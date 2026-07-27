@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { ArrowDown, ArrowUp, Check, Clock3, SkipForward } from 'lucide-react';
+import { ArrowDown, ArrowUp, Check, Clock3, Save, SkipForward } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
 import { SectionCard } from '@/components/SectionCard';
 import { db } from '@/db/appDb';
@@ -10,11 +10,18 @@ import {
   moveSessionExercise,
   toggleSetCompletion,
   toggleSkipSessionExercise,
+  updateSetLogValues,
 } from '@/db/session-actions';
-import type { WorkoutSessionExercise, WorkoutSetLog } from '@/domain/models';
+import type { TrackingMode, WorkoutSessionExercise, WorkoutSetLog } from '@/domain/models';
 import { formatDateTime, formatLoadLabel, formatTimer } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { useUiStore } from '@/store/ui-store';
+
+interface SetLogDraft {
+  reps: string;
+  seconds: string;
+  weight: string;
+}
 
 function groupLogsByExercise(setLogs: WorkoutSetLog[]) {
   return setLogs.reduce<Record<string, WorkoutSetLog[]>>((groups, item) => {
@@ -25,6 +32,175 @@ function groupLogsByExercise(setLogs: WorkoutSetLog[]) {
     groups[item.sessionExerciseId].push(item);
     return groups;
   }, {});
+}
+
+function toInputValue(value?: number) {
+  return typeof value === 'number' ? String(value) : '';
+}
+
+function parseOptionalNumber(value: string) {
+  if (!value.trim()) {
+    return undefined;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+}
+
+function createSetLogDraft(log: WorkoutSetLog): SetLogDraft {
+  return {
+    reps: toInputValue(log.reps),
+    seconds: toInputValue(log.seconds),
+    weight: toInputValue(log.weight),
+  };
+}
+
+function supportsReps(trackingMode: TrackingMode) {
+  return trackingMode === 'reps_weight';
+}
+
+function supportsSeconds(trackingMode: TrackingMode) {
+  return trackingMode === 'time' || trackingMode === 'time_weight';
+}
+
+function supportsWeight(trackingMode: TrackingMode) {
+  return trackingMode === 'reps_weight' || trackingMode === 'time_weight';
+}
+
+function formatSideLabel(side: WorkoutSetLog['side']) {
+  if (side === 'left') {
+    return 'links';
+  }
+
+  if (side === 'right') {
+    return 'rechts';
+  }
+
+  return '';
+}
+
+interface SetLogEditorProps {
+  log: WorkoutSetLog;
+  trackingMode: TrackingMode;
+  restSeconds?: number;
+  onCompleted: () => void;
+}
+
+function SetLogEditor({ log, trackingMode, restSeconds, onCompleted }: SetLogEditorProps) {
+  const [draft, setDraft] = useState<SetLogDraft>(() => createSetLogDraft(log));
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    setDraft(createSetLogDraft(log));
+  }, [log.completed, log.id, log.reps, log.seconds, log.weight]);
+
+  const dirty =
+    draft.reps !== toInputValue(log.reps) ||
+    draft.seconds !== toInputValue(log.seconds) ||
+    draft.weight !== toInputValue(log.weight);
+
+  async function handleSave() {
+    setIsSaving(true);
+
+    try {
+      await updateSetLogValues(log.id, {
+        reps: supportsReps(trackingMode) ? parseOptionalNumber(draft.reps) : undefined,
+        seconds: supportsSeconds(trackingMode) ? parseOptionalNumber(draft.seconds) : undefined,
+        weight: supportsWeight(trackingMode) ? parseOptionalNumber(draft.weight) : undefined,
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function handleToggleCompletion() {
+    if (dirty) {
+      await handleSave();
+    }
+
+    await toggleSetCompletion(log.id);
+
+    if (!log.completed && restSeconds) {
+      onCompleted();
+    }
+  }
+
+  const fieldCount = Number(supportsReps(trackingMode)) + Number(supportsSeconds(trackingMode)) + Number(supportsWeight(trackingMode));
+
+  return (
+    <div
+      className={cn(
+        'rounded-3xl border px-4 py-4 transition',
+        log.completed ? 'border-lime-300/20 bg-lime-300/10' : 'border-white/10 bg-zinc-950/40',
+      )}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-zinc-100">
+            {log.setKind === 'warmup' ? 'Warmup' : `Satz ${log.setNumber}`}
+            {log.side !== 'both' ? ` · ${formatSideLabel(log.side)}` : ''}
+          </p>
+          <p className="mt-1 text-sm text-zinc-400">{formatLoadLabel(log)}</p>
+        </div>
+        <button
+          type="button"
+          onClick={handleToggleCompletion}
+          className={cn(
+            'flex h-10 min-w-10 items-center justify-center rounded-2xl px-3 text-sm font-medium transition',
+            log.completed
+              ? 'bg-lime-300 text-zinc-950'
+              : 'bg-white/5 text-zinc-300 hover:bg-white/10',
+          )}
+        >
+          {log.completed ? <Check size={16} /> : 'Fertig'}
+        </button>
+      </div>
+
+      <div className={cn('mt-4 grid gap-3', fieldCount === 1 ? 'grid-cols-1' : 'grid-cols-2')}>
+        {supportsReps(trackingMode) ? (
+          <input
+            value={draft.reps}
+            onChange={(event) => setDraft((current) => ({ ...current, reps: event.target.value }))}
+            inputMode="numeric"
+            placeholder="Wdh"
+            className="rounded-3xl border border-white/10 bg-zinc-950/50 px-4 py-4 text-sm text-zinc-50 outline-none transition placeholder:text-zinc-500 focus:border-lime-300/40"
+          />
+        ) : null}
+
+        {supportsSeconds(trackingMode) ? (
+          <input
+            value={draft.seconds}
+            onChange={(event) => setDraft((current) => ({ ...current, seconds: event.target.value }))}
+            inputMode="decimal"
+            placeholder="Sekunden"
+            className="rounded-3xl border border-white/10 bg-zinc-950/50 px-4 py-4 text-sm text-zinc-50 outline-none transition placeholder:text-zinc-500 focus:border-lime-300/40"
+          />
+        ) : null}
+
+        {supportsWeight(trackingMode) ? (
+          <input
+            value={draft.weight}
+            onChange={(event) => setDraft((current) => ({ ...current, weight: event.target.value }))}
+            inputMode="decimal"
+            placeholder="Gewicht in kg"
+            className="rounded-3xl border border-white/10 bg-zinc-950/50 px-4 py-4 text-sm text-zinc-50 outline-none transition placeholder:text-zinc-500 focus:border-lime-300/40"
+          />
+        ) : null}
+      </div>
+
+      {dirty ? (
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={isSaving}
+          className="mt-3 flex w-full items-center justify-center gap-2 rounded-3xl bg-white/5 px-4 py-4 text-sm font-medium text-zinc-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <Save size={15} />
+          Werte speichern
+        </button>
+      ) : null}
+    </div>
+  );
 }
 
 export function SessionPage() {
@@ -84,13 +260,13 @@ export function SessionPage() {
     const logLookup: Record<string, string> = {};
 
     for (const [exerciseId, sessionExercise] of latestByExerciseId.entries()) {
-      const logs = await db.workoutSetLogs
+      const historicLogs = await db.workoutSetLogs
         .where('sessionExerciseId')
         .equals(sessionExercise.id)
         .filter((item) => item.setKind === 'work' && item.completed)
         .toArray();
 
-      logLookup[exerciseId] = logs.slice(0, 2).map(formatLoadLabel).join(' | ') || 'Noch keine Werte';
+      logLookup[exerciseId] = historicLogs.slice(0, 2).map(formatLoadLabel).join(' | ') || 'Noch keine Werte';
     }
 
     return logLookup;
@@ -98,6 +274,16 @@ export function SessionPage() {
 
   useEffect(() => {
     if (sessionExercises?.length && !activeSessionExerciseId) {
+      setActiveSessionExerciseId(sessionExercises[0].id);
+    }
+  }, [activeSessionExerciseId, sessionExercises, setActiveSessionExerciseId]);
+
+  useEffect(() => {
+    if (!sessionExercises?.length) {
+      return;
+    }
+
+    if (!sessionExercises.some((item) => item.id === activeSessionExerciseId)) {
       setActiveSessionExerciseId(sessionExercises[0].id);
     }
   }, [activeSessionExerciseId, sessionExercises, setActiveSessionExerciseId]);
@@ -162,8 +348,7 @@ export function SessionPage() {
                   {lastValues?.[focusedExercise.exerciseId] ?? 'Noch keine Historie vorhanden'}
                 </p>
                 <p className="mt-3 text-sm text-zinc-400">
-                  Ziel:{' '}
-                  {focusedExercise.targetReps ? `${focusedExercise.targetReps} Wdh` : null}
+                  Ziel: {focusedExercise.targetReps ? `${focusedExercise.targetReps} Wdh` : null}
                   {focusedExercise.targetReps && focusedExercise.targetSeconds ? ' · ' : null}
                   {focusedExercise.targetSeconds ? `${focusedExercise.targetSeconds}s` : null}
                   {focusedExercise.targetWeight ? ` · ${focusedExercise.targetWeight} kg` : ''}
@@ -254,39 +439,17 @@ export function SessionPage() {
 
               <div className="space-y-3">
                 {exerciseLogs.map((log) => (
-                  <button
+                  <SetLogEditor
                     key={log.id}
-                    type="button"
-                    onClick={async () => {
-                      await toggleSetCompletion(log.id);
-
-                      if (!log.completed && exercise.restSeconds) {
+                    log={log}
+                    trackingMode={exercise.trackingMode}
+                    restSeconds={exercise.restSeconds}
+                    onCompleted={() => {
+                      if (exercise.restSeconds) {
                         startRestTimer(exercise.restSeconds);
                       }
                     }}
-                    className={cn(
-                      'flex w-full items-center justify-between rounded-3xl border px-4 py-4 text-left transition',
-                      log.completed
-                        ? 'border-lime-300/20 bg-lime-300/10'
-                        : 'border-white/10 bg-zinc-950/40 hover:bg-zinc-950/60',
-                    )}
-                  >
-                    <div>
-                      <p className="text-sm font-semibold text-zinc-100">
-                        {log.setKind === 'warmup' ? 'Warmup' : `Satz ${log.setNumber}`}
-                        {log.side !== 'both' ? ` · ${log.side}` : ''}
-                      </p>
-                      <p className="mt-1 text-sm text-zinc-400">{formatLoadLabel(log)}</p>
-                    </div>
-                    <div
-                      className={cn(
-                        'flex h-10 w-10 items-center justify-center rounded-2xl',
-                        log.completed ? 'bg-lime-300 text-zinc-950' : 'bg-white/5 text-zinc-500',
-                      )}
-                    >
-                      <Check size={16} />
-                    </div>
-                  </button>
+                  />
                 ))}
               </div>
             </SectionCard>

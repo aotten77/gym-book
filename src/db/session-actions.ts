@@ -1,6 +1,12 @@
 import { db } from '@/db/appDb';
 import { materializeSession } from '@/domain/session';
 
+interface SetLogValuesInput {
+  reps?: number;
+  seconds?: number;
+  weight?: number;
+}
+
 export async function startSessionFromTemplate(templateId: string) {
   const existingActiveSession = await db.workoutSessions.where('status').equals('active').first();
 
@@ -60,6 +66,20 @@ export async function toggleSetCompletion(setLogId: string) {
   await db.workoutSetLogs.update(setLogId, {
     completed: !current.completed,
     completedAt: !current.completed ? new Date().toISOString() : undefined,
+  });
+}
+
+export async function updateSetLogValues(setLogId: string, values: SetLogValuesInput) {
+  const current = await db.workoutSetLogs.get(setLogId);
+
+  if (!current) {
+    return;
+  }
+
+  await db.workoutSetLogs.update(setLogId, {
+    reps: values.reps,
+    seconds: values.seconds,
+    weight: values.weight,
   });
 }
 
