@@ -163,3 +163,27 @@ export async function deleteTemplateExercise(templateExerciseId: string) {
 
   await normalizeTemplateExerciseOrder(templateExercise.templateId);
 }
+
+export async function reorderTemplateExercises(templateId: string, orderedTemplateExerciseIds: string[]) {
+  const currentExercises = await db.workoutTemplateExercises.where('templateId').equals(templateId).sortBy('orderIndex');
+
+  if (currentExercises.length !== orderedTemplateExerciseIds.length) {
+    return;
+  }
+
+  const knownIds = new Set(currentExercises.map((item) => item.id));
+
+  if (orderedTemplateExerciseIds.some((id) => !knownIds.has(id))) {
+    return;
+  }
+
+  await db.transaction('rw', db.workoutTemplateExercises, async () => {
+    await Promise.all(
+      orderedTemplateExerciseIds.map((id, index) =>
+        db.workoutTemplateExercises.update(id, {
+          orderIndex: index + 1,
+        }),
+      ),
+    );
+  });
+}
