@@ -1,0 +1,56 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: "SF Pro Display", "SF Pro Text", "Segoe UI", sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color: rgba(244, 244, 245, 1);
+  background:
+    radial-gradient(circle at top, rgba(132, 204, 22, 0.2), transparent 28%),
+    radial-gradient(circle at bottom right, rgba(245, 158, 11, 0.16), transparent 24%),
+    linear-gradient(180deg, #101214 0%, #09090b 100%);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: #09090b;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+.bg-app {
+  background:
+    radial-gradient(circle at top, rgba(132, 204, 22, 0.16), transparent 26%),
+    radial-gradient(circle at bottom right, rgba(245, 158, 11, 0.12), transparent 22%),
+    linear-gradient(180deg, rgba(24, 24, 27, 1) 0%, rgba(9, 9, 11, 1) 100%);
+}
+
+.shadow-soft {
+  box-shadow:
+    0 12px 30px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
