@@ -126,7 +126,11 @@ function SetLogEditor({ log, trackingMode, restSeconds, onCompleted }: SetLogEdi
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
-    setDraft(createSetLogDraft(log));
+    setDraft({
+      reps: toInputValue(log.reps),
+      seconds: toInputValue(log.seconds),
+      weight: toInputValue(log.weight),
+    });
   }, [log.completed, log.id, log.reps, log.seconds, log.weight]);
 
   const dirty =
