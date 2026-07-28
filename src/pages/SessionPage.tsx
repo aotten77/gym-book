@@ -1,14 +1,33 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { ArrowDown, ArrowUp, Check, Clock3, Save, SkipForward } from 'lucide-react';
+import {
+  closestCenter,
+  DndContext,
+  DragOverlay,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import { Check, Clock3, GripVertical, Save, SkipForward } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
 import { SectionCard } from '@/components/SectionCard';
 import { db } from '@/db/appDb';
 import {
   addSessionExercise,
   completeSession,
-  moveSessionExercise,
+  reorderSessionExercises,
   toggleSetCompletion,
   toggleSkipSessionExercise,
   updateSetLogValues,
@@ -242,6 +261,138 @@ function SetLogEditor({ log, trackingMode, restSeconds, onCompleted }: SetLogEdi
   );
 }
 
+function formatSessionExerciseSubtitle(exercise: WorkoutSessionExercise) {
+  if (exercise.wasSkipped) {
+    return 'Aktuell uebersprungen';
+  }
+
+  if (exercise.addedInSession) {
+    return 'Waehrend der Session hinzugefuegt';
+  }
+
+  return 'Teil der laufenden Session';
+}
+
+function SessionExerciseMeta({
+  exercise,
+  showOrder = true,
+}: {
+  exercise: WorkoutSessionExercise;
+  showOrder?: boolean;
+}) {
+  return (
+    <div className="min-w-0">
+      <p className="text-sm font-semibold text-zinc-50">
+        {showOrder ? `${exercise.orderIndex}. ` : ''}
+        {exercise.exerciseNameSnapshot}
+      </p>
+      <p className="mt-1 text-sm text-zinc-400">{formatSessionExerciseSubtitle(exercise)}</p>
+      <p className="mt-2 text-sm text-zinc-400">
+        Ziel: {exercise.targetReps ? `${exercise.targetReps} Wdh` : null}
+        {exercise.targetReps && exercise.targetSeconds ? ' · ' : null}
+        {exercise.targetSeconds ? `${exercise.targetSeconds}s` : null}
+        {exercise.targetWeight ? ` · ${exercise.targetWeight} kg` : ''}
+        {exercise.restSeconds ? ` · Pause ${exercise.restSeconds}s` : ''}
+      </p>
+    </div>
+  );
+}
+
+interface SortableSessionExerciseCardProps {
+  exercise: WorkoutSessionExercise;
+  exerciseLogs: WorkoutSetLog[];
+  isFocused: boolean;
+  isBusy: boolean;
+  onFocus: (sessionExerciseId: string) => void;
+  onToggleSkip: (sessionExerciseId: string) => void;
+  onSetCompleted: (restSeconds?: number) => void;
+}
+
+function SortableSessionExerciseCard({
+  exercise,
+  exerciseLogs,
+  isFocused,
+  isBusy,
+  onFocus,
+  onToggleSkip,
+  onSetCompleted,
+}: SortableSessionExerciseCardProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: exercise.id,
+  });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style}>
+      <SectionCard
+        title={exercise.exerciseNameSnapshot}
+        subtitle={formatSessionExerciseSubtitle(exercise)}
+        className={cn(
+          isFocused && 'border-lime-300/40 bg-lime-300/[0.06]',
+          isDragging
+            ? 'border-lime-300/30 opacity-35 shadow-soft ring-2 ring-lime-300/20'
+            : 'transition hover:border-lime-300/20 hover:bg-white/[0.055]',
+        )}
+        action={
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              aria-label={`${exercise.exerciseNameSnapshot} ziehen und umsortieren`}
+              disabled={isBusy}
+              className={cn(
+                'touch-none rounded-2xl border p-2 transition disabled:cursor-not-allowed disabled:opacity-35',
+                isDragging
+                  ? 'cursor-grabbing border-lime-300/30 bg-lime-300/10 text-lime-200'
+                  : 'cursor-grab border-white/10 text-zinc-300 hover:bg-white/5 active:cursor-grabbing',
+              )}
+              {...attributes}
+              {...listeners}
+            >
+              <GripVertical size={16} />
+            </button>
+            <button
+              type="button"
+              onClick={() => onFocus(exercise.id)}
+              className="rounded-2xl border border-white/10 px-3 py-2 text-sm text-zinc-300 transition hover:bg-white/5"
+            >
+              Fokus
+            </button>
+          </div>
+        }
+      >
+        <div className="mb-4 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => onToggleSkip(exercise.id)}
+            className="rounded-2xl border border-white/10 px-3 py-2 text-sm text-zinc-300 transition hover:bg-white/5"
+          >
+            <div className="flex items-center gap-2">
+              <SkipForward size={14} />
+              {exercise.wasSkipped ? 'Zurueckholen' : 'Skip'}
+            </div>
+          </button>
+        </div>
+
+        <div className="space-y-3">
+          {exerciseLogs.map((log) => (
+            <SetLogEditor
+              key={log.id}
+              log={log}
+              trackingMode={exercise.trackingMode}
+              restSeconds={exercise.restSeconds}
+              onCompleted={() => onSetCompleted(exercise.restSeconds)}
+            />
+          ))}
+        </div>
+      </SectionCard>
+    </div>
+  );
+}
+
 export function SessionPage() {
   const { sessionId = '' } = useParams();
   const navigate = useNavigate();
@@ -250,6 +401,9 @@ export function SessionPage() {
   const [now, setNow] = useState(Date.now());
   const [showAddExerciseForm, setShowAddExerciseForm] = useState(false);
   const [isSavingExercise, setIsSavingExercise] = useState(false);
+  const [isReorderingExercises, setIsReorderingExercises] = useState(false);
+  const [draggedSessionExerciseId, setDraggedSessionExerciseId] = useState<string | null>(null);
+  const [sessionExerciseOrder, setSessionExerciseOrder] = useState<string[]>([]);
   const [exerciseForm, setExerciseForm] = useState<SessionExerciseFormState>(
     defaultSessionExerciseFormState,
   );
@@ -316,22 +470,57 @@ export function SessionPage() {
 
     return logLookup;
   }, [sessionId]);
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
+  );
 
-  useEffect(() => {
-    if (sessionExercises?.length && !activeSessionExerciseId) {
-      setActiveSessionExerciseId(sessionExercises[0].id);
+  const orderedSessionExercises = useMemo(() => {
+    if (!sessionExercises) {
+      return [];
     }
-  }, [activeSessionExerciseId, sessionExercises, setActiveSessionExerciseId]);
+
+    const exerciseById = new Map(sessionExercises.map((item) => [item.id, item]));
+    const orderedItems = sessionExerciseOrder
+      .map((itemId) => exerciseById.get(itemId))
+      .filter((item): item is WorkoutSessionExercise => Boolean(item));
+
+    return orderedItems.length === sessionExercises.length ? orderedItems : sessionExercises;
+  }, [sessionExerciseOrder, sessionExercises]);
+  const activeDraggedSessionExercise = useMemo(
+    () => orderedSessionExercises.find((item) => item.id === draggedSessionExerciseId),
+    [draggedSessionExerciseId, orderedSessionExercises],
+  );
 
   useEffect(() => {
-    if (!sessionExercises?.length) {
+    if (orderedSessionExercises.length && !activeSessionExerciseId) {
+      setActiveSessionExerciseId(orderedSessionExercises[0].id);
+    }
+  }, [activeSessionExerciseId, orderedSessionExercises, setActiveSessionExerciseId]);
+
+  useEffect(() => {
+    if (!orderedSessionExercises.length) {
       return;
     }
 
-    if (!sessionExercises.some((item) => item.id === activeSessionExerciseId)) {
-      setActiveSessionExerciseId(sessionExercises[0].id);
+    if (!orderedSessionExercises.some((item) => item.id === activeSessionExerciseId)) {
+      setActiveSessionExerciseId(orderedSessionExercises[0].id);
     }
-  }, [activeSessionExerciseId, sessionExercises, setActiveSessionExerciseId]);
+  }, [activeSessionExerciseId, orderedSessionExercises, setActiveSessionExerciseId]);
+
+  useEffect(() => {
+    if (!sessionExercises) {
+      return;
+    }
+
+    setSessionExerciseOrder(sessionExercises.map((item) => item.id));
+  }, [sessionExercises]);
 
   useEffect(() => {
     if (!restTimerEndsAt) {
@@ -377,7 +566,7 @@ export function SessionPage() {
 
   const groupedLogs = useMemo(() => groupLogsByExercise(setLogs ?? []), [setLogs]);
   const focusedExercise =
-    (sessionExercises ?? []).find((item) => item.id === activeSessionExerciseId) ?? sessionExercises?.[0];
+    orderedSessionExercises.find((item) => item.id === activeSessionExerciseId) ?? orderedSessionExercises[0];
   const remainingSeconds = restTimerEndsAt ? Math.max(0, Math.ceil((restTimerEndsAt - now) / 1000)) : 0;
   const selectedExistingExercise = (availableExercises ?? []).find(
     (exercise) => exercise.id === exerciseForm.exerciseId,
@@ -441,6 +630,39 @@ export function SessionPage() {
     } finally {
       setIsSavingExercise(false);
     }
+  }
+
+  async function handleSessionExerciseDragEnd(event: DragEndEvent) {
+    setDraggedSessionExerciseId(null);
+
+    if (!session || !event.over || event.active.id === event.over.id) {
+      return;
+    }
+
+    const currentIndex = sessionExerciseOrder.indexOf(String(event.active.id));
+    const targetIndex = sessionExerciseOrder.indexOf(String(event.over.id));
+
+    if (currentIndex === -1 || targetIndex === -1) {
+      return;
+    }
+
+    const nextOrder = arrayMove(sessionExerciseOrder, currentIndex, targetIndex);
+    setSessionExerciseOrder(nextOrder);
+    setIsReorderingExercises(true);
+
+    try {
+      await reorderSessionExercises(session.id, nextOrder);
+    } finally {
+      setIsReorderingExercises(false);
+    }
+  }
+
+  function handleSessionExerciseDragStart(event: DragStartEvent) {
+    setDraggedSessionExerciseId(String(event.active.id));
+  }
+
+  function handleSessionExerciseDragCancel() {
+    setDraggedSessionExerciseId(null);
   }
 
   if (!session) {
@@ -798,84 +1020,67 @@ export function SessionPage() {
             </div>
         </SectionCard>
 
-        {(sessionExercises ?? []).map((exercise) => {
-          const exerciseLogs = (groupedLogs[exercise.id] ?? []).sort((left, right) => {
-            if (left.setNumber === right.setNumber) {
-              return left.side.localeCompare(right.side);
-            }
+        {orderedSessionExercises.length > 0 ? (
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragStart={handleSessionExerciseDragStart}
+            onDragCancel={handleSessionExerciseDragCancel}
+            onDragEnd={handleSessionExerciseDragEnd}
+          >
+            <SortableContext items={sessionExerciseOrder} strategy={verticalListSortingStrategy}>
+              <div
+                className={cn(
+                  'space-y-4 rounded-[28px] transition',
+                  draggedSessionExerciseId && 'bg-lime-300/[0.03] p-1 ring-1 ring-lime-300/15',
+                )}
+              >
+                {orderedSessionExercises.map((exercise) => {
+                  const exerciseLogs = (groupedLogs[exercise.id] ?? []).sort((left, right) => {
+                    if (left.setNumber === right.setNumber) {
+                      return left.side.localeCompare(right.side);
+                    }
 
-            return left.setNumber - right.setNumber;
-          });
+                    return left.setNumber - right.setNumber;
+                  });
 
-          return (
-            <SectionCard
-              key={exercise.id}
-              title={exercise.exerciseNameSnapshot}
-                subtitle={
-                  exercise.wasSkipped
-                    ? 'Aktuell uebersprungen'
-                    : exercise.addedInSession
-                      ? 'Waehrend der Session hinzugefuegt'
-                      : 'Teil der laufenden Session'
-                }
-              className={cn(
-                activeSessionExerciseId === exercise.id && 'border-lime-300/40 bg-lime-300/[0.06]',
-              )}
-              action={
-                <button
-                  type="button"
-                  onClick={() => setActiveSessionExerciseId(exercise.id)}
-                  className="rounded-2xl border border-white/10 px-3 py-2 text-sm text-zinc-300 transition hover:bg-white/5"
-                >
-                  Fokus
-                </button>
-              }
-            >
-              <div className="mb-4 flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => moveSessionExercise(exercise.id, -1)}
-                  className="rounded-2xl border border-white/10 p-2 text-zinc-300 transition hover:bg-white/5"
-                >
-                  <ArrowUp size={16} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => moveSessionExercise(exercise.id, 1)}
-                  className="rounded-2xl border border-white/10 p-2 text-zinc-300 transition hover:bg-white/5"
-                >
-                  <ArrowDown size={16} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => toggleSkipSessionExercise(exercise.id)}
-                  className="rounded-2xl border border-white/10 px-3 py-2 text-sm text-zinc-300 transition hover:bg-white/5"
-                >
-                  <div className="flex items-center gap-2">
-                    <SkipForward size={14} />
-                    {exercise.wasSkipped ? 'Zurueckholen' : 'Skip'}
+                  return (
+                    <SortableSessionExerciseCard
+                      key={exercise.id}
+                      exercise={exercise}
+                      exerciseLogs={exerciseLogs}
+                      isFocused={activeSessionExerciseId === exercise.id}
+                      isBusy={isReorderingExercises || session.status !== 'active'}
+                      onFocus={setActiveSessionExerciseId}
+                      onToggleSkip={toggleSkipSessionExercise}
+                      onSetCompleted={(restSeconds) => {
+                        if (restSeconds) {
+                          startRestTimer(restSeconds);
+                        }
+                      }}
+                    />
+                  );
+                })}
+              </div>
+            </SortableContext>
+            <DragOverlay>
+              {activeDraggedSessionExercise ? (
+                <div className="w-[min(100vw-40px,32rem)] rounded-3xl border border-lime-300/35 bg-zinc-900/95 p-4 shadow-soft ring-2 ring-lime-300/20 backdrop-blur">
+                  <div className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-lime-200/90">
+                    <GripVertical size={14} />
+                    <span>Loslassen zum Ablegen</span>
                   </div>
-                </button>
-              </div>
-
-              <div className="space-y-3">
-                {exerciseLogs.map((log) => (
-                  <SetLogEditor
-                    key={log.id}
-                    log={log}
-                    trackingMode={exercise.trackingMode}
-                    restSeconds={exercise.restSeconds}
-                    onCompleted={() => {
-                      if (exercise.restSeconds) {
-                        startRestTimer(exercise.restSeconds);
-                      }
-                    }}
-                  />
-                ))}
-              </div>
-            </SectionCard>
-          );
-        })}
+                  <div className="flex min-w-0 gap-3">
+                    <div className="rounded-2xl border border-lime-300/30 bg-lime-300/10 p-2 text-lime-200">
+                      <GripVertical size={16} />
+                    </div>
+                    <SessionExerciseMeta exercise={activeDraggedSessionExercise} />
+                  </div>
+                </div>
+              ) : null}
+            </DragOverlay>
+          </DndContext>
+        ) : null}
       </div>
     </AppShell>
   );

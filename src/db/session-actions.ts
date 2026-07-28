@@ -230,30 +230,30 @@ export async function toggleSkipSessionExercise(sessionExerciseId: string) {
   });
 }
 
-export async function moveSessionExercise(sessionExerciseId: string, direction: -1 | 1) {
-  const current = await db.workoutSessionExercises.get(sessionExerciseId);
-
-  if (!current) {
-    return;
-  }
-
-  const allExercises = await db.workoutSessionExercises
+export async function reorderSessionExercises(sessionId: string, orderedSessionExerciseIds: string[]) {
+  const currentExercises = await db.workoutSessionExercises
     .where('sessionId')
-    .equals(current.sessionId)
+    .equals(sessionId)
     .sortBy('orderIndex');
 
-  const currentIndex = allExercises.findIndex((item) => item.id === sessionExerciseId);
-  const targetIndex = currentIndex + direction;
-
-  if (currentIndex === -1 || targetIndex < 0 || targetIndex >= allExercises.length) {
+  if (currentExercises.length !== orderedSessionExerciseIds.length) {
     return;
   }
 
-  const target = allExercises[targetIndex];
+  const knownIds = new Set(currentExercises.map((item) => item.id));
+
+  if (orderedSessionExerciseIds.some((id) => !knownIds.has(id))) {
+    return;
+  }
 
   await db.transaction('rw', db.workoutSessionExercises, async () => {
-    await db.workoutSessionExercises.update(current.id, { orderIndex: target.orderIndex });
-    await db.workoutSessionExercises.update(target.id, { orderIndex: current.orderIndex });
+    await Promise.all(
+      orderedSessionExerciseIds.map((id, index) =>
+        db.workoutSessionExercises.update(id, {
+          orderIndex: index + 1,
+        }),
+      ),
+    );
   });
 }
 

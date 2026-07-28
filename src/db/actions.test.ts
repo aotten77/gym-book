@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { db } from '@/db/appDb';
-import { addSessionExercise } from '@/db/session-actions';
+import { addSessionExercise, reorderSessionExercises } from '@/db/session-actions';
 import { reorderTemplateExercises } from '@/db/template-actions';
 
 describe('addSessionExercise', () => {
@@ -178,6 +178,106 @@ describe('reorderTemplateExercises', () => {
     const unchanged = await db.workoutTemplateExercises.where('templateId').equals('template-2').sortBy('orderIndex');
 
     expect(unchanged.map((item) => item.id)).toEqual(['template-exercise-a', 'template-exercise-b']);
+    expect(unchanged.map((item) => item.orderIndex)).toEqual([1, 2]);
+  });
+});
+
+describe('reorderSessionExercises', () => {
+  it('persists a new sequential order for all session exercises', async () => {
+    await db.workoutSessionExercises.bulkAdd([
+      {
+        id: 'session-exercise-1',
+        sessionId: 'session-1',
+        exerciseId: 'exercise-1',
+        exerciseNameSnapshot: 'Squat',
+        trackingMode: 'reps_weight',
+        unilateral: false,
+        orderIndex: 1,
+        wasSkipped: false,
+        addedInSession: false,
+        workSetCount: 3,
+      },
+      {
+        id: 'session-exercise-2',
+        sessionId: 'session-1',
+        exerciseId: 'exercise-2',
+        exerciseNameSnapshot: 'Bench',
+        trackingMode: 'reps_weight',
+        unilateral: false,
+        orderIndex: 2,
+        wasSkipped: false,
+        addedInSession: false,
+        workSetCount: 3,
+      },
+      {
+        id: 'session-exercise-3',
+        sessionId: 'session-1',
+        exerciseId: 'exercise-3',
+        exerciseNameSnapshot: 'Row',
+        trackingMode: 'reps_weight',
+        unilateral: false,
+        orderIndex: 3,
+        wasSkipped: false,
+        addedInSession: true,
+        workSetCount: 3,
+      },
+    ]);
+
+    await reorderSessionExercises('session-1', [
+      'session-exercise-3',
+      'session-exercise-1',
+      'session-exercise-2',
+    ]);
+
+    const reordered = await db.workoutSessionExercises
+      .where('sessionId')
+      .equals('session-1')
+      .sortBy('orderIndex');
+
+    expect(reordered.map((item) => item.id)).toEqual([
+      'session-exercise-3',
+      'session-exercise-1',
+      'session-exercise-2',
+    ]);
+    expect(reordered.map((item) => item.orderIndex)).toEqual([1, 2, 3]);
+  });
+
+  it('leaves the current order untouched when the provided ids are incomplete', async () => {
+    await db.workoutSessionExercises.bulkAdd([
+      {
+        id: 'session-exercise-a',
+        sessionId: 'session-2',
+        exerciseId: 'exercise-a',
+        exerciseNameSnapshot: 'Press',
+        trackingMode: 'reps_weight',
+        unilateral: false,
+        orderIndex: 1,
+        wasSkipped: false,
+        addedInSession: false,
+        workSetCount: 3,
+      },
+      {
+        id: 'session-exercise-b',
+        sessionId: 'session-2',
+        exerciseId: 'exercise-b',
+        exerciseNameSnapshot: 'Pull Up',
+        trackingMode: 'reps_weight',
+        unilateral: false,
+        orderIndex: 2,
+        wasSkipped: false,
+        addedInSession: false,
+        workSetCount: 3,
+      },
+    ]);
+
+    await reorderSessionExercises('session-2', ['session-exercise-b']);
+
+    const unchanged = await db.workoutSessionExercises
+      .where('sessionId')
+      .equals('session-2')
+      .sortBy('orderIndex');
+
+    expect(unchanged.map((item) => item.id)).toEqual(['session-exercise-a', 'session-exercise-b']);
     expect(unchanged.map((item) => item.orderIndex)).toEqual([1, 2]);
   });
 });
