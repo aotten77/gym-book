@@ -594,7 +594,7 @@ export function SessionPage() {
   const focusedExerciseMedia =
     focusedExerciseRecord?.mediaAssetId ? mediaAssetById[focusedExerciseRecord.mediaAssetId] : undefined;
   const remainingSeconds = restTimerEndsAt ? Math.max(0, Math.ceil((restTimerEndsAt - now) / 1000)) : 0;
-  const isReadOnly = session.status !== 'active';
+  const isReadOnly = session?.status !== 'active';
   const selectedExistingExercise = (availableExercises ?? []).find(
     (exercise) => exercise.id === exerciseForm.exerciseId,
   );

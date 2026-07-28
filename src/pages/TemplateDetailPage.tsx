@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
@@ -271,6 +271,7 @@ function SortableTemplateExerciseCard({
 export function TemplateDetailPage() {
   const { templateId = '' } = useParams();
   const navigate = useNavigate();
+  const editExerciseSectionRef = useRef<HTMLDivElement | null>(null);
   const [templateName, setTemplateName] = useState('');
   const [templateNotes, setTemplateNotes] = useState('');
   const [editingTemplateExerciseId, setEditingTemplateExerciseId] = useState<string | null>(null);
@@ -297,7 +298,10 @@ export function TemplateDetailPage() {
   );
   const exercises = useLiveQuery(() => db.exercises.toArray(), []);
   const mediaAssets = useLiveQuery(() => db.mediaAssets.toArray(), []);
-  const programs = useLiveQuery(() => db.programs.orderBy('createdAt').toArray(), []);
+  const programs = useLiveQuery(async () => {
+    const items = await db.programs.toArray();
+    return items.sort((a, b) => (a.createdAt ?? '').localeCompare(b.createdAt ?? ''));
+  }, []);
   const settings = useLiveQuery(() => db.appSettings.get('app-settings'), []);
   const programWeeks = useLiveQuery(() => db.programWeeks.toArray(), []);
   const progressionRules = useLiveQuery(() => db.progressionRules.toArray(), []);
@@ -379,6 +383,20 @@ export function TemplateDetailPage() {
     setTemplateName(template?.name ?? '');
     setTemplateNotes(template?.notes ?? '');
   }, [template?.id, template?.name, template?.notes]);
+
+  function handleEditTemplateExercise(templateExerciseId: string) {
+    setEditingTemplateExerciseId(templateExerciseId);
+    requestAnimationFrame(() => {
+      editExerciseSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }
+
+  function handleOpenAddTemplateExercise() {
+    setEditingTemplateExerciseId(null);
+    requestAnimationFrame(() => {
+      editExerciseSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }
 
   useEffect(() => {
     if (!templateExercises) {
@@ -753,6 +771,16 @@ export function TemplateDetailPage() {
         <SectionCard
           title="Template-Uebungen"
           subtitle="Per Drag auf Touch und Desktop umsortieren. Ueber den Handle geht das auch per Tastatur."
+          action={
+            <button
+              type="button"
+              onClick={handleOpenAddTemplateExercise}
+              className="flex h-10 items-center gap-2 rounded-2xl bg-lime-300/10 px-3 py-2 text-sm text-lime-200 transition hover:bg-lime-300/20"
+            >
+              <Plus size={16} />
+              Hinzufuegen
+            </button>
+          }
         >
           <div className="space-y-3">
             {orderedTemplateExercises.length > 0 ? (
@@ -780,7 +808,7 @@ export function TemplateDetailPage() {
                             : undefined
                         }
                         isBusy={isReorderingExercises}
-                        onEdit={setEditingTemplateExerciseId}
+                        onEdit={handleEditTemplateExercise}
                         onDelete={handleDeleteTemplateExercise}
                       />
                     ))}
@@ -1012,15 +1040,16 @@ export function TemplateDetailPage() {
           )}
         </SectionCard>
 
-        <SectionCard
-          title={editingTemplateExerciseId ? 'Template-Uebung bearbeiten' : 'Template-Uebung hinzufuegen'}
-          subtitle="Bestehende Uebung auswaehlen oder direkt eine neue globale Uebung anlegen."
-          action={
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-lime-300/10 text-lime-200">
-              <Plus size={18} />
-            </div>
-          }
-        >
+        <div ref={editExerciseSectionRef}>
+          <SectionCard
+            title={editingTemplateExerciseId ? 'Template-Uebung bearbeiten' : 'Template-Uebung hinzufuegen'}
+            subtitle="Bestehende Uebung auswaehlen oder direkt eine neue globale Uebung anlegen."
+            action={
+              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-lime-300/10 text-lime-200">
+                <Plus size={18} />
+              </div>
+            }
+          >
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
               <button
@@ -1278,6 +1307,7 @@ export function TemplateDetailPage() {
             ) : null}
           </div>
         </SectionCard>
+        </div>
       </div>
     </AppShell>
   );

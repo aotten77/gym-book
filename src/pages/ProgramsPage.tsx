@@ -23,7 +23,10 @@ export function ProgramsPage() {
   const [editingWeekLabel, setEditingWeekLabel] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const programs = useLiveQuery(() => db.programs.orderBy('createdAt').toArray(), []);
+  const programs = useLiveQuery(async () => {
+    const items = await db.programs.toArray();
+    return items.sort((a, b) => (a.createdAt ?? '').localeCompare(b.createdAt ?? ''));
+  }, []);
   const weeks = useLiveQuery(() => db.programWeeks.toArray(), []);
   const settings = useLiveQuery(() => db.appSettings.get('app-settings'), []);
 

@@ -29,7 +29,10 @@ export function SettingsPage() {
   const [importError, setImportError] = useState<string | null>(null);
   const [importSuccess, setImportSuccess] = useState<string | null>(null);
   const settings = useLiveQuery(() => db.appSettings.get('app-settings'), []);
-  const programs = useLiveQuery(() => db.programs.orderBy('name').toArray(), []);
+  const programs = useLiveQuery(async () => {
+    const items = await db.programs.toArray();
+    return items.sort((a, b) => a.name.localeCompare(b.name));
+  }, []);
   const activeProgram = useLiveQuery(async () => {
     const appSettings = await db.appSettings.get('app-settings');
 

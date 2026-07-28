@@ -34,23 +34,13 @@ interface AppShellProps {
 export function AppShell({ title, eyebrow, children }: AppShellProps) {
   const location = useLocation();
   const inSession = location.pathname.startsWith('/session/');
-  const {
-    isOnline,
-    isOfflineReady,
-    isUpdateAvailable,
-    deferredInstallPrompt,
-    setDeferredInstallPrompt,
-    setOfflineReady,
-    setUpdateAvailable,
-  } = useUiStore((state) => ({
-    isOnline: state.isOnline,
-    isOfflineReady: state.isOfflineReady,
-    isUpdateAvailable: state.isUpdateAvailable,
-    deferredInstallPrompt: state.deferredInstallPrompt,
-    setDeferredInstallPrompt: state.setDeferredInstallPrompt,
-    setOfflineReady: state.setOfflineReady,
-    setUpdateAvailable: state.setUpdateAvailable,
-  }));
+  const isOnline = useUiStore((state) => state.isOnline);
+  const isOfflineReady = useUiStore((state) => state.isOfflineReady);
+  const isUpdateAvailable = useUiStore((state) => state.isUpdateAvailable);
+  const deferredInstallPrompt = useUiStore((state) => state.deferredInstallPrompt);
+  const setDeferredInstallPrompt = useUiStore((state) => state.setDeferredInstallPrompt);
+  const setOfflineReady = useUiStore((state) => state.setOfflineReady);
+  const setUpdateAvailable = useUiStore((state) => state.setUpdateAvailable);
 
   async function handleInstallApp() {
     if (!deferredInstallPrompt) {

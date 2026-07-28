@@ -29,182 +29,188 @@ function currentProgramWeek() {
 }
 
 export async function bootstrapAppData() {
-  const existingExerciseCount = await db.exercises.count();
-
-  if (existingExerciseCount > 0) {
-    return;
-  }
-
-  const now = new Date().toISOString();
-  const activeWeek = currentProgramWeek();
-  const programId = createId();
-  const templateId = createId();
-  const frontSquatId = createId();
-  const splitSquatId = createId();
-  const nordicId = createId();
-  const nordicTemplateExerciseId = createId();
-
-  const program: Program = {
-    id: programId,
-    name: 'Unterkoerper Aufbau',
-    activeWeek,
-    createdAt: now,
-    updatedAt: now,
-  };
-
-  const settings: AppSettings = {
-    id: 'app-settings',
-    activeProgramId: programId,
-    exportSchemaVersion: 1,
-    updatedAt: now,
-  };
-
-  const weeks: ProgramWeek[] = Array.from({ length: 8 }, (_, index) => ({
-    id: createId(),
-    programId,
-    weekNumber: index + 1,
-    label: `Woche ${index + 1}`,
-  }));
-
-  const exercises: Exercise[] = [
-    {
-      id: frontSquatId,
-      name: 'Front Squat',
-      instructions: 'Ellbogen hoch halten, sauber tief, keine Grind-Reps.',
-      tempo: '3-1-1',
-      trackingMode: 'reps_weight',
-      unilateral: false,
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: splitSquatId,
-      name: 'Bulgarian Split Squat',
-      instructions: 'Saubere Balance, gleicher Satzumfang links und rechts.',
-      tempo: '2-1-1',
-      trackingMode: 'reps_weight',
-      unilateral: true,
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: nordicId,
-      name: 'Nordic Curl Iso',
-      instructions: 'Exzentrik kontrollieren, Zusatzlast optional.',
-      trackingMode: 'time_weight',
-      unilateral: false,
-      createdAt: now,
-      updatedAt: now,
-    },
-  ];
-
-  const template: WorkoutTemplate = {
-    id: templateId,
-    name: 'Einheit A',
-    notes: 'Unterkoerper Fokus mit unilateraler Assistenz und Posterior-Chain-Arbeit.',
-    createdAt: now,
-    updatedAt: now,
-  };
-
-  const templateExercises: WorkoutTemplateExercise[] = [
-    {
-      id: createId(),
-      templateId,
-      exerciseId: frontSquatId,
-      orderIndex: 1,
-      workSetCount: 3,
-      targetReps: 5,
-      targetWeight: 82.5,
-      restSeconds: 150,
-      notes: 'RPE 7-8',
-    },
-    {
-      id: createId(),
-      templateId,
-      exerciseId: splitSquatId,
-      orderIndex: 2,
-      workSetCount: 2,
-      targetReps: 8,
-      targetWeight: 22.5,
-      restSeconds: 90,
-      notes: 'Links mit rechts matchen, keine Extra-Saetze.',
-    },
-    {
-      id: nordicTemplateExerciseId,
-      templateId,
-      exerciseId: nordicId,
-      orderIndex: 3,
-      workSetCount: 3,
-      targetSeconds: 18,
-      targetWeight: 5,
-      restSeconds: 75,
-      notes: 'Iso-Hold in der schwersten kontrollierbaren Position.',
-    },
-  ];
-
-  const progressionRules: ProgressionRule[] = weeks.map((week) => ({
-    id: createId(),
-    templateExerciseId: nordicTemplateExerciseId,
-    programWeekId: week.id,
-    targetSeconds: 8 + week.weekNumber * 2,
-    targetWeight: week.weekNumber >= 5 ? 5 : undefined,
-    notes: `Progressionsstufe Woche ${week.weekNumber}`,
-  }));
-
-  const exerciseLookup = Object.fromEntries(exercises.map((exercise) => [exercise.id, exercise]));
-  const completedBundle = materializeSession({
-    template,
-    templateExercises,
-    exercisesById: exerciseLookup,
-    resolvedProgramWeek: Math.max(1, activeWeek - 1),
-    startedAt: isoDaysAgo(6),
-  });
-
-  completedBundle.session.status = 'completed';
-  completedBundle.session.completedAt = isoDaysAgo(6);
-
-  completedBundle.setLogs = completedBundle.setLogs.map((log) => {
-    const sessionExercise = completedBundle.sessionExercises.find(
-      (item) => item.id === log.sessionExerciseId,
-    );
-
-    if (!sessionExercise) {
-      return log;
-    }
-
-    if (log.setKind === 'warmup') {
-      return {
-        ...log,
-        completed: true,
-        completedAt: isoDaysAgo(6),
-        reps: sessionExercise.trackingMode === 'reps_weight' ? 8 : undefined,
-        seconds: sessionExercise.trackingMode !== 'reps_weight' ? 10 : undefined,
-        weight: sessionExercise.targetWeight ? sessionExercise.targetWeight * 0.5 : undefined,
-      };
-    }
-
-    if (sessionExercise.trackingMode === 'reps_weight') {
-      const baseWeight = sessionExercise.targetWeight ?? 0;
-
-      return {
-        ...log,
-        completed: true,
-        completedAt: isoDaysAgo(6),
-        reps: (sessionExercise.targetReps ?? 0) - (log.side === 'left' ? 0 : 1),
-        weight: log.side === 'right' ? baseWeight + 1.25 : baseWeight,
-      };
-    }
-
-    return {
-      ...log,
-      completed: true,
-      completedAt: isoDaysAgo(6),
-      seconds: (sessionExercise.targetSeconds ?? 0) - 2 + log.setNumber,
-      weight: sessionExercise.targetWeight,
-    };
-  });
-
   await db.transaction('rw', db.tables, async () => {
+    const existingSettings = await db.appSettings.get('app-settings');
+    const existingExerciseCount = await db.exercises.count();
+
+    if (existingSettings || existingExerciseCount > 0) {
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const activeWeek = currentProgramWeek();
+    const programId = createId();
+    const templateId = createId();
+    const frontSquatId = createId();
+    const splitSquatId = createId();
+    const nordicId = createId();
+    const nordicTemplateExerciseId = createId();
+
+    const program: Program = {
+      id: programId,
+      name: 'Unterkoerper Aufbau',
+      activeWeek,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    const settings: AppSettings = {
+      id: 'app-settings',
+      activeProgramId: programId,
+      exportSchemaVersion: 1,
+      updatedAt: now,
+    };
+
+    const weeks: ProgramWeek[] = Array.from({ length: 8 }, (_, index) => ({
+      id: createId(),
+      programId,
+      weekNumber: index + 1,
+      label: `Woche ${index + 1}`,
+    }));
+
+    const exercises: Exercise[] = [
+      {
+        id: frontSquatId,
+        name: 'Front Squat',
+        instructions: 'Ellbogen hoch halten, sauber tief, keine Grind-Reps.',
+        tempo: '3-1-1',
+        trackingMode: 'reps_weight',
+        unilateral: false,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: splitSquatId,
+        name: 'Bulgarian Split Squat',
+        instructions: 'Saubere Balance, gleicher Satzumfang links und rechts.',
+        tempo: '2-1-1',
+        trackingMode: 'reps_weight',
+        unilateral: true,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: nordicId,
+        name: 'Nordic Curl Iso',
+        instructions: 'Exzentrik kontrollieren, Zusatzlast optional.',
+        trackingMode: 'time_weight',
+        unilateral: false,
+        createdAt: now,
+        updatedAt: now,
+      },
+    ];
+
+    const template: WorkoutTemplate = {
+      id: templateId,
+      name: 'Einheit A',
+      notes:
+        'Unterkoerper Fokus mit unilateraler Assistenz und Posterior-Chain-Arbeit.',
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    const templateExercises: WorkoutTemplateExercise[] = [
+      {
+        id: createId(),
+        templateId,
+        exerciseId: frontSquatId,
+        orderIndex: 1,
+        workSetCount: 3,
+        targetReps: 5,
+        targetWeight: 82.5,
+        restSeconds: 150,
+        notes: 'RPE 7-8',
+      },
+      {
+        id: createId(),
+        templateId,
+        exerciseId: splitSquatId,
+        orderIndex: 2,
+        workSetCount: 2,
+        targetReps: 8,
+        targetWeight: 22.5,
+        restSeconds: 90,
+        notes: 'Links mit rechts matchen, keine Extra-Saetze.',
+      },
+      {
+        id: nordicTemplateExerciseId,
+        templateId,
+        exerciseId: nordicId,
+        orderIndex: 3,
+        workSetCount: 3,
+        targetSeconds: 18,
+        targetWeight: 5,
+        restSeconds: 75,
+        notes: 'Iso-Hold in der schwersten kontrollierbaren Position.',
+      },
+    ];
+
+    const progressionRules: ProgressionRule[] = weeks.map((week) => ({
+      id: createId(),
+      templateExerciseId: nordicTemplateExerciseId,
+      programWeekId: week.id,
+      targetSeconds: 8 + week.weekNumber * 2,
+      targetWeight: week.weekNumber >= 5 ? 5 : undefined,
+      notes: `Progressionsstufe Woche ${week.weekNumber}`,
+    }));
+
+    const exerciseLookup = Object.fromEntries(
+      exercises.map((exercise) => [exercise.id, exercise]),
+    );
+    const completedBundle = materializeSession({
+      template,
+      templateExercises,
+      exercisesById: exerciseLookup,
+      resolvedProgramWeek: Math.max(1, activeWeek - 1),
+      startedAt: isoDaysAgo(6),
+    });
+
+    completedBundle.session.status = 'completed';
+    completedBundle.session.completedAt = isoDaysAgo(6);
+
+    completedBundle.setLogs = completedBundle.setLogs.map((log) => {
+      const sessionExercise = completedBundle.sessionExercises.find(
+        (item) => item.id === log.sessionExerciseId,
+      );
+
+      if (!sessionExercise) {
+        return log;
+      }
+
+      if (log.setKind === 'warmup') {
+        return {
+          ...log,
+          completed: true,
+          completedAt: isoDaysAgo(6),
+          reps: sessionExercise.trackingMode === 'reps_weight' ? 8 : undefined,
+          seconds: sessionExercise.trackingMode !== 'reps_weight' ? 10 : undefined,
+          weight: sessionExercise.targetWeight
+            ? sessionExercise.targetWeight * 0.5
+            : undefined,
+        };
+      }
+
+      if (sessionExercise.trackingMode === 'reps_weight') {
+        const baseWeight = sessionExercise.targetWeight ?? 0;
+
+        return {
+          ...log,
+          completed: true,
+          completedAt: isoDaysAgo(6),
+          reps: (sessionExercise.targetReps ?? 0) - (log.side === 'left' ? 0 : 1),
+          weight: log.side === 'right' ? baseWeight + 1.25 : baseWeight,
+        };
+      }
+
+      return {
+        ...log,
+        completed: true,
+        completedAt: isoDaysAgo(6),
+        seconds: (sessionExercise.targetSeconds ?? 0) - 2 + log.setNumber,
+        weight: sessionExercise.targetWeight,
+      };
+    });
+
     await db.programs.add(program);
     await db.programWeeks.bulkAdd(weeks);
     await db.workoutTemplates.add(template);
