@@ -41,6 +41,9 @@ export interface WorkoutSession {
   id: string;
   templateId: string;
   templateNameSnapshot: string;
+  programNameSnapshot?: string;
+  programWeekLabelSnapshot?: string;
+  usedWeekOverride?: boolean;
   resolvedProgramWeek: number;
   startedAt: string;
   completedAt?: string;

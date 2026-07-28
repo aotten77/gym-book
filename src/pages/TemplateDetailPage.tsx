@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
   closestCenter,
@@ -16,16 +16,20 @@ import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, v
 import { CSS } from '@dnd-kit/utilities';
 import { GripVertical, Pencil, Plus, Trash2 } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
+import { ExerciseMedia } from '@/components/ExerciseMedia';
 import { SectionCard } from '@/components/SectionCard';
 import { db } from '@/db/appDb';
+import { clearExerciseMedia, createPendingExerciseMedia, replaceExerciseMedia } from '@/db/media-actions';
 import {
+  clearProgressionRule,
   deleteTemplate,
   deleteTemplateExercise,
   reorderTemplateExercises,
+  saveProgressionRule,
   saveTemplateExercise,
   updateTemplate,
 } from '@/db/template-actions';
-import type { Exercise, TrackingMode, WorkoutTemplateExercise } from '@/domain/models';
+import type { Exercise, MediaAsset, TrackingMode, WorkoutTemplateExercise } from '@/domain/models';
 
 type ExerciseSource = 'existing' | 'new';
 
@@ -61,8 +65,34 @@ const defaultFormState: TemplateExerciseFormState = {
   notes: '',
 };
 
+interface ProgressionRuleFormState {
+  targetReps: string;
+  targetSeconds: string;
+  targetWeight: string;
+  notes: string;
+}
+
+const defaultProgressionRuleFormState: ProgressionRuleFormState = {
+  targetReps: '',
+  targetSeconds: '',
+  targetWeight: '',
+  notes: '',
+};
+
 function numberToInputValue(value?: number) {
   return typeof value === 'number' ? String(value) : '';
+}
+
+function supportsReps(trackingMode?: TrackingMode) {
+  return trackingMode === 'reps_weight';
+}
+
+function supportsSeconds(trackingMode?: TrackingMode) {
+  return trackingMode === 'time' || trackingMode === 'time_weight';
+}
+
+function supportsWeight(trackingMode?: TrackingMode) {
+  return trackingMode === 'reps_weight' || trackingMode === 'time_weight';
 }
 
 function parseOptionalNumber(value: string) {
@@ -96,26 +126,67 @@ function buildFormState(item?: WorkoutTemplateExercise, exercise?: Exercise): Te
   };
 }
 
+function buildProgressionRuleFormState(rule?: {
+  targetReps?: number;
+  targetSeconds?: number;
+  targetWeight?: number;
+  notes?: string;
+}): ProgressionRuleFormState {
+  return {
+    targetReps: numberToInputValue(rule?.targetReps),
+    targetSeconds: numberToInputValue(rule?.targetSeconds),
+    targetWeight: numberToInputValue(rule?.targetWeight),
+    notes: rule?.notes ?? '',
+  };
+}
+
+function formatPrescriptionLine(input: {
+  workSetCount: number;
+  targetReps?: number;
+  targetSeconds?: number;
+  targetWeight?: number;
+  restSeconds?: number;
+}) {
+  const parts = [
+    input.targetReps ? `${input.workSetCount} x ${input.targetReps} Wdh` : null,
+    input.targetSeconds ? `${input.workSetCount} x ${input.targetSeconds}s` : null,
+    typeof input.targetWeight === 'number' ? `${input.targetWeight} kg` : null,
+    typeof input.restSeconds === 'number' ? `Pause ${input.restSeconds}s` : null,
+  ].filter(Boolean);
+
+  return parts.join(' · ') || 'Keine Zielwerte gesetzt';
+}
+
 function TemplateExerciseMeta({
   item,
   exerciseName,
+  mediaAsset,
 }: {
   item: WorkoutTemplateExercise;
   exerciseName: string;
+  mediaAsset?: MediaAsset;
 }) {
   return (
-    <div className="min-w-0">
-      <p className="text-sm font-semibold text-zinc-50">
-        {item.orderIndex}. {exerciseName}
-      </p>
-      <p className="mt-1 text-sm text-zinc-400">
-        {item.targetReps ? `${item.workSetCount} x ${item.targetReps} Wdh` : null}
-        {item.targetReps && item.targetSeconds ? ' · ' : null}
-        {item.targetSeconds ? `${item.workSetCount} x ${item.targetSeconds}s` : null}
-        {item.targetWeight ? ` · ${item.targetWeight} kg` : ''}
-        {item.restSeconds ? ` · Pause ${item.restSeconds}s` : ''}
-      </p>
-      {item.notes ? <p className="mt-3 text-sm text-zinc-400">{item.notes}</p> : null}
+    <div className="flex min-w-0 gap-3">
+      <ExerciseMedia
+        mediaAsset={mediaAsset}
+        alt={exerciseName}
+        className="h-16 w-16 shrink-0 rounded-2xl"
+        imageClassName="h-full w-full"
+      />
+      <div className="min-w-0">
+        <p className="text-sm font-semibold text-zinc-50">
+          {item.orderIndex}. {exerciseName}
+        </p>
+        <p className="mt-1 text-sm text-zinc-400">
+          {item.targetReps ? `${item.workSetCount} x ${item.targetReps} Wdh` : null}
+          {item.targetReps && item.targetSeconds ? ' · ' : null}
+          {item.targetSeconds ? `${item.workSetCount} x ${item.targetSeconds}s` : null}
+          {item.targetWeight ? ` · ${item.targetWeight} kg` : ''}
+          {item.restSeconds ? ` · Pause ${item.restSeconds}s` : ''}
+        </p>
+        {item.notes ? <p className="mt-3 text-sm text-zinc-400">{item.notes}</p> : null}
+      </div>
     </div>
   );
 }
@@ -123,6 +194,7 @@ function TemplateExerciseMeta({
 interface SortableTemplateExerciseCardProps {
   item: WorkoutTemplateExercise;
   exerciseName: string;
+  mediaAsset?: MediaAsset;
   isBusy: boolean;
   onEdit: (templateExerciseId: string) => void;
   onDelete: (templateExerciseId: string) => void;
@@ -131,6 +203,7 @@ interface SortableTemplateExerciseCardProps {
 function SortableTemplateExerciseCard({
   item,
   exerciseName,
+  mediaAsset,
   isBusy,
   onEdit,
   onDelete,
@@ -170,7 +243,7 @@ function SortableTemplateExerciseCard({
           >
             <GripVertical size={16} />
           </button>
-          <TemplateExerciseMeta item={item} exerciseName={exerciseName} />
+          <TemplateExerciseMeta item={item} exerciseName={exerciseName} mediaAsset={mediaAsset} />
         </div>
         <div className="flex gap-2">
           <button
@@ -204,17 +277,34 @@ export function TemplateDetailPage() {
   const [form, setForm] = useState<TemplateExerciseFormState>(defaultFormState);
   const [isSavingTemplate, setIsSavingTemplate] = useState(false);
   const [isSavingExercise, setIsSavingExercise] = useState(false);
+  const [isSavingProgressionRule, setIsSavingProgressionRule] = useState(false);
+  const [isUpdatingExerciseMedia, setIsUpdatingExerciseMedia] = useState(false);
   const [isReorderingExercises, setIsReorderingExercises] = useState(false);
   const [activeTemplateExerciseId, setActiveTemplateExerciseId] = useState<string | null>(null);
   const [templateExerciseOrder, setTemplateExerciseOrder] = useState<string[]>([]);
+  const [selectedProgramId, setSelectedProgramId] = useState('');
+  const [selectedProgressionTemplateExerciseId, setSelectedProgressionTemplateExerciseId] =
+    useState<string>('');
+  const [progressionFormsByWeekId, setProgressionFormsByWeekId] = useState<
+    Record<string, ProgressionRuleFormState>
+  >({});
+  const [pendingNewExerciseMediaFile, setPendingNewExerciseMediaFile] = useState<File | null>(null);
+  const [mediaError, setMediaError] = useState<string | null>(null);
   const template = useLiveQuery(() => db.workoutTemplates.get(templateId), [templateId]);
   const templateExercises = useLiveQuery(
     () => db.workoutTemplateExercises.where('templateId').equals(templateId).sortBy('orderIndex'),
     [templateId],
   );
   const exercises = useLiveQuery(() => db.exercises.toArray(), []);
+  const mediaAssets = useLiveQuery(() => db.mediaAssets.toArray(), []);
+  const programs = useLiveQuery(() => db.programs.orderBy('createdAt').toArray(), []);
+  const settings = useLiveQuery(() => db.appSettings.get('app-settings'), []);
+  const programWeeks = useLiveQuery(() => db.programWeeks.toArray(), []);
+  const progressionRules = useLiveQuery(() => db.progressionRules.toArray(), []);
 
   const nameById = Object.fromEntries((exercises ?? []).map((item) => [item.id, item.name]));
+  const exerciseById = Object.fromEntries((exercises ?? []).map((item) => [item.id, item]));
+  const mediaAssetById = Object.fromEntries((mediaAssets ?? []).map((item) => [item.id, item]));
   const sortedExercises = useMemo(
     () => [...(exercises ?? [])].sort((left, right) => left.name.localeCompare(right.name)),
     [exercises],
@@ -235,10 +325,45 @@ export function TemplateDetailPage() {
     () => orderedTemplateExercises.find((item) => item.id === activeTemplateExerciseId),
     [activeTemplateExerciseId, orderedTemplateExercises],
   );
+  const selectedProgressionTemplateExercise = useMemo(
+    () =>
+      orderedTemplateExercises.find((item) => item.id === selectedProgressionTemplateExerciseId),
+    [orderedTemplateExercises, selectedProgressionTemplateExerciseId],
+  );
+  const selectedProgressionExercise =
+    selectedProgressionTemplateExercise?.exerciseId
+      ? exerciseById[selectedProgressionTemplateExercise.exerciseId]
+      : undefined;
+  const selectedProgramWeeks = useMemo(
+    () =>
+      [...(programWeeks ?? [])]
+        .filter((week) => week.programId === selectedProgramId)
+        .sort((left, right) => left.weekNumber - right.weekNumber),
+    [programWeeks, selectedProgramId],
+  );
+  const selectedProgressionRulesByWeekId = useMemo(() => {
+    if (!selectedProgressionTemplateExerciseId) {
+      return {};
+    }
+
+    const relevantWeekIds = new Set(selectedProgramWeeks.map((week) => week.id));
+
+    return Object.fromEntries(
+      (progressionRules ?? [])
+        .filter(
+          (rule) =>
+            rule.templateExerciseId === selectedProgressionTemplateExerciseId &&
+            relevantWeekIds.has(rule.programWeekId),
+        )
+        .map((rule) => [rule.programWeekId, rule]),
+    );
+  }, [progressionRules, selectedProgramWeeks, selectedProgressionTemplateExerciseId]);
   const selectedExistingExercise =
     form.exerciseSource === 'existing'
       ? sortedExercises.find((item) => item.id === form.exerciseId)
       : undefined;
+  const selectedExistingExerciseMedia =
+    selectedExistingExercise?.mediaAssetId ? mediaAssetById[selectedExistingExercise.mediaAssetId] : undefined;
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
@@ -280,7 +405,60 @@ export function TemplateDetailPage() {
     const exercise = sortedExercises.find((entry) => entry.id === item?.exerciseId);
 
     setForm(buildFormState(item, exercise));
+    setPendingNewExerciseMediaFile(null);
+    setMediaError(null);
   }, [editingTemplateExerciseId, sortedExercises, templateExercises]);
+
+  useEffect(() => {
+    const availableProgramIds = (programs ?? []).map((program) => program.id);
+
+    if (availableProgramIds.length === 0) {
+      if (selectedProgramId) {
+        setSelectedProgramId('');
+      }
+      return;
+    }
+
+    const preferredProgramId = settings?.activeProgramId ?? availableProgramIds[0];
+
+    if (!selectedProgramId || !availableProgramIds.includes(selectedProgramId)) {
+      setSelectedProgramId(preferredProgramId);
+    }
+  }, [programs, selectedProgramId, settings?.activeProgramId]);
+
+  useEffect(() => {
+    const availableTemplateExerciseIds = orderedTemplateExercises.map((item) => item.id);
+
+    if (availableTemplateExerciseIds.length === 0) {
+      if (selectedProgressionTemplateExerciseId) {
+        setSelectedProgressionTemplateExerciseId('');
+      }
+      return;
+    }
+
+    if (
+      !selectedProgressionTemplateExerciseId ||
+      !availableTemplateExerciseIds.includes(selectedProgressionTemplateExerciseId)
+    ) {
+      setSelectedProgressionTemplateExerciseId(availableTemplateExerciseIds[0]);
+    }
+  }, [orderedTemplateExercises, selectedProgressionTemplateExerciseId]);
+
+  useEffect(() => {
+    if (selectedProgramWeeks.length === 0) {
+      setProgressionFormsByWeekId({});
+      return;
+    }
+
+    setProgressionFormsByWeekId(
+      Object.fromEntries(
+        selectedProgramWeeks.map((week) => [
+          week.id,
+          buildProgressionRuleFormState(selectedProgressionRulesByWeekId[week.id]),
+        ]),
+      ),
+    );
+  }, [selectedProgramWeeks, selectedProgressionRulesByWeekId]);
 
   async function handleSaveTemplate() {
     if (!template || !templateName.trim()) {
@@ -335,8 +513,16 @@ export function TemplateDetailPage() {
       const currentItem = editingTemplateExerciseId
         ? templateExercises?.find((entry) => entry.id === editingTemplateExerciseId)
         : undefined;
+      const pendingMediaAssetId =
+        form.exerciseSource === 'new' && pendingNewExerciseMediaFile
+          ? await createPendingExerciseMedia({
+              file: pendingNewExerciseMediaFile,
+              fileName: pendingNewExerciseMediaFile.name,
+              mimeType: pendingNewExerciseMediaFile.type,
+            })
+          : undefined;
 
-      await saveTemplateExercise({
+      const result = await saveTemplateExercise({
         id: editingTemplateExerciseId ?? undefined,
         templateId: template.id,
         orderIndex: currentItem?.orderIndex ?? orderedTemplateExercises.length + 1,
@@ -350,6 +536,7 @@ export function TemplateDetailPage() {
         exerciseName: form.exerciseSource === 'new' ? form.exerciseName : undefined,
         instructions: form.exerciseSource === 'new' ? form.instructions : undefined,
         tempo: form.exerciseSource === 'new' ? form.tempo : undefined,
+        mediaAssetId: pendingMediaAssetId,
         trackingMode:
           form.exerciseSource === 'new'
             ? form.trackingMode
@@ -360,9 +547,71 @@ export function TemplateDetailPage() {
             : selectedExistingExercise?.unilateral ?? false,
       });
 
+      if (form.exerciseSource === 'new') {
+        setPendingNewExerciseMediaFile(null);
+      }
+
+      if (form.exerciseSource === 'existing' && pendingNewExerciseMediaFile) {
+        await replaceExerciseMedia({
+          exerciseId: result.exerciseId,
+          file: pendingNewExerciseMediaFile,
+          fileName: pendingNewExerciseMediaFile.name,
+          mimeType: pendingNewExerciseMediaFile.type,
+        });
+        setPendingNewExerciseMediaFile(null);
+      }
+
       setEditingTemplateExerciseId(null);
+      setMediaError(null);
+    } catch (error) {
+      setMediaError(
+        error instanceof Error ? error.message : 'Bild konnte nicht gespeichert werden.',
+      );
     } finally {
       setIsSavingExercise(false);
+    }
+  }
+
+  async function handleReplaceExistingExerciseMedia(file?: File) {
+    if (!selectedExistingExercise || !file) {
+      return;
+    }
+
+    setIsUpdatingExerciseMedia(true);
+
+    try {
+      await replaceExerciseMedia({
+        exerciseId: selectedExistingExercise.id,
+        file,
+        fileName: file.name,
+        mimeType: file.type,
+      });
+      setMediaError(null);
+    } catch (error) {
+      setMediaError(
+        error instanceof Error ? error.message : 'Bild konnte nicht aktualisiert werden.',
+      );
+    } finally {
+      setIsUpdatingExerciseMedia(false);
+    }
+  }
+
+  async function handleClearExistingExerciseMedia() {
+    if (!selectedExistingExercise?.mediaAssetId) {
+      return;
+    }
+
+    setIsUpdatingExerciseMedia(true);
+
+    try {
+      await clearExerciseMedia(selectedExistingExercise.id);
+      setMediaError(null);
+    } catch (error) {
+      setMediaError(
+        error instanceof Error ? error.message : 'Bild konnte nicht entfernt werden.',
+      );
+    } finally {
+      setIsUpdatingExerciseMedia(false);
     }
   }
 
@@ -410,6 +659,53 @@ export function TemplateDetailPage() {
 
     if (editingTemplateExerciseId === templateExerciseId) {
       setEditingTemplateExerciseId(null);
+    }
+  }
+
+  async function handleSaveProgressionForWeek(programWeekId: string) {
+    if (!selectedProgressionTemplateExercise) {
+      return;
+    }
+
+    const draft = progressionFormsByWeekId[programWeekId] ?? defaultProgressionRuleFormState;
+
+    setIsSavingProgressionRule(true);
+
+    try {
+      await saveProgressionRule({
+        templateExerciseId: selectedProgressionTemplateExercise.id,
+        programWeekId,
+        targetReps: supportsReps(selectedProgressionExercise?.trackingMode)
+          ? parseOptionalNumber(draft.targetReps)
+          : undefined,
+        targetSeconds: supportsSeconds(selectedProgressionExercise?.trackingMode)
+          ? parseOptionalNumber(draft.targetSeconds)
+          : undefined,
+        targetWeight: supportsWeight(selectedProgressionExercise?.trackingMode)
+          ? parseOptionalNumber(draft.targetWeight)
+          : undefined,
+        notes: draft.notes,
+      });
+    } finally {
+      setIsSavingProgressionRule(false);
+    }
+  }
+
+  async function handleClearProgressionForWeek(programWeekId: string) {
+    if (!selectedProgressionTemplateExercise) {
+      return;
+    }
+
+    setIsSavingProgressionRule(true);
+
+    try {
+      await clearProgressionRule(selectedProgressionTemplateExercise.id, programWeekId);
+      setProgressionFormsByWeekId((current) => ({
+        ...current,
+        [programWeekId]: defaultProgressionRuleFormState,
+      }));
+    } finally {
+      setIsSavingProgressionRule(false);
     }
   }
 
@@ -478,6 +774,11 @@ export function TemplateDetailPage() {
                         key={item.id}
                         item={item}
                         exerciseName={nameById[item.exerciseId] ?? 'Unbekannte Uebung'}
+                        mediaAsset={
+                          exerciseById[item.exerciseId]?.mediaAssetId
+                            ? mediaAssetById[exerciseById[item.exerciseId].mediaAssetId]
+                            : undefined
+                        }
                         isBusy={isReorderingExercises}
                         onEdit={setEditingTemplateExerciseId}
                         onDelete={handleDeleteTemplateExercise}
@@ -499,6 +800,11 @@ export function TemplateDetailPage() {
                         <TemplateExerciseMeta
                           item={activeTemplateExercise}
                           exerciseName={nameById[activeTemplateExercise.exerciseId] ?? 'Unbekannte Uebung'}
+                          mediaAsset={
+                            exerciseById[activeTemplateExercise.exerciseId]?.mediaAssetId
+                              ? mediaAssetById[exerciseById[activeTemplateExercise.exerciseId].mediaAssetId]
+                              : undefined
+                          }
                         />
                       </div>
                     </div>
@@ -511,6 +817,199 @@ export function TemplateDetailPage() {
               </div>
             )}
           </div>
+        </SectionCard>
+
+        <SectionCard
+          title="Wochenprogression"
+          subtitle="Pro Programmwoche kannst du Zielwerte fuer diese Vorlage ueberschreiben. Beim Session-Start wird genau diese Stufe als Snapshot uebernommen."
+          action={
+            <Link
+              to="/programs"
+              className="rounded-2xl border border-white/10 px-3 py-2 text-sm text-zinc-300 transition hover:bg-white/5"
+            >
+              Programme
+            </Link>
+          }
+        >
+          {(programs?.length ?? 0) === 0 ? (
+            <div className="rounded-3xl border border-dashed border-white/10 bg-zinc-950/35 px-4 py-5 text-sm text-zinc-400">
+              Lege zuerst ein Programm mit Wochen an, damit du Wochen-Overrides pflegen kannst.
+            </div>
+          ) : orderedTemplateExercises.length === 0 ? (
+            <div className="rounded-3xl border border-dashed border-white/10 bg-zinc-950/35 px-4 py-5 text-sm text-zinc-400">
+              Fuege zuerst eine Template-Uebung hinzu. Danach kannst du hier die Progression je Woche editieren.
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <select
+                  value={selectedProgramId}
+                  onChange={(event) => setSelectedProgramId(event.target.value)}
+                  className="w-full rounded-3xl border border-white/10 bg-zinc-950/45 px-4 py-4 text-sm text-zinc-50 outline-none transition focus:border-lime-300/40"
+                >
+                  {(programs ?? []).map((program) => (
+                    <option key={program.id} value={program.id}>
+                      {program.name}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={selectedProgressionTemplateExerciseId}
+                  onChange={(event) => setSelectedProgressionTemplateExerciseId(event.target.value)}
+                  className="w-full rounded-3xl border border-white/10 bg-zinc-950/45 px-4 py-4 text-sm text-zinc-50 outline-none transition focus:border-lime-300/40"
+                >
+                  {orderedTemplateExercises.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.orderIndex}. {nameById[item.exerciseId] ?? 'Unbekannte Uebung'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {selectedProgressionTemplateExercise ? (
+                <div className="rounded-3xl bg-zinc-950/45 p-4 text-sm text-zinc-400">
+                  <p className="font-semibold text-zinc-100">
+                    {nameById[selectedProgressionTemplateExercise.exerciseId] ?? 'Unbekannte Uebung'}
+                  </p>
+                  <p className="mt-2">
+                    Basis: {formatPrescriptionLine(selectedProgressionTemplateExercise)}
+                  </p>
+                  <p className="mt-1">
+                    Tracking: {selectedProgressionExercise?.trackingMode ?? 'reps_weight'} ·{' '}
+                    {selectedProgressionExercise?.unilateral ? 'unilateral' : 'beidseitig'}
+                  </p>
+                </div>
+              ) : null}
+
+              {selectedProgramWeeks.length > 0 ? (
+                <div className="space-y-3">
+                  {selectedProgramWeeks.map((week) => {
+                    const draft = progressionFormsByWeekId[week.id] ?? defaultProgressionRuleFormState;
+                    const hasSavedRule = Boolean(selectedProgressionRulesByWeekId[week.id]);
+
+                    return (
+                      <div
+                        key={week.id}
+                        className="rounded-3xl border border-white/10 bg-zinc-950/45 p-4"
+                      >
+                        <div className="mb-3 flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-semibold text-zinc-50">
+                              W{week.weekNumber}
+                              {week.label ? ` · ${week.label}` : ''}
+                            </p>
+                            <p className="mt-1 text-xs text-zinc-500">
+                              Leer lassen = Basiswerte der Template-Uebung verwenden
+                            </p>
+                          </div>
+                          {hasSavedRule ? (
+                            <span className="rounded-2xl bg-lime-300/10 px-3 py-2 text-xs font-medium text-lime-200">
+                              Override aktiv
+                            </span>
+                          ) : null}
+                        </div>
+
+                        <div className="space-y-3">
+                          {supportsReps(selectedProgressionExercise?.trackingMode) ? (
+                            <input
+                              value={draft.targetReps}
+                              onChange={(event) =>
+                                setProgressionFormsByWeekId((current) => ({
+                                  ...current,
+                                  [week.id]: {
+                                    ...(current[week.id] ?? defaultProgressionRuleFormState),
+                                    targetReps: event.target.value,
+                                  },
+                                }))
+                              }
+                              inputMode="numeric"
+                              placeholder="Ziel-Wdh"
+                              className="w-full rounded-3xl border border-white/10 bg-zinc-900 px-4 py-4 text-sm text-zinc-50 outline-none transition focus:border-lime-300/40"
+                            />
+                          ) : null}
+
+                          {supportsSeconds(selectedProgressionExercise?.trackingMode) ? (
+                            <input
+                              value={draft.targetSeconds}
+                              onChange={(event) =>
+                                setProgressionFormsByWeekId((current) => ({
+                                  ...current,
+                                  [week.id]: {
+                                    ...(current[week.id] ?? defaultProgressionRuleFormState),
+                                    targetSeconds: event.target.value,
+                                  },
+                                }))
+                              }
+                              inputMode="decimal"
+                              placeholder="Ziel-Sekunden"
+                              className="w-full rounded-3xl border border-white/10 bg-zinc-900 px-4 py-4 text-sm text-zinc-50 outline-none transition focus:border-lime-300/40"
+                            />
+                          ) : null}
+
+                          {supportsWeight(selectedProgressionExercise?.trackingMode) ? (
+                            <input
+                              value={draft.targetWeight}
+                              onChange={(event) =>
+                                setProgressionFormsByWeekId((current) => ({
+                                  ...current,
+                                  [week.id]: {
+                                    ...(current[week.id] ?? defaultProgressionRuleFormState),
+                                    targetWeight: event.target.value,
+                                  },
+                                }))
+                              }
+                              inputMode="decimal"
+                              placeholder="Ziel-Gewicht in kg"
+                              className="w-full rounded-3xl border border-white/10 bg-zinc-900 px-4 py-4 text-sm text-zinc-50 outline-none transition focus:border-lime-300/40"
+                            />
+                          ) : null}
+
+                          <textarea
+                            value={draft.notes}
+                            onChange={(event) =>
+                              setProgressionFormsByWeekId((current) => ({
+                                ...current,
+                                [week.id]: {
+                                  ...(current[week.id] ?? defaultProgressionRuleFormState),
+                                  notes: event.target.value,
+                                },
+                              }))
+                            }
+                            rows={2}
+                            placeholder="Wochen-spezifische Notiz"
+                            className="w-full rounded-3xl border border-white/10 bg-zinc-900 px-4 py-4 text-sm text-zinc-50 outline-none transition placeholder:text-zinc-500 focus:border-lime-300/40"
+                          />
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <button
+                              type="button"
+                              onClick={() => handleSaveProgressionForWeek(week.id)}
+                              disabled={isSavingProgressionRule}
+                              className="rounded-3xl bg-lime-300 px-4 py-4 text-sm font-semibold text-zinc-950 transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              Wochenwerte speichern
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleClearProgressionForWeek(week.id)}
+                              disabled={isSavingProgressionRule}
+                              className="rounded-3xl bg-white/5 px-4 py-4 text-sm font-medium text-zinc-300 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              Override entfernen
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="rounded-3xl border border-dashed border-white/10 bg-zinc-950/35 px-4 py-5 text-sm text-zinc-400">
+                  Dieses Programm hat noch keine Wochen. Fuege sie in der Programm-Verwaltung hinzu.
+                </div>
+              )}
+            </div>
+          )}
         </SectionCard>
 
         <SectionCard
@@ -570,6 +1069,12 @@ export function TemplateDetailPage() {
 
                 {selectedExistingExercise ? (
                   <div className="rounded-3xl bg-zinc-950/45 p-4 text-sm text-zinc-400">
+                    <ExerciseMedia
+                      mediaAsset={selectedExistingExerciseMedia}
+                      alt={selectedExistingExercise.name}
+                      className="mb-4 h-40 w-full"
+                      imageClassName="h-full w-full"
+                    />
                     <p className="font-semibold text-zinc-100">{selectedExistingExercise.name}</p>
                     <p className="mt-2">
                       Tracking: {selectedExistingExercise.trackingMode} ·{' '}
@@ -578,6 +1083,31 @@ export function TemplateDetailPage() {
                     {selectedExistingExercise.instructions ? (
                       <p className="mt-2">{selectedExistingExercise.instructions}</p>
                     ) : null}
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <label className="rounded-2xl border border-white/10 px-3 py-2 text-sm text-zinc-300 transition hover:bg-white/5">
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp,image/gif"
+                          className="hidden"
+                          onChange={(event) => {
+                            const file = event.target.files?.[0];
+                            void handleReplaceExistingExerciseMedia(file);
+                            event.target.value = '';
+                          }}
+                        />
+                        {selectedExistingExerciseMedia ? 'Bild ersetzen' : 'Bild hochladen'}
+                      </label>
+                      {selectedExistingExerciseMedia ? (
+                        <button
+                          type="button"
+                          onClick={handleClearExistingExerciseMedia}
+                          disabled={isUpdatingExerciseMedia}
+                          className="rounded-2xl border border-rose-400/20 px-3 py-2 text-sm text-rose-200 transition hover:bg-rose-400/10 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Bild entfernen
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
                 ) : null}
               </div>
@@ -628,6 +1158,37 @@ export function TemplateDetailPage() {
                   >
                     {form.unilateral ? 'Unilateral' : 'Beidseitig'}
                   </button>
+                </div>
+                <div className="space-y-3 rounded-3xl bg-zinc-950/45 p-4">
+                  <label className="block rounded-2xl border border-white/10 px-3 py-3 text-sm text-zinc-300 transition hover:bg-white/5">
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp,image/gif"
+                      className="hidden"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0] ?? null;
+                        setPendingNewExerciseMediaFile(file);
+                        setMediaError(null);
+                        event.target.value = '';
+                      }}
+                    />
+                    {pendingNewExerciseMediaFile ? 'Bild ersetzen' : 'Bild fuer neue Uebung waehlen'}
+                  </label>
+                  <ExerciseMedia
+                    blob={pendingNewExerciseMediaFile ?? undefined}
+                    alt={form.exerciseName || 'Neue Uebung'}
+                    className="h-40 w-full"
+                    imageClassName="h-full w-full"
+                  />
+                  {pendingNewExerciseMediaFile ? (
+                    <button
+                      type="button"
+                      onClick={() => setPendingNewExerciseMediaFile(null)}
+                      className="rounded-2xl border border-white/10 px-3 py-2 text-sm text-zinc-300 transition hover:bg-white/5"
+                    >
+                      Bild entfernen
+                    </button>
+                  ) : null}
                 </div>
               </div>
             )}
@@ -696,7 +1257,7 @@ export function TemplateDetailPage() {
               <button
                 type="button"
                 onClick={handleSaveTemplateExercise}
-                disabled={isSavingExercise}
+                disabled={isSavingExercise || isUpdatingExerciseMedia}
                 className="rounded-3xl bg-lime-300 px-4 py-4 text-sm font-semibold text-zinc-950 transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {editingTemplateExerciseId ? 'Aenderung speichern' : 'Uebung hinzufuegen'}
@@ -709,6 +1270,12 @@ export function TemplateDetailPage() {
                 Zuruecksetzen
               </button>
             </div>
+
+            {mediaError ? (
+              <div className="rounded-3xl border border-rose-300/20 bg-rose-300/10 px-4 py-4 text-sm text-rose-100">
+                {mediaError}
+              </div>
+            ) : null}
           </div>
         </SectionCard>
       </div>

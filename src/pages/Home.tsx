@@ -1,16 +1,19 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { ArrowRight, Play, RotateCcw } from 'lucide-react';
+import { ArrowRight, Minus, Play, Plus, RotateCcw } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
+import { Empty } from '@/components/Empty';
 import { SectionCard } from '@/components/SectionCard';
 import { StatCard } from '@/components/StatCard';
 import { db } from '@/db/appDb';
+import { clearWeekOverride, setWeekOverride } from '@/db/settings-actions';
 import { startSessionFromTemplate } from '@/db/session-actions';
 import { formatDateTime } from '@/lib/format';
 
 export default function Home() {
   const navigate = useNavigate();
+  const [isUpdatingWeek, setIsUpdatingWeek] = useState(false);
   const templates = useLiveQuery(() => db.workoutTemplates.toArray(), []);
   const settings = useLiveQuery(() => db.appSettings.get('app-settings'), []);
   const program = useLiveQuery(async () => {
@@ -21,6 +24,16 @@ export default function Home() {
     }
 
     return db.programs.get(appSettings.activeProgramId);
+  }, []);
+  const programWeeks = useLiveQuery(async () => {
+    const appSettings = await db.appSettings.get('app-settings');
+
+    if (!appSettings?.activeProgramId) {
+      return [];
+    }
+
+    const weeks = await db.programWeeks.where('programId').equals(appSettings.activeProgramId).toArray();
+    return weeks.sort((left, right) => left.weekNumber - right.weekNumber);
   }, []);
   const activeSession = useLiveQuery(
     () => db.workoutSessions.where('status').equals('active').first(),
@@ -37,16 +50,84 @@ export default function Home() {
   );
 
   const templateCountLabel = useMemo(() => `${templates?.length ?? 0}`, [templates]);
+  const maxProgramWeek = Math.max(
+    1,
+    ...(programWeeks ?? []).map((week) => week.weekNumber),
+    program?.activeWeek ?? 1,
+    settings?.weekOverride ?? 1,
+  );
+  const effectiveWeek = settings?.weekOverride ?? program?.activeWeek ?? 1;
+  const effectiveWeekLabel = `W${effectiveWeek}`;
+  const weekHint = program?.name ?? 'Programm in /programme anlegen';
+  const weekModeHint = settings?.weekOverride ? 'Override aktiv' : 'Programm';
+
+  async function handleStepWeek(direction: -1 | 1) {
+    if (!program) {
+      return;
+    }
+
+    setIsUpdatingWeek(true);
+
+    try {
+      const next = Math.min(maxProgramWeek, Math.max(1, effectiveWeek + direction));
+      await setWeekOverride(next);
+    } finally {
+      setIsUpdatingWeek(false);
+    }
+  }
+
+  async function handleClearWeek() {
+    setIsUpdatingWeek(true);
+
+    try {
+      await clearWeekOverride();
+    } finally {
+      setIsUpdatingWeek(false);
+    }
+  }
 
   return (
     <AppShell title="Gym Book" eyebrow="Offline-First Training">
       <div className="space-y-4">
         <section className="grid grid-cols-2 gap-3">
-          <StatCard
-            label="Aktive Woche"
-            value={`W${settings?.weekOverride ?? program?.activeWeek ?? 1}`}
-            hint={program?.name ?? 'Noch kein Programm'}
-          />
+          <div className="rounded-3xl border border-white/10 bg-zinc-950/50 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Aktive Woche</p>
+                <p className="mt-3 text-2xl font-semibold tracking-tight text-zinc-50">
+                  {effectiveWeekLabel}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleStepWeek(-1)}
+                  disabled={!program || isUpdatingWeek}
+                  className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 text-zinc-200 transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Minus size={18} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleStepWeek(1)}
+                  disabled={!program || isUpdatingWeek}
+                  className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 text-zinc-200 transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Plus size={18} />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleClearWeek}
+                  disabled={!settings?.weekOverride || isUpdatingWeek}
+                  className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 text-zinc-200 transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <RotateCcw size={18} />
+                </button>
+              </div>
+            </div>
+            <p className="mt-2 text-sm text-zinc-400">{weekHint}</p>
+            <p className="mt-1 text-xs text-zinc-500">{weekModeHint}</p>
+          </div>
           <StatCard
             label="Vorlagen"
             value={templateCountLabel}
@@ -75,31 +156,48 @@ export default function Home() {
                 <RotateCcw size={18} />
               </button>
             ) : (
-              <div className="rounded-3xl border border-dashed border-white/10 bg-zinc-950/35 px-4 py-5 text-sm text-zinc-400">
-                Keine aktive Session offen. Starte direkt aus einer Vorlage.
-              </div>
+              <Empty
+                title="Keine aktive Session"
+                description="Starte direkt aus einer Vorlage. Der Session-Stand bleibt lokal gespeichert."
+              />
             )}
 
             <div className="grid gap-3">
-              {(templates ?? []).map((template) => (
-                <button
-                  key={template.id}
-                  type="button"
-                  onClick={async () => {
-                    const sessionId = await startSessionFromTemplate(template.id);
-                    navigate(`/session/${sessionId}`);
-                  }}
-                  className="flex items-center justify-between rounded-3xl border border-white/10 bg-white/[0.04] px-4 py-4 text-left transition hover:border-lime-300/30 hover:bg-white/[0.07]"
-                >
-                  <div>
-                    <p className="text-sm font-semibold text-zinc-50">{template.name}</p>
-                    <p className="mt-1 text-sm text-zinc-400">{template.notes}</p>
-                  </div>
-                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-lime-300/10 text-lime-200">
-                    <Play size={18} />
-                  </div>
-                </button>
-              ))}
+              {(templates?.length ?? 0) > 0 ? (
+                (templates ?? []).map((template) => (
+                  <button
+                    key={template.id}
+                    type="button"
+                    onClick={async () => {
+                      const sessionId = await startSessionFromTemplate(template.id);
+                      navigate(`/session/${sessionId}`);
+                    }}
+                    className="flex items-center justify-between rounded-3xl border border-white/10 bg-white/[0.04] px-4 py-4 text-left transition hover:border-lime-300/30 hover:bg-white/[0.07]"
+                  >
+                    <div>
+                      <p className="text-sm font-semibold text-zinc-50">{template.name}</p>
+                      <p className="mt-1 text-sm text-zinc-400">{template.notes}</p>
+                    </div>
+                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-lime-300/10 text-lime-200">
+                      <Play size={18} />
+                    </div>
+                  </button>
+                ))
+              ) : (
+                <Empty
+                  title="Noch keine Vorlage"
+                  description="Lege zuerst eine Trainingsvorlage an. Danach kannst du Sessions mit einem Tap starten."
+                  action={
+                    <button
+                      type="button"
+                      onClick={() => navigate('/templates')}
+                      className="rounded-2xl border border-white/10 px-4 py-2 text-sm text-zinc-200 transition hover:bg-white/5"
+                    >
+                      Zu den Vorlagen
+                    </button>
+                  }
+                />
+              )}
             </div>
           </div>
         </SectionCard>
@@ -133,9 +231,11 @@ export default function Home() {
               </div>
             </div>
           ) : (
-            <div className="rounded-3xl bg-zinc-950/45 p-4 text-sm text-zinc-400">
-              Sobald du eine Session abschliesst, taucht sie hier als schneller Ruecksprung auf.
-            </div>
+            <Empty
+              title="Noch kein Abschluss"
+              description="Sobald du eine Session abschliesst, taucht sie hier als schneller Ruecksprung auf."
+              className="border-white/0 bg-zinc-950/45 text-left"
+            />
           )}
         </SectionCard>
       </div>

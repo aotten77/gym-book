@@ -62,6 +62,9 @@ describe('parseDatabaseSnapshot', () => {
               id: 'session-1',
               templateId: 'template-1',
               templateNameSnapshot: 'Pull',
+              programNameSnapshot: 'Block A',
+              programWeekLabelSnapshot: 'Woche 4',
+              usedWeekOverride: true,
               resolvedProgramWeek: 4,
               startedAt: '2026-07-27T09:00:00.000Z',
               completedAt: '2026-07-27T10:00:00.000Z',
@@ -99,14 +102,19 @@ describe('parseDatabaseSnapshot', () => {
               fileName: 'deadlift.jpg',
               byteSize: 1234,
               createdAt: '2026-07-27T12:30:00.000Z',
-              blob: {},
+              blobDataUrl: 'data:image/jpeg;base64,AA==',
             },
-          ] as DatabaseSnapshot['mediaAssets'],
+          ] as unknown as DatabaseSnapshot['mediaAssets'],
         }),
       ),
     );
 
-    expect(snapshot.mediaAssets[0]?.blob).toBeUndefined();
+    expect(snapshot.mediaAssets[0]?.blob).toBeInstanceOf(Blob);
+    expect(snapshot.workoutSessions[0]).toMatchObject({
+      programNameSnapshot: 'Block A',
+      programWeekLabelSnapshot: 'Woche 4',
+      usedWeekOverride: true,
+    });
     expect(summarizeDatabaseSnapshot(snapshot)).toEqual({
       exercises: 1,
       templates: 1,
@@ -223,6 +231,16 @@ describe('restoreDatabaseSnapshot', () => {
           updatedAt: '2026-07-03T10:00:00.000Z',
         },
       ],
+      mediaAssets: [
+        {
+          id: 'asset-new',
+          mimeType: 'image/png',
+          fileName: 'bench.png',
+          byteSize: 4,
+          createdAt: '2026-07-03T10:00:00.000Z',
+          blob: new Blob(['test'], { type: 'image/png' }),
+        },
+      ],
     });
 
     await restoreDatabaseSnapshot(snapshot);
@@ -246,6 +264,10 @@ describe('restoreDatabaseSnapshot', () => {
     expect(await db.appSettings.get('app-settings')).toMatchObject({
       activeProgramId: 'program-1',
       weekOverride: 3,
+    });
+    expect(await db.mediaAssets.get('asset-new')).toMatchObject({
+      fileName: 'bench.png',
+      mimeType: 'image/png',
     });
   });
 });

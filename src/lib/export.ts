@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { db } from '@/db/appDb';
+import { blobToDataUrl, dataUrlToBlob } from '@/lib/media';
 import type {
   AppSettings,
   Exercise,
@@ -60,6 +61,9 @@ const workoutSessionSchema = z.object({
   id: z.string().min(1),
   templateId: z.string().min(1),
   templateNameSnapshot: z.string().min(1),
+  programNameSnapshot: z.string().optional(),
+  programWeekLabelSnapshot: z.string().optional(),
+  usedWeekOverride: z.boolean().optional(),
   resolvedProgramWeek: z.number().int().positive(),
   startedAt: z.string(),
   completedAt: z.string().optional(),
@@ -140,6 +144,7 @@ const mediaAssetSchema = z
     mimeType: z.string().min(1),
     fileName: z.string().min(1),
     byteSize: z.number().int().nonnegative(),
+    blobDataUrl: z.string().optional(),
     blob: z.unknown().optional(),
     createdAt: z.string(),
   })
@@ -148,6 +153,7 @@ const mediaAssetSchema = z
     mimeType: asset.mimeType,
     fileName: asset.fileName,
     byteSize: asset.byteSize,
+    blob: asset.blobDataUrl ? dataUrlToBlob(asset.blobDataUrl) : undefined,
     createdAt: asset.createdAt,
   }));
 
@@ -336,7 +342,20 @@ export async function restoreDatabaseSnapshot(snapshot: DatabaseSnapshot) {
 
 export async function exportDatabaseSnapshot() {
   const snapshot = await createDatabaseSnapshot();
-  const blob = new Blob([JSON.stringify(snapshot, null, 2)], {
+  const serializableSnapshot = {
+    ...snapshot,
+    mediaAssets: await Promise.all(
+      snapshot.mediaAssets.map(async (asset) => ({
+        id: asset.id,
+        mimeType: asset.mimeType,
+        fileName: asset.fileName,
+        byteSize: asset.byteSize,
+        blobDataUrl: asset.blob ? await blobToDataUrl(asset.blob) : undefined,
+        createdAt: asset.createdAt,
+      })),
+    ),
+  };
+  const blob = new Blob([JSON.stringify(serializableSnapshot, null, 2)], {
     type: 'application/json',
   });
   const url = URL.createObjectURL(blob);

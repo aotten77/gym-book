@@ -22,6 +22,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { Check, Clock3, GripVertical, Save, SkipForward } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
+import { ExerciseMedia } from '@/components/ExerciseMedia';
 import { SectionCard } from '@/components/SectionCard';
 import { db } from '@/db/appDb';
 import {
@@ -138,9 +139,10 @@ interface SetLogEditorProps {
   trackingMode: TrackingMode;
   restSeconds?: number;
   onCompleted: () => void;
+  disabled?: boolean;
 }
 
-function SetLogEditor({ log, trackingMode, restSeconds, onCompleted }: SetLogEditorProps) {
+function SetLogEditor({ log, trackingMode, restSeconds, onCompleted, disabled }: SetLogEditorProps) {
   const [draft, setDraft] = useState<SetLogDraft>(() => createSetLogDraft(log));
   const [isSaving, setIsSaving] = useState(false);
 
@@ -153,11 +155,16 @@ function SetLogEditor({ log, trackingMode, restSeconds, onCompleted }: SetLogEdi
   }, [log.completed, log.id, log.reps, log.seconds, log.weight]);
 
   const dirty =
-    draft.reps !== toInputValue(log.reps) ||
-    draft.seconds !== toInputValue(log.seconds) ||
-    draft.weight !== toInputValue(log.weight);
+    !disabled &&
+    (draft.reps !== toInputValue(log.reps) ||
+      draft.seconds !== toInputValue(log.seconds) ||
+      draft.weight !== toInputValue(log.weight));
 
   async function handleSave() {
+    if (disabled) {
+      return;
+    }
+
     setIsSaving(true);
 
     try {
@@ -172,6 +179,10 @@ function SetLogEditor({ log, trackingMode, restSeconds, onCompleted }: SetLogEdi
   }
 
   async function handleToggleCompletion() {
+    if (disabled) {
+      return;
+    }
+
     if (dirty) {
       await handleSave();
     }
@@ -190,6 +201,7 @@ function SetLogEditor({ log, trackingMode, restSeconds, onCompleted }: SetLogEdi
       className={cn(
         'rounded-3xl border px-4 py-4 transition',
         log.completed ? 'border-lime-300/20 bg-lime-300/10' : 'border-white/10 bg-zinc-950/40',
+        disabled && 'opacity-80',
       )}
     >
       <div className="flex items-start justify-between gap-3">
@@ -203,6 +215,7 @@ function SetLogEditor({ log, trackingMode, restSeconds, onCompleted }: SetLogEdi
         <button
           type="button"
           onClick={handleToggleCompletion}
+          disabled={disabled}
           className={cn(
             'flex h-10 min-w-10 items-center justify-center rounded-2xl px-3 text-sm font-medium transition',
             log.completed
@@ -221,7 +234,8 @@ function SetLogEditor({ log, trackingMode, restSeconds, onCompleted }: SetLogEdi
             onChange={(event) => setDraft((current) => ({ ...current, reps: event.target.value }))}
             inputMode="numeric"
             placeholder="Wdh"
-            className="rounded-3xl border border-white/10 bg-zinc-950/50 px-4 py-4 text-sm text-zinc-50 outline-none transition placeholder:text-zinc-500 focus:border-lime-300/40"
+            disabled={disabled}
+            className="rounded-3xl border border-white/10 bg-zinc-950/50 px-4 py-4 text-sm text-zinc-50 outline-none transition placeholder:text-zinc-500 focus:border-lime-300/40 disabled:cursor-not-allowed disabled:opacity-60"
           />
         ) : null}
 
@@ -231,7 +245,8 @@ function SetLogEditor({ log, trackingMode, restSeconds, onCompleted }: SetLogEdi
             onChange={(event) => setDraft((current) => ({ ...current, seconds: event.target.value }))}
             inputMode="decimal"
             placeholder="Sekunden"
-            className="rounded-3xl border border-white/10 bg-zinc-950/50 px-4 py-4 text-sm text-zinc-50 outline-none transition placeholder:text-zinc-500 focus:border-lime-300/40"
+            disabled={disabled}
+            className="rounded-3xl border border-white/10 bg-zinc-950/50 px-4 py-4 text-sm text-zinc-50 outline-none transition placeholder:text-zinc-500 focus:border-lime-300/40 disabled:cursor-not-allowed disabled:opacity-60"
           />
         ) : null}
 
@@ -241,7 +256,8 @@ function SetLogEditor({ log, trackingMode, restSeconds, onCompleted }: SetLogEdi
             onChange={(event) => setDraft((current) => ({ ...current, weight: event.target.value }))}
             inputMode="decimal"
             placeholder="Gewicht in kg"
-            className="rounded-3xl border border-white/10 bg-zinc-950/50 px-4 py-4 text-sm text-zinc-50 outline-none transition placeholder:text-zinc-500 focus:border-lime-300/40"
+            disabled={disabled}
+            className="rounded-3xl border border-white/10 bg-zinc-950/50 px-4 py-4 text-sm text-zinc-50 outline-none transition placeholder:text-zinc-500 focus:border-lime-300/40 disabled:cursor-not-allowed disabled:opacity-60"
           />
         ) : null}
       </div>
@@ -250,7 +266,7 @@ function SetLogEditor({ log, trackingMode, restSeconds, onCompleted }: SetLogEdi
         <button
           type="button"
           onClick={handleSave}
-          disabled={isSaving}
+          disabled={isSaving || disabled}
           className="mt-3 flex w-full items-center justify-center gap-2 rounded-3xl bg-white/5 px-4 py-4 text-sm font-medium text-zinc-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Save size={15} />
@@ -303,6 +319,7 @@ interface SortableSessionExerciseCardProps {
   exerciseLogs: WorkoutSetLog[];
   isFocused: boolean;
   isBusy: boolean;
+  isReadOnly: boolean;
   onFocus: (sessionExerciseId: string) => void;
   onToggleSkip: (sessionExerciseId: string) => void;
   onSetCompleted: (restSeconds?: number) => void;
@@ -313,6 +330,7 @@ function SortableSessionExerciseCard({
   exerciseLogs,
   isFocused,
   isBusy,
+  isReadOnly,
   onFocus,
   onToggleSkip,
   onSetCompleted,
@@ -342,7 +360,7 @@ function SortableSessionExerciseCard({
             <button
               type="button"
               aria-label={`${exercise.exerciseNameSnapshot} ziehen und umsortieren`}
-              disabled={isBusy}
+              disabled={isBusy || isReadOnly}
               className={cn(
                 'touch-none rounded-2xl border p-2 transition disabled:cursor-not-allowed disabled:opacity-35',
                 isDragging
@@ -368,7 +386,8 @@ function SortableSessionExerciseCard({
           <button
             type="button"
             onClick={() => onToggleSkip(exercise.id)}
-            className="rounded-2xl border border-white/10 px-3 py-2 text-sm text-zinc-300 transition hover:bg-white/5"
+            disabled={isReadOnly}
+            className="rounded-2xl border border-white/10 px-3 py-2 text-sm text-zinc-300 transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <div className="flex items-center gap-2">
               <SkipForward size={14} />
@@ -385,6 +404,7 @@ function SortableSessionExerciseCard({
               trackingMode={exercise.trackingMode}
               restSeconds={exercise.restSeconds}
               onCompleted={() => onSetCompleted(exercise.restSeconds)}
+              disabled={isReadOnly}
             />
           ))}
         </div>
@@ -410,6 +430,7 @@ export function SessionPage() {
 
   const session = useLiveQuery(() => db.workoutSessions.get(sessionId), [sessionId]);
   const availableExercises = useLiveQuery(() => db.exercises.orderBy('name').toArray(), []);
+  const mediaAssets = useLiveQuery(() => db.mediaAssets.toArray(), []);
   const sessionExercises = useLiveQuery(
     () => db.workoutSessionExercises.where('sessionId').equals(sessionId).sortBy('orderIndex'),
     [sessionId],
@@ -565,9 +586,15 @@ export function SessionPage() {
   }, [availableExercises]);
 
   const groupedLogs = useMemo(() => groupLogsByExercise(setLogs ?? []), [setLogs]);
+  const availableExerciseById = Object.fromEntries((availableExercises ?? []).map((exercise) => [exercise.id, exercise]));
+  const mediaAssetById = Object.fromEntries((mediaAssets ?? []).map((asset) => [asset.id, asset]));
   const focusedExercise =
     orderedSessionExercises.find((item) => item.id === activeSessionExerciseId) ?? orderedSessionExercises[0];
+  const focusedExerciseRecord = focusedExercise ? availableExerciseById[focusedExercise.exerciseId] : undefined;
+  const focusedExerciseMedia =
+    focusedExerciseRecord?.mediaAssetId ? mediaAssetById[focusedExerciseRecord.mediaAssetId] : undefined;
   const remainingSeconds = restTimerEndsAt ? Math.max(0, Math.ceil((restTimerEndsAt - now) / 1000)) : 0;
+  const isReadOnly = session.status !== 'active';
   const selectedExistingExercise = (availableExercises ?? []).find(
     (exercise) => exercise.id === exerciseForm.exerciseId,
   );
@@ -635,7 +662,7 @@ export function SessionPage() {
   async function handleSessionExerciseDragEnd(event: DragEndEvent) {
     setDraggedSessionExerciseId(null);
 
-    if (!session || !event.over || event.active.id === event.over.id) {
+    if (isReadOnly || !event.over || event.active.id === event.over.id) {
       return;
     }
 
@@ -658,6 +685,10 @@ export function SessionPage() {
   }
 
   function handleSessionExerciseDragStart(event: DragStartEvent) {
+    if (isReadOnly) {
+      return;
+    }
+
     setDraggedSessionExerciseId(String(event.active.id));
   }
 
@@ -677,12 +708,21 @@ export function SessionPage() {
     );
   }
 
+  const sessionWeekContext = [
+    `Woche ${session.resolvedProgramWeek}`,
+    session.programWeekLabelSnapshot,
+    session.programNameSnapshot,
+    session.usedWeekOverride ? 'Override' : 'Programm',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
   return (
     <AppShell title={session.templateNameSnapshot} eyebrow="Session">
       <div className="space-y-4">
         <SectionCard
             title={focusedExercise?.exerciseNameSnapshot ?? 'Session Uebersicht'}
-          subtitle={`Gestartet ${formatDateTime(session.startedAt)} · Woche ${session.resolvedProgramWeek}`}
+          subtitle={`Gestartet ${formatDateTime(session.startedAt)} · ${sessionWeekContext}`}
           action={
             remainingSeconds > 0 ? (
               <div className="rounded-2xl bg-amber-300/15 px-3 py-2 text-sm font-medium text-amber-200">
@@ -695,8 +735,18 @@ export function SessionPage() {
           }
         >
             <div className="space-y-4">
+              <div className="rounded-3xl bg-zinc-950/50 p-4 text-sm text-zinc-400">
+                <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Materialisiert aus</p>
+                <p className="mt-2 text-sm text-zinc-200">{sessionWeekContext}</p>
+              </div>
               {focusedExercise ? (
               <div className="rounded-3xl bg-zinc-950/50 p-4">
+                <ExerciseMedia
+                  mediaAsset={focusedExerciseMedia}
+                  alt={focusedExercise.exerciseNameSnapshot}
+                  className="mb-4 h-40 w-full"
+                  imageClassName="h-full w-full"
+                />
                 <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Letzte Werte</p>
                 <p className="mt-2 text-sm text-zinc-200">
                   {lastValues?.[focusedExercise.exerciseId] ?? 'Noch keine Historie vorhanden'}
@@ -790,6 +840,16 @@ export function SessionPage() {
                                 Modus: {effectiveTrackingMode} ·{' '}
                                 {effectiveUnilateral ? 'links/rechts getrennt' : 'beidseitig'}
                               </p>
+                              <ExerciseMedia
+                                mediaAsset={
+                                  selectedExistingExercise?.mediaAssetId
+                                    ? mediaAssetById[selectedExistingExercise.mediaAssetId]
+                                    : undefined
+                                }
+                                alt={selectedExistingExercise?.name ?? 'Uebung'}
+                                className="h-32 w-full"
+                                imageClassName="h-full w-full"
+                              />
                             </>
                           ) : (
                             <div className="rounded-3xl bg-white/5 px-4 py-4 text-sm text-zinc-400">
@@ -987,36 +1047,42 @@ export function SessionPage() {
                 </div>
               ) : null}
 
-              <div className="grid grid-cols-2 gap-3">
-                {focusedExercise ? (
+              {session.status === 'active' ? (
+                <div className="grid grid-cols-2 gap-3">
+                  {focusedExercise ? (
+                    <button
+                      type="button"
+                      onClick={() => toggleSkipSessionExercise(focusedExercise.id)}
+                      className={cn(
+                        'rounded-3xl px-4 py-4 text-sm font-medium transition',
+                        focusedExercise.wasSkipped
+                          ? 'bg-rose-400/15 text-rose-200'
+                          : 'bg-white/5 text-zinc-200 hover:bg-white/10',
+                      )}
+                    >
+                      {focusedExercise.wasSkipped ? 'Uebung wieder aktivieren' : 'Uebung ueberspringen'}
+                    </button>
+                  ) : (
+                    <div className="rounded-3xl bg-white/5 px-4 py-4 text-sm text-zinc-400">
+                      Noch keine aktive Uebung im Fokus.
+                    </div>
+                  )}
                   <button
                     type="button"
-                    onClick={() => toggleSkipSessionExercise(focusedExercise.id)}
-                    className={cn(
-                      'rounded-3xl px-4 py-4 text-sm font-medium transition',
-                      focusedExercise.wasSkipped
-                        ? 'bg-rose-400/15 text-rose-200'
-                        : 'bg-white/5 text-zinc-200 hover:bg-white/10',
-                    )}
+                    onClick={async () => {
+                      await completeSession(session.id);
+                      navigate('/');
+                    }}
+                    className="rounded-3xl bg-lime-300 px-4 py-4 text-sm font-semibold text-zinc-950 transition hover:brightness-105"
                   >
-                    {focusedExercise.wasSkipped ? 'Uebung wieder aktivieren' : 'Uebung ueberspringen'}
+                    Session abschliessen
                   </button>
-                ) : (
-                  <div className="rounded-3xl bg-white/5 px-4 py-4 text-sm text-zinc-400">
-                    Noch keine aktive Uebung im Fokus.
-                  </div>
-                )}
-                <button
-                  type="button"
-                  onClick={async () => {
-                    await completeSession(session.id);
-                    navigate('/');
-                  }}
-                  className="rounded-3xl bg-lime-300 px-4 py-4 text-sm font-semibold text-zinc-950 transition hover:brightness-105"
-                >
-                  Session abschliessen
-                </button>
-              </div>
+                </div>
+              ) : (
+                <div className="rounded-3xl bg-white/5 px-4 py-4 text-sm text-zinc-400">
+                  Session ist abgeschlossen und schreibgeschuetzt.
+                </div>
+              )}
             </div>
         </SectionCard>
 
@@ -1050,7 +1116,8 @@ export function SessionPage() {
                       exercise={exercise}
                       exerciseLogs={exerciseLogs}
                       isFocused={activeSessionExerciseId === exercise.id}
-                      isBusy={isReorderingExercises || session.status !== 'active'}
+                      isBusy={isReorderingExercises}
+                      isReadOnly={isReadOnly}
                       onFocus={setActiveSessionExerciseId}
                       onToggleSkip={toggleSkipSessionExercise}
                       onSetCompleted={(restSeconds) => {

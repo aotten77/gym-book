@@ -1,18 +1,24 @@
 import { useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
+import { Link } from 'react-router-dom';
 import { AppShell } from '@/components/AppShell';
+import { Empty } from '@/components/Empty';
 import { SectionCard } from '@/components/SectionCard';
 import { db } from '@/db/appDb';
-import type { WorkoutSessionExercise, WorkoutSetLog } from '@/domain/models';
+import type { WorkoutSession, WorkoutSessionExercise, WorkoutSetLog } from '@/domain/models';
 import { formatDateTime, formatLoadLabel } from '@/lib/format';
 
 interface HistoryEntry {
+  sessionId: string;
+  templateName: string;
+  weekContext: string;
   exerciseName: string;
   completedAt?: string;
   preview: string[];
 }
 
 function buildExerciseHistory(
+  sessionsById: Record<string, WorkoutSession | undefined>,
   sessionExercises: WorkoutSessionExercise[],
   setLogs: WorkoutSetLog[],
   completedAtBySessionId: Record<string, string | undefined>,
@@ -27,6 +33,17 @@ function buildExerciseHistory(
   }, {});
 
   return sessionExercises.reduce<Record<string, HistoryEntry[]>>((groups, item) => {
+    const session = sessionsById[item.sessionId];
+    const weekContext = session
+      ? [
+          `Woche ${session.resolvedProgramWeek}`,
+          session.programWeekLabelSnapshot,
+          session.programNameSnapshot,
+          session.usedWeekOverride ? 'Override' : 'Programm',
+        ]
+          .filter(Boolean)
+          .join(' · ')
+      : `Woche ?`;
     const preview = (logsBySessionExerciseId[item.id] ?? [])
       .filter((log) => log.setKind === 'work' && log.completed)
       .slice(0, 3)
@@ -37,6 +54,9 @@ function buildExerciseHistory(
     }
 
     groups[item.exerciseId].push({
+      sessionId: item.sessionId,
+      templateName: session?.templateNameSnapshot ?? item.exerciseNameSnapshot,
+      weekContext,
       exerciseName: item.exerciseNameSnapshot,
       completedAt: completedAtBySessionId[item.sessionId],
       preview,
@@ -73,8 +93,10 @@ export function HistoryPage() {
     const completedAtBySessionId = Object.fromEntries(
       (completedSessions ?? []).map((item) => [item.id, item.completedAt]),
     );
+    const sessionsById = Object.fromEntries((completedSessions ?? []).map((item) => [item.id, item]));
 
     return buildExerciseHistory(
+      sessionsById,
       completedSessionExercises ?? [],
       completedSetLogs ?? [],
       completedAtBySessionId,
@@ -84,35 +106,49 @@ export function HistoryPage() {
   return (
     <AppShell title="Historie" eyebrow="Rueckblick">
       <div className="space-y-4">
-        {Object.entries(historyByExercise).map(([exerciseId, entries]) => (
-          <SectionCard
-            key={exerciseId}
-            title={entries[0]?.exerciseName ?? 'Uebung'}
-            subtitle={`${entries.length} abgeschlossene Einheiten`}
-          >
-            <div className="space-y-3">
-              {entries.map((entry) => (
-                <div key={`${exerciseId}-${entry.completedAt}`} className="rounded-3xl bg-zinc-950/45 p-4">
-                  <p className="text-sm font-semibold text-zinc-50">{formatDateTime(entry.completedAt)}</p>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {entry.preview.length > 0 ? (
-                      entry.preview.map((value) => (
-                        <span
-                          key={`${exerciseId}-${entry.completedAt}-${value}`}
-                          className="rounded-full bg-white/5 px-3 py-1 text-xs text-zinc-300"
-                        >
-                          {value}
-                        </span>
-                      ))
-                    ) : (
-                      <span className="text-sm text-zinc-400">Noch keine abgeschlossenen Arbeitssaetze.</span>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </SectionCard>
-        ))}
+        {Object.keys(historyByExercise).length > 0 ? (
+          Object.entries(historyByExercise).map(([exerciseId, entries]) => (
+            <SectionCard
+              key={exerciseId}
+              title={entries[0]?.exerciseName ?? 'Uebung'}
+              subtitle={`${entries.length} abgeschlossene Einheiten`}
+            >
+              <div className="space-y-3">
+                {entries.map((entry) => (
+                  <Link
+                    key={`${exerciseId}-${entry.sessionId}`}
+                    to={`/history/session/${entry.sessionId}`}
+                    className="block rounded-3xl bg-zinc-950/45 p-4 transition hover:bg-zinc-950/55"
+                  >
+                    <p className="text-sm font-semibold text-zinc-50">
+                      {formatDateTime(entry.completedAt)} · {entry.templateName}
+                    </p>
+                    <p className="mt-1 text-sm text-zinc-400">{entry.weekContext}</p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {entry.preview.length > 0 ? (
+                        entry.preview.map((value) => (
+                          <span
+                            key={`${exerciseId}-${entry.completedAt}-${value}`}
+                            className="rounded-full bg-white/5 px-3 py-1 text-xs text-zinc-300"
+                          >
+                            {value}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-sm text-zinc-400">Noch keine abgeschlossenen Arbeitssaetze.</span>
+                      )}
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </SectionCard>
+          ))
+        ) : (
+          <Empty
+            title="Noch keine Historie"
+            description="Schliesse deine erste Session ab, damit hier stabile Verlaufsdaten pro Uebung auftauchen."
+          />
+        )}
 
         <SectionCard
           title="Was schon steht"

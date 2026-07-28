@@ -21,8 +21,18 @@ interface SaveTemplateExerciseInput {
   exerciseName?: string;
   instructions?: string;
   tempo?: string;
+  mediaAssetId?: string;
   trackingMode: TrackingMode;
   unilateral: boolean;
+}
+
+interface SaveProgressionRuleInput {
+  templateExerciseId: string;
+  programWeekId: string;
+  targetReps?: number;
+  targetSeconds?: number;
+  targetWeight?: number;
+  notes?: string;
 }
 
 function normalizeOptionalText(value?: string) {
@@ -99,6 +109,7 @@ export async function deleteTemplate(templateId: string) {
 export async function saveTemplateExercise(input: SaveTemplateExerciseInput) {
   const now = new Date().toISOString();
   const exerciseId = input.exerciseId ?? createId();
+  const templateExerciseId = input.id ?? createId();
 
   await db.transaction(
     'rw',
@@ -113,6 +124,7 @@ export async function saveTemplateExercise(input: SaveTemplateExerciseInput) {
           tempo: normalizeOptionalText(input.tempo),
           trackingMode: input.trackingMode,
           unilateral: input.unilateral,
+          mediaAssetId: input.mediaAssetId,
           createdAt: now,
           updatedAt: now,
         });
@@ -134,7 +146,7 @@ export async function saveTemplateExercise(input: SaveTemplateExerciseInput) {
         await db.workoutTemplateExercises.update(input.id, templateExercisePayload);
       } else {
         await db.workoutTemplateExercises.add({
-          id: createId(),
+          id: templateExerciseId,
           ...templateExercisePayload,
         });
       }
@@ -142,6 +154,11 @@ export async function saveTemplateExercise(input: SaveTemplateExerciseInput) {
   );
 
   await normalizeTemplateExerciseOrder(input.templateId);
+
+  return {
+    exerciseId,
+    templateExerciseId,
+  };
 }
 
 export async function deleteTemplateExercise(templateExerciseId: string) {
@@ -186,4 +203,65 @@ export async function reorderTemplateExercises(templateId: string, orderedTempla
       ),
     );
   });
+}
+
+export async function saveProgressionRule(input: SaveProgressionRuleInput) {
+  const targetReps = normalizeOptionalNumber(input.targetReps);
+  const targetSeconds = normalizeOptionalNumber(input.targetSeconds);
+  const targetWeight = normalizeOptionalNumber(input.targetWeight);
+  const notes = normalizeOptionalText(input.notes);
+
+  const existingRule = await db.progressionRules
+    .where('templateExerciseId')
+    .equals(input.templateExerciseId)
+    .filter((rule) => rule.programWeekId === input.programWeekId)
+    .first();
+
+  if (
+    targetReps === undefined &&
+    targetSeconds === undefined &&
+    targetWeight === undefined &&
+    notes === undefined
+  ) {
+    if (existingRule) {
+      await db.progressionRules.delete(existingRule.id);
+    }
+    return;
+  }
+
+  const payload = {
+    templateExerciseId: input.templateExerciseId,
+    programWeekId: input.programWeekId,
+    targetReps,
+    targetSeconds,
+    targetWeight,
+    notes,
+  };
+
+  if (existingRule) {
+    await db.progressionRules.put({
+      id: existingRule.id,
+      ...payload,
+    });
+    return;
+  }
+
+  await db.progressionRules.add({
+    id: createId(),
+    ...payload,
+  });
+}
+
+export async function clearProgressionRule(templateExerciseId: string, programWeekId: string) {
+  const existingRule = await db.progressionRules
+    .where('templateExerciseId')
+    .equals(templateExerciseId)
+    .filter((rule) => rule.programWeekId === programWeekId)
+    .first();
+
+  if (!existingRule) {
+    return;
+  }
+
+  await db.progressionRules.delete(existingRule.id);
 }

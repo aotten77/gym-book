@@ -68,6 +68,27 @@ function createSetLogs(sessionExerciseId: string, workSetCount: number, unilater
   return setLogs;
 }
 
+async function isSessionExerciseEditable(sessionExerciseId: string) {
+  const sessionExercise = await db.workoutSessionExercises.get(sessionExerciseId);
+
+  if (!sessionExercise) {
+    return false;
+  }
+
+  const session = await db.workoutSessions.get(sessionExercise.sessionId);
+  return session?.status === 'active';
+}
+
+async function isSetLogEditable(setLogId: string) {
+  const setLog = await db.workoutSetLogs.get(setLogId);
+
+  if (!setLog) {
+    return false;
+  }
+
+  return isSessionExerciseEditable(setLog.sessionExerciseId);
+}
+
 export async function startSessionFromTemplate(templateId: string) {
   const existingActiveSession = await db.workoutSessions.where('status').equals('active').first();
 
@@ -91,6 +112,25 @@ export async function startSessionFromTemplate(templateId: string) {
   const program = settings?.activeProgramId
     ? await db.programs.get(settings.activeProgramId)
     : undefined;
+  const resolvedProgramWeek = settings?.weekOverride ?? program?.activeWeek ?? 1;
+  const usedWeekOverride = typeof settings?.weekOverride === 'number';
+  const programWeek =
+    program && settings?.activeProgramId
+      ? (
+          await db.programWeeks
+            .where('programId')
+            .equals(settings.activeProgramId)
+            .filter((week) => week.weekNumber === resolvedProgramWeek)
+            .first()
+        )
+      : undefined;
+  const progressionRules =
+    programWeek && templateExercises.length > 0
+      ? await db.progressionRules.where('programWeekId').equals(programWeek.id).toArray()
+      : [];
+  const progressionRulesByTemplateExerciseId = Object.fromEntries(
+    progressionRules.map((rule) => [rule.templateExerciseId, rule]),
+  );
 
   const bundle = materializeSession({
     template,
@@ -98,7 +138,11 @@ export async function startSessionFromTemplate(templateId: string) {
     exercisesById: Object.fromEntries(
       exercises.filter(Boolean).map((exercise) => [exercise.id, exercise]),
     ),
-    resolvedProgramWeek: settings?.weekOverride ?? program?.activeWeek ?? 1,
+    progressionRulesByTemplateExerciseId,
+    programNameSnapshot: program?.name,
+    programWeekLabelSnapshot: programWeek?.label,
+    usedWeekOverride,
+    resolvedProgramWeek,
     startedAt: new Date().toISOString(),
   });
 
@@ -118,6 +162,10 @@ export async function startSessionFromTemplate(templateId: string) {
 }
 
 export async function toggleSetCompletion(setLogId: string) {
+  if (!(await isSetLogEditable(setLogId))) {
+    return;
+  }
+
   const current = await db.workoutSetLogs.get(setLogId);
 
   if (!current) {
@@ -131,6 +179,10 @@ export async function toggleSetCompletion(setLogId: string) {
 }
 
 export async function updateSetLogValues(setLogId: string, values: SetLogValuesInput) {
+  if (!(await isSetLogEditable(setLogId))) {
+    return;
+  }
+
   const current = await db.workoutSetLogs.get(setLogId);
 
   if (!current) {
@@ -219,6 +271,10 @@ export async function addSessionExercise(input: AddSessionExerciseInput) {
 }
 
 export async function toggleSkipSessionExercise(sessionExerciseId: string) {
+  if (!(await isSessionExerciseEditable(sessionExerciseId))) {
+    return;
+  }
+
   const current = await db.workoutSessionExercises.get(sessionExerciseId);
 
   if (!current) {
@@ -231,6 +287,12 @@ export async function toggleSkipSessionExercise(sessionExerciseId: string) {
 }
 
 export async function reorderSessionExercises(sessionId: string, orderedSessionExerciseIds: string[]) {
+  const session = await db.workoutSessions.get(sessionId);
+
+  if (!session || session.status !== 'active') {
+    return;
+  }
+
   const currentExercises = await db.workoutSessionExercises
     .where('sessionId')
     .equals(sessionId)

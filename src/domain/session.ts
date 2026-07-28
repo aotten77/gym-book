@@ -1,5 +1,6 @@
 import type {
   Exercise,
+  ProgressionRule,
   SessionBundle,
   WorkoutSession,
   WorkoutSessionExercise,
@@ -12,6 +13,10 @@ interface MaterializeSessionInput {
   template: WorkoutTemplate;
   templateExercises: WorkoutTemplateExercise[];
   exercisesById: Record<string, Exercise>;
+  progressionRulesByTemplateExerciseId?: Record<string, ProgressionRule | undefined>;
+  programNameSnapshot?: string;
+  programWeekLabelSnapshot?: string;
+  usedWeekOverride?: boolean;
   resolvedProgramWeek: number;
   startedAt: string;
 }
@@ -24,6 +29,10 @@ export function materializeSession({
   template,
   templateExercises,
   exercisesById,
+  progressionRulesByTemplateExerciseId,
+  programNameSnapshot,
+  programWeekLabelSnapshot,
+  usedWeekOverride,
   resolvedProgramWeek,
   startedAt,
 }: MaterializeSessionInput): SessionBundle {
@@ -33,6 +42,9 @@ export function materializeSession({
     id: sessionId,
     templateId: template.id,
     templateNameSnapshot: template.name,
+    programNameSnapshot,
+    programWeekLabelSnapshot,
+    usedWeekOverride,
     resolvedProgramWeek,
     startedAt,
     status: 'active',
@@ -45,6 +57,7 @@ export function materializeSession({
     (left, right) => left.orderIndex - right.orderIndex,
   )) {
     const exercise = exercisesById[templateExercise.exerciseId];
+    const progressionRule = progressionRulesByTemplateExerciseId?.[templateExercise.id];
 
     if (!exercise) {
       throw new Error(`Exercise ${templateExercise.exerciseId} not found`);
@@ -64,11 +77,11 @@ export function materializeSession({
       wasSkipped: false,
       addedInSession: false,
       workSetCount: templateExercise.workSetCount,
-      targetReps: templateExercise.targetReps,
-      targetSeconds: templateExercise.targetSeconds,
-      targetWeight: templateExercise.targetWeight,
+      targetReps: progressionRule?.targetReps ?? templateExercise.targetReps,
+      targetSeconds: progressionRule?.targetSeconds ?? templateExercise.targetSeconds,
+      targetWeight: progressionRule?.targetWeight ?? templateExercise.targetWeight,
       restSeconds: templateExercise.restSeconds,
-      notes: templateExercise.notes,
+      notes: progressionRule?.notes ?? templateExercise.notes,
     });
 
     setLogs.push({

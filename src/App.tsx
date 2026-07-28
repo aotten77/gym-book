@@ -3,6 +3,8 @@ import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
 import Home from '@/pages/Home';
 import { bootstrapAppData } from '@/db/bootstrap';
 import { HistoryPage } from '@/pages/HistoryPage';
+import { HistorySessionPage } from '@/pages/HistorySessionPage';
+import { ProgramsPage } from '@/pages/ProgramsPage';
 import { SessionPage } from '@/pages/SessionPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { TemplateDetailPage } from '@/pages/TemplateDetailPage';
@@ -36,10 +38,12 @@ export default function App() {
     <HashRouter>
       <Routes>
         <Route path="/" element={<Home />} />
+        <Route path="/programs" element={<ProgramsPage />} />
         <Route path="/templates" element={<TemplatesPage />} />
         <Route path="/templates/:templateId" element={<TemplateDetailPage />} />
         <Route path="/session/:sessionId" element={<SessionPage />} />
         <Route path="/history" element={<HistoryPage />} />
+        <Route path="/history/session/:sessionId" element={<HistorySessionPage />} />
         <Route path="/tests" element={<TestsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
