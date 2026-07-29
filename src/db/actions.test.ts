@@ -4,6 +4,7 @@ import {
   abortSession,
   addSessionExercise,
   completeSession,
+  deleteSetLog,
   reorderSessionExercises,
   startSessionFromTemplate,
   toggleSetCompletion,
@@ -89,6 +90,31 @@ describe('addSessionExercise', () => {
     expect(await db.exercises.count()).toBe(1);
   });
 
+  it('lässt den Warmup-Satz weg, wenn er abgewählt wurde', async () => {
+    await db.workoutSessions.add({
+      id: 'session-ohne-warmup',
+      templateId: 'template-1',
+      templateNameSnapshot: 'Einheit A',
+      resolvedProgramWeek: 1,
+      startedAt: '2026-01-08T09:00:00.000Z',
+      status: 'active',
+    });
+
+    const sessionExerciseId = await addSessionExercise({
+      sessionId: 'session-ohne-warmup',
+      exerciseName: 'Hip Thrust',
+      workSetCount: 3,
+      includeWarmup: false,
+      trackingMode: 'reps_weight',
+      unilateral: false,
+    });
+
+    const setLogs = await db.workoutSetLogs.where('sessionExerciseId').equals(sessionExerciseId).toArray();
+
+    expect(setLogs).toHaveLength(3);
+    expect(setLogs.filter((item) => item.setKind === 'warmup')).toHaveLength(0);
+  });
+
   it('creates a new exercise when the session exercise does not reference an existing one', async () => {
     await db.workoutSessions.add({
       id: 'session-2',
@@ -102,7 +128,7 @@ describe('addSessionExercise', () => {
     const sessionExerciseId = await addSessionExercise({
       sessionId: 'session-2',
       exerciseName: '  Copenhagen Plank  ',
-      instructions: '  Unteres Bein sauber fuehren  ',
+      instructions: '  Unteres Bein sauber führen  ',
       tempo: ' 2-1-2 ',
       trackingMode: 'time',
       unilateral: false,
@@ -118,7 +144,7 @@ describe('addSessionExercise', () => {
 
     expect(createdExercise).toMatchObject({
       name: 'Copenhagen Plank',
-      instructions: 'Unteres Bein sauber fuehren',
+      instructions: 'Unteres Bein sauber führen',
       tempo: '2-1-2',
       trackingMode: 'time',
       unilateral: false,
@@ -946,5 +972,79 @@ describe('starting a session', () => {
     expect(activeSessions).toHaveLength(1);
     expect(first).toBe(second);
     expect(activeSessions[0].id).toBe(first);
+  });
+});
+
+describe('deleteSetLog', () => {
+  async function seedSetLog(status: 'active' | 'completed') {
+    await db.workoutSessions.add({
+      id: `session-delete-${status}`,
+      templateId: 'template-1',
+      templateNameSnapshot: 'Einheit A',
+      resolvedProgramWeek: 1,
+      startedAt: '2026-01-08T09:00:00.000Z',
+      status,
+    });
+
+    await db.workoutSessionExercises.add({
+      id: `session-exercise-delete-${status}`,
+      sessionId: `session-delete-${status}`,
+      exerciseId: 'exercise-1',
+      exerciseNameSnapshot: 'Split Squat',
+      trackingMode: 'reps_weight',
+      unilateral: true,
+      orderIndex: 1,
+      wasSkipped: false,
+      addedInSession: false,
+      workSetCount: 1,
+    });
+
+    await db.workoutSetLogs.bulkAdd([
+      {
+        id: `warmup-${status}`,
+        sessionExerciseId: `session-exercise-delete-${status}`,
+        setKind: 'warmup',
+        side: 'both',
+        setNumber: 0,
+        completed: false,
+      },
+      {
+        id: `links-${status}`,
+        sessionExerciseId: `session-exercise-delete-${status}`,
+        setKind: 'work',
+        side: 'left',
+        setNumber: 1,
+        completed: false,
+      },
+      {
+        id: `rechts-${status}`,
+        sessionExerciseId: `session-exercise-delete-${status}`,
+        setKind: 'work',
+        side: 'right',
+        setNumber: 1,
+        completed: false,
+      },
+    ]);
+  }
+
+  it('entfernt genau eine Zeile und lässt die Gegenseite stehen', async () => {
+    await seedSetLog('active');
+
+    await deleteSetLog('links-active');
+
+    const remaining = await db.workoutSetLogs
+      .where('sessionExerciseId')
+      .equals('session-exercise-delete-active')
+      .toArray();
+
+    expect(remaining.map((item) => item.id).sort()).toEqual(['rechts-active', 'warmup-active']);
+  });
+
+  it('rührt abgeschlossene Sessions nicht an', async () => {
+    await seedSetLog('completed');
+
+    await deleteSetLog('warmup-completed');
+
+    expect(await db.workoutSetLogs.get('warmup-completed')).toBeDefined();
   });
 });

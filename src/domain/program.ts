@@ -7,9 +7,9 @@ export interface WeekControl {
 }
 
 /**
- * Loest die aktuell wirksame Woche auf und liefert dieselbe Obergrenze fuer
+ * Löst die aktuell wirksame Woche auf und liefert dieselbe Obergrenze für
  * Home und Settings - die beiden Seiten wichen vorher in der maxWeek-Formel
- * voneinander ab (Home bezog einen Override oberhalb der hoechsten
+ * voneinander ab (Home bezog einen Override oberhalb der höchsten
  * Programmwoche mit ein, Settings nicht).
  */
 export function resolveWeekControl(

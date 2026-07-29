@@ -3,7 +3,7 @@ import { collectPageErrors, resetDatabase, seedSampleData, startSampleSession } 
 
 /*
  * Deckt die Befunde ab, an denen zuvor Trainingsdaten verloren gingen.
- * Keiner davon laesst sich im jsdom nachstellen: es braucht echte
+ * Keiner davon lässt sich im jsdom nachstellen: es braucht echte
  * Eingabefelder, einen echten Reload und einen laufenden Timer.
  */
 test.describe('Satz-Protokollierung', () => {
@@ -12,11 +12,11 @@ test.describe('Satz-Protokollierung', () => {
     await seedSampleData(page);
   });
 
-  test('deutsches Dezimalkomma wird gespeichert und ueberlebt einen Reload', async ({ page }) => {
+  test('deutsches Dezimalkomma wird gespeichert und überlebt einen Reload', async ({ page }) => {
     await startSampleSession(page);
 
-    // Number("52,5") ergibt NaN. Frueher wurde daraus `undefined`, und Dexies
-    // Table.update loescht damit die Property - der Wert war weg.
+    // Number("52,5") ergibt NaN. Früher wurde daraus `undefined`, und Dexies
+    // Table.update löscht damit die Property - der Wert war weg.
     await page.locator('input[id$="-weight"]').first().fill('82,5');
     await page.locator('input[id$="-reps"]').first().fill('5');
     await page.waitForTimeout(1200); // Autosave abwarten
@@ -28,7 +28,7 @@ test.describe('Satz-Protokollierung', () => {
     await expect(page.locator('input[id$="-reps"]').first()).toHaveValue('5');
   });
 
-  test('eine ungueltige Eingabe laesst den gespeicherten Wert unangetastet', async ({ page }) => {
+  test('eine ungültige Eingabe lässt den gespeicherten Wert unangetastet', async ({ page }) => {
     await startSampleSession(page);
 
     const weight = page.locator('input[id$="-weight"]').first();
@@ -45,7 +45,7 @@ test.describe('Satz-Protokollierung', () => {
     await expect(page.locator('input[id$="-weight"]').first()).toHaveValue('82.5');
   });
 
-  test('das Speichern eines Feldes ueberschreibt nicht das Nachbarfeld', async ({ page }) => {
+  test('das Speichern eines Feldes überschreibt nicht das Nachbarfeld', async ({ page }) => {
     await startSampleSession(page);
 
     // Genau hier lag ein Fehler, den alle Unit-Tests passierten: der Sync aus
@@ -67,7 +67,7 @@ test.describe('Pausentimer', () => {
     await seedSampleData(page);
   });
 
-  test('laeuft nach einem Reload weiter', async ({ page }) => {
+  test('läuft nach einem Reload weiter', async ({ page }) => {
     await startSampleSession(page);
 
     await page.getByRole('button', { name: /Pause starten/ }).click();
@@ -81,7 +81,7 @@ test.describe('Pausentimer', () => {
     await expect(page.getByRole('timer')).toBeVisible();
   });
 
-  test('laesst sich abbrechen', async ({ page }) => {
+  test('lässt sich abbrechen', async ({ page }) => {
     await startSampleSession(page);
 
     await page.getByRole('button', { name: /Pause starten/ }).click();
@@ -94,7 +94,7 @@ test.describe('Pausentimer', () => {
   });
 });
 
-test.describe('Uebung zur Session hinzufuegen', () => {
+test.describe('Übung zur Session hinzufügen', () => {
   test.beforeEach(async ({ page }) => {
     await resetDatabase(page);
     await seedSampleData(page);
@@ -103,13 +103,13 @@ test.describe('Uebung zur Session hinzufuegen', () => {
   test('nur Auswahl aus der Bibliothek, kein Neuanlage-Formular', async ({ page }) => {
     await startSampleSession(page);
 
-    await page.getByRole('button', { name: 'Uebung hinzufuegen' }).click();
+    await page.getByRole('button', { name: 'Übung hinzufügen' }).click();
     await page.waitForTimeout(400);
 
     await expect(page.getByRole('button', { name: 'Neu', exact: true })).toHaveCount(0);
 
     await page.locator('select').selectOption({ label: 'Nordic Curl Iso' });
-    await page.getByRole('button', { name: 'Zur Session hinzufuegen' }).click();
+    await page.getByRole('button', { name: 'Zur Session hinzufügen' }).click();
     await page.waitForTimeout(900);
 
     await expect(page.getByText('Nordic Curl Iso').first()).toBeVisible();
@@ -132,7 +132,7 @@ test.describe('Session-Lebenszyklus', () => {
     await page.waitForURL(/#\/$/);
     await page.waitForTimeout(800);
 
-    await expect(page.getByText('Ein Training laeuft bereits')).toBeHidden();
+    await expect(page.getByText('Ein Training läuft bereits')).toBeHidden();
     await expect(page.getByRole('button', { name: 'Einheit A' }).first()).toBeEnabled();
     expect(errors).toEqual([]);
   });
@@ -142,8 +142,139 @@ test.describe('Session-Lebenszyklus', () => {
     await page.goto('./');
     await page.waitForTimeout(800);
 
-    // Frueher fuehrte ein Tap auf eine andere Vorlage stillschweigend in die
-    // laufende Session - fuer den Nutzer sah das aus wie ein Defekt.
-    await expect(page.getByText('Ein Training laeuft bereits')).toBeVisible();
+    // Früher führte ein Tap auf eine andere Vorlage stillschweigend in die
+    // laufende Session - für den Nutzer sah das aus wie ein Defekt.
+    await expect(page.getByText('Ein Training läuft bereits')).toBeVisible();
+  });
+});
+
+test.describe('Eingabefelder', () => {
+  test.beforeEach(async ({ page }) => {
+    await resetDatabase(page);
+    await seedSampleData(page);
+  });
+
+  test('kein Feld liegt unter 16px', async ({ page }) => {
+    await startSampleSession(page);
+
+    /*
+     * iOS Safari zoomt beim Fokus in jedes Feld hinein, dessen Schrift kleiner
+     * als 16px ist - genau der Zoom, den die App nicht haben soll. Berechnete
+     * Schriftgrössen kennt nur ein echter Browser, jsdom nicht.
+     */
+    const tooSmall = await page.evaluate(() =>
+      [...document.querySelectorAll('input, select, textarea')]
+        .filter((element) => (element as HTMLElement).offsetParent !== null)
+        .map((element) => ({
+          id: element.id || element.getAttribute('aria-label') || element.tagName,
+          fontSize: Number.parseFloat(getComputedStyle(element).fontSize),
+        }))
+        .filter((entry) => entry.fontSize < 16),
+    );
+
+    expect(tooSmall).toEqual([]);
+  });
+});
+
+test.describe('Werte der letzten Session', () => {
+  test.beforeEach(async ({ page }) => {
+    await resetDatabase(page);
+    await seedSampleData(page);
+  });
+
+  test('stehen als Platzhalter im Feld und werden per Fertig übernommen', async ({ page }) => {
+    /*
+     * Die Beispieldaten bringen eine abgeschlossene Session von vor sechs Tagen
+     * mit - deren Werte sind die "letzte Woche" für die neue Session.
+     */
+    await startSampleSession(page);
+
+    const weight = page.locator('input[id$="-weight"]').first();
+    const placeholder = await weight.getAttribute('placeholder');
+
+    expect(placeholder).toBeTruthy();
+    await expect(weight).toHaveValue('');
+
+    await page.getByRole('button', { name: 'Satz als erledigt markieren' }).first().click();
+    await page.waitForTimeout(900);
+
+    // Ohne Eingabe abgehakt: der Platzhalter wird zum gespeicherten Wert und
+    // überlebt einen Reload.
+    await page.reload();
+    await page.waitForTimeout(1200);
+
+    await expect(page.locator('input[id$="-weight"]').first()).toHaveValue(placeholder!);
+  });
+});
+
+test.describe('Sätze und Reihenfolge', () => {
+  test.beforeEach(async ({ page }) => {
+    await resetDatabase(page);
+    await seedSampleData(page);
+  });
+
+  test('ein leerer Warmup-Satz lässt sich ohne Rückfrage entfernen', async ({ page }) => {
+    await startSampleSession(page);
+
+    const warmupRemove = page.getByRole('button', { name: 'Warmup entfernen' }).first();
+    const countBefore = await page.getByRole('button', { name: /entfernen$/ }).count();
+
+    await warmupRemove.click();
+    await page.waitForTimeout(900);
+
+    expect(await page.getByRole('button', { name: /entfernen$/ }).count()).toBe(countBefore - 1);
+  });
+
+  test('die Reihenfolge ändert sich nur über die Pfeile', async ({ page }) => {
+    await startSampleSession(page);
+
+    // Der Griff zum Ziehen ist ersatzlos weg - er sortierte beim Scrollen
+    // versehentlich um.
+    await expect(page.getByRole('button', { name: /ziehen und umsortieren/ })).toHaveCount(0);
+
+    // Nur die Übungskarten, nicht die Übersicht darüber: die trägt den
+    // Namen der fokussierten Übung als eigene Überschrift.
+    const cardOrder = async () =>
+      (
+        await page.locator('section:has(> div button[aria-label$="nach unten"]) h2').allTextContents()
+      ).map((text) => text.trim());
+
+    expect(await cardOrder()).toEqual([
+      'Front Squat',
+      'Bulgarian Split Squat',
+      'Nordic Curl Iso',
+    ]);
+
+    await page.getByRole('button', { name: 'Front Squat nach unten' }).click();
+    await page.waitForTimeout(900);
+
+    expect(await cardOrder()).toEqual([
+      'Bulgarian Split Squat',
+      'Front Squat',
+      'Nordic Curl Iso',
+    ]);
+  });
+});
+
+test.describe('Übungsbild', () => {
+  test.beforeEach(async ({ page }) => {
+    await resetDatabase(page);
+    await seedSampleData(page);
+  });
+
+  test('der Streifen bleibt beim Scrollen zum letzten Satz sichtbar', async ({ page }) => {
+    await startSampleSession(page);
+
+    const strip = page.getByText('Kein Bild hinterlegt').first();
+    await expect(strip).toBeVisible();
+
+    // mouse.wheel gibt es im mobilen WebKit nicht - hier zählt ohnehin, was
+    // ein echtes Scrollen des Dokuments bewirkt.
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await page.waitForTimeout(600);
+
+    // Sticky: welche Übung dran ist, muss auch beim letzten Satz noch
+    // sichtbar sein.
+    await expect(strip).toBeInViewport();
   });
 });

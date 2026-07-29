@@ -27,7 +27,7 @@ export function ProgramsPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /*
-   * Loeschen war hier bisher ein einziger Tap ohne Rueckfrage - und nimmt beim
+   * Löschen war hier bisher ein einziger Tap ohne Rückfrage - und nimmt beim
    * Programm alle Wochen und Progressionsregeln mit.
    */
   const [pendingDelete, setPendingDelete] = useState<
@@ -108,7 +108,7 @@ export function ProgramsPage() {
       setPendingDelete(null);
     } catch (nextError) {
       setError(
-        nextError instanceof Error ? nextError.message : 'Loeschen ist fehlgeschlagen.',
+        nextError instanceof Error ? nextError.message : 'Löschen ist fehlgeschlagen.',
       );
       setPendingDelete(null);
     } finally {
@@ -174,7 +174,7 @@ export function ProgramsPage() {
               value={newProgramName}
               onChange={(event) => setNewProgramName(event.target.value)}
               aria-label="z. B. Block Hypertrophie" placeholder="z. B. Block Hypertrophie"
-              className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
+              className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-base text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
             />
             <div className="grid grid-cols-[1fr_auto] gap-3">
               <input
@@ -182,7 +182,7 @@ export function ProgramsPage() {
                 onChange={(event) => setNewProgramWeekCount(event.target.value)}
                 inputMode="numeric"
                 aria-label="8" placeholder="8"
-                className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
+                className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-base text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
               />
               <button
                 type="button"
@@ -227,7 +227,7 @@ export function ProgramsPage() {
                     <input
                       value={editingProgramName}
                       onChange={(event) => setEditingProgramName(event.target.value)}
-                      className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
+                      className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-base text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
                     />
                     <button
                       type="button"
@@ -252,7 +252,7 @@ export function ProgramsPage() {
                     <Pencil size={18} />
                   </IconButton>
                   <IconButton
-                    label={`Programm ${program.name} loeschen`}
+                    label={`Programm ${program.name} löschen`}
                     variant="danger"
                     onClick={() => setPendingDelete({ kind: 'program', id: program.id, name: program.name })}
                     disabled={isSaving}
@@ -260,7 +260,7 @@ export function ProgramsPage() {
                     <Trash2 size={18} />
                   </IconButton>
                   <Button variant="ghost" size="md" onClick={() => handleAddWeek(program.id)} disabled={isSaving}>
-                    Woche hinzufuegen
+                    Woche hinzufügen
                   </Button>
                 </div>
 
@@ -279,7 +279,7 @@ export function ProgramsPage() {
                               value={editingWeekLabel}
                               onChange={(event) => setEditingWeekLabel(event.target.value)}
                               placeholder={`Woche ${week.weekNumber}`}
-                              className="w-full rounded-panel border border-line bg-surface-sunken px-4 py-4 text-sm text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
+                              className="w-full rounded-panel border border-line bg-surface-sunken px-4 py-4 text-base text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
                             />
                             <button
                               type="button"
@@ -310,7 +310,7 @@ export function ProgramsPage() {
                                 <Pencil size={18} />
                               </IconButton>
                               <IconButton
-                                label={`Woche ${week.weekNumber} loeschen`}
+                                label={`Woche ${week.weekNumber} löschen`}
                                 variant="danger"
                                 onClick={() => setPendingDelete({ kind: 'week', id: week.id, name: `Woche ${week.weekNumber}` })}
                                 disabled={isSaving}
@@ -332,11 +332,11 @@ export function ProgramsPage() {
 
       <ConfirmDialog
         open={pendingDelete !== null}
-        title={pendingDelete?.kind === 'program' ? 'Programm loeschen?' : 'Woche loeschen?'}
+        title={pendingDelete?.kind === 'program' ? 'Programm löschen?' : 'Woche löschen?'}
         description={
           pendingDelete?.kind === 'program'
             ? `"${pendingDelete.name}" wird mit allen Wochen und Progressionsregeln entfernt. Bereits absolvierte Sessions bleiben in der Historie erhalten.`
-            : `"${pendingDelete?.name}" wird entfernt, die folgenden Wochen ruecken auf. Progressionsregeln dieser Woche gehen verloren.`
+            : `"${pendingDelete?.name}" wird entfernt, die folgenden Wochen rücken auf. Progressionsregeln dieser Woche gehen verloren.`
         }
         busy={isSaving}
         onConfirm={handleConfirmDelete}

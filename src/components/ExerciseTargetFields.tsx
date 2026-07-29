@@ -11,9 +11,9 @@ export interface ExerciseTargetFieldsValues {
 }
 
 const STACKED_FIELD_CLASSES =
-  'w-full rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent';
+  'w-full rounded-panel border border-line bg-surface px-4 py-4 text-base text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent';
 const GRID_FIELD_CLASSES =
-  'rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent';
+  'rounded-panel border border-line bg-surface px-4 py-4 text-base text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent';
 
 interface ExerciseTargetFieldsProps {
   trackingMode?: TrackingMode;
@@ -21,7 +21,7 @@ interface ExerciseTargetFieldsProps {
   onChange: (field: keyof ExerciseTargetFieldsValues, value: string) => void;
   /**
    * 'stacked': ein Feld pro Zeile (Template-Formular), Pause steht am Ende.
-   * 'grid': zwei Spalten (Session-Formular), Pause direkt neben Arbeitssaetze.
+   * 'grid': zwei Spalten (Session-Formular), Pause direkt neben Arbeitssätze.
    * Der Aufrufer liefert bei 'grid' selbst den umgebenden `grid grid-cols-2`-Container.
    */
   layout?: 'stacked' | 'grid';
@@ -30,7 +30,7 @@ interface ExerciseTargetFieldsProps {
 }
 
 /**
- * Arbeitssaetze/Ziel-Wdh/Ziel-Sekunden/Ziel-Gewicht/Pause - dieselben fuenf
+ * Arbeitssätze/Ziel-Wdh/Ziel-Sekunden/Ziel-Gewicht/Pause - dieselben fünf
  * Felder mit derselben Tracking-Mode-Sichtbarkeit tauchten identisch im
  * Template- und im Session-Formular auf, nur mit abweichendem Layout.
  */
@@ -49,8 +49,8 @@ export function ExerciseTargetFields({
       value={values.workSetCount}
       onChange={(event) => onChange('workSetCount', event.target.value)}
       inputMode="numeric"
-      aria-label="Arbeitssaetze"
-      placeholder="Arbeitssaetze"
+      aria-label="Arbeitssätze"
+      placeholder="Arbeitssätze"
       className={fieldClassName}
     />
   );

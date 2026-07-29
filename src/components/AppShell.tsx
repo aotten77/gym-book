@@ -21,7 +21,7 @@ const navigationItems = [
   // "Programme" passt bei sechs Spalten auf keinem Handy in eine Zeile.
   { to: '/programs', label: 'Plan', icon: CalendarRange },
   { to: '/templates', label: 'Vorlagen', icon: FolderKanban },
-  { to: '/exercises', label: 'Uebung', icon: Dumbbell },
+  { to: '/exercises', label: 'Übung', icon: Dumbbell },
   { to: '/history', label: 'Verlauf', icon: BarChart3 },
   { to: '/tests', label: 'Tests', icon: FlaskConical },
 ];
@@ -69,8 +69,8 @@ export function AppShell({ title, eyebrow, children }: AppShellProps) {
       <div
         className={cn(
           'mx-auto flex min-h-[100dvh] max-w-md flex-col px-4 pt-[max(1rem,env(safe-area-inset-top))]',
-          // Platz fuer die Bottom-Nav samt Home-Indicator - aber nur dort, wo
-          // die Nav ueberhaupt gerendert wird.
+          // Platz für die Bottom-Nav samt Home-Indicator - aber nur dort, wo
+          // die Nav überhaupt gerendert wird.
           inSession
             ? 'pb-[calc(5rem+env(safe-area-inset-bottom))]'
             : 'pb-[calc(7rem+env(safe-area-inset-bottom))]',
@@ -84,7 +84,7 @@ export function AppShell({ title, eyebrow, children }: AppShellProps) {
             </div>
             <div className="flex flex-col items-end gap-2">
               {/*
-                Die Bottom-Nav traegt sechs Eintraege; Einstellungen werden
+                Die Bottom-Nav trägt sechs Einträge; Einstellungen werden
                 selten gebraucht und sitzen deshalb hier statt dort.
               */}
               <NavLink
@@ -105,7 +105,7 @@ export function AppShell({ title, eyebrow, children }: AppShellProps) {
               </NavLink>
               {/*
                 Der Offline-Zustand steht schon im Banner darunter; hier reicht
-                das Abzeichen fuer den Offline-Fall, sonst ist es Rauschen.
+                das Abzeichen für den Offline-Fall, sonst ist es Rauschen.
               */}
               {!isOnline ? (
                 <div
@@ -126,7 +126,7 @@ export function AppShell({ title, eyebrow, children }: AppShellProps) {
               <div role="status" className="rounded-card border border-warning/20 bg-warning-soft px-4 py-4">
                 <p className="text-sm font-semibold text-warning">Offline aktiv</p>
                 <p className="mt-1 text-sm text-content-secondary">
-                  Bereits geladene Daten und lokale Aenderungen bleiben weiter nutzbar.
+                  Bereits geladene Daten und lokale Änderungen bleiben weiter nutzbar.
                 </p>
               </div>
             ) : null}
@@ -159,7 +159,7 @@ export function AppShell({ title, eyebrow, children }: AppShellProps) {
               <div role="status" className="rounded-card border border-line bg-surface-raised px-4 py-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-sm font-semibold text-content">Update verfuegbar</p>
+                    <p className="text-sm font-semibold text-content">Update verfügbar</p>
                     <p className="mt-1 text-sm text-content-muted">
                       Neue Dateien sind geladen. Ein kurzer Reload zieht die aktuelle Version.
                     </p>
@@ -178,10 +178,10 @@ export function AppShell({ title, eyebrow, children }: AppShellProps) {
                   <div>
                     <p className="text-sm font-semibold text-content">Offline-Basis bereit</p>
                     <p className="mt-1 text-sm text-content-muted">
-                      Die App wurde fuer die lokale Nutzung zwischengespeichert.
+                      Die App wurde für die lokale Nutzung zwischengespeichert.
                     </p>
                   </div>
-                  <IconButton label="Hinweis schliessen" onClick={() => setOfflineReady(false)}>
+                  <IconButton label="Hinweis schließen" onClick={() => setOfflineReady(false)}>
                     <X size={14} />
                   </IconButton>
                 </div>
@@ -212,8 +212,8 @@ export function AppShell({ title, eyebrow, children }: AppShellProps) {
                     }
                   >
                     <Icon size={18} />
-                    {/* Unterhalb von 360px reicht die Zellenbreite nicht fuer
-                        die Beschriftung; das aria-label am Link traegt den
+                    {/* Unterhalb von 360px reicht die Zellenbreite nicht für
+                        die Beschriftung; das aria-label am Link trägt den
                         Namen dann weiter. */}
                     <span className="hidden w-full truncate text-center xs:block">{label}</span>
                   </NavLink>

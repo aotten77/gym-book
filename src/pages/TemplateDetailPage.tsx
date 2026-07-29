@@ -1,21 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import {
-  closestCenter,
-  DndContext,
-  DragOverlay,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  type DragStartEvent,
-  type DragEndEvent,
-} from '@dnd-kit/core';
-import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
-import { GripVertical, Pencil, Plus, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, Pencil, Plus, Trash2 } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
+import { IconButton } from '@/components/ui/Button';
+import { CheckboxField } from '@/components/ui/Field';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { ExerciseMedia } from '@/components/ExerciseMedia';
 import { ExerciseTargetFields } from '@/components/ExerciseTargetFields';
@@ -31,10 +20,12 @@ import {
   updateTemplate,
 } from '@/db/template-actions';
 import type { MediaAsset, WorkoutTemplateExercise } from '@/domain/models';
+import { moveItem } from '@/lib/reorder';
 
 interface TemplateExerciseFormState {
   exerciseId: string;
   workSetCount: string;
+  includeWarmup: boolean;
   targetReps: string;
   targetSeconds: string;
   targetWeight: string;
@@ -45,6 +36,7 @@ interface TemplateExerciseFormState {
 const defaultFormState: TemplateExerciseFormState = {
   exerciseId: '',
   workSetCount: '3',
+  includeWarmup: true,
   targetReps: '',
   targetSeconds: '',
   targetWeight: '',
@@ -73,6 +65,8 @@ function buildFormState(item?: WorkoutTemplateExercise): TemplateExerciseFormSta
   return {
     exerciseId: item.exerciseId,
     workSetCount: String(item.workSetCount),
+    // Altdaten ohne den Schlüssel behalten ihr Warmup.
+    includeWarmup: item.includeWarmup !== false,
     targetReps: numberToInputValue(item.targetReps),
     targetSeconds: numberToInputValue(item.targetSeconds),
     targetWeight: numberToInputValue(item.targetWeight),
@@ -115,58 +109,54 @@ function TemplateExerciseMeta({
   );
 }
 
-interface SortableTemplateExerciseCardProps {
+interface TemplateExerciseCardProps {
   item: WorkoutTemplateExercise;
   exerciseName: string;
   mediaAsset?: MediaAsset;
   isBusy: boolean;
+  isFirst: boolean;
+  isLast: boolean;
+  onMove: (templateExerciseId: string, direction: -1 | 1) => void;
   onEdit: (templateExerciseId: string) => void;
   onDelete: (templateExerciseId: string, exerciseName: string) => void;
 }
 
-function SortableTemplateExerciseCard({
+/*
+ * Sortiert wird über Pfeile, nicht per Drag: die alte Drag-Geste sprang schon
+ * bei acht Pixeln an und veränderte beim Scrollen versehentlich die
+ * Reihenfolge.
+ */
+function TemplateExerciseCard({
   item,
   exerciseName,
   mediaAsset,
   isBusy,
+  isFirst,
+  isLast,
+  onMove,
   onEdit,
   onDelete,
-}: SortableTemplateExerciseCardProps) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: item.id,
-  });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  };
-
+}: TemplateExerciseCardProps) {
   return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className={`rounded-panel border bg-surface p-4 transition ${
-        isDragging
-          ? 'border-accent-border opacity-35 shadow-soft ring-2 ring-lime-300/20'
-          : 'border-line hover:border-accent-border hover:bg-surface-sunken'
-      }`}
-    >
+    <div className="rounded-panel border border-line bg-surface p-4 transition hover:border-accent-border hover:bg-surface-sunken">
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 flex-1 gap-3">
-          <button
-            type="button"
-            aria-label={`${exerciseName} ziehen und umsortieren`}
-            disabled={isBusy}
-            className={`touch-none rounded-control border p-2 transition disabled:cursor-not-allowed disabled:opacity-35 ${
-              isDragging
-                ? 'cursor-grabbing border-accent-border bg-accent-soft text-accent'
-                : 'cursor-grab border-line text-content-secondary hover:bg-surface-raised active:cursor-grabbing'
-            }`}
-            {...attributes}
-            {...listeners}
-          >
-            <GripVertical size={16} />
-          </button>
+          <div className="flex shrink-0 flex-col gap-1">
+            <IconButton
+              label={`${exerciseName} nach oben`}
+              onClick={() => onMove(item.id, -1)}
+              disabled={isBusy || isFirst}
+            >
+              <ChevronUp size={16} />
+            </IconButton>
+            <IconButton
+              label={`${exerciseName} nach unten`}
+              onClick={() => onMove(item.id, 1)}
+              disabled={isBusy || isLast}
+            >
+              <ChevronDown size={16} />
+            </IconButton>
+          </div>
           <TemplateExerciseMeta item={item} exerciseName={exerciseName} mediaAsset={mediaAsset} />
         </div>
         <div className="flex gap-2">
@@ -213,7 +203,6 @@ export function TemplateDetailPage() {
   const [isSavingExercise, setIsSavingExercise] = useState(false);
   const [isUpdatingExerciseMedia, setIsUpdatingExerciseMedia] = useState(false);
   const [isReorderingExercises, setIsReorderingExercises] = useState(false);
-  const [activeTemplateExerciseId, setActiveTemplateExerciseId] = useState<string | null>(null);
   const [templateExerciseOrder, setTemplateExerciseOrder] = useState<string[]>([]);
   const [mediaError, setMediaError] = useState<string | null>(null);
   const template = useLiveQuery(() => db.workoutTemplates.get(templateId), [templateId]);
@@ -250,24 +239,9 @@ export function TemplateDetailPage() {
 
     return orderedItems.length === templateExercises.length ? orderedItems : templateExercises;
   }, [templateExerciseOrder, templateExercises]);
-  const activeTemplateExercise = useMemo(
-    () => orderedTemplateExercises.find((item) => item.id === activeTemplateExerciseId),
-    [activeTemplateExerciseId, orderedTemplateExercises],
-  );
   const selectedExistingExercise = sortedExercises.find((item) => item.id === form.exerciseId);
   const selectedExistingExerciseMedia =
     selectedExistingExercise?.mediaAssetId ? mediaAssetById[selectedExistingExercise.mediaAssetId] : undefined;
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 8,
-      },
-    }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    }),
-  );
-
   useEffect(() => {
     setTemplateName(template?.name ?? '');
     setTemplateNotes(template?.notes ?? '');
@@ -362,6 +336,7 @@ export function TemplateDetailPage() {
         templateId: template.id,
         orderIndex: currentItem?.orderIndex ?? orderedTemplateExercises.length + 1,
         workSetCount: Number(form.workSetCount) || 1,
+        includeWarmup: form.includeWarmup,
         targetReps: parseOptionalNumber(form.targetReps),
         targetSeconds: parseOptionalNumber(form.targetSeconds),
         targetWeight: parseOptionalNumber(form.targetWeight),
@@ -426,37 +401,31 @@ export function TemplateDetailPage() {
     }
   }
 
-  async function handleTemplateExerciseDragEnd(event: DragEndEvent) {
-    setActiveTemplateExerciseId(null);
-
-    if (!template || !event.over || event.active.id === event.over.id) {
+  async function handleMoveTemplateExercise(templateExerciseId: string, direction: -1 | 1) {
+    if (!template) {
       return;
     }
 
-    const currentIndex = templateExerciseOrder.indexOf(String(event.active.id));
-    const targetIndex = templateExerciseOrder.indexOf(String(event.over.id));
+    const currentIndex = templateExerciseOrder.indexOf(templateExerciseId);
+    const nextOrder = moveItem(templateExerciseOrder, currentIndex, currentIndex + direction);
 
-    if (currentIndex === -1 || targetIndex === -1) {
+    if (nextOrder === templateExerciseOrder) {
       return;
     }
 
-    const nextOrder = arrayMove(templateExerciseOrder, currentIndex, targetIndex);
+    const previousOrder = templateExerciseOrder;
     setTemplateExerciseOrder(nextOrder);
     setIsReorderingExercises(true);
 
     try {
       await reorderTemplateExercises(template.id, nextOrder);
+    } catch {
+      // Optimistische Reihenfolge zurücknehmen, sonst zeigt die Liste eine
+      // Sortierung, die nie gespeichert wurde.
+      setTemplateExerciseOrder(previousOrder);
     } finally {
       setIsReorderingExercises(false);
     }
-  }
-
-  function handleTemplateExerciseDragStart(event: DragStartEvent) {
-    setActiveTemplateExerciseId(String(event.active.id));
-  }
-
-  function handleTemplateExerciseDragCancel() {
-    setActiveTemplateExerciseId(null);
   }
 
   async function handleDeleteTemplateExercise(templateExerciseId: string) {
@@ -479,7 +448,7 @@ export function TemplateDetailPage() {
               onClick={() => setPendingDelete({ kind: 'template' })}
               className="min-h-touch inline-flex items-center justify-center rounded-control border border-rose-400/20 px-3 py-2 text-sm text-rose-200 transition hover:bg-rose-400/10"
             >
-              Loeschen
+              Löschen
             </button>
           }
         >
@@ -488,14 +457,14 @@ export function TemplateDetailPage() {
               value={templateName}
               onChange={(event) => setTemplateName(event.target.value)}
               aria-label="Vorlagenname" placeholder="Vorlagenname"
-              className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
+              className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-base text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
             />
             <textarea
               value={templateNotes}
               onChange={(event) => setTemplateNotes(event.target.value)}
               aria-label="Notizen zur Einheit" placeholder="Notizen zur Einheit"
               rows={3}
-              className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
+              className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-base text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
             />
             <button
               type="button"
@@ -509,8 +478,8 @@ export function TemplateDetailPage() {
         </SectionCard>
 
         <SectionCard
-          title="Template-Uebungen"
-          subtitle="Per Drag auf Touch und Desktop umsortieren. Ueber den Handle geht das auch per Tastatur."
+          title="Template-Übungen"
+          subtitle="Reihenfolge über die Pfeile - so verrutscht beim Scrollen nichts."
           action={
             <button
               type="button"
@@ -518,70 +487,35 @@ export function TemplateDetailPage() {
               className="min-h-touch inline-flex items-center justify-center flex h-10 items-center gap-2 rounded-control bg-accent-soft px-3 py-2 text-sm text-accent transition hover:bg-accent/20"
             >
               <Plus size={16} />
-              Hinzufuegen
+              Hinzufügen
             </button>
           }
         >
           <div className="space-y-3">
             {orderedTemplateExercises.length > 0 ? (
-              <DndContext
-                sensors={sensors}
-                collisionDetection={closestCenter}
-                onDragStart={handleTemplateExerciseDragStart}
-                onDragCancel={handleTemplateExerciseDragCancel}
-                onDragEnd={handleTemplateExerciseDragEnd}
-              >
-                <SortableContext items={templateExerciseOrder} strategy={verticalListSortingStrategy}>
-                  <div
-                    className={`space-y-3 rounded-card transition ${
-                      activeTemplateExerciseId ? 'bg-accent/[0.03] p-1 ring-1 ring-lime-300/15' : ''
-                    }`}
-                  >
-                    {orderedTemplateExercises.map((item) => (
-                      <SortableTemplateExerciseCard
-                        key={item.id}
-                        item={item}
-                        exerciseName={nameById[item.exerciseId] ?? 'Unbekannte Uebung'}
-                        mediaAsset={
-                          exerciseById[item.exerciseId]?.mediaAssetId
-                            ? mediaAssetById[exerciseById[item.exerciseId].mediaAssetId]
-                            : undefined
-                        }
-                        isBusy={isReorderingExercises}
-                        onEdit={handleEditTemplateExercise}
-                        onDelete={(id, name) => setPendingDelete({ kind: 'exercise', id, name })}
-                      />
-                    ))}
-                  </div>
-                </SortableContext>
-                <DragOverlay>
-                  {activeTemplateExercise ? (
-                    <div className="w-[min(100vw-40px,32rem)] rounded-panel border border-lime-300/35 bg-zinc-950/95 p-4 shadow-soft ring-2 ring-lime-300/20 backdrop-blur">
-                      <div className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-accent/90">
-                        <GripVertical size={14} />
-                        <span>Loslassen zum Ablegen</span>
-                      </div>
-                      <div className="flex min-w-0 gap-3">
-                        <div className="rounded-control border border-accent-border bg-accent-soft p-2 text-accent">
-                          <GripVertical size={16} />
-                        </div>
-                        <TemplateExerciseMeta
-                          item={activeTemplateExercise}
-                          exerciseName={nameById[activeTemplateExercise.exerciseId] ?? 'Unbekannte Uebung'}
-                          mediaAsset={
-                            exerciseById[activeTemplateExercise.exerciseId]?.mediaAssetId
-                              ? mediaAssetById[exerciseById[activeTemplateExercise.exerciseId].mediaAssetId]
-                              : undefined
-                          }
-                        />
-                      </div>
-                    </div>
-                  ) : null}
-                </DragOverlay>
-              </DndContext>
+              <div className="space-y-3">
+                {orderedTemplateExercises.map((item, index) => (
+                  <TemplateExerciseCard
+                    key={item.id}
+                    item={item}
+                    exerciseName={nameById[item.exerciseId] ?? 'Unbekannte Übung'}
+                    mediaAsset={
+                      exerciseById[item.exerciseId]?.mediaAssetId
+                        ? mediaAssetById[exerciseById[item.exerciseId].mediaAssetId]
+                        : undefined
+                    }
+                    isBusy={isReorderingExercises}
+                    isFirst={index === 0}
+                    isLast={index === orderedTemplateExercises.length - 1}
+                    onMove={handleMoveTemplateExercise}
+                    onEdit={handleEditTemplateExercise}
+                    onDelete={(id, name) => setPendingDelete({ kind: 'exercise', id, name })}
+                  />
+                ))}
+              </div>
             ) : (
               <div className="rounded-panel border border-dashed border-line bg-surface px-4 py-5 text-sm text-content-muted">
-                Noch keine Template-Uebungen vorhanden.
+                Noch keine Template-Übungen vorhanden.
               </div>
             )}
           </div>
@@ -599,8 +533,8 @@ export function TemplateDetailPage() {
 
         <div ref={editExerciseSectionRef}>
           <SectionCard
-            title={editingTemplateExerciseId ? 'Template-Uebung bearbeiten' : 'Template-Uebung hinzufuegen'}
-            subtitle="Uebung aus der Bibliothek auswaehlen."
+            title={editingTemplateExerciseId ? 'Template-Übung bearbeiten' : 'Template-Übung hinzufügen'}
+            subtitle="Übung aus der Bibliothek auswählen."
             action={
               <div className="flex h-10 w-10 items-center justify-center rounded-control bg-accent-soft text-accent">
                 <Plus size={18} />
@@ -610,7 +544,7 @@ export function TemplateDetailPage() {
           <div className="space-y-4">
             {sortedExercises.length === 0 ? (
               <div className="rounded-panel border border-dashed border-line bg-surface px-4 py-5 text-sm text-content-muted">
-                Noch keine Uebung in der Bibliothek.{' '}
+                Noch keine Übung in der Bibliothek.{' '}
                 <Link to="/exercises" className="text-accent underline underline-offset-2">
                   Jetzt anlegen
                 </Link>
@@ -621,7 +555,7 @@ export function TemplateDetailPage() {
                 <select
                   value={form.exerciseId}
                   onChange={(event) => setForm((current) => ({ ...current, exerciseId: event.target.value }))}
-                  className="select-control min-h-touch w-full rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
+                  className="select-control min-h-touch w-full rounded-panel border border-line bg-surface px-4 py-4 text-base text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
                 >
                   {sortedExercises.map((exercise) => (
                     <option key={exercise.id} value={exercise.id}>
@@ -680,8 +614,17 @@ export function TemplateDetailPage() {
               trackingMode={selectedExistingExercise?.trackingMode}
               values={form}
               onChange={(field, value) => setForm((current) => ({ ...current, [field]: value }))}
-              workSetCountHint="Die Reihenfolge aenderst du oben direkt per Drag am Handle."
+              workSetCountHint="Die Reihenfolge änderst du oben mit den Pfeilen."
               weightLabel="Ziel-Gewicht in kg"
+            />
+
+            <CheckboxField
+              label="Warmup-Satz anlegen"
+              hint="Aus bleibt der Warmup-Satz beim Start der Session komplett weg."
+              checked={form.includeWarmup}
+              onChange={(event) =>
+                setForm((current) => ({ ...current, includeWarmup: event.target.checked }))
+              }
             />
 
             <textarea
@@ -689,7 +632,7 @@ export function TemplateDetailPage() {
               onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))}
               aria-label="Template-spezifische Notiz" placeholder="Template-spezifische Notiz"
               rows={3}
-              className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
+              className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-base text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
             />
 
             <div className="grid grid-cols-2 gap-3">
@@ -699,14 +642,14 @@ export function TemplateDetailPage() {
                 disabled={isSavingExercise || isUpdatingExerciseMedia}
                 className="rounded-panel bg-accent px-4 py-4 text-sm font-semibold text-accent-contrast transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {editingTemplateExerciseId ? 'Aenderung speichern' : 'Uebung hinzufuegen'}
+                {editingTemplateExerciseId ? 'Änderung speichern' : 'Übung hinzufügen'}
               </button>
               <button
                 type="button"
                 onClick={() => setEditingTemplateExerciseId(null)}
                 className="rounded-panel bg-surface-raised px-4 py-4 text-sm font-medium text-content-secondary transition hover:bg-surface-hover"
               >
-                Zuruecksetzen
+                Zurücksetzen
               </button>
             </div>
 
@@ -722,11 +665,11 @@ export function TemplateDetailPage() {
 
       <ConfirmDialog
         open={pendingDelete !== null}
-        title={pendingDelete?.kind === 'template' ? 'Vorlage loeschen?' : 'Uebung entfernen?'}
+        title={pendingDelete?.kind === 'template' ? 'Vorlage löschen?' : 'Übung entfernen?'}
         description={
           pendingDelete?.kind === 'template'
             ? `"${template?.name ?? ''}" wird entfernt. Bereits absolvierte Sessions bleiben in der Historie erhalten.`
-            : `"${pendingDelete?.kind === 'exercise' ? pendingDelete.name : ''}" wird aus dieser Vorlage entfernt. Die Uebung selbst und ihre Historie bleiben bestehen.`
+            : `"${pendingDelete?.kind === 'exercise' ? pendingDelete.name : ''}" wird aus dieser Vorlage entfernt. Die Übung selbst und ihre Historie bleiben bestehen.`
         }
         confirmLabel="Entfernen"
         onConfirm={async () => {

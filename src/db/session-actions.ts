@@ -12,6 +12,7 @@ export interface SetLogValuesInput {
 interface AddSessionExerciseInput {
   sessionId: string;
   workSetCount: number;
+  includeWarmup?: boolean;
   targetReps?: number;
   targetSeconds?: number;
   targetWeight?: number;
@@ -38,17 +39,26 @@ function normalizeOptionalNumber(value?: number) {
   return value >= 0 ? value : undefined;
 }
 
-function createSetLogs(sessionExerciseId: string, workSetCount: number, unilateral: boolean) {
-  const setLogs: WorkoutSetLog[] = [
-    {
-      id: createId(),
-      sessionExerciseId,
-      setKind: 'warmup',
-      side: 'both',
-      setNumber: 0,
-      completed: false,
-    },
-  ];
+function createSetLogs(
+  sessionExerciseId: string,
+  workSetCount: number,
+  unilateral: boolean,
+  includeWarmup = true,
+) {
+  // Spiegelt die Regel aus `materializeSession`: höchstens ein Warmup-Satz,
+  // und nur wenn er nicht ausdrücklich abgewählt wurde.
+  const setLogs: WorkoutSetLog[] = includeWarmup
+    ? [
+        {
+          id: createId(),
+          sessionExerciseId,
+          setKind: 'warmup',
+          side: 'both',
+          setNumber: 0,
+          completed: false,
+        },
+      ]
+    : [];
 
   for (let setNumber = 1; setNumber <= workSetCount; setNumber += 1) {
     const sides = unilateral ? (['left', 'right'] as const) : (['both'] as const);
@@ -150,7 +160,7 @@ export async function startSessionFromTemplate(templateId: string) {
     db.workoutSessionExercises,
     db.workoutSetLogs,
     async () => {
-      // Der Check gehoert in dieselbe Transaktion wie das Insert, sonst
+      // Der Check gehört in dieselbe Transaktion wie das Insert, sonst
       // erzeugen zwei schnelle Taps zwei parallele aktive Sessions.
       const existingActiveSession = await findActiveSession();
 
@@ -178,7 +188,7 @@ export async function toggleSetCompletion(setLogId: string) {
         return;
       }
 
-      // Lesen und Schreiben in einem Zug: bei einem Doppeltipp wuerde ein
+      // Lesen und Schreiben in einem Zug: bei einem Doppeltipp würde ein
       // getrenntes get/update beide Male denselben Ausgangswert sehen.
       await db.workoutSetLogs.where('id').equals(setLogId).modify((log) => {
         const nextCompleted = !log.completed;
@@ -198,9 +208,9 @@ export async function toggleSetCompletion(setLogId: string) {
  * Schreibt Satzwerte.
  *
  * Nur Felder, die im Input als eigene Property vorhanden sind, werden
- * angefasst. Ein fehlendes Feld bleibt unveraendert; ein Feld mit `undefined`
- * wird bewusst geleert. Ohne diese Unterscheidung wuerde eine Fehleingabe
- * ueber Dexies `undefined = Property loeschen` einen gespeicherten Wert
+ * angefasst. Ein fehlendes Feld bleibt unverändert; ein Feld mit `undefined`
+ * wird bewusst geleert. Ohne diese Unterscheidung würde eine Fehleingabe
+ * über Dexies `undefined = Property löschen` einen gespeicherten Wert
  * vernichten.
  */
 export async function updateSetLogValues(setLogId: string, values: SetLogValuesInput) {
@@ -235,6 +245,33 @@ export async function updateSetLogValues(setLogId: string, values: SetLogValuesI
   await db.workoutSetLogs.update(setLogId, changes);
 }
 
+/**
+ * Entfernt eine einzelne Satzzeile aus einer laufenden Session.
+ *
+ * Bewusst genau eine Zeile: bei unilateralen Übungen sind links und rechts
+ * getrennte Datensätze, und wer nur eine Seite streichen will, soll die
+ * andere behalten dürfen. `workSetCount` auf der Session-Übung bleibt
+ * unangetastet - der Wert beschreibt die Materialisierung, nicht den
+ * laufenden Stand.
+ */
+export async function deleteSetLog(setLogId: string) {
+  await db.transaction(
+    'rw',
+    db.workoutSessions,
+    db.workoutSessionExercises,
+    db.workoutSetLogs,
+    async () => {
+      // Derselbe Guard wie beim Werteschreiben: abgeschlossene Sessions sind
+      // unveränderlich.
+      if (!(await isSetLogEditable(setLogId))) {
+        return;
+      }
+
+      await db.workoutSetLogs.delete(setLogId);
+    },
+  );
+}
+
 export async function addSessionExercise(input: AddSessionExerciseInput) {
   const session = await db.workoutSessions.get(input.sessionId);
 
@@ -259,11 +296,16 @@ export async function addSessionExercise(input: AddSessionExerciseInput) {
     throw new Error('Exercise not found');
   }
 
-  const exerciseName = existingExercise?.name ?? input.exerciseName?.trim() ?? 'Neue Uebung';
+  const exerciseName = existingExercise?.name ?? input.exerciseName?.trim() ?? 'Neue Übung';
   const trackingMode = existingExercise?.trackingMode ?? input.trackingMode;
   const unilateral = existingExercise?.unilateral ?? input.unilateral;
   const sessionExerciseId = createId();
-  const setLogs = createSetLogs(sessionExerciseId, workSetCount, unilateral);
+  const setLogs = createSetLogs(
+    sessionExerciseId,
+    workSetCount,
+    unilateral,
+    input.includeWarmup !== false,
+  );
 
   await db.transaction(
     'rw',
@@ -378,7 +420,7 @@ export async function extendRestTimer(sessionId: string, seconds: number) {
       return;
     }
 
-    // Von der Restlaufzeit aus verlaengern, nicht vom urspruenglichen Ende:
+    // Von der Restlaufzeit aus verlängern, nicht vom ursprünglichen Ende:
     // ein abgelaufener Timer startet damit sauber neu.
     const base = Math.max(session.restTimerEndsAt ?? 0, Date.now());
 
@@ -400,8 +442,8 @@ async function closeSession(sessionId: string, status: 'completed' | 'aborted') 
       throw new Error('Session nicht gefunden');
     }
 
-    // Nur eine laufende Session laesst sich abschliessen. Ohne diesen Guard
-    // ueberschreibt ein zweiter Tipp den bereits gesetzten Abschlusszeitpunkt.
+    // Nur eine laufende Session lässt sich abschließen. Ohne diesen Guard
+    // überschreibt ein zweiter Tipp den bereits gesetzten Abschlusszeitpunkt.
     if (session.status !== 'active') {
       return;
     }
@@ -420,7 +462,7 @@ export async function completeSession(sessionId: string) {
 
 /**
  * Bricht eine laufende Session ab. Ohne diesen Weg bleibt eine versehentlich
- * gestartete Session fuer immer aktiv und blockiert jeden neuen Trainingsstart.
+ * gestartete Session für immer aktiv und blockiert jeden neuen Trainingsstart.
  */
 export async function abortSession(sessionId: string) {
   await closeSession(sessionId, 'aborted');

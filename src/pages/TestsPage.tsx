@@ -88,7 +88,7 @@ export function TestsPage() {
       setPendingDelete(null);
       setError(null);
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : 'Test konnte nicht geloescht werden.');
+      setError(nextError instanceof Error ? nextError.message : 'Test konnte nicht gelöscht werden.');
       setPendingDelete(null);
     } finally {
       setIsSaving(false);
@@ -102,7 +102,7 @@ export function TestsPage() {
 
         <SectionCard
           title="Neuer Test"
-          subtitle="Links und rechts erfassen. Die Asymmetrie wird aus der groesseren Seite berechnet."
+          subtitle="Links und rechts erfassen. Die Asymmetrie wird aus der größeren Seite berechnet."
           action={
             !showForm ? (
               <Button
@@ -119,12 +119,12 @@ export function TestsPage() {
         >
           {(exercises?.length ?? 0) === 0 ? (
             <p className="text-sm text-content-muted">
-              Lege zuerst eine Uebung in der Bibliothek an.
+              Lege zuerst eine Übung in der Bibliothek an.
             </p>
           ) : showForm ? (
             <div className="space-y-3">
               <SelectField
-                label="Uebung"
+                label="Übung"
                 value={form.exerciseId}
                 onChange={(event) => setForm((current) => ({ ...current, exerciseId: event.target.value }))}
               >
@@ -199,7 +199,7 @@ export function TestsPage() {
               subtitle={`Erfasst ${formatDateTime(test.recordedAt)}`}
               action={
                 <IconButton
-                  label={`Test vom ${formatDateTime(test.recordedAt)} loeschen`}
+                  label={`Test vom ${formatDateTime(test.recordedAt)} löschen`}
                   variant="danger"
                   onClick={() => setPendingDelete({ id: test.id, name: test.exerciseNameSnapshot })}
                 >
@@ -227,15 +227,15 @@ export function TestsPage() {
         ) : (
           <Empty
             title="Noch keine Tests"
-            description="Erfasse einen Links-Rechts-Vergleich, um Asymmetrien ueber die Zeit im Blick zu behalten."
+            description="Erfasse einen Links-Rechts-Vergleich, um Asymmetrien über die Zeit im Blick zu behalten."
           />
         )}
       </div>
 
       <ConfirmDialog
         open={pendingDelete !== null}
-        title="Test loeschen?"
-        description={`Der erfasste Test fuer "${pendingDelete?.name}" wird entfernt. Das laesst sich nicht rueckgaengig machen.`}
+        title="Test löschen?"
+        description={`Der erfasste Test für "${pendingDelete?.name}" wird entfernt. Das lässt sich nicht rückgängig machen.`}
         busy={isSaving}
         onConfirm={handleConfirmDelete}
         onCancel={() => setPendingDelete(null)}

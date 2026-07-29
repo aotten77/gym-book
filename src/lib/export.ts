@@ -49,6 +49,13 @@ const workoutTemplateExerciseSchema = z.object({
   exerciseId: z.string().min(1),
   orderIndex: z.number().int().positive(),
   workSetCount: z.number().int().positive(),
+  /*
+   * Rein additives Feld: alte Backups ohne den Schlüssel bleiben gültig, und
+   * neue Dateien laufen in älteren App-Ständen weiter durch. Deshalb bleibt
+   * SNAPSHOT_SCHEMA_VERSION hier bewusst unverändert - ein Bump würde über
+   * das z.literal jedes bestehende Nutzer-Backup abweisen.
+   */
+  includeWarmup: z.boolean().optional(),
   targetReps: z.number().nonnegative().optional(),
   targetSeconds: z.number().nonnegative().optional(),
   targetWeight: z.number().nonnegative().optional(),
@@ -228,12 +235,12 @@ async function createDatabaseSnapshot(): Promise<DatabaseSnapshot> {
 }
 
 /**
- * Prueft, ob alle Verweise innerhalb des Snapshots aufloesbar sind.
+ * Prüft, ob alle Verweise innerhalb des Snapshots auflösbar sind.
  *
  * Der Vertrag verlangt Validierung auf Schema-Version, referentielle
- * Integritaet und unterstuetzte Medientypen - umgesetzt war nur die Version.
- * Ein Template mit fehlender Uebung laesst `materializeSession` werfen: der
- * Nutzer merkt das erst Wochen spaeter im Gym, wenn die Kachel nicht reagiert.
+ * Integrität und unterstützte Medientypen - umgesetzt war nur die Version.
+ * Ein Template mit fehlender Übung lässt `materializeSession` werfen: der
+ * Nutzer merkt das erst Wochen später im Gym, wenn die Kachel nicht reagiert.
  */
 function assertReferentialIntegrity(snapshot: DatabaseSnapshot) {
   const ids = {
@@ -259,25 +266,25 @@ function assertReferentialIntegrity(snapshot: DatabaseSnapshot) {
   };
 
   for (const item of snapshot.workoutTemplateExercises) {
-    check(ids.templates.has(item.templateId), `Vorlagen-Uebung ${item.id} verweist auf eine fehlende Vorlage`);
-    check(ids.exercises.has(item.exerciseId), `Vorlagen-Uebung ${item.id} verweist auf eine fehlende Uebung`);
+    check(ids.templates.has(item.templateId), `Vorlagen-Übung ${item.id} verweist auf eine fehlende Vorlage`);
+    check(ids.exercises.has(item.exerciseId), `Vorlagen-Übung ${item.id} verweist auf eine fehlende Übung`);
   }
 
   for (const item of snapshot.workoutSessionExercises) {
-    check(ids.sessions.has(item.sessionId), `Session-Uebung ${item.id} verweist auf eine fehlende Session`);
+    check(ids.sessions.has(item.sessionId), `Session-Übung ${item.id} verweist auf eine fehlende Session`);
   }
 
   for (const item of snapshot.workoutSetLogs) {
     check(
       ids.sessionExercises.has(item.sessionExerciseId),
-      `Satz ${item.id} verweist auf eine fehlende Session-Uebung`,
+      `Satz ${item.id} verweist auf eine fehlende Session-Übung`,
     );
   }
 
   for (const item of snapshot.progressionRules) {
     check(
       ids.templateExercises.has(item.templateExerciseId),
-      `Progressionsregel ${item.id} verweist auf eine fehlende Vorlagen-Uebung`,
+      `Progressionsregel ${item.id} verweist auf eine fehlende Vorlagen-Übung`,
     );
     check(
       ids.programWeeks.has(item.programWeekId),
@@ -292,7 +299,7 @@ function assertReferentialIntegrity(snapshot: DatabaseSnapshot) {
   for (const item of snapshot.exercises) {
     check(
       !item.mediaAssetId || ids.mediaAssets.has(item.mediaAssetId),
-      `Uebung ${item.name} verweist auf ein fehlendes Bild`,
+      `Übung ${item.name} verweist auf ein fehlendes Bild`,
     );
   }
 
@@ -304,7 +311,7 @@ function assertReferentialIntegrity(snapshot: DatabaseSnapshot) {
   }
 
   if (problems.length > 0) {
-    throw new Error(`Import-Datei ist in sich nicht schluessig: ${problems.join('; ')}.`);
+    throw new Error(`Import-Datei ist in sich nicht schlüssig: ${problems.join('; ')}.`);
   }
 }
 
@@ -313,7 +320,7 @@ function assertSupportedMedia(snapshot: DatabaseSnapshot) {
 
   if (unsupported) {
     throw new Error(
-      `Medientyp "${unsupported.mimeType}" wird nicht unterstuetzt (${unsupported.fileName}). Erlaubt sind JPG, PNG, GIF und WebP.`,
+      `Medientyp "${unsupported.mimeType}" wird nicht unterstützt (${unsupported.fileName}). Erlaubt sind JPG, PNG, GIF und WebP.`,
     );
   }
 }
@@ -327,15 +334,15 @@ export function parseDatabaseSnapshot(json: string): DatabaseSnapshot {
     throw new Error('Die JSON-Datei konnte nicht gelesen werden.');
   }
 
-  // Version zuerst pruefen, damit die Meldung erklaert, was los ist, statt
+  // Version zuerst prüfen, damit die Meldung erklärt, was los ist, statt
   // einen generischen Schemafehler zu zeigen.
   const version = (parsed as { schemaVersion?: unknown } | null)?.schemaVersion;
 
   if (typeof version === 'number' && version !== SNAPSHOT_SCHEMA_VERSION) {
     throw new Error(
       version > SNAPSHOT_SCHEMA_VERSION
-        ? `Diese Datei stammt aus einer neueren App-Version (Format ${version}, unterstuetzt wird ${SNAPSHOT_SCHEMA_VERSION}).`
-        : `Diese Datei nutzt ein aelteres Format (${version}) und kann nicht importiert werden.`,
+        ? `Diese Datei stammt aus einer neueren App-Version (Format ${version}, unterstützt wird ${SNAPSHOT_SCHEMA_VERSION}).`
+        : `Diese Datei nutzt ein älteres Format (${version}) und kann nicht importiert werden.`,
     );
   }
 
@@ -344,7 +351,7 @@ export function parseDatabaseSnapshot(json: string): DatabaseSnapshot {
   if (!result.success) {
     const issue = result.error.issues[0];
     const location = issue.path.length > 0 ? issue.path.join('.') : 'snapshot';
-    throw new Error(`Import-Datei ungueltig bei ${location}: ${issue.message}`);
+    throw new Error(`Import-Datei ungültig bei ${location}: ${issue.message}`);
   }
 
   const snapshot = result.data as DatabaseSnapshot;
@@ -473,7 +480,7 @@ export async function exportDatabaseSnapshot() {
   document.body.append(anchor);
   anchor.click();
   anchor.remove();
-  // Erst im naechsten Tick freigeben - ein synchrones revoke bricht den
-  // Download je nach Browser und Dateigroesse ab.
+  // Erst im nächsten Tick freigeben - ein synchrones revoke bricht den
+  // Download je nach Browser und Dateigröße ab.
   window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }

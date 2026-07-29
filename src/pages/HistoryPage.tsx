@@ -95,13 +95,13 @@ export function HistoryPage() {
   }, [completedSessionExercises, completedSessions, completedSetLogs]);
 
   return (
-    <AppShell title="Historie" eyebrow="Rueckblick">
+    <AppShell title="Historie" eyebrow="Rückblick">
       <div className="space-y-4">
         {Object.keys(historyByExercise).length > 0 ? (
           Object.entries(historyByExercise).map(([exerciseId, entries]) => (
             <SectionCard
               key={exerciseId}
-              title={entries[0]?.exerciseName ?? 'Uebung'}
+              title={entries[0]?.exerciseName ?? 'Übung'}
               subtitle={`${entries.length} abgeschlossene Einheiten`}
             >
               <div className="space-y-3">
@@ -126,7 +126,7 @@ export function HistoryPage() {
                           </span>
                         ))
                       ) : (
-                        <span className="text-sm text-content-muted">Noch keine abgeschlossenen Arbeitssaetze.</span>
+                        <span className="text-sm text-content-muted">Noch keine abgeschlossenen Arbeitssätze.</span>
                       )}
                     </div>
                   </Link>
@@ -137,7 +137,7 @@ export function HistoryPage() {
         ) : (
           <Empty
             title="Noch keine Historie"
-            description="Schliesse deine erste Session ab, damit hier stabile Verlaufsdaten pro Uebung auftauchen."
+            description="Schließe deine erste Session ab, damit hier stabile Verlaufsdaten pro Übung auftauchen."
           />
         )}
 
@@ -146,7 +146,7 @@ export function HistoryPage() {
           subtitle="Historie liest bereits aus den persistierten Session-Snapshots."
         >
           <p className="text-sm text-content-muted">
-            Als naechstes koennen wir hier sparklines oder echte Verlaufsdiagramme pro Uebung andocken, ohne die
+            Als nächstes können wir hier sparklines oder echte Verlaufsdiagramme pro Übung andocken, ohne die
             Datenbasis nochmal umzuwerfen.
           </p>
         </SectionCard>

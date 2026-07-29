@@ -52,6 +52,46 @@ describe('materializeSession', () => {
     ).toHaveLength(2);
   });
 
+  it('skips the warmup set when the template exercise switched it off', () => {
+    const template: WorkoutTemplate = {
+      id: 'template-1',
+      name: 'Einheit A',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+
+    const exercises: Record<string, Exercise> = {
+      squat: {
+        id: 'squat',
+        name: 'Front Squat',
+        trackingMode: 'reps_weight',
+        unilateral: false,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      },
+    };
+
+    const bundle = materializeSession({
+      template,
+      templateExercises: [
+        {
+          id: 'template-exercise-1',
+          templateId: template.id,
+          exerciseId: 'squat',
+          orderIndex: 1,
+          workSetCount: 3,
+          includeWarmup: false,
+        },
+      ],
+      exercisesById: exercises,
+      resolvedProgramWeek: 1,
+      startedAt: '2026-01-08T09:00:00.000Z',
+    });
+
+    expect(bundle.setLogs.filter((item) => item.setKind === 'warmup')).toHaveLength(0);
+    expect(bundle.setLogs).toHaveLength(3);
+  });
+
   it('overrides template targets from progression rules for the resolved week snapshot', () => {
     const template: WorkoutTemplate = {
       id: 'template-1',

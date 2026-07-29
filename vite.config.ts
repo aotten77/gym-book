@@ -20,8 +20,8 @@ export default defineConfig({
       /*
        * 'prompt' statt 'autoUpdate': autoUpdate erzeugt einen Service Worker
        * mit skipWaiting, wodurch `onNeedRefresh` nie feuert - das vorhandene
-       * "Update verfuegbar"-Banner war damit unerreichbarer toter Code, und
-       * der neue Worker uebernahm still, potenziell mitten in einer Session.
+       * "Update verfügbar"-Banner war damit unerreichbarer toter Code, und
+       * der neue Worker übernahm still, potenziell mitten in einer Session.
        */
       registerType: 'prompt',
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
@@ -52,7 +52,7 @@ export default defineConfig({
             purpose: 'any',
           },
           {
-            // Ohne maskable setzt Android das Icon in einen weissen Kreis.
+            // Ohne maskable setzt Android das Icon in einen weißen Kreis.
             src: '/gym-book/pwa-maskable-512.png',
             sizes: '512x512',
             type: 'image/png',

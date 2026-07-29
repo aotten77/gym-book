@@ -2,14 +2,18 @@ import { useId, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttribu
 import { cn } from '@/lib/utils';
 
 /*
- * Bis hierher trugen rund 30 Felder ihre Beschriftung ausschliesslich im
+ * Bis hierher trugen rund 30 Felder ihre Beschriftung ausschließlich im
  * Placeholder - die verschwindet, sobald der Nutzer tippt, und Screenreader
- * lesen sie nicht zuverlaessig als Label. Diese Primitives erzwingen ein
+ * lesen sie nicht zuverlässig als Label. Diese Primitives erzwingen ein
  * echtes `<label for>` und einen sichtbaren Fokusring.
  */
 
+/*
+ * `text-base` statt `text-sm` ist hier kein Geschmack: iOS Safari zoomt beim
+ * Fokus in jedes Feld hinein, dessen Schrift kleiner als 16px ist.
+ */
 const CONTROL_CLASSES =
-  'w-full rounded-panel border border-line bg-surface-sunken px-4 py-3.5 text-sm text-content ' +
+  'w-full rounded-panel border border-line bg-surface-sunken px-4 py-3.5 text-base text-content ' +
   'outline-none transition placeholder:text-content-muted ' +
   'focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent ' +
   'disabled:cursor-not-allowed disabled:opacity-60';
@@ -96,6 +100,51 @@ export function TextArea({
         {...rest}
       />
     </FieldShell>
+  );
+}
+
+interface CheckboxFieldProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'id' | 'type'> {
+  label: string;
+  hint?: string;
+  containerClassName?: string;
+}
+
+/**
+ * Kontrollkästchen mit derselben Trefferfläche wie die übrigen Felder.
+ *
+ * Die gesamte Zeile ist das Label, damit im Training nicht das 16px-Kästchen
+ * getroffen werden muss.
+ */
+export function CheckboxField({
+  label,
+  hint,
+  className,
+  containerClassName,
+  ...rest
+}: CheckboxFieldProps) {
+  const id = useId();
+
+  return (
+    <div className={cn('w-full', containerClassName)}>
+      <label
+        htmlFor={id}
+        className={cn(
+          'flex min-h-touch w-full cursor-pointer items-center gap-3 rounded-panel border border-line',
+          'bg-surface-sunken px-4 py-3 transition hover:bg-surface-raised',
+          'focus-within:border-accent-border focus-within:ring-2 focus-within:ring-accent',
+          className,
+        )}
+      >
+        <input
+          id={id}
+          type="checkbox"
+          className="h-5 w-5 shrink-0 accent-lime-300"
+          {...rest}
+        />
+        <span className="text-base text-content">{label}</span>
+      </label>
+      {hint ? <p className="mt-1.5 text-xs text-content-muted">{hint}</p> : null}
+    </div>
   );
 }
 

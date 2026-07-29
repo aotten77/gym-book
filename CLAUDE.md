@@ -40,7 +40,7 @@ Layering is strict and worth preserving:
 
 `WorkoutTemplate` + `WorkoutTemplateExercise` describe the *plan*. Starting a workout **materializes** an independent execution copy — `WorkoutSession` + `WorkoutSessionExercise` + `WorkoutSetLog` — via `materializeSession`. Editing a running session (adding, skipping, reordering exercises, changing targets) must never mutate the template. Session rows carry `*Snapshot` fields (`templateNameSnapshot`, `exerciseNameSnapshot`, `programNameSnapshot`, `resolvedProgramWeek`) so history stays historically correct when templates, programs, or the active week later change.
 
-Set materialization rules, enforced in `materializeSession` and mirrored in `addSessionExercise`: exactly **one warmup set** per exercise (`setKind: 'warmup'`, `setNumber: 0`, `side: 'both'`), then `workSetCount` work sets; unilateral exercises get mirrored `left`/`right` rows at every set number.
+Set materialization rules, enforced in `materializeSession` and mirrored in `addSessionExercise`: **at most one warmup set** per exercise (`setKind: 'warmup'`, `setNumber: 0`, `side: 'both'`) — skipped when the template exercise carries `includeWarmup: false` — then `workSetCount` work sets; unilateral exercises get mirrored `left`/`right` rows at every set number. `deleteSetLog` can remove a single row from a running session afterwards, one side at a time, so the row count is not a derived value.
 
 ### Progression
 
@@ -72,12 +72,12 @@ Two rules that are not negotiable, because both were broken across the whole app
 
 ## Conventions
 
-- UI strings are **German**, and umlauts are consistently transliterated in source (`Uebung`, `ungueltig`, `Unterkoerper`) — keep new strings ASCII-only in the same style. Error messages thrown from `db/` actions are user-facing German.
+- UI strings are **German with real umlauts** (`Übung`, `ungültig`, `Unterkörper`, `schließen`) — in strings *and* in comments. The source used to transliterate them ASCII-style; it no longer does anywhere, so don't reintroduce that style. Error messages thrown from `db/` actions are user-facing German.
 - Imports use the `@/` alias for `src/` (configured in `tsconfig.json`, `vite-tsconfig-paths`, and separately in `vitest.config.ts`).
 - IDs: `createId()` from [src/lib/id.ts](src/lib/id.ts) (`crypto.randomUUID`). Timestamps are ISO strings.
 - Routing is `HashRouter` — required for GitHub Pages deep links. Don't switch to `BrowserRouter`.
 - Styling is Tailwind, dark-first, with `cn()` (clsx + tailwind-merge) for conditional classes. UI targets one-handed phone use: large touch targets, bottom-reachable primary actions, minimal typing during a workout.
-- Drag-and-drop reordering uses `@dnd-kit`; both `reorderTemplateExercises` and `reorderSessionExercises` reject incomplete id lists and rewrite `orderIndex` as a dense 1-based sequence.
+- Reordering runs on up/down arrow buttons (`moveItem` in [src/lib/reorder.ts](src/lib/reorder.ts)), not drag-and-drop — the old `@dnd-kit` gesture fired after 8px and reordered by accident while scrolling. Both `reorderTemplateExercises` and `reorderSessionExercises` reject incomplete id lists and rewrite `orderIndex` as a dense 1-based sequence.
 
 ## Tests
 

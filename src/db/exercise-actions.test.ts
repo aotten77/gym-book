@@ -105,7 +105,7 @@ describe('exercise actions', () => {
 
     await deleteExercise(exerciseId);
 
-    // Der Snapshot traegt den Namen - die Historie bleibt lesbar.
+    // Der Snapshot trägt den Namen - die Historie bleibt lesbar.
     expect(await db.workoutSessionExercises.get('session-exercise-1')).toMatchObject({
       exerciseNameSnapshot: 'Hip Thrust',
     });
@@ -120,7 +120,7 @@ describe('exercise test actions', () => {
       exerciseId,
       leftValue: 22,
       rightValue: 24,
-      notes: '  Nach dem Aufwaermen  ',
+      notes: '  Nach dem Aufwärmen  ',
     });
 
     expect(await db.exerciseTests.get(testId)).toMatchObject({
@@ -128,7 +128,7 @@ describe('exercise test actions', () => {
       leftValue: 22,
       rightValue: 24,
       asymmetryPercent: 8.3,
-      notes: 'Nach dem Aufwaermen',
+      notes: 'Nach dem Aufwärmen',
     });
   });
 

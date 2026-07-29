@@ -59,7 +59,7 @@ export function HistorySessionPage() {
               className="min-h-touch inline-flex items-center justify-center flex items-center gap-2 rounded-control border border-line px-3 py-2 text-sm text-content-secondary transition hover:bg-surface-raised"
             >
               <ArrowLeft size={16} />
-              Zurueck
+              Zurück
             </Link>
           }
         >
@@ -83,7 +83,7 @@ export function HistorySessionPage() {
               className="min-h-touch inline-flex items-center justify-center flex items-center gap-2 rounded-control border border-line px-3 py-2 text-sm text-content-secondary transition hover:bg-surface-raised"
             >
               <ArrowLeft size={16} />
-              Zurueck
+              Zurück
             </Link>
           }
         >
@@ -130,7 +130,7 @@ export function HistorySessionPage() {
               title={`${exercise.orderIndex}. ${exercise.exerciseNameSnapshot}`}
               subtitle={[
                 exercise.wasSkipped ? 'Skipped' : null,
-                exercise.addedInSession ? 'In Session hinzugefuegt' : null,
+                exercise.addedInSession ? 'In Session hinzugefügt' : null,
                 targetParts.length > 0 ? `Ziel: ${targetParts.join(' · ')}` : null,
               ]
                 .filter(Boolean)

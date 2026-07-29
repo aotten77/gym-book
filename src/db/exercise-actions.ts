@@ -3,9 +3,9 @@ import type { Exercise, TrackingMode } from '@/domain/models';
 import { createId } from '@/lib/id';
 
 /*
- * Bis hierher entstanden Uebungen nur als Nebeneffekt beim Anlegen einer
- * Template- oder Session-Uebung, waren danach nicht mehr editierbar und liessen
- * sich ueberhaupt nicht loeschen - ein Tippfehler im Namen war permanent.
+ * Bis hierher entstanden Übungen nur als Nebeneffekt beim Anlegen einer
+ * Template- oder Session-Übung, waren danach nicht mehr editierbar und ließen
+ * sich überhaupt nicht löschen - ein Tippfehler im Namen war permanent.
  */
 
 export interface ExerciseInput {
@@ -19,7 +19,7 @@ export interface ExerciseInput {
 export interface ExerciseUsage {
   templateNames: string[];
   sessionCount: number;
-  /** In Vorlagen verwendete Uebungen zu loeschen wuerde diese Vorlagen zerstoeren. */
+  /** In Vorlagen verwendete Übungen zu löschen würde diese Vorlagen zerstören. */
   canDelete: boolean;
 }
 
@@ -32,7 +32,7 @@ function assertName(name: string) {
   const trimmed = name.trim();
 
   if (!trimmed) {
-    throw new Error('Die Uebung braucht einen Namen.');
+    throw new Error('Die Übung braucht einen Namen.');
   }
 
   return trimmed;
@@ -58,7 +58,7 @@ export async function createExercise(input: ExerciseInput) {
 }
 
 /**
- * Aendert die Stammdaten einer Uebung.
+ * Ändert die Stammdaten einer Übung.
  *
  * Laufende und historische Sessions sind davon nicht betroffen: sie tragen
  * eigene Snapshots von Name, Tracking-Modus und Unilateral-Flag.
@@ -70,7 +70,7 @@ export async function updateExercise(exerciseId: string, input: ExerciseInput) {
     const existing = await db.exercises.get(exerciseId);
 
     if (!existing) {
-      throw new Error('Uebung nicht gefunden.');
+      throw new Error('Übung nicht gefunden.');
     }
 
     await db.exercises.update(exerciseId, {
@@ -111,19 +111,19 @@ export async function getExerciseUsage(exerciseId: string): Promise<ExerciseUsag
 }
 
 /**
- * Loescht eine Uebung samt verwaistem Bild.
+ * Löscht eine Übung samt verwaistem Bild.
  *
  * Historische Sessions bleiben erhalten - sie arbeiten mit Snapshots und
- * verlieren dadurch keine Aussagekraft. In einer Vorlage verwendete Uebungen
- * werden dagegen abgelehnt, sonst laesst sich die Vorlage nie wieder starten
- * (`materializeSession` wirft bei fehlender Uebung).
+ * verlieren dadurch keine Aussagekraft. In einer Vorlage verwendete Übungen
+ * werden dagegen abgelehnt, sonst lässt sich die Vorlage nie wieder starten
+ * (`materializeSession` wirft bei fehlender Übung).
  */
 export async function deleteExercise(exerciseId: string) {
   await db.transaction('rw', db.exercises, db.workoutTemplateExercises, db.mediaAssets, async () => {
     const exercise = await db.exercises.get(exerciseId);
 
     if (!exercise) {
-      throw new Error('Uebung nicht gefunden.');
+      throw new Error('Übung nicht gefunden.');
     }
 
     const usedInTemplates = await db.workoutTemplateExercises
@@ -133,7 +133,7 @@ export async function deleteExercise(exerciseId: string) {
 
     if (usedInTemplates > 0) {
       throw new Error(
-        'Diese Uebung wird noch in einer Vorlage verwendet. Entferne sie dort zuerst.',
+        'Diese Übung wird noch in einer Vorlage verwendet. Entferne sie dort zuerst.',
       );
     }
 

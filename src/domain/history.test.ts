@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { pickLastCompletedExecution, sortSetLogs, type ExerciseExecution } from '@/domain/history';
+import {
+  buildLastSetValues,
+  pickLastCompletedExecution,
+  sortSetLogs,
+  type ExerciseExecution,
+} from '@/domain/history';
 import type { WorkoutSetLog } from '@/domain/models';
 
 function workLog(overrides: Partial<WorkoutSetLog>): WorkoutSetLog {
@@ -73,5 +78,41 @@ describe('pickLastCompletedExecution', () => {
   it('returns undefined when no execution has values', () => {
     expect(pickLastCompletedExecution([execution({ workLogs: [] })])).toBeUndefined();
     expect(pickLastCompletedExecution([])).toBeUndefined();
+  });
+});
+
+describe('buildLastSetValues', () => {
+  it('findet die Werte derselben Satzzeile inklusive Warmup', () => {
+    const lastValues = buildLastSetValues([
+      workLog({ setKind: 'warmup', setNumber: 0, reps: 10, weight: 40 }),
+      workLog({ setNumber: 1, reps: 5, weight: 82.5 }),
+      workLog({ setNumber: 2, reps: 5, weight: 85 }),
+    ]);
+
+    expect(lastValues.resolve({ setKind: 'warmup', side: 'both', setNumber: 0 })).toEqual({
+      reps: 10,
+      seconds: undefined,
+      weight: 40,
+    });
+    expect(lastValues.resolve({ setKind: 'work', side: 'both', setNumber: 2 })?.weight).toBe(85);
+  });
+
+  it('fällt auf den letzten Arbeitssatz derselben Seite zurück', () => {
+    const lastValues = buildLastSetValues([
+      workLog({ setNumber: 1, side: 'left', reps: 8 }),
+      workLog({ setNumber: 2, side: 'left', reps: 7 }),
+      workLog({ setNumber: 1, side: 'right', reps: 9 }),
+    ]);
+
+    // Satz 3 gab es letzte Woche noch nicht - die Vorlage hat seitdem einen
+    // Arbeitssatz mehr.
+    expect(lastValues.resolve({ setKind: 'work', side: 'left', setNumber: 3 })?.reps).toBe(7);
+    expect(lastValues.resolve({ setKind: 'work', side: 'right', setNumber: 3 })?.reps).toBe(9);
+  });
+
+  it('erfindet keinen Warmup-Wert aus Arbeitssätzen', () => {
+    const lastValues = buildLastSetValues([workLog({ setNumber: 1, reps: 5, weight: 82.5 })]);
+
+    expect(lastValues.resolve({ setKind: 'warmup', side: 'both', setNumber: 0 })).toBeUndefined();
   });
 });

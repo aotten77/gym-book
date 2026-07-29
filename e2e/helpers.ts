@@ -1,9 +1,9 @@
 import type { Page } from '@playwright/test';
 
 /**
- * Setzt die lokale Datenbank zurueck.
+ * Setzt die lokale Datenbank zurück.
  *
- * Die App haelt ihren gesamten Zustand in IndexedDB - ohne Reset traegt jeder
+ * Die App hält ihren gesamten Zustand in IndexedDB - ohne Reset trägt jeder
  * Test die Daten des vorherigen mit sich herum.
  */
 export async function resetDatabase(page: Page) {
@@ -22,7 +22,7 @@ export async function resetDatabase(page: Page) {
 }
 
 /**
- * Laedt das Beispielprogramm ueber die Einstellungen.
+ * Lädt das Beispielprogramm über die Einstellungen.
  *
  * Seit Phase B legt der erste Start bewusst keine Demo-Daten mehr an, damit
  * ein echter Nutzer keine erfundene Historie vorfindet. Tests, die eine

@@ -7,8 +7,8 @@ import { useUiStore } from '@/store/ui-store';
 
 /*
  * Mit registerType: 'prompt' (siehe vite.config.ts) feuert `onNeedRefresh`
- * tatsaechlich, sobald eine neue Version bereitliegt. Der Nutzer entscheidet
- * dann ueber das Banner, wann aktualisiert wird - nicht der Service Worker
+ * tatsächlich, sobald eine neue Version bereitliegt. Der Nutzer entscheidet
+ * dann über das Banner, wann aktualisiert wird - nicht der Service Worker
  * mitten im Satz.
  */
 const updateServiceWorker = registerSW({
@@ -51,10 +51,28 @@ window.addEventListener('appinstalled', () => {
   useUiStore.getState().setDeferredInstallPrompt(null);
 });
 
+/*
+ * Pinch-Zoom unterbinden.
+ *
+ * Safari im Tab ignoriert `user-scalable=no` seit iOS 10; nur diese drei
+ * Gesture-Events stoppen den Zoom dort. In der installierten PWA greift
+ * umgekehrt das Meta-Tag. `passive: false` ist Pflicht, sonst läuft
+ * preventDefault ins Leere.
+ */
+for (const type of ['gesturestart', 'gesturechange', 'gestureend']) {
+  document.addEventListener(
+    type,
+    (event) => {
+      event.preventDefault();
+    },
+    { passive: false },
+  );
+}
+
 window.addEventListener('gym-book:update-app', () => {
   void updateServiceWorker(true).catch((error) => {
     console.error('Update fehlgeschlagen', error);
-    // Banner zuruecksetzen, damit der Nutzer es erneut versuchen kann.
+    // Banner zurücksetzen, damit der Nutzer es erneut versuchen kann.
     useUiStore.getState().setUpdateAvailable(true);
   });
 });

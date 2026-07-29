@@ -6,20 +6,20 @@ flowchart TD
     APP --> DB["Dexie Repository Layer"]
     DB --> IDB["IndexedDB"]
     APP --> PWA["Service Worker und App Shell Cache"]
-    APP --> FILE["Datei-APIs fuer Import/Export und Medienupload"]
+    APP --> FILE["Datei-APIs für Import/Export und Medienupload"]
     PWA --> STATIC["GitHub Pages Static Hosting"]
 ```
 
-Die App ist eine rein statische Client-Anwendung auf GitHub Pages. Persistente Fachdaten liegen in IndexedDB und werden ueber Dexie adressiert. UI-State bleibt fluechtig und getrennt vom Persistenzmodell. Sessions werden beim Start aus Templates materialisiert, damit spaetere Template-Aenderungen historische Einheiten nicht rueckwirkend verfaelschen.
+Die App ist eine rein statische Client-Anwendung auf GitHub Pages. Persistente Fachdaten liegen in IndexedDB und werden über Dexie adressiert. UI-State bleibt flüchtig und getrennt vom Persistenzmodell. Sessions werden beim Start aus Templates materialisiert, damit spätere Template-Änderungen historische Einheiten nicht rückwirkend verfälschen.
 
 ## 2. Technologiebeschreibung
 - Frontend: React 18 + TypeScript + Vite
-- Routing: `HashRouter` fuer robuste GitHub-Pages-Kompatibilitaet
+- Routing: `HashRouter` für robuste GitHub-Pages-Kompatibilität
 - Styling: CSS-Variablen + modulare Styles oder co-located Styles; Fokus auf mobile-first Layout
 - Persistenz: Dexie auf IndexedDB als Source of Truth
-- PWA: `vite-plugin-pwa` mit App-Shell-Caching, Manifest, `start_url` und `scope` fuer `/gym-book/`
-- Diagramme/Visualisierung: leichte, clientseitige Chart-Loesung fuer einfache Verlaufsgraphen
-- Validierung: `zod` fuer Import/Export-Validierung und Laufzeitgrenzen an Systemschnittstellen
+- PWA: `vite-plugin-pwa` mit App-Shell-Caching, Manifest, `start_url` und `scope` für `/gym-book/`
+- Diagramme/Visualisierung: leichte, clientseitige Chart-Lösung für einfache Verlaufsgraphen
+- Validierung: `zod` für Import/Export-Validierung und Laufzeitgrenzen an Systemschnittstellen
 - Backend: keines in v1
 - Deployment: GitHub Pages aus statischem Build
 
@@ -28,14 +28,14 @@ Die App ist eine rein statische Client-Anwendung auf GitHub Pages. Persistente F
 |-------|-------|
 | `/#/` | Startansicht mit Programmstatus und Schnellstart |
 | `/#/templates` | Vorlagenliste und Template-Verwaltung |
-| `/#/templates/:templateId` | Bearbeitung einer Vorlage und ihrer Uebungen |
+| `/#/templates/:templateId` | Bearbeitung einer Vorlage und ihrer Übungen |
 | `/#/session/:sessionId` | Laufende oder wiederhergestellte Trainingssession |
-| `/#/history` | Historie und Uebungsverlauf |
-| `/#/tests` | Testwerte fuer links/rechts und Asymmetrie |
+| `/#/history` | Historie und Übungsverlauf |
+| `/#/tests` | Testwerte für links/rechts und Asymmetrie |
 | `/#/settings` | Einstellungen, Medienverwaltung, Export/Import |
 
 ## 4. API-Definitionen
-Es gibt in v1 keine Remote-API. Interne Grenzen werden ueber TypeScript-Typen, Domain-Funktionen und Repository-Schnittstellen abgebildet.
+Es gibt in v1 keine Remote-API. Interne Grenzen werden über TypeScript-Typen, Domain-Funktionen und Repository-Schnittstellen abgebildet.
 
 ```ts
 export type TrackingMode = 'reps_weight' | 'time' | 'time_weight';
@@ -170,7 +170,7 @@ export interface AppSettings {
 ```
 
 ## 5. Server-Architekturdiagramm
-Kein Server in v1. Deployment liefert ausschliesslich statische Assets.
+Kein Server in v1. Deployment liefert ausschließlich statische Assets.
 
 ## 6. Datenmodell
 ### 6.1 Datenmodell-Definition
@@ -277,8 +277,8 @@ CREATE TABLE exercise_test (
 );
 ```
 
-- In Dexie werden diese Tabellen als explizite Stores mit Indexen auf Fremdschluessel und Zeitfeldern modelliert.
-- Historische Korrektheit entsteht ueber Snapshots in `workout_session` und `workout_session_exercise`.
-- Der Session-Start muss Progression fuer die aktive Kalenderwoche aufloesen und in die Session uebernehmen.
-- Import/Export wird versioniert und mit Schema- sowie Referenzpruefung validiert.
-- Medien bleiben lokal in IndexedDB; Export muss sie mitschicken, Import muss Typ und Groesse pruefen.
+- In Dexie werden diese Tabellen als explizite Stores mit Indexen auf Fremdschlüssel und Zeitfeldern modelliert.
+- Historische Korrektheit entsteht über Snapshots in `workout_session` und `workout_session_exercise`.
+- Der Session-Start muss Progression für die aktive Kalenderwoche auflösen und in die Session übernehmen.
+- Import/Export wird versioniert und mit Schema- sowie Referenzprüfung validiert.
+- Medien bleiben lokal in IndexedDB; Export muss sie mitschicken, Import muss Typ und Größe prüfen.

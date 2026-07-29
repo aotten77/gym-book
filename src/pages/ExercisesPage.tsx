@@ -77,14 +77,14 @@ function ExerciseDetail({ exercise }: { exercise: Exercise }) {
           </div>
         ) : (
           <p className="mt-2 text-sm text-content-muted">
-            Noch keine abgeschlossene Session mit dieser Uebung.
+            Noch keine abgeschlossene Session mit dieser Übung.
           </p>
         )}
       </div>
 
       {recent.length > 0 ? (
         <div className="rounded-panel bg-surface p-4">
-          <p className="text-xs uppercase tracking-[0.18em] text-content-muted">Letzte Ausfuehrungen</p>
+          <p className="text-xs uppercase tracking-[0.18em] text-content-muted">Letzte Ausführungen</p>
           <ul className="mt-3 space-y-2">
             {recent.map((execution) => (
               <li key={execution.sessionExerciseId} className="text-sm">
@@ -93,7 +93,7 @@ function ExerciseDetail({ exercise }: { exercise: Exercise }) {
                 </p>
                 <p className="mt-0.5 text-content-muted">
                   {execution.workLogs.map((log) => formatLoadLabel(log)).join(' · ') ||
-                    'Keine Arbeitssaetze geloggt'}
+                    'Keine Arbeitssätze geloggt'}
                 </p>
               </li>
             ))}
@@ -151,8 +151,8 @@ export function ExercisesPage() {
         unilateral: exercise.unilateral,
       });
     }
-    // Nur beim Wechsel der bearbeiteten Uebung neu befuellen - sonst wuerde
-    // jede Live-Query-Aktualisierung die Eingaben ueberschreiben.
+    // Nur beim Wechsel der bearbeiteten Übung neu befüllen - sonst würde
+    // jede Live-Query-Aktualisierung die Eingaben überschreiben.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingId]);
 
@@ -186,7 +186,7 @@ export function ExercisesPage() {
       const usage = await getExerciseUsage(exercise.id);
       setPendingDelete({ exercise, templateNames: usage.templateNames, sessionCount: usage.sessionCount });
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : 'Pruefung fehlgeschlagen.');
+      setError(nextError instanceof Error ? nextError.message : 'Prüfung fehlgeschlagen.');
     }
   }
 
@@ -202,7 +202,7 @@ export function ExercisesPage() {
       setError(null);
       setPendingDelete(null);
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : 'Loeschen fehlgeschlagen.');
+      setError(nextError instanceof Error ? nextError.message : 'Löschen fehlgeschlagen.');
       setPendingDelete(null);
     } finally {
       setIsSaving(false);
@@ -215,7 +215,7 @@ export function ExercisesPage() {
     }
 
     if (!isSupportedMediaType(file.type)) {
-      setError('Nur JPG, PNG, GIF und WebP werden unterstuetzt.');
+      setError('Nur JPG, PNG, GIF und WebP werden unterstützt.');
       return;
     }
 
@@ -235,13 +235,13 @@ export function ExercisesPage() {
   const canDelete = pendingDelete?.templateNames.length === 0;
 
   return (
-    <AppShell title="Uebungen" eyebrow="Bibliothek">
+    <AppShell title="Übungen" eyebrow="Bibliothek">
       <div className="space-y-4">
         {error ? <Alert>{error}</Alert> : null}
 
         <SectionCard
-          title={editingId ? 'Uebung bearbeiten' : 'Neue Uebung'}
-          subtitle="Stammdaten gelten fuer alle Vorlagen. Laufende und vergangene Sessions bleiben unveraendert."
+          title={editingId ? 'Übung bearbeiten' : 'Neue Übung'}
+          subtitle="Stammdaten gelten für alle Vorlagen. Laufende und vergangene Sessions bleiben unverändert."
           action={
             !showForm ? (
               <Button size="md" variant="primary" onClick={() => setShowForm(true)}>
@@ -267,7 +267,7 @@ export function ExercisesPage() {
                   setForm((current) => ({ ...current, instructions: event.target.value }))
                 }
                 rows={3}
-                placeholder="Worauf es bei der Ausfuehrung ankommt"
+                placeholder="Worauf es bei der Ausführung ankommt"
               />
               <div className="grid grid-cols-2 gap-3">
                 <TextField
@@ -323,15 +323,15 @@ export function ExercisesPage() {
             </div>
           ) : (
             <p className="text-sm text-content-muted">
-              {exercises?.length ?? 0} Uebungen in der Bibliothek.
+              {exercises?.length ?? 0} Übungen in der Bibliothek.
             </p>
           )}
         </SectionCard>
 
         {(exercises?.length ?? 0) === 0 ? (
           <Empty
-            title="Noch keine Uebung"
-            description="Lege deine erste Uebung an. Sie steht danach in allen Vorlagen und Sessions zur Auswahl."
+            title="Noch keine Übung"
+            description="Lege deine erste Übung an. Sie steht danach in allen Vorlagen und Sessions zur Auswahl."
           />
         ) : null}
 
@@ -358,7 +358,7 @@ export function ExercisesPage() {
                     <Pencil size={16} />
                   </IconButton>
                   <IconButton
-                    label={`${exercise.name} loeschen`}
+                    label={`${exercise.name} löschen`}
                     variant="danger"
                     onClick={() => void handleRequestDelete(exercise)}
                   >
@@ -381,11 +381,11 @@ export function ExercisesPage() {
 
                   <label className="inline-flex min-h-touch cursor-pointer items-center justify-center gap-2 rounded-control border border-line px-4 text-sm font-medium text-content-secondary transition hover:bg-surface-raised focus-within:ring-2 focus-within:ring-accent">
                     <Dumbbell size={16} />
-                    {exercise.mediaAssetId ? 'Bild ersetzen' : 'Bild waehlen'}
+                    {exercise.mediaAssetId ? 'Bild ersetzen' : 'Bild wählen'}
                     <input
                       type="file"
                       accept="image/jpeg,image/png,image/webp,image/gif"
-                      aria-label={`Bild fuer ${exercise.name} waehlen`}
+                      aria-label={`Bild für ${exercise.name} wählen`}
                       className="sr-only"
                       onChange={(event) => {
                         void handleMediaChange(exercise.id, event.target.files?.[0]);
@@ -414,18 +414,18 @@ export function ExercisesPage() {
 
       <ConfirmDialog
         open={pendingDelete !== null}
-        title={canDelete ? 'Uebung loeschen?' : 'Loeschen nicht moeglich'}
+        title={canDelete ? 'Übung löschen?' : 'Löschen nicht möglich'}
         description={
           canDelete
             ? `"${pendingDelete?.exercise.name}" wird aus der Bibliothek entfernt.${
                 pendingDelete && pendingDelete.sessionCount > 0
-                  ? ` Die ${pendingDelete.sessionCount} bereits protokollierten Ausfuehrungen bleiben in der Historie erhalten.`
+                  ? ` Die ${pendingDelete.sessionCount} bereits protokollierten Ausführungen bleiben in der Historie erhalten.`
                   : ''
               }`
-            : `"${pendingDelete?.exercise.name}" wird noch in ${pendingDelete?.templateNames.join(', ')} verwendet. Entferne die Uebung dort zuerst.`
+            : `"${pendingDelete?.exercise.name}" wird noch in ${pendingDelete?.templateNames.join(', ')} verwendet. Entferne die Übung dort zuerst.`
         }
-        confirmLabel={canDelete ? 'Loeschen' : 'Verstanden'}
-        cancelLabel={canDelete ? 'Abbrechen' : 'Schliessen'}
+        confirmLabel={canDelete ? 'Löschen' : 'Verstanden'}
+        cancelLabel={canDelete ? 'Abbrechen' : 'Schließen'}
         destructive={canDelete}
         busy={isSaving}
         onConfirm={canDelete ? handleConfirmDelete : () => setPendingDelete(null)}

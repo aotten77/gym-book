@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-// Nur fluechtiger UI-Zustand. Alles, was einen Reload ueberleben muss -
+// Nur flüchtiger UI-Zustand. Alles, was einen Reload überleben muss -
 // insbesondere der Pausentimer - liegt in IndexedDB, siehe session-actions.
 interface UiStoreState {
   activeSessionExerciseId: string | null;

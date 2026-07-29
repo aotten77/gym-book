@@ -12,6 +12,7 @@ interface SaveTemplateExerciseInput {
   templateId: string;
   orderIndex: number;
   workSetCount: number;
+  includeWarmup?: boolean;
   targetReps?: number;
   targetSeconds?: number;
   targetWeight?: number;
@@ -119,7 +120,7 @@ export async function saveTemplateExercise(input: SaveTemplateExerciseInput) {
       if (!input.exerciseId) {
         await db.exercises.add({
           id: exerciseId,
-          name: input.exerciseName?.trim() ?? 'Neue Uebung',
+          name: input.exerciseName?.trim() ?? 'Neue Übung',
           instructions: normalizeOptionalText(input.instructions),
           tempo: normalizeOptionalText(input.tempo),
           trackingMode: input.trackingMode,
@@ -135,6 +136,9 @@ export async function saveTemplateExercise(input: SaveTemplateExerciseInput) {
         exerciseId,
         orderIndex: Math.max(1, input.orderIndex),
         workSetCount: Math.max(1, input.workSetCount),
+        // Immer als echter Boolean schreiben: `undefined` würde die Property
+        // über Dexies Update-Semantik löschen statt sie zu setzen.
+        includeWarmup: input.includeWarmup !== false,
         targetReps: normalizeOptionalNumber(input.targetReps),
         targetSeconds: normalizeOptionalNumber(input.targetSeconds),
         targetWeight: normalizeOptionalNumber(input.targetWeight),

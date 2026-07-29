@@ -61,7 +61,7 @@ export function SettingsPage() {
     setIsResetting(true);
 
     try {
-      // Alle Tabellen leeren statt die Datenbank zu loeschen: die
+      // Alle Tabellen leeren statt die Datenbank zu löschen: die
       // Schemaversion und offene Live-Queries bleiben so intakt.
       await db.transaction('rw', db.tables, async () => {
         await Promise.all(db.tables.map((table) => table.clear()));
@@ -71,7 +71,7 @@ export function SettingsPage() {
       setSeedMessage(null);
       setProgramError(null);
     } catch (error) {
-      setProgramError(error instanceof Error ? error.message : 'Zuruecksetzen fehlgeschlagen.');
+      setProgramError(error instanceof Error ? error.message : 'Zurücksetzen fehlgeschlagen.');
       setShowResetDialog(false);
     } finally {
       setIsResetting(false);
@@ -147,7 +147,7 @@ export function SettingsPage() {
 
     try {
       // Sicherheitsnetz: der Restore leert alle Tabellen. Wer versehentlich
-      // die falsche Datei waehlt, hat sonst keinen Weg zurueck.
+      // die falsche Datei wählt, hat sonst keinen Weg zurück.
       await exportDatabaseSnapshot();
       await restoreDatabaseSnapshot(pendingImport.snapshot);
       setImportSuccess(
@@ -277,7 +277,7 @@ export function SettingsPage() {
                 value={settings?.activeProgramId ?? ''}
                 onChange={(event) => handleProgramChange(event.target.value)}
                 disabled={isSavingProgram}
-                className="select-control min-h-touch w-full rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
+                className="select-control min-h-touch w-full rounded-panel border border-line bg-surface px-4 py-4 text-base text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {programs?.map((program) => (
                   <option key={program.id} value={program.id}>
@@ -292,8 +292,8 @@ export function SettingsPage() {
             )}
 
             <p className="text-sm text-content-muted">
-              Die Programm-Woche laeuft kalendarisch mit dem Programm; ein Override
-              ueberschreibt sie, bis du ihn zuruecksetzt.
+              Die Programm-Woche läuft kalendarisch mit dem Programm; ein Override
+              überschreibt sie, bis du ihn zurücksetzt.
             </p>
 
             <WeekStepper
@@ -304,13 +304,13 @@ export function SettingsPage() {
                   {weekControl.mode === 'override' ? 'Override' : 'Programm'}
                 </p>
               }
-              backLabel="Override-Woche zurueck"
+              backLabel="Override-Woche zurück"
               forwardLabel="Override-Woche vor"
               onStepBack={() => handleStepActiveWeek(-1)}
               onStepForward={() => handleStepActiveWeek(1)}
               disabled={!activeProgram || isSavingProgram}
               onReset={handleResetWeekOverride}
-              resetLabel="Wochen-Override zuruecksetzen"
+              resetLabel="Wochen-Override zurücksetzen"
               resetDisabled={!settings?.weekOverride || isSavingProgram}
             />
 
@@ -322,7 +322,7 @@ export function SettingsPage() {
                   Wirkt nur, wenn keine Override-Woche aktiv ist.
                 </p>
               }
-              backLabel="Programm-Woche zurueck"
+              backLabel="Programm-Woche zurück"
               forwardLabel="Programm-Woche vor"
               onStepBack={() => handleStepProgramWeek(-1)}
               onStepForward={() => handleStepProgramWeek(1)}
@@ -355,7 +355,7 @@ export function SettingsPage() {
 
             <input
               ref={fileInputRef}
-              aria-label="Backup-Datei auswaehlen"
+              aria-label="Backup-Datei auswählen"
               type="file"
               accept="application/json"
               onChange={handleImportFileChange}
@@ -368,9 +368,9 @@ export function SettingsPage() {
               className="flex items-center justify-between rounded-panel border border-line bg-surface-raised px-4 py-4 text-left transition hover:border-accent-border hover:bg-surface-hover"
             >
               <div>
-                <p className="font-medium text-content-secondary">JSON-Restore auswaehlen</p>
+                <p className="font-medium text-content-secondary">JSON-Restore auswählen</p>
                 <p className="mt-1 text-sm text-content-muted">
-                  Liest einen Export ein, prueft das Schema und zeigt vor dem Restore eine Vorschau.
+                  Liest einen Export ein, prüft das Schema und zeigt vor dem Restore eine Vorschau.
                 </p>
               </div>
               <Upload size={18} className="text-content-muted" />
@@ -382,14 +382,14 @@ export function SettingsPage() {
                   Restore bereit: {pendingImport.fileName}
                 </p>
                 <p className="mt-1 text-sm text-amber-50/80">
-                  Der Import ersetzt den aktuellen lokalen Datenbestand vollstaendig. Vom bisherigen
+                  Der Import ersetzt den aktuellen lokalen Datenbestand vollständig. Vom bisherigen
                   Stand wird vorher automatisch ein Backup heruntergeladen.
                 </p>
                 {/* Das Exportdatum ist der einzige Weg zu erkennen, ob es die
                     gemeinte Datei ist. */}
                 <p className="mt-2 text-sm text-amber-50/80">
                   Erstellt am {formatDateTime(pendingImport.snapshot.exportedAt)} ·{' '}
-                  {pendingSummary.exercises} Uebungen · {pendingSummary.mediaAssets} Bilder
+                  {pendingSummary.exercises} Übungen · {pendingSummary.mediaAssets} Bilder
                 </p>
 
                 <div className="mt-4 grid grid-cols-2 gap-3">
@@ -418,7 +418,7 @@ export function SettingsPage() {
                     disabled={isImporting}
                     className="flex-1 rounded-panel bg-accent px-4 py-3 text-sm font-medium text-accent-contrast transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    {isImporting ? 'Import laeuft...' : 'Import bestaetigen'}
+                    {isImporting ? 'Import läuft...' : 'Import bestätigen'}
                   </button>
                   <button
                     type="button"
@@ -459,8 +459,8 @@ export function SettingsPage() {
         >
           <div className="space-y-3">
             <p className="text-sm text-content-muted">
-              Legt ein Programm mit acht Wochen, drei Uebungen, einer Vorlage und einer bereits
-              abgeschlossenen Session an. Nur moeglich, solange die Bibliothek leer ist.
+              Legt ein Programm mit acht Wochen, drei Übungen, einer Vorlage und einer bereits
+              abgeschlossenen Session an. Nur möglich, solange die Bibliothek leer ist.
             </p>
             <Button
               variant="ghost"
@@ -475,16 +475,16 @@ export function SettingsPage() {
         </SectionCard>
 
         <SectionCard
-          title="Alle Daten loeschen"
-          subtitle="Setzt die App auf den Auslieferungszustand zurueck."
+          title="Alle Daten löschen"
+          subtitle="Setzt die App auf den Auslieferungszustand zurück."
         >
           <div className="space-y-3">
             <p className="text-sm text-content-muted">
-              Entfernt Programme, Vorlagen, Uebungen, Sessions, Tests und Bilder aus IndexedDB.
+              Entfernt Programme, Vorlagen, Übungen, Sessions, Tests und Bilder aus IndexedDB.
               Exportiere vorher ein Backup, wenn du die Daten behalten willst.
             </p>
             <Button variant="danger" fullWidth onClick={() => setShowResetDialog(true)}>
-              Lokale Daten loeschen
+              Lokale Daten löschen
             </Button>
           </div>
         </SectionCard>
@@ -492,9 +492,9 @@ export function SettingsPage() {
 
       <ConfirmDialog
         open={showResetDialog}
-        title="Wirklich alle Daten loeschen?"
-        description="Saemtliche Programme, Vorlagen, Uebungen, Sessions, Tests und Bilder werden aus dieser Installation entfernt. Ohne Backup laesst sich das nicht rueckgaengig machen."
-        confirmLabel="Alles loeschen"
+        title="Wirklich alle Daten löschen?"
+        description="Sämtliche Programme, Vorlagen, Übungen, Sessions, Tests und Bilder werden aus dieser Installation entfernt. Ohne Backup lässt sich das nicht rückgängig machen."
+        confirmLabel="Alles löschen"
         busy={isResetting}
         onConfirm={handleResetAllData}
         onCancel={() => setShowResetDialog(false)}

@@ -9,11 +9,11 @@ interface ErrorBoundaryState {
 }
 
 /**
- * Faengt Render-Fehler ab.
+ * Fängt Render-Fehler ab.
  *
  * Ohne diese Grenze unmountet React den kompletten Baum, wenn irgendeine Seite
- * beim Rendern wirft - der Nutzer sieht dann mitten im Training eine weisse
- * Seite und hat keinen Weg zurueck ausser einem Reload.
+ * beim Rendern wirft - der Nutzer sieht dann mitten im Training eine weiße
+ * Seite und hat keinen Weg zurück außer einem Reload.
  */
 export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   state: ErrorBoundaryState = { error: null };

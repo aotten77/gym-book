@@ -26,7 +26,7 @@ export function WeekStepper({
   onStepForward,
   disabled,
   onReset,
-  resetLabel = 'Zuruecksetzen',
+  resetLabel = 'Zurücksetzen',
   resetDisabled,
 }: WeekStepperProps) {
   return (

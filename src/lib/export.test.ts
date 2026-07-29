@@ -169,7 +169,7 @@ describe('parseDatabaseSnapshot', () => {
           }),
         ),
       ),
-    ).toThrow(/nicht schluessig/i);
+    ).toThrow(/nicht schlüssig/i);
   });
 
   it('rejects settings pointing at a missing program', () => {
@@ -208,7 +208,7 @@ describe('parseDatabaseSnapshot', () => {
           }),
         ),
       ),
-    ).toThrow(/nicht unterstuetzt/i);
+    ).toThrow(/nicht unterstützt/i);
   });
 });
 

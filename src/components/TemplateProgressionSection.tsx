@@ -81,9 +81,9 @@ interface TemplateProgressionSectionProps {
 }
 
 /**
- * Pro Programmwoche Zielwerte fuer eine Template-Uebung ueberschreiben. Der
- * Block ist bewusst eigenstaendig - er teilt bis auf Nachschlagetabellen
- * (Uebungen, Programme, Wochen) keinen State mit dem Rest der Template-Seite.
+ * Pro Programmwoche Zielwerte für eine Template-Übung überschreiben. Der
+ * Block ist bewusst eigenständig - er teilt bis auf Nachschlagetabellen
+ * (Übungen, Programme, Wochen) keinen State mit dem Rest der Template-Seite.
  */
 export function TemplateProgressionSection({
   programs,
@@ -235,7 +235,7 @@ export function TemplateProgressionSection({
   return (
     <SectionCard
       title="Wochenprogression"
-      subtitle="Pro Programmwoche kannst du Zielwerte fuer diese Vorlage ueberschreiben. Beim Session-Start wird genau diese Stufe als Snapshot uebernommen."
+      subtitle="Pro Programmwoche kannst du Zielwerte für diese Vorlage überschreiben. Beim Session-Start wird genau diese Stufe als Snapshot übernommen."
       action={
         <Link
           to="/programs"
@@ -251,7 +251,7 @@ export function TemplateProgressionSection({
         </div>
       ) : orderedTemplateExercises.length === 0 ? (
         <div className="rounded-panel border border-dashed border-line bg-surface px-4 py-5 text-sm text-content-muted">
-          Fuege zuerst eine Template-Uebung hinzu. Danach kannst du hier die Progression je Woche editieren.
+          Füge zuerst eine Template-Übung hinzu. Danach kannst du hier die Progression je Woche editieren.
         </div>
       ) : (
         <div className="space-y-4">
@@ -259,7 +259,7 @@ export function TemplateProgressionSection({
             <select
               value={selectedProgramId}
               onChange={(event) => setSelectedProgramId(event.target.value)}
-              className="select-control w-full rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
+              className="select-control w-full rounded-panel border border-line bg-surface px-4 py-4 text-base text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
             >
               {(programs ?? []).map((program) => (
                 <option key={program.id} value={program.id}>
@@ -270,11 +270,11 @@ export function TemplateProgressionSection({
             <select
               value={selectedProgressionTemplateExerciseId}
               onChange={(event) => setSelectedProgressionTemplateExerciseId(event.target.value)}
-              className="select-control w-full rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
+              className="select-control w-full rounded-panel border border-line bg-surface px-4 py-4 text-base text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
             >
               {orderedTemplateExercises.map((item) => (
                 <option key={item.id} value={item.id}>
-                  {item.orderIndex}. {nameById[item.exerciseId] ?? 'Unbekannte Uebung'}
+                  {item.orderIndex}. {nameById[item.exerciseId] ?? 'Unbekannte Übung'}
                 </option>
               ))}
             </select>
@@ -283,7 +283,7 @@ export function TemplateProgressionSection({
           {selectedProgressionTemplateExercise ? (
             <div className="rounded-panel bg-surface p-4 text-sm text-content-muted">
               <p className="font-semibold text-content">
-                {nameById[selectedProgressionTemplateExercise.exerciseId] ?? 'Unbekannte Uebung'}
+                {nameById[selectedProgressionTemplateExercise.exerciseId] ?? 'Unbekannte Übung'}
               </p>
               <p className="mt-2">Basis: {formatPrescriptionLine(selectedProgressionTemplateExercise)}</p>
               <p className="mt-1">
@@ -308,7 +308,7 @@ export function TemplateProgressionSection({
                           {week.label ? ` · ${week.label}` : ''}
                         </p>
                         <p className="mt-1 text-xs text-content-muted">
-                          Leer lassen = Basiswerte der Template-Uebung verwenden
+                          Leer lassen = Basiswerte der Template-Übung verwenden
                         </p>
                       </div>
                       {hasSavedRule ? (
@@ -334,7 +334,7 @@ export function TemplateProgressionSection({
                           inputMode="numeric"
                           aria-label="Ziel-Wdh"
                           placeholder="Ziel-Wdh"
-                          className="w-full rounded-panel border border-line bg-surface-sunken px-4 py-4 text-sm text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
+                          className="w-full rounded-panel border border-line bg-surface-sunken px-4 py-4 text-base text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
                         />
                       ) : null}
 
@@ -353,7 +353,7 @@ export function TemplateProgressionSection({
                           inputMode="decimal"
                           aria-label="Ziel-Sekunden"
                           placeholder="Ziel-Sekunden"
-                          className="w-full rounded-panel border border-line bg-surface-sunken px-4 py-4 text-sm text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
+                          className="w-full rounded-panel border border-line bg-surface-sunken px-4 py-4 text-base text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
                         />
                       ) : null}
 
@@ -372,7 +372,7 @@ export function TemplateProgressionSection({
                           inputMode="decimal"
                           aria-label="Ziel-Gewicht in kg"
                           placeholder="Ziel-Gewicht in kg"
-                          className="w-full rounded-panel border border-line bg-surface-sunken px-4 py-4 text-sm text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
+                          className="w-full rounded-panel border border-line bg-surface-sunken px-4 py-4 text-base text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
                         />
                       ) : null}
 
@@ -390,7 +390,7 @@ export function TemplateProgressionSection({
                         rows={2}
                         aria-label="Wochen-spezifische Notiz"
                         placeholder="Wochen-spezifische Notiz"
-                        className="w-full rounded-panel border border-line bg-surface-sunken px-4 py-4 text-sm text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
+                        className="w-full rounded-panel border border-line bg-surface-sunken px-4 py-4 text-base text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
                       />
 
                       <div className="grid grid-cols-2 gap-3">
@@ -418,7 +418,7 @@ export function TemplateProgressionSection({
             </div>
           ) : (
             <div className="rounded-panel border border-dashed border-line bg-surface px-4 py-5 text-sm text-content-muted">
-              Dieses Programm hat noch keine Wochen. Fuege sie in der Programm-Verwaltung hinzu.
+              Dieses Programm hat noch keine Wochen. Füge sie in der Programm-Verwaltung hinzu.
             </div>
           )}
         </div>

@@ -65,7 +65,7 @@ export default function Home() {
       setStartError(null);
       navigate(`/session/${sessionId}`);
     } catch (error) {
-      // Haeufigster Fall: das Template zeigt auf eine Uebung, die es nicht
+      // Häufigster Fall: das Template zeigt auf eine Übung, die es nicht
       // mehr gibt. Ohne Meldung wirkt der Tap einfach wirkungslos.
       setStartError(
         error instanceof Error ? error.message : 'Session konnte nicht gestartet werden.',
@@ -103,9 +103,9 @@ export default function Home() {
     <AppShell title="Gym Book" eyebrow="Offline-First Training">
       <div className="space-y-4">
         {/*
-          Bei zwei gleich breiten Spalten reicht der Platz nicht fuer Label
-          plus drei 44px-Buttons - sie liefen ueber den Kartenrand und lagen
-          dann unter der Vorlagen-Karte, ausserhalb der Klickflaeche.
+          Bei zwei gleich breiten Spalten reicht der Platz nicht für Label
+          plus drei 44px-Buttons - sie liefen über den Kartenrand und lagen
+          dann unter der Vorlagen-Karte, außerhalb der Klickfläche.
         */}
         <section className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <WeekStepper
@@ -117,13 +117,13 @@ export default function Home() {
                 <p className="mt-1 text-xs text-content-muted">{weekModeHint}</p>
               </>
             }
-            backLabel="Eine Woche zurueck"
+            backLabel="Eine Woche zurück"
             forwardLabel="Eine Woche vor"
             onStepBack={() => handleStepWeek(-1)}
             onStepForward={() => handleStepWeek(1)}
             disabled={!program || isUpdatingWeek}
             onReset={handleClearWeek}
-            resetLabel="Wochen-Override zuruecksetzen"
+            resetLabel="Wochen-Override zurücksetzen"
             resetDisabled={!settings?.weekOverride || isUpdatingWeek}
           />
           <StatCard
@@ -135,7 +135,7 @@ export default function Home() {
 
         <SectionCard
           title="Heute im Fokus"
-          subtitle="Schneller Einstieg fuer verschwitzte Haende und kurze Aufmerksamkeit."
+          subtitle="Schneller Einstieg für verschwitzte Hände und kurze Aufmerksamkeit."
         >
           <div className="space-y-3">
             {startError ? <Alert>{startError}</Alert> : null}
@@ -157,11 +157,11 @@ export default function Home() {
                   <RotateCcw size={18} />
                 </button>
                 {/*
-                  Solange eine Session laeuft, fuehrt jeder Vorlagen-Tap dorthin
-                  zurueck. Das muss sichtbar sein, sonst wirkt die App defekt.
+                  Solange eine Session läuft, führt jeder Vorlagen-Tap dorthin
+                  zurück. Das muss sichtbar sein, sonst wirkt die App defekt.
                 */}
                 <p className="px-1 text-sm text-content-muted">
-                  Ein Training laeuft bereits. Schliesse es ab oder brich es ab, um eine andere
+                  Ein Training läuft bereits. Schließe es ab oder brich es ab, um eine andere
                   Vorlage zu starten.
                 </p>
               </div>
@@ -212,7 +212,7 @@ export default function Home() {
 
         <SectionCard
           title="Letzter Abschluss"
-          subtitle="Historie bleibt stabil, auch wenn du spaeter Templates aenderst."
+          subtitle="Historie bleibt stabil, auch wenn du später Templates änderst."
           action={
             <Button variant="ghost" size="md" onClick={() => navigate('/history')}>
               Historie
@@ -237,7 +237,7 @@ export default function Home() {
           ) : (
             <Empty
               title="Noch kein Abschluss"
-              description="Sobald du eine Session abschliesst, taucht sie hier als schneller Ruecksprung auf."
+              description="Sobald du eine Session abschließt, taucht sie hier als schneller Rücksprung auf."
               className="border-transparent bg-surface text-left"
             />
           )}

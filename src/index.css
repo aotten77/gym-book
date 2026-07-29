@@ -27,6 +27,14 @@
 html,
 body {
   /*
+   * Kein Doppeltipp-Zoom: `manipulation` nimmt genau diese Geste heraus und
+   * laesst Scrollen unangetastet. Pinch blocken zusaetzlich das Meta-Tag in
+   * index.html und die Gesture-Handler in main.tsx.
+   */
+  touch-action: manipulation;
+  /* Verhindert, dass iOS im Querformat eigenmaechtig Schrift vergroessert. */
+  -webkit-text-size-adjust: 100%;
+  /*
    * Der Verlauf sitzt auf dem Dokument, nicht auf einem Inhalts-Div: sonst
    * wird er ueber die gesamte Seitenhoehe gestreckt und beim iOS-Overscroll
    * blitzt eine andere Farbe auf.

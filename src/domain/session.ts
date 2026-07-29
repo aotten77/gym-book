@@ -84,14 +84,18 @@ export function materializeSession({
       notes: progressionRule?.notes ?? templateExercise.notes,
     });
 
-    setLogs.push({
-      id: createId(),
-      sessionExerciseId,
-      setKind: 'warmup',
-      side: 'both',
-      setNumber: 0,
-      completed: false,
-    });
+    // Der Schalter ist optional: alles außer einem ausdrücklichen `false`
+    // bekommt weiterhin genau einen Warmup-Satz.
+    if (templateExercise.includeWarmup !== false) {
+      setLogs.push({
+        id: createId(),
+        sessionExerciseId,
+        setKind: 'warmup',
+        side: 'both',
+        setNumber: 0,
+        completed: false,
+      });
+    }
 
     for (let setNumber = 1; setNumber <= templateExercise.workSetCount; setNumber += 1) {
       const sides = exercise.unilateral ? (['left', 'right'] as const) : (['both'] as const);

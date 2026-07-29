@@ -34,13 +34,13 @@ export function dataUrlToBlob(dataUrl: string) {
   const [header, base64Payload] = dataUrl.split(',');
 
   if (!header || !base64Payload) {
-    throw new Error('Media-Daten ungueltig.');
+    throw new Error('Media-Daten ungültig.');
   }
 
   const mimeTypeMatch = header.match(/^data:(.+);base64$/);
 
   if (!mimeTypeMatch) {
-    throw new Error('Media-Daten ungueltig.');
+    throw new Error('Media-Daten ungültig.');
   }
 
   const binary = atob(base64Payload);

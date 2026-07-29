@@ -42,10 +42,10 @@ Do not use it for generic framework tutorials or unrelated repositories.
 
 ## Set logging rules
 
-- Exactly one warmup set per exercise, modelled explicitly (`setKind: 'warmup'`, `setNumber: 0`, `side: 'both'`) — not implied in UI only.
+- At most one warmup set per exercise, modelled explicitly (`setKind: 'warmup'`, `setNumber: 0`, `side: 'both'`) — not implied in UI only. A template exercise may switch it off via `includeWarmup: false`.
 - Work sets are logged separately from the warmup set.
 - Time-based exercises may carry both `seconds` and `weight`.
-- Unilateral exercises capture left/right; in v1 both sides share the same set count.
+- Unilateral exercises capture left/right. Both sides start with the same set count; a running session may drop a single row per side.
 - Keep the set-log model flat so queries and history stay simple.
 
 ## Progression rules
@@ -81,7 +81,7 @@ Do not use it for generic framework tutorials or unrelated repositories.
 
 ## v1 scope
 
-Must include: template management · local media upload · session start from template · per-session execution edits · one warmup set · work set logging · left/right capture · time plus optional load · rest timer · last values · exercise history graph · tests with left/right values and asymmetry · export/import backup · installable PWA on Pages.
+Must include: template management · local media upload · session start from template · per-session execution edits · optional warmup set · work set logging · left/right capture · time plus optional load · rest timer · last values · exercise history graph · tests with left/right values and asymmetry · export/import backup · installable PWA on Pages.
 
 Must exclude: backend services · cloud sync · multi-user · sharing · video upload · complex adaptive progression · deload automation · semantic conflict resolution.
 
@@ -100,6 +100,6 @@ Before finalising any change, answer these:
 
 ## Conventions
 
-- UI strings are German with ASCII-transliterated umlauts (`Uebung`, `ungueltig`). Error messages thrown from `db/` actions are user-facing.
+- UI strings are German with real umlauts (`Übung`, `ungültig`, `schließen`) — in strings and in comments. Error messages thrown from `db/` actions are user-facing.
 - `@/` alias for `src/`. IDs via `createId()` from `src/lib/id.ts`. Timestamps are ISO strings.
 - Tests concentrate on `domain/`, `db/` actions and import/export — not components.

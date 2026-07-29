@@ -1,12 +1,18 @@
 import { db } from '@/db/appDb';
-import { pickLastCompletedExecution, sortSetLogs, type ExerciseExecution } from '@/domain/history';
+import {
+  buildLastSetValues,
+  pickLastCompletedExecution,
+  sortSetLogs,
+  type ExerciseExecution,
+  type LastSetValues,
+} from '@/domain/history';
 import type { WorkoutSetLog } from '@/domain/models';
 
 /**
- * Alle abgeschlossenen Ausfuehrungen einer Uebung, aelteste zuerst.
+ * Alle abgeschlossenen Ausführungen einer Übung, älteste zuerst.
  *
- * Basis fuer das Verlaufsdiagramm. Nutzt den `exerciseId`-Index statt eines
- * Tabellenscans und holt die Saetze in einem einzigen Query.
+ * Basis für das Verlaufsdiagramm. Nutzt den `exerciseId`-Index statt eines
+ * Tabellenscans und holt die Sätze in einem einzigen Query.
  */
 export async function loadExerciseExecutions(exerciseId: string) {
   const sessionExercises = await db.workoutSessionExercises
@@ -70,14 +76,19 @@ export async function loadExerciseExecutions(exerciseId: string) {
 }
 
 export interface LastValues {
+  /** Nur Arbeitssätze - Grundlage der "Letzte Werte"-Anzeige. */
   logs: WorkoutSetLog[];
+  /**
+   * Satzgenaue Werte inklusive Warmup, für die Platzhalter im Satz-Editor.
+   */
+  setValues: LastSetValues;
   completedAt: string;
   templateName?: string;
 }
 
 /**
- * Liefert die zuletzt geloggten Werte je Uebung - definiert als die letzte
- * *abgeschlossene* Ausfuehrung derselben Exercise, unabhaengig vom Template.
+ * Liefert die zuletzt geloggten Werte je Übung - definiert als die letzte
+ * *abgeschlossene* Ausführung derselben Exercise, unabhängig vom Template.
  *
  * `excludeSessionId` blendet die laufende Session aus, damit die Anzeige nicht
  * auf die eigenen, gerade eingetragenen Werte zeigt.
@@ -116,16 +127,31 @@ export async function loadLastValuesForExercises(
     return {};
   }
 
-  // Ein Query fuer alle Kandidaten statt einer Abfrage je Uebung.
+  // Ein Query für alle Kandidaten statt einer Abfrage je Übung.
   const allLogs = await db.workoutSetLogs
     .where('sessionExerciseId')
     .anyOf(candidates.map((item) => item.id))
     .toArray();
 
   const workLogsBySessionExerciseId = new Map<string, WorkoutSetLog[]>();
+  // Zweiter Eimer inklusive Warmup: der Platzhalter im Satz-Editor soll auch
+  // für den Aufwärmsatz zeigen, was zuletzt dort stand.
+  const completedLogsBySessionExerciseId = new Map<string, WorkoutSetLog[]>();
 
   for (const log of allLogs) {
-    if (log.setKind !== 'work' || !log.completed) {
+    if (!log.completed) {
+      continue;
+    }
+
+    const completedBucket = completedLogsBySessionExerciseId.get(log.sessionExerciseId);
+
+    if (completedBucket) {
+      completedBucket.push(log);
+    } else {
+      completedLogsBySessionExerciseId.set(log.sessionExerciseId, [log]);
+    }
+
+    if (log.setKind !== 'work') {
       continue;
     }
 
@@ -171,6 +197,9 @@ export async function loadLastValuesForExercises(
 
     result[exerciseId] = {
       logs: sortSetLogs(latest.workLogs),
+      setValues: buildLastSetValues(
+        completedLogsBySessionExerciseId.get(latest.sessionExerciseId) ?? [],
+      ),
       completedAt: latest.completedAt,
       templateName: latest.templateNameSnapshot,
     };

@@ -4,7 +4,7 @@ import type { WorkoutSession, WorkoutSetLog } from '@/domain/models';
  * Beschreibt, aus welcher Programmwoche eine Session materialisiert wurde.
  *
  * Bisher in drei Seiten kopiert - und alle drei zeigten "Woche 8 · Woche 8",
- * weil die aufgeloeste Wochennummer und das Wochen-Label meist denselben Text
+ * weil die aufgelöste Wochennummer und das Wochen-Label meist denselben Text
  * ergeben. Das Label gewinnt, die Nummer springt nur ein, wenn keines da ist.
  */
 export function formatSessionWeekContext(session: WorkoutSession) {
@@ -64,8 +64,8 @@ export function formatSideLabel(side: WorkoutSetLog['side']) {
 }
 
 /**
- * Bei unilateralen Uebungen ist die Zahl ohne Seitenangabe wertlos - man
- * weiss sonst nicht, ob "50 kg | 45 kg" zwei Saetze oder zwei Seiten sind.
+ * Bei unilateralen Übungen ist die Zahl ohne Seitenangabe wertlos - man
+ * weiß sonst nicht, ob "50 kg | 45 kg" zwei Sätze oder zwei Seiten sind.
  */
 export function formatSetLogWithSide(log: WorkoutSetLog) {
   const sideLabel = formatSideLabel(log.side);

@@ -2,7 +2,7 @@ import type { TrackingMode, WorkoutSetLog } from '@/domain/models';
 
 export interface ProgressPoint {
   completedAt: string;
-  /** Bester Arbeitssatz der Ausfuehrung - die Zahl, die Fortschritt zeigt. */
+  /** Bester Arbeitssatz der Ausführung - die Zahl, die Fortschritt zeigt. */
   topValue: number;
   /** Summe aus Gewicht x Wiederholungen bzw. Gewicht x Sekunden. */
   volume: number;
@@ -10,8 +10,8 @@ export interface ProgressPoint {
 }
 
 /**
- * Welche Kennzahl den Fortschritt einer Uebung traegt, haengt vom Tracking ab:
- * bei Wiederholungen das Gewicht, bei reinen Zeituebungen die Sekunden.
+ * Welche Kennzahl den Fortschritt einer Übung trägt, hängt vom Tracking ab:
+ * bei Wiederholungen das Gewicht, bei reinen Zeitübungen die Sekunden.
  */
 export function progressMetricFor(trackingMode: TrackingMode) {
   if (trackingMode === 'time') {
@@ -26,9 +26,9 @@ function valueOf(log: WorkoutSetLog, metric: 'weight' | 'seconds') {
 }
 
 /**
- * Verdichtet die Arbeitssaetze einer Ausfuehrung auf einen Punkt der Zeitreihe.
+ * Verdichtet die Arbeitssätze einer Ausführung auf einen Punkt der Zeitreihe.
  *
- * Bei unilateralen Uebungen zaehlt der beste Satz einer Seite, nicht die Summe
+ * Bei unilateralen Übungen zählt der beste Satz einer Seite, nicht die Summe
  * beider - sonst zeigte das Diagramm einen Sprung, sobald links und rechts
  * getrennt geloggt werden.
  */

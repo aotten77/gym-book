@@ -31,16 +31,16 @@ function currentProgramWeek() {
 /**
  * Legt beim allerersten Start nur die Einstellungszeile an.
  *
- * Frueher schrieb der Bootstrap ein komplettes Demo-Programm inklusive einer
- * fertig ausgefuellten Session von "vor sechs Tagen" und eines erfundenen
- * Asymmetrie-Tests. Fuer einen echten Nutzer bedeutete das: die Historie zeigt
- * ein Training, das nie stattfand, und "Letzte Werte" schlaegt Gewichte fuer
- * Uebungen vor, die er nie gemacht hat. Beispieldaten gibt es jetzt nur noch
- * auf ausdruecklichen Wunsch ueber die Einstellungen.
+ * Früher schrieb der Bootstrap ein komplettes Demo-Programm inklusive einer
+ * fertig ausgefüllten Session von "vor sechs Tagen" und eines erfundenen
+ * Asymmetrie-Tests. Für einen echten Nutzer bedeutete das: die Historie zeigt
+ * ein Training, das nie stattfand, und "Letzte Werte" schlägt Gewichte für
+ * Übungen vor, die er nie gemacht hat. Beispieldaten gibt es jetzt nur noch
+ * auf ausdrücklichen Wunsch über die Einstellungen.
  */
 export async function bootstrapAppData() {
-  // Der Guard laeuft ausserhalb der Transaktion: sonst wurden bei jedem
-  // App-Start alle zwoelf Tabellen schreibend gesperrt, nur um sofort wieder
+  // Der Guard läuft außerhalb der Transaktion: sonst wurden bei jedem
+  // App-Start alle zwölf Tabellen schreibend gesperrt, nur um sofort wieder
   // auszusteigen.
   const existingSettings = await db.appSettings.get('app-settings');
 
@@ -62,8 +62,8 @@ export async function bootstrapAppData() {
 }
 
 /**
- * Legt ein durchgespieltes Beispielprogramm an - ausdruecklich angefordert
- * ueber die Einstellungen, nicht beim ersten Start.
+ * Legt ein durchgespieltes Beispielprogramm an - ausdrücklich angefordert
+ * über die Einstellungen, nicht beim ersten Start.
  */
 export async function seedSampleData() {
   await db.transaction('rw', db.tables, async () => {
@@ -84,7 +84,7 @@ export async function seedSampleData() {
 
     const program: Program = {
       id: programId,
-      name: 'Unterkoerper Aufbau',
+      name: 'Unterkörper Aufbau',
       activeWeek,
       createdAt: now,
       updatedAt: now,
@@ -140,7 +140,7 @@ export async function seedSampleData() {
       id: templateId,
       name: 'Einheit A',
       notes:
-        'Unterkoerper Fokus mit unilateraler Assistenz und Posterior-Chain-Arbeit.',
+        'Unterkörper Fokus mit unilateraler Assistenz und Posterior-Chain-Arbeit.',
       createdAt: now,
       updatedAt: now,
     };
@@ -166,7 +166,7 @@ export async function seedSampleData() {
         targetReps: 8,
         targetWeight: 22.5,
         restSeconds: 90,
-        notes: 'Links mit rechts matchen, keine Extra-Saetze.',
+        notes: 'Links mit rechts matchen, keine Extra-Sätze.',
       },
       {
         id: nordicTemplateExerciseId,

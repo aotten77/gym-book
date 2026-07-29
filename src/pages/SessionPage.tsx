@@ -1,35 +1,22 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import {
-  closestCenter,
-  DndContext,
-  DragOverlay,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-  type DragStartEvent,
-} from '@dnd-kit/core';
-import {
-  SortableContext,
-  arrayMove,
-  sortableKeyboardCoordinates,
-  verticalListSortingStrategy,
-} from '@dnd-kit/sortable';
-import { Clock3, GripVertical, X } from 'lucide-react';
+import { Clock3, X } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
 import { ExerciseMedia } from '@/components/ExerciseMedia';
 import { ExerciseTargetFields } from '@/components/ExerciseTargetFields';
+import { MediaLightbox } from '@/components/MediaLightbox';
 import { SectionCard } from '@/components/SectionCard';
-import { SessionExerciseMeta, SortableSessionExerciseCard } from '@/components/SessionExerciseCard';
+import { CheckboxField } from '@/components/ui/Field';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { SessionExerciseCard } from '@/components/SessionExerciseCard';
 import { db } from '@/db/appDb';
 import {
   abortSession,
   addSessionExercise,
   clearRestTimer,
   completeSession,
+  deleteSetLog,
   extendRestTimer,
   reorderSessionExercises,
   startRestTimer,
@@ -37,19 +24,21 @@ import {
 } from '@/db/session-actions';
 import { loadLastValuesForExercises } from '@/db/history-queries';
 import { sortSetLogs } from '@/domain/history';
-import type { WorkoutSessionExercise, WorkoutSetLog } from '@/domain/models';
+import type { MediaAsset, WorkoutSessionExercise, WorkoutSetLog } from '@/domain/models';
 import { supportsReps, supportsSeconds, supportsWeight } from '@/domain/tracking';
 import { formatDateTime, formatSessionWeekContext, formatSetLogWithSide, formatTimer } from '@/lib/format';
 import { optionalNumberInput } from '@/lib/number-input';
+import { moveItem } from '@/lib/reorder';
 import { cn } from '@/lib/utils';
 import { useUiStore } from '@/store/ui-store';
 
-/** Pause fuer Uebungen, bei denen im Template nichts hinterlegt ist. */
+/** Pause für Übungen, bei denen im Template nichts hinterlegt ist. */
 const DEFAULT_REST_SECONDS = 90;
 
 interface SessionExerciseFormState {
   exerciseId: string;
   workSetCount: string;
+  includeWarmup: boolean;
   targetReps: string;
   targetSeconds: string;
   targetWeight: string;
@@ -60,12 +49,18 @@ interface SessionExerciseFormState {
 const defaultSessionExerciseFormState: SessionExerciseFormState = {
   exerciseId: '',
   workSetCount: '3',
+  includeWarmup: true,
   targetReps: '',
   targetSeconds: '',
   targetWeight: '',
   restSeconds: '',
   notes: '',
 };
+
+interface PendingSetLogDelete {
+  log: WorkoutSetLog;
+  exerciseName: string;
+}
 
 function groupLogsByExercise(setLogs: WorkoutSetLog[]) {
   return setLogs.reduce<Record<string, WorkoutSetLog[]>>((groups, item) => {
@@ -83,7 +78,7 @@ export function SessionPage() {
   const { sessionId = '' } = useParams();
   const navigate = useNavigate();
   // Selektoren statt des ganzen Stores: sonst rendert jede Netzwerk- oder
-  // Update-Statusaenderung diese Seite komplett neu.
+  // Update-Statusänderung diese Seite komplett neu.
   const activeSessionExerciseId = useUiStore((state) => state.activeSessionExerciseId);
   const setActiveSessionExerciseId = useUiStore((state) => state.setActiveSessionExerciseId);
   const [now, setNow] = useState(Date.now());
@@ -92,8 +87,12 @@ export function SessionPage() {
   const [isSavingExercise, setIsSavingExercise] = useState(false);
   const [isReorderingExercises, setIsReorderingExercises] = useState(false);
   const [isClosingSession, setIsClosingSession] = useState(false);
-  const [draggedSessionExerciseId, setDraggedSessionExerciseId] = useState<string | null>(null);
   const [sessionExerciseOrder, setSessionExerciseOrder] = useState<string[]>([]);
+  const [pendingSetLogDelete, setPendingSetLogDelete] = useState<PendingSetLogDelete | null>(null);
+  const [isDeletingSetLog, setIsDeletingSetLog] = useState(false);
+  const [mediaPreview, setMediaPreview] = useState<{ mediaAsset: MediaAsset; alt: string } | null>(
+    null,
+  );
   const [exerciseForm, setExerciseForm] = useState<SessionExerciseFormState>(
     defaultSessionExerciseFormState,
   );
@@ -129,17 +128,6 @@ export function SessionPage() {
       sessionId,
     );
   }, [sessionId]);
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 8,
-      },
-    }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    }),
-  );
-
   const orderedSessionExercises = useMemo(() => {
     if (!sessionExercises) {
       return [];
@@ -152,10 +140,6 @@ export function SessionPage() {
 
     return orderedItems.length === sessionExercises.length ? orderedItems : sessionExercises;
   }, [sessionExerciseOrder, sessionExercises]);
-  const activeDraggedSessionExercise = useMemo(
-    () => orderedSessionExercises.find((item) => item.id === draggedSessionExerciseId),
-    [draggedSessionExerciseId, orderedSessionExercises],
-  );
 
   useEffect(() => {
     if (orderedSessionExercises.length && !activeSessionExerciseId) {
@@ -190,8 +174,8 @@ export function SessionPage() {
       setNow(Date.now());
     }, 1000);
 
-    // Nach dem Zurueckwechseln aus dem Hintergrund sofort neu rechnen, statt
-    // auf den naechsten - vom Browser gedrosselten - Intervall zu warten.
+    // Nach dem Zurückwechseln aus dem Hintergrund sofort neu rechnen, statt
+    // auf den nächsten - vom Browser gedrosselten - Intervall zu warten.
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         setNow(Date.now());
@@ -211,7 +195,7 @@ export function SessionPage() {
       return;
     }
 
-    // Beim Ablauf spuerbar melden - im Gym liegt das Telefon in der Tasche.
+    // Beim Ablauf spürbar melden - im Gym liegt das Telefon in der Tasche.
     if (typeof navigator.vibrate === 'function') {
       navigator.vibrate([180, 90, 180]);
     }
@@ -243,17 +227,44 @@ export function SessionPage() {
   const availableExerciseById = Object.fromEntries((availableExercises ?? []).map((exercise) => [exercise.id, exercise]));
   const focusedExercise =
     orderedSessionExercises.find((item) => item.id === activeSessionExerciseId) ?? orderedSessionExercises[0];
-  const focusedExerciseRecord = focusedExercise ? availableExerciseById[focusedExercise.exerciseId] : undefined;
 
-  // Gezielt nur das Bild der fokussierten Uebung laden. Ein `toArray()` ueber
-  // alle MediaAssets zoege saemtliche Blobs in den Speicher, um eines zu zeigen.
-  const focusedExerciseMedia = useLiveQuery(
-    async () =>
-      focusedExerciseRecord?.mediaAssetId
-        ? db.mediaAssets.get(focusedExerciseRecord.mediaAssetId)
-        : undefined,
-    [focusedExerciseRecord?.mediaAssetId],
+  /*
+   * Genau die Bilder dieser Session laden, nicht die ganze Tabelle: ein
+   * `toArray()` über mediaAssets zöge sämtliche Blobs in den Speicher.
+   * `bulkGet` hält das auf die Übungen der laufenden Session begrenzt.
+   */
+  const sessionMediaIds = useMemo(() => {
+    const ids = orderedSessionExercises
+      .map((item) => availableExerciseById[item.exerciseId]?.mediaAssetId)
+      .filter((id): id is string => Boolean(id));
+
+    return [...new Set(ids)].sort();
+  }, [availableExerciseById, orderedSessionExercises]);
+  const mediaAssetById = useLiveQuery(
+    async () => {
+      if (sessionMediaIds.length === 0) {
+        return {} as Record<string, MediaAsset>;
+      }
+
+      const assets = await db.mediaAssets.bulkGet(sessionMediaIds);
+
+      return Object.fromEntries(
+        assets.filter((asset): asset is MediaAsset => Boolean(asset)).map((asset) => [asset.id, asset]),
+      );
+    },
+    // Die Liste selbst ist die Abhängigkeit; als String stabil vergleichbar.
+    [sessionMediaIds.join(',')],
   );
+
+  function mediaAssetForExercise(sessionExercise?: WorkoutSessionExercise) {
+    const mediaAssetId = sessionExercise
+      ? availableExerciseById[sessionExercise.exerciseId]?.mediaAssetId
+      : undefined;
+
+    return mediaAssetId ? mediaAssetById?.[mediaAssetId] : undefined;
+  }
+
+  const focusedExerciseMedia = mediaAssetForExercise(focusedExercise);
 
   const focusedLastValues = focusedExercise ? lastValues?.[focusedExercise.exerciseId] : undefined;
   const remainingSeconds = restTimerEndsAt ? Math.max(0, Math.ceil((restTimerEndsAt - now) / 1000)) : 0;
@@ -286,6 +297,7 @@ export function SessionPage() {
       const sessionExerciseId = await addSessionExercise({
         sessionId: session.id,
         workSetCount: Number(exerciseForm.workSetCount) || 1,
+        includeWarmup: exerciseForm.includeWarmup,
         targetReps: supportsReps(effectiveTrackingMode)
           ? optionalNumberInput(exerciseForm.targetReps)
           : undefined,
@@ -313,22 +325,19 @@ export function SessionPage() {
     }
   }
 
-  async function handleSessionExerciseDragEnd(event: DragEndEvent) {
-    setDraggedSessionExerciseId(null);
-
-    if (isReadOnly || !event.over || event.active.id === event.over.id) {
+  async function handleMoveSessionExercise(sessionExerciseId: string, direction: -1 | 1) {
+    if (isReadOnly || !session) {
       return;
     }
 
-    const currentIndex = sessionExerciseOrder.indexOf(String(event.active.id));
-    const targetIndex = sessionExerciseOrder.indexOf(String(event.over.id));
+    const currentIndex = sessionExerciseOrder.indexOf(sessionExerciseId);
+    const nextOrder = moveItem(sessionExerciseOrder, currentIndex, currentIndex + direction);
 
-    if (currentIndex === -1 || targetIndex === -1) {
+    if (nextOrder === sessionExerciseOrder) {
       return;
     }
 
     const previousOrder = sessionExerciseOrder;
-    const nextOrder = arrayMove(sessionExerciseOrder, currentIndex, targetIndex);
     setSessionExerciseOrder(nextOrder);
     setIsReorderingExercises(true);
 
@@ -336,7 +345,7 @@ export function SessionPage() {
       await reorderSessionExercises(session.id, nextOrder);
       setSessionError(null);
     } catch (error) {
-      // Optimistische Reihenfolge zuruecknehmen, sonst zeigt die Liste eine
+      // Optimistische Reihenfolge zurücknehmen, sonst zeigt die Liste eine
       // Sortierung, die nie gespeichert wurde.
       setSessionExerciseOrder(previousOrder);
       setSessionError(
@@ -347,13 +356,48 @@ export function SessionPage() {
     }
   }
 
+  function handleRequestDeleteSetLog(log: WorkoutSetLog, exerciseName: string) {
+    /*
+     * Rückfrage nur, wenn etwas verloren gehen kann. Ein leerer, offener Satz
+     * verschwindet direkt - sonst kostet jeder Handgriff im Training einen
+     * Dialog.
+     */
+    const carriesData =
+      log.completed ||
+      typeof log.reps === 'number' ||
+      typeof log.seconds === 'number' ||
+      typeof log.weight === 'number';
+
+    if (!carriesData) {
+      void handleDeleteSetLog(log.id);
+      return;
+    }
+
+    setPendingSetLogDelete({ log, exerciseName });
+  }
+
+  async function handleDeleteSetLog(setLogId: string) {
+    setIsDeletingSetLog(true);
+
+    try {
+      await deleteSetLog(setLogId);
+      setPendingSetLogDelete(null);
+      setSessionError(null);
+    } catch (error) {
+      setPendingSetLogDelete(null);
+      setSessionError(error instanceof Error ? error.message : 'Satz konnte nicht entfernt werden.');
+    } finally {
+      setIsDeletingSetLog(false);
+    }
+  }
+
   async function handleToggleSkip(sessionExerciseId: string) {
     try {
       await toggleSkipSessionExercise(sessionExerciseId);
       setSessionError(null);
     } catch (error) {
       setSessionError(
-        error instanceof Error ? error.message : 'Uebung konnte nicht uebersprungen werden.',
+        error instanceof Error ? error.message : 'Übung konnte nicht übersprungen werden.',
       );
     }
   }
@@ -380,24 +424,12 @@ export function SessionPage() {
     }
   }
 
-  function handleSessionExerciseDragStart(event: DragStartEvent) {
-    if (isReadOnly) {
-      return;
-    }
-
-    setDraggedSessionExerciseId(String(event.active.id));
-  }
-
-  function handleSessionExerciseDragCancel() {
-    setDraggedSessionExerciseId(null);
-  }
-
   if (!session) {
     return (
       <AppShell title="Session" eyebrow="Execution">
         <SectionCard title="Session nicht gefunden">
           <p className="text-sm text-content-muted">
-            Entweder wurde sie noch nicht angelegt oder bereits geloescht.
+            Entweder wurde sie noch nicht angelegt oder bereits gelöscht.
           </p>
         </SectionCard>
       </AppShell>
@@ -409,8 +441,48 @@ export function SessionPage() {
   return (
     <AppShell title={session.templateNameSnapshot} eyebrow="Session">
       <div className="space-y-4">
+        {/*
+          Der Streifen klebt beim Scrollen oben fest: welche Übung gerade
+          dran ist und wie sie aussieht, muss auch beim letzten Satz noch
+          sichtbar sein.
+        */}
+        {focusedExercise ? (
+          <div className="sticky top-[max(0.5rem,env(safe-area-inset-top))] z-20 -mx-1 px-1">
+            <button
+              type="button"
+              onClick={() =>
+                focusedExerciseMedia
+                  ? setMediaPreview({
+                      mediaAsset: focusedExerciseMedia,
+                      alt: focusedExercise.exerciseNameSnapshot,
+                    })
+                  : undefined
+              }
+              disabled={!focusedExerciseMedia}
+              className="flex w-full items-center gap-3 rounded-card border border-line bg-zinc-950/90 p-2 text-left shadow-soft backdrop-blur-xl disabled:cursor-default"
+            >
+              {focusedExerciseMedia ? (
+                <ExerciseMedia
+                  mediaAsset={focusedExerciseMedia}
+                  alt={focusedExercise.exerciseNameSnapshot}
+                  className="h-12 w-12 shrink-0 rounded-control"
+                  imageClassName="h-full w-full"
+                />
+              ) : null}
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-content">
+                  {focusedExercise.exerciseNameSnapshot}
+                </p>
+                <p className="truncate text-xs text-content-muted">
+                  {focusedExerciseMedia ? 'Tippen für die große Ansicht' : 'Kein Bild hinterlegt'}
+                </p>
+              </div>
+            </button>
+          </div>
+        ) : null}
+
         <SectionCard
-            title={focusedExercise?.exerciseNameSnapshot ?? 'Session Uebersicht'}
+            title={focusedExercise?.exerciseNameSnapshot ?? 'Session Übersicht'}
           subtitle={`Gestartet ${formatDateTime(session.startedAt)} · ${sessionWeekContext}`}
         >
           {sessionError ? (
@@ -451,7 +523,7 @@ export function SessionPage() {
               </div>
               ) : (
                 <div className="rounded-panel bg-surface p-4 text-sm text-content-muted">
-                  Noch keine Uebung in dieser Session. Du kannst direkt eine hinzufuegen.
+                  Noch keine Übung in dieser Session. Du kannst direkt eine hinzufügen.
                 </div>
               )}
 
@@ -462,7 +534,7 @@ export function SessionPage() {
                     onClick={() => setShowAddExerciseForm((current) => !current)}
                     className="w-full rounded-panel bg-surface-raised px-4 py-4 text-sm font-medium text-content-secondary transition hover:bg-surface-hover"
                 >
-                    {showAddExerciseForm ? 'Hinzufuegen schliessen' : 'Uebung hinzufuegen'}
+                    {showAddExerciseForm ? 'Hinzufügen schließen' : 'Übung hinzufügen'}
                 </button>
 
                   {showAddExerciseForm ? (
@@ -477,7 +549,7 @@ export function SessionPage() {
                                 exerciseId: event.target.value,
                               }))
                             }
-                            className="select-control w-full rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
+                            className="select-control w-full rounded-panel border border-line bg-surface px-4 py-4 text-base text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
                           >
                             {(availableExercises ?? []).map((exercise) => (
                               <option key={exercise.id} value={exercise.id}>
@@ -492,14 +564,14 @@ export function SessionPage() {
                           </p>
                           <ExerciseMedia
                             mediaAsset={selectedExerciseMedia}
-                            alt={selectedExistingExercise?.name ?? 'Uebung'}
+                            alt={selectedExistingExercise?.name ?? 'Übung'}
                             className="h-32 w-full"
                             imageClassName="h-full w-full"
                           />
                         </div>
                       ) : (
                         <div className="rounded-panel bg-surface-raised px-4 py-4 text-sm text-content-muted">
-                          Noch keine Uebung in der Bibliothek.{' '}
+                          Noch keine Übung in der Bibliothek.{' '}
                           <Link to="/exercises" className="text-accent underline underline-offset-2">
                             Jetzt anlegen
                           </Link>
@@ -518,6 +590,17 @@ export function SessionPage() {
                         />
                       </div>
 
+                      <CheckboxField
+                        label="Warmup-Satz anlegen"
+                        checked={exerciseForm.includeWarmup}
+                        onChange={(event) =>
+                          setExerciseForm((current) => ({
+                            ...current,
+                            includeWarmup: event.target.checked,
+                          }))
+                        }
+                      />
+
                       <textarea
                         value={exerciseForm.notes}
                         onChange={(event) =>
@@ -527,8 +610,8 @@ export function SessionPage() {
                           }))
                         }
                         rows={3}
-                        aria-label="Notizen fuer diese Session-Uebung, optional" placeholder="Notizen fuer diese Session-Uebung, optional"
-                        className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
+                        aria-label="Notizen für diese Session-Übung, optional" placeholder="Notizen für diese Session-Übung, optional"
+                        className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-base text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
                       />
 
                       <div className="grid grid-cols-2 gap-3">
@@ -551,7 +634,7 @@ export function SessionPage() {
                           disabled={isSavingExercise || !exerciseForm.exerciseId}
                           className="rounded-panel bg-accent px-4 py-4 text-sm font-semibold text-accent-contrast transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
                         >
-                          {isSavingExercise ? 'Speichert...' : 'Zur Session hinzufuegen'}
+                          {isSavingExercise ? 'Speichert...' : 'Zur Session hinzufügen'}
                         </button>
                       </div>
                     </div>
@@ -572,11 +655,11 @@ export function SessionPage() {
                           : 'bg-surface-raised text-content-secondary hover:bg-surface-hover',
                       )}
                     >
-                      {focusedExercise.wasSkipped ? 'Uebung wieder aktivieren' : 'Uebung ueberspringen'}
+                      {focusedExercise.wasSkipped ? 'Übung wieder aktivieren' : 'Übung überspringen'}
                     </button>
                   ) : (
                     <div className="rounded-panel bg-surface-raised px-4 py-4 text-sm text-content-muted">
-                      Noch keine aktive Uebung im Fokus.
+                      Noch keine aktive Übung im Fokus.
                     </div>
                   )}
                   <div className="grid grid-cols-2 gap-3">
@@ -594,74 +677,50 @@ export function SessionPage() {
                       disabled={isClosingSession}
                       className="rounded-panel bg-accent px-4 py-4 text-sm font-semibold text-accent-contrast transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      {isClosingSession ? 'Wird beendet...' : 'Session abschliessen'}
+                      {isClosingSession ? 'Wird beendet...' : 'Session abschließen'}
                     </button>
                   </div>
                 </div>
               ) : (
                 <div className="rounded-panel bg-surface-raised px-4 py-4 text-sm text-content-muted">
-                  Session ist abgeschlossen und schreibgeschuetzt.
+                  Session ist abgeschlossen und schreibgeschützt.
                 </div>
               )}
             </div>
         </SectionCard>
 
         {orderedSessionExercises.length > 0 ? (
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragStart={handleSessionExerciseDragStart}
-            onDragCancel={handleSessionExerciseDragCancel}
-            onDragEnd={handleSessionExerciseDragEnd}
-          >
-            <SortableContext items={sessionExerciseOrder} strategy={verticalListSortingStrategy}>
-              <div
-                className={cn(
-                  'space-y-4 rounded-card transition',
-                  draggedSessionExerciseId && 'bg-accent/[0.03] p-1 ring-1 ring-lime-300/15',
-                )}
-              >
-                {orderedSessionExercises.map((exercise) => {
-                  const exerciseLogs = sortSetLogs(groupedLogs[exercise.id] ?? []);
+          <div className="space-y-4">
+            {orderedSessionExercises.map((exercise, index) => {
+              const exerciseLogs = sortSetLogs(groupedLogs[exercise.id] ?? []);
 
-                  return (
-                    <SortableSessionExerciseCard
-                      key={exercise.id}
-                      exercise={exercise}
-                      exerciseLogs={exerciseLogs}
-                      isFocused={activeSessionExerciseId === exercise.id}
-                      isBusy={isReorderingExercises}
-                      isReadOnly={isReadOnly}
-                      onFocus={setActiveSessionExerciseId}
-                      onToggleSkip={handleToggleSkip}
-                      onSetCompleted={handleSetCompleted}
-                    />
-                  );
-                })}
-              </div>
-            </SortableContext>
-            <DragOverlay>
-              {activeDraggedSessionExercise ? (
-                <div className="w-[min(100vw-40px,32rem)] rounded-panel border border-lime-300/35 bg-zinc-950/95 p-4 shadow-soft ring-2 ring-lime-300/20 backdrop-blur">
-                  <div className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-accent/90">
-                    <GripVertical size={14} />
-                    <span>Loslassen zum Ablegen</span>
-                  </div>
-                  <div className="flex min-w-0 gap-3">
-                    <div className="rounded-control border border-accent-border bg-accent-soft p-2 text-accent">
-                      <GripVertical size={16} />
-                    </div>
-                    <SessionExerciseMeta exercise={activeDraggedSessionExercise} />
-                  </div>
-                </div>
-              ) : null}
-            </DragOverlay>
-          </DndContext>
+              return (
+                <SessionExerciseCard
+                  key={exercise.id}
+                  exercise={exercise}
+                  exerciseLogs={exerciseLogs}
+                  mediaAsset={mediaAssetForExercise(exercise)}
+                  lastSetValues={lastValues?.[exercise.exerciseId]?.setValues}
+                  isFocused={activeSessionExerciseId === exercise.id}
+                  isBusy={isReorderingExercises}
+                  isReadOnly={isReadOnly}
+                  isFirst={index === 0}
+                  isLast={index === orderedSessionExercises.length - 1}
+                  onMove={handleMoveSessionExercise}
+                  onFocus={setActiveSessionExerciseId}
+                  onToggleSkip={handleToggleSkip}
+                  onSetCompleted={handleSetCompleted}
+                  onRequestDeleteSetLog={handleRequestDeleteSetLog}
+                  onOpenMedia={(mediaAsset, alt) => setMediaPreview({ mediaAsset, alt })}
+                />
+              );
+            })}
+          </div>
         ) : null}
       </div>
 
       {/*
-        Der Timer gehoert dorthin, wo der Daumen liegt, und muss waehrend der
+        Der Timer gehört dorthin, wo der Daumen liegt, und muss während der
         Pause sichtbar bleiben - als Karten-Badge scrollt er nach zwei Wischern
         aus dem Bild.
       */}
@@ -707,6 +766,34 @@ export function SessionPage() {
           </div>
         </div>
       ) : null}
+
+      <MediaLightbox
+        mediaAsset={mediaPreview?.mediaAsset}
+        alt={mediaPreview?.alt ?? ''}
+        onClose={() => setMediaPreview(null)}
+      />
+
+      <ConfirmDialog
+        open={pendingSetLogDelete !== null}
+        title="Satz entfernen?"
+        description={
+          pendingSetLogDelete
+            ? `${
+                pendingSetLogDelete.log.setKind === 'warmup'
+                  ? 'Der Warmup-Satz'
+                  : `Satz ${pendingSetLogDelete.log.setNumber}`
+              } von ${pendingSetLogDelete.exerciseName} wird samt eingetragener Werte entfernt.`
+            : ''
+        }
+        confirmLabel="Entfernen"
+        busy={isDeletingSetLog}
+        onConfirm={() => {
+          if (pendingSetLogDelete) {
+            void handleDeleteSetLog(pendingSetLogDelete.log.id);
+          }
+        }}
+        onCancel={() => setPendingSetLogDelete(null)}
+      />
     </AppShell>
   );
 }

@@ -16,15 +16,15 @@ interface ConfirmDialogProps {
 
 /**
  * Ersetzt `window.confirm`: in einer installierten PWA ist der native
- * Systemdialog ein Stilbruch, auf iOS blockiert er zusaetzlich den Thread.
- * Und er war ohnehin nicht ueberall vorhanden - Programme liessen sich bisher
- * ohne jede Rueckfrage samt aller Wochen und Progressionsregeln loeschen.
+ * Systemdialog ein Stilbruch, auf iOS blockiert er zusätzlich den Thread.
+ * Und er war ohnehin nicht überall vorhanden - Programme ließen sich bisher
+ * ohne jede Rückfrage samt aller Wochen und Progressionsregeln löschen.
  */
 export function ConfirmDialog({
   open,
   title,
   description,
-  confirmLabel = 'Loeschen',
+  confirmLabel = 'Löschen',
   cancelLabel = 'Abbrechen',
   destructive = true,
   busy = false,
@@ -86,7 +86,7 @@ export function ConfirmDialog({
             onClick={onConfirm}
             disabled={busy}
           >
-            {busy ? 'Laeuft...' : confirmLabel}
+            {busy ? 'Läuft...' : confirmLabel}
           </Button>
         </div>
       </div>

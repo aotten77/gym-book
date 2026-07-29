@@ -19,7 +19,7 @@ interface AlertProps {
 export function Alert({ variant = 'error', children, className }: AlertProps) {
   return (
     <p
-      // Fehler und Erfolge muessen auch angesagt werden, nicht nur sichtbar sein.
+      // Fehler und Erfolge müssen auch angesagt werden, nicht nur sichtbar sein.
       role={variant === 'error' ? 'alert' : 'status'}
       className={cn(
         'rounded-3xl border px-4 py-4 text-sm',

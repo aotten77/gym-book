@@ -5,11 +5,11 @@ test.describe('Erster Start', () => {
   test('legt keine erfundenen Trainingsdaten an', async ({ page }) => {
     await resetDatabase(page);
 
-    // Frueher schrieb der Bootstrap eine fertig ausgefuellte Session "von vor
+    // Früher schrieb der Bootstrap eine fertig ausgefüllte Session "von vor
     // sechs Tagen" und einen erfundenen Asymmetrie-Test in die Datenbank.
     await page.goto('./#/exercises');
     await page.waitForTimeout(900);
-    await expect(page.getByText('Noch keine Uebung')).toBeVisible();
+    await expect(page.getByText('Noch keine Übung')).toBeVisible();
 
     await page.goto('./#/history');
     await page.waitForTimeout(900);
@@ -20,7 +20,7 @@ test.describe('Erster Start', () => {
     await expect(page.getByText('Noch keine Tests')).toBeVisible();
   });
 
-  test('Beispieldaten sind nur bei leerer Bibliothek moeglich', async ({ page }) => {
+  test('Beispieldaten sind nur bei leerer Bibliothek möglich', async ({ page }) => {
     await resetDatabase(page);
     await seedSampleData(page);
 
@@ -31,12 +31,12 @@ test.describe('Erster Start', () => {
   });
 });
 
-test.describe('Uebungsbibliothek', () => {
+test.describe('Übungsbibliothek', () => {
   test.beforeEach(async ({ page }) => {
     await resetDatabase(page);
   });
 
-  test('anlegen, umbenennen und Stammdaten aendern', async ({ page }) => {
+  test('anlegen, umbenennen und Stammdaten ändern', async ({ page }) => {
     const errors = collectPageErrors(page);
 
     await page.goto('./#/exercises');
@@ -50,8 +50,8 @@ test.describe('Uebungsbibliothek', () => {
 
     await expect(page.getByText('Front Squat').first()).toBeVisible();
 
-    // Genau das war zuvor unmoeglich: Stammdaten einer bestehenden Uebung
-    // liessen sich nirgends in der App aendern.
+    // Genau das war zuvor unmöglich: Stammdaten einer bestehenden Übung
+    // ließen sich nirgends in der App ändern.
     await page.getByRole('button', { name: 'Front Squat bearbeiten' }).click();
     await page.waitForTimeout(500);
     await page.getByLabel('Name').fill('Front Squat (Pause)');
@@ -62,17 +62,17 @@ test.describe('Uebungsbibliothek', () => {
     expect(errors).toEqual([]);
   });
 
-  test('eine in einer Vorlage verwendete Uebung wird nicht geloescht', async ({ page }) => {
+  test('eine in einer Vorlage verwendete Übung wird nicht gelöscht', async ({ page }) => {
     await seedSampleData(page);
     await page.goto('./#/exercises');
     await page.waitForTimeout(1000);
 
-    // Sonst wuerde materializeSession werfen und die Vorlage waere fuer immer
-    // unbrauchbar - auffallen wuerde das erst Wochen spaeter im Gym.
-    await page.getByRole('button', { name: /Front Squat loeschen/ }).first().click();
+    // Sonst würde materializeSession werfen und die Vorlage wäre für immer
+    // unbrauchbar - auffallen würde das erst Wochen später im Gym.
+    await page.getByRole('button', { name: /Front Squat löschen/ }).first().click();
     await page.waitForTimeout(700);
 
-    await expect(page.getByText('Loeschen nicht moeglich')).toBeVisible();
+    await expect(page.getByText('Löschen nicht möglich')).toBeVisible();
   });
 
   test('zeigt einen Verlauf mit echten Datenpunkten', async ({ page }) => {
@@ -86,7 +86,7 @@ test.describe('Uebungsbibliothek', () => {
     const chart = page.locator('svg[role=img]').first();
     await expect(chart).toBeVisible();
 
-    // Das Diagramm muss fuer Screenreader eine Aussage tragen, nicht nur Pixel.
+    // Das Diagramm muss für Screenreader eine Aussage tragen, nicht nur Pixel.
     const label = await chart.getAttribute('aria-label');
     expect(label).toMatch(/Gewicht|Sekunden/);
 
@@ -104,7 +104,7 @@ test.describe('Uebungsbibliothek', () => {
 });
 
 test.describe('Test-Erfassung', () => {
-  test('erfassen, Asymmetrie berechnen und wieder loeschen', async ({ page }) => {
+  test('erfassen, Asymmetrie berechnen und wieder löschen', async ({ page }) => {
     await resetDatabase(page);
     await seedSampleData(page);
 
@@ -127,20 +127,20 @@ test.describe('Test-Erfassung', () => {
     await page.getByRole('button', { name: /Test vom/ }).first().click();
     const dialog = page.getByRole('alertdialog');
     await expect(dialog).toBeVisible();
-    await dialog.getByRole('button', { name: 'Loeschen' }).click();
+    await dialog.getByRole('button', { name: 'Löschen' }).click();
     await page.waitForTimeout(900);
 
-    // Der Beispieldatensatz enthaelt selbst einen Test - geprueft wird also,
+    // Der Beispieldatensatz enthält selbst einen Test - geprüft wird also,
     // dass genau der eben erfasste verschwunden ist.
     await expect(page.getByText('25%')).toBeHidden();
   });
 
-  test('erfasster Test erscheint auch in der Uebungsansicht', async ({ page }) => {
+  test('erfasster Test erscheint auch in der Übungsansicht', async ({ page }) => {
     await resetDatabase(page);
     await seedSampleData(page);
 
     // loadTestsForExercise existierte schon vorher, wurde aber nirgends
-    // aufgerufen - Tests waren nur ueber /tests auffindbar.
+    // aufgerufen - Tests waren nur über /tests auffindbar.
     await page.goto('./#/tests');
     await page.waitForTimeout(900);
 
@@ -152,7 +152,7 @@ test.describe('Test-Erfassung', () => {
 
     await page.goto('./#/exercises');
     await page.waitForTimeout(900);
-    // Test und Formular defaulten beide auf die alphabetisch erste Uebung.
+    // Test und Formular defaulten beide auf die alphabetisch erste Übung.
     await page.getByRole('button', { name: 'Verlauf anzeigen' }).first().click();
     await page.waitForTimeout(500);
 
@@ -161,7 +161,7 @@ test.describe('Test-Erfassung', () => {
 });
 
 test.describe('Vorlagen', () => {
-  test('Uebung zur Vorlage nur ueber Auswahl aus der Bibliothek hinzufuegen', async ({ page }) => {
+  test('Übung zur Vorlage nur über Auswahl aus der Bibliothek hinzufügen', async ({ page }) => {
     await resetDatabase(page);
     await seedSampleData(page);
 
@@ -171,11 +171,11 @@ test.describe('Vorlagen', () => {
     await page.waitForTimeout(900);
 
     // Der "Bestehend"/"Neu"-Toggle samt Neuanlage-Formular ist mit der
-    // Bibliothek ueberfluessig geworden - nur noch Auswahl.
+    // Bibliothek überflüssig geworden - nur noch Auswahl.
     const addExerciseSection = page.locator('section', {
-      has: page.getByRole('heading', { name: 'Template-Uebung hinzufuegen' }),
+      has: page.getByRole('heading', { name: 'Template-Übung hinzufügen' }),
     });
-    await expect(page.getByRole('button', { name: 'Neue Uebung' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Neue Übung' })).toHaveCount(0);
     await expect(addExerciseSection.locator('select')).toHaveCount(1);
 
     await addExerciseSection.locator('select').selectOption({ label: 'Nordic Curl Iso' });
@@ -187,7 +187,7 @@ test.describe('Vorlagen', () => {
 });
 
 test.describe('Destruktive Aktionen', () => {
-  test('fragen ueber einen Dialog nach statt ueber window.confirm', async ({ page }) => {
+  test('fragen über einen Dialog nach statt über window.confirm', async ({ page }) => {
     await resetDatabase(page);
     await seedSampleData(page);
 
@@ -196,7 +196,7 @@ test.describe('Destruktive Aktionen', () => {
     await page.getByRole('link', { name: 'Bearbeiten' }).first().click();
     await page.waitForTimeout(900);
 
-    await page.getByRole('button', { name: 'Loeschen' }).first().click();
+    await page.getByRole('button', { name: 'Löschen' }).first().click();
     await page.waitForTimeout(500);
 
     const dialog = page.getByRole('alertdialog');

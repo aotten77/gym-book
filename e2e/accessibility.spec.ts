@@ -5,16 +5,16 @@ const ROUTES = [
   ['Heute', './'],
   ['Plan', './#/programs'],
   ['Vorlagen', './#/templates'],
-  ['Uebungen', './#/exercises'],
+  ['Übungen', './#/exercises'],
   ['Verlauf', './#/history'],
   ['Tests', './#/tests'],
   ['Einstellungen', './#/settings'],
 ] as const;
 
 /**
- * Misst den tatsaechlich gerenderten Kontrast statt der Klassennamen.
+ * Misst den tatsächlich gerenderten Kontrast statt der Klassennamen.
  *
- * Der Ausloeser: `text-zinc-500` lag auf Karten bei 3,67:1 und wurde an 48
+ * Der Auslöser: `text-zinc-500` lag auf Karten bei 3,67:1 und wurde an 48
  * Stellen verwendet - sichtbar wird das nur an den berechneten Farben.
  */
 async function findContrastViolations(page: Page) {
@@ -29,7 +29,7 @@ async function findContrastViolations(page: Page) {
     const parseColor = (value: string) =>
       (value.match(/\d+(\.\d+)?/g) ?? []).slice(0, 3).map(Number);
 
-    // Transparente Elternflaechen ueberspringen, bis eine deckende kommt.
+    // Transparente Elternflächen überspringen, bis eine deckende kommt.
     const effectiveBackground = (element: Element): number[] => {
       let node: Element | null = element;
 
@@ -85,12 +85,12 @@ async function findContrastViolations(page: Page) {
 }
 
 /**
- * Prueft Trefferflaechen gegen zwei Schwellen.
+ * Prüft Trefferflächen gegen zwei Schwellen.
  *
- * Apple HIG empfiehlt 44x44pt; das ist der Massstab fuer normale Bedienelemente.
- * Fuer die dichte Tab-Leiste gilt der normative WCAG-2.2-Wert von 24x24 CSS px
- * (SC 2.5.8, Level AA): auf einem 320px breiten Geraet sind sechs Zellen à 44px
- * geometrisch unmoeglich, die Zellen messen dort 43x51px.
+ * Apple HIG empfiehlt 44x44pt; das ist der Maßstab für normale Bedienelemente.
+ * Für die dichte Tab-Leiste gilt der normative WCAG-2.2-Wert von 24x24 CSS px
+ * (SC 2.5.8, Level AA): auf einem 320px breiten Gerät sind sechs Zellen à 44px
+ * geometrisch unmöglich, die Zellen messen dort 43x51px.
  */
 async function findSmallTargets(page: Page) {
   return page.evaluate(() =>
@@ -135,7 +135,7 @@ async function findUnlabelledControls(page: Page) {
   });
 }
 
-test.describe('Zugaenglichkeit', () => {
+test.describe('Zugänglichkeit', () => {
   test.beforeEach(async ({ page }) => {
     await resetDatabase(page);
     await seedSampleData(page);
@@ -154,7 +154,7 @@ test.describe('Zugaenglichkeit', () => {
 
   test('Tastaturnavigation zeigt einen sichtbaren Fokus', async ({ page }) => {
     // Auf einem Formularfeld statt auf der Startseite: WebKit springt per Tab
-    // systembedingt nur zwischen Eingabefeldern, nicht ueber Buttons und
+    // systembedingt nur zwischen Eingabefeldern, nicht über Buttons und
     // Links - das ist Browserverhalten, kein Mangel der App.
     await page.goto('./#/tests');
     await page.waitForTimeout(700);

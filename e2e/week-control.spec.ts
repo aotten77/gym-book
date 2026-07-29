@@ -3,9 +3,9 @@ import { resetDatabase, seedSampleData } from './helpers';
 
 /*
  * Home und Settings hatten vor der Konsolidierung auf resolveWeekControl je
- * eine eigene maxWeek-Formel - bei einem Override oberhalb der hoechsten
+ * eine eigene maxWeek-Formel - bei einem Override oberhalb der höchsten
  * Programmwoche konnten beide Seiten unterschiedliche Werte zeigen. Dieser
- * Test faengt genau diese Divergenz ab, nicht nur die einzelne Seite.
+ * Test fängt genau diese Divergenz ab, nicht nur die einzelne Seite.
  */
 test.describe('Wochensteuerung', () => {
   test.beforeEach(async ({ page }) => {
@@ -42,7 +42,7 @@ test.describe('Wochensteuerung', () => {
 
     await page.goto('./#/settings');
     await page.waitForTimeout(900);
-    await page.getByRole('button', { name: 'Wochen-Override zuruecksetzen' }).first().click();
+    await page.getByRole('button', { name: 'Wochen-Override zurücksetzen' }).first().click();
     await page.waitForTimeout(600);
 
     await page.goto('./');

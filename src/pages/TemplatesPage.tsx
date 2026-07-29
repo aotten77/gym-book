@@ -40,7 +40,7 @@ export function TemplatesPage() {
       <div className="space-y-4">
         <SectionCard
           title="Neue Vorlage"
-          subtitle="Direkt in Dexie anlegen und anschliessend im Detail mit Uebungen befuellen."
+          subtitle="Direkt in Dexie anlegen und anschließend im Detail mit Übungen befüllen."
           action={
             <div className="flex h-10 w-10 items-center justify-center rounded-control bg-accent-soft text-accent">
               <Plus size={18} />
@@ -52,14 +52,14 @@ export function TemplatesPage() {
               value={name}
               onChange={(event) => setName(event.target.value)}
               aria-label="z. B. Einheit B" placeholder="z. B. Einheit B"
-              className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
+              className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-base text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
             />
             <textarea
               value={notes}
               onChange={(event) => setNotes(event.target.value)}
-              aria-label="Kurznotiz fuer Fokus, Ziel oder Belastungssteuerung" placeholder="Kurznotiz fuer Fokus, Ziel oder Belastungssteuerung"
+              aria-label="Kurznotiz für Fokus, Ziel oder Belastungssteuerung" placeholder="Kurznotiz für Fokus, Ziel oder Belastungssteuerung"
               rows={3}
-              className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
+              className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-base text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
             />
             <button
               type="button"
@@ -81,7 +81,7 @@ export function TemplatesPage() {
             <SectionCard
               key={template.id}
               title={template.name}
-              subtitle={`${items.length} Uebungen · Session wird beim Start materialisiert`}
+              subtitle={`${items.length} Übungen · Session wird beim Start materialisiert`}
               action={
                 <Link
                   to={`/templates/${template.id}`}
@@ -101,7 +101,7 @@ export function TemplatesPage() {
                     >
                       <div>
                         <p className="text-sm font-semibold text-content">
-                          {item.orderIndex}. {exerciseNameById[item.exerciseId] ?? 'Unbekannte Uebung'}
+                          {item.orderIndex}. {exerciseNameById[item.exerciseId] ?? 'Unbekannte Übung'}
                         </p>
                         <p className="mt-1 text-sm text-content-muted">
                           {item.targetReps ? `${item.workSetCount} x ${item.targetReps} Wdh` : null}
@@ -115,7 +115,7 @@ export function TemplatesPage() {
                   ))
                 ) : (
                   <div className="rounded-panel border border-dashed border-line bg-surface px-4 py-5 text-sm text-content-muted">
-                    Noch keine Uebungen hinterlegt. Im Detailscreen kannst du bestehende Uebungen
+                    Noch keine Übungen hinterlegt. Im Detailscreen kannst du bestehende Übungen
                     referenzieren oder neue anlegen.
                   </div>
                 )}

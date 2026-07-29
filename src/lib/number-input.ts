@@ -8,9 +8,9 @@ export type NumberInputResult =
  *
  * Deutsche Tastaturen liefern ein Dezimalkomma, das `Number()` als NaN
  * ablehnt. Ein NaN darf hier nie als "kein Wert" durchgereicht werden:
- * `Table.update` in Dexie loescht Properties, deren Wert `undefined` ist,
- * womit eine Fehleingabe einen bereits gespeicherten Wert vernichten wuerde.
- * Deshalb sind "leer" und "ungueltig" zwei verschiedene Ergebnisse.
+ * `Table.update` in Dexie löscht Properties, deren Wert `undefined` ist,
+ * womit eine Fehleingabe einen bereits gespeicherten Wert vernichten würde.
+ * Deshalb sind "leer" und "ungültig" zwei verschiedene Ergebnisse.
  */
 export function parseNumberInput(value: string): NumberInputResult {
   const trimmed = value.trim();
@@ -33,9 +33,9 @@ export function isInvalidNumberInput(value: string) {
 }
 
 /**
- * Fuer Formulare, die einen Datensatz neu anlegen: leer und ungueltig sind
+ * Für Formulare, die einen Datensatz neu anlegen: leer und ungültig sind
  * beide "kein Wert". Nicht verwenden, wenn ein bereits gespeicherter Wert
- * ueberschrieben wird - dort muss `parseNumberInput` den Unterschied machen.
+ * überschrieben wird - dort muss `parseNumberInput` den Unterschied machen.
  */
 export function optionalNumberInput(value: string) {
   const parsed = parseNumberInput(value);

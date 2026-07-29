@@ -15,8 +15,8 @@ const PADDING = { top: 12, right: 8, bottom: 20, left: 8 };
 /**
  * Handgeschriebenes SVG statt einer Chart-Bibliothek.
  *
- * Eine einzelne Zeitreihe rechtfertigt in einer Offline-App keine zusaetzliche
- * Abhaengigkeit im Bundle - und ohne Netz muss ohnehin alles mit ausgeliefert
+ * Eine einzelne Zeitreihe rechtfertigt in einer Offline-App keine zusätzliche
+ * Abhängigkeit im Bundle - und ohne Netz muss ohnehin alles mit ausgeliefert
  * werden.
  */
 export function ProgressChart({ points, unit, label }: ProgressChartProps) {
@@ -30,7 +30,7 @@ export function ProgressChart({ points, unit, label }: ProgressChartProps) {
   const values = points.map((point) => point.topValue);
   const min = Math.min(...values);
   const max = Math.max(...values);
-  // Bei konstanten Werten waere die Spanne 0 - dann liegt die Linie mittig.
+  // Bei konstanten Werten wäre die Spanne 0 - dann liegt die Linie mittig.
   const span = max - min || Math.max(1, max * 0.1);
   const innerWidth = WIDTH - PADDING.left - PADDING.right;
   const innerHeight = HEIGHT - PADDING.top - PADDING.bottom;
@@ -50,7 +50,7 @@ export function ProgressChart({ points, unit, label }: ProgressChartProps) {
 
   const summary = trend
     ? `${label} von ${trend.first} auf ${trend.last} ${unit}, ${trend.delta >= 0 ? 'plus' : 'minus'} ${Math.abs(trend.delta)} ${unit}`
-    : `${label}: ${points[0].topValue} ${unit} bei einer Ausfuehrung`;
+    : `${label}: ${points[0].topValue} ${unit} bei einer Ausführung`;
 
   return (
     <figure className="m-0">

@@ -29,6 +29,13 @@ export interface WorkoutTemplateExercise {
   exerciseId: string;
   orderIndex: number;
   workSetCount: number;
+  /**
+   * Ob beim Materialisieren ein Warmup-Satz entsteht.
+   *
+   * `undefined` zählt wie `true`: Datensätze, die vor der Einführung des
+   * Schalters angelegt wurden, behalten damit ihr Warmup ohne Migration.
+   */
+  includeWarmup?: boolean;
   targetReps?: number;
   targetSeconds?: number;
   targetWeight?: number;
@@ -52,7 +59,7 @@ export interface WorkoutSession {
    * Ablaufzeitpunkt des Pausentimers als Epoch-Millisekunden.
    *
    * Liegt bewusst in IndexedDB und nicht im UI-Store: der Timer muss einen
-   * Reload und ein Service-Worker-Update mitten im Training ueberleben.
+   * Reload und ein Service-Worker-Update mitten im Training überleben.
    */
   restTimerEndsAt?: number;
 }

@@ -12,7 +12,7 @@ const VARIANT_CLASSES: Record<ButtonVariant, string> = {
 };
 
 const SIZE_CLASSES: Record<ButtonSize, string> = {
-  // min-h-touch haelt die 44px auch dann, wenn der Text kurz ist.
+  // min-h-touch hält die 44px auch dann, wenn der Text kurz ist.
   md: 'min-h-touch rounded-control px-4 py-2.5 text-sm',
   lg: 'min-h-touch rounded-panel px-4 py-4 text-sm',
 };
@@ -50,7 +50,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
 });
 
 export interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  /** Pflicht: ein Icon allein hat keinen zugaenglichen Namen. */
+  /** Pflicht: ein Icon allein hat keinen zugänglichen Namen. */
   label: string;
   variant?: 'ghost' | 'danger';
   children: ReactNode;

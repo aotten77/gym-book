@@ -16,7 +16,7 @@ async function deleteOrphanedMediaAsset(mediaAssetId?: string) {
 
 async function createMediaAsset(file: Blob, fileName: string, mimeType: string) {
   if (!isSupportedMediaType(mimeType)) {
-    throw new Error('Nur JPG, PNG, GIF und WebP werden unterstuetzt.');
+    throw new Error('Nur JPG, PNG, GIF und WebP werden unterstützt.');
   }
 
   const mediaAssetId = createId();
@@ -42,7 +42,7 @@ export async function replaceExerciseMedia(input: {
   const exercise = await db.exercises.get(input.exerciseId);
 
   if (!exercise) {
-    throw new Error('Uebung nicht gefunden');
+    throw new Error('Übung nicht gefunden');
   }
 
   const previousMediaAssetId = exercise.mediaAssetId;
@@ -50,7 +50,7 @@ export async function replaceExerciseMedia(input: {
 
   await db.transaction('rw', db.exercises, db.mediaAssets, async () => {
     if (!isSupportedMediaType(input.mimeType)) {
-      throw new Error('Nur JPG, PNG, GIF und WebP werden unterstuetzt.');
+      throw new Error('Nur JPG, PNG, GIF und WebP werden unterstützt.');
     }
 
     await db.mediaAssets.add({
@@ -77,7 +77,7 @@ export async function clearExerciseMedia(exerciseId: string) {
   const exercise = await db.exercises.get(exerciseId);
 
   if (!exercise) {
-    throw new Error('Uebung nicht gefunden');
+    throw new Error('Übung nicht gefunden');
   }
 
   const previousMediaAssetId = exercise.mediaAssetId;

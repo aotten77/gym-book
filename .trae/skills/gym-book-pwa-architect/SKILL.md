@@ -89,7 +89,7 @@ The model must preserve a strict separation between plan definition and workout 
 
 ## Set Logging Rules
 
-- Every exercise has exactly one warmup set in v1.
+- Every exercise has at most one warmup set in v1; the template may switch it off via `includeWarmup: false`.
 - Warmup sets must be modeled explicitly, not implied only in UI.
 - Work sets are logged separately from the warmup set.
 - Time-based exercises may include both `seconds` and `weight`.
@@ -158,7 +158,7 @@ Must include:
 - local media upload for exercises
 - session start from a template
 - session execution plan with per-session edits
-- one warmup set per exercise
+- optional warmup set per exercise
 - work set logging
 - left/right capture
 - time plus optional load capture
