@@ -3,6 +3,7 @@ import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
 import Home from '@/pages/Home';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { bootstrapAppData } from '@/db/bootstrap';
+import { requestPersistentStorage } from '@/lib/storage';
 import { ExercisesPage } from '@/pages/ExercisesPage';
 import { HistoryPage } from '@/pages/HistoryPage';
 import { HistorySessionPage } from '@/pages/HistorySessionPage';
@@ -18,6 +19,14 @@ export default function App() {
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
 
   useEffect(() => {
+    /*
+     * Ohne dauerhaften Speicher darf der Browser IndexedDB bei Speicherdruck
+     * räumen - bei einer App ohne Backend wäre das die gesamte
+     * Trainingshistorie. Safari entscheidet nach eigenen Heuristiken und zeigt
+     * keinen Dialog, ein abgelehnter Antrag ist deshalb kein Fehlerfall.
+     */
+    void requestPersistentStorage();
+
     bootstrapAppData()
       .catch((error) => {
         const message = error instanceof Error ? error.message : 'Unbekannter Initialisierungsfehler';

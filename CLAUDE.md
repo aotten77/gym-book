@@ -60,6 +60,16 @@ Images only (JPG/PNG/GIF/WebP — `isSupportedMediaType`), stored as `Blob` in t
 
 [src/lib/export.ts](src/lib/export.ts) is the backup format: a full versioned snapshot of every table. Import validates three things, all required by the contract: schema version, referential integrity across tables, and supported media types. `SNAPSHOT_SCHEMA_VERSION` is pinned with `z.literal(...)` — a schema change means bumping the version *and* the literal. `restoreDatabaseSnapshot` clears all tables before bulk-inserting (child tables first); the Settings page exports a backup automatically before restoring.
 
+### Data loss on iOS — why the safeguards exist
+
+A home-screen web app on iOS owns a storage container separate from Safari, and **deleting the icon deletes IndexedDB with it**. This already cost a user their training history, because the only way they found to update the app was to remove and re-add it. Three mechanisms follow from that, and none of them is decorative:
+
+- `onRegisteredSW` in [main.tsx](src/main.tsx) calls `registration.update()` on start, on `visibilitychange`, and every 30 minutes. Without it the "Update verfügbar" banner never appears in an installed app — a service worker only looks for a new version when the page loads, and a standalone app sits in the app switcher for days.
+- `requestPersistentStorage` ([src/lib/storage.ts](src/lib/storage.ts)) runs on every start; Settings shows the resulting state plus usage. It stops eviction under storage pressure, *not* deletion of the app.
+- `AppSettings.lastBackupAt` drives the reminder on Home. `evaluateBackupStatus` ([src/domain/backup.ts](src/domain/backup.ts)) counts completed sessions newer than the last backup — elapsed days alone would nag people who simply didn't train. `exportDatabaseSnapshot` sets the timestamp itself, so every export path counts.
+
+`exportDatabaseSnapshot({ preferShare: true })` routes through the Web Share API **only** in `display-mode: standalone`, where iOS hides the download folder; in a tab it downloads, and `navigator.share` would hang there without a share sheet. A cancelled share returns `'cancelled'` and must not mark a backup as done.
+
 ### Schema changes
 
 `appDb.ts` declares `version(1)` and `version(2)`. Adding or changing indexes requires a new `this.version(n).stores({...})` block with an `upgrade()` where data needs reshaping — the DB is on real users' devices and cannot be reset. Also update the matching Zod schema in `export.ts`. Note that IndexedDB rejects booleans as keys, so boolean fields must not be indexed.

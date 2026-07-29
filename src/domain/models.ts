@@ -145,6 +145,13 @@ export interface AppSettings {
   id: 'app-settings';
   activeProgramId?: string;
   weekOverride?: number;
+  /**
+   * Zeitpunkt der letzten erfolgreichen Sicherung.
+   *
+   * Grundlage der Backup-Erinnerung: die gesamte Historie liegt nur lokal, und
+   * eine vom Homescreen geloeschte iOS-Web-App nimmt ihren Speicher mit.
+   */
+  lastBackupAt?: string;
   exportSchemaVersion: number;
   updatedAt: string;
 }

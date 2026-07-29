@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { ArrowRight, Play, RotateCcw } from 'lucide-react';
+import { ArrowRight, Play, RotateCcw, ShieldAlert } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
 import { Empty } from '@/components/Empty';
 import { Alert } from '@/components/Alert';
@@ -12,7 +12,9 @@ import { WeekStepper } from '@/components/WeekStepper';
 import { db } from '@/db/appDb';
 import { clearWeekOverride, setWeekOverride } from '@/db/settings-actions';
 import { startSessionFromTemplate } from '@/db/session-actions';
+import { evaluateBackupStatus } from '@/domain/backup';
 import { resolveWeekControl } from '@/domain/program';
+import { exportDatabaseSnapshot } from '@/lib/export';
 import { formatDateTime } from '@/lib/format';
 
 export default function Home() {
@@ -20,6 +22,8 @@ export default function Home() {
   const [isUpdatingWeek, setIsUpdatingWeek] = useState(false);
   const [isStartingSession, setIsStartingSession] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
+  const [isBackingUp, setIsBackingUp] = useState(false);
+  const [backupError, setBackupError] = useState<string | null>(null);
   const templates = useLiveQuery(() => db.workoutTemplates.toArray(), []);
   const settings = useLiveQuery(() => db.appSettings.get('app-settings'), []);
   const program = useLiveQuery(async () => {
@@ -51,6 +55,34 @@ export default function Home() {
     },
     [],
   );
+
+  const completedSessionDates = useLiveQuery(
+    async () => {
+      const sessions = await db.workoutSessions.where('status').equals('completed').toArray();
+      return sessions.map((item) => item.completedAt).filter((value): value is string => Boolean(value));
+    },
+    [],
+  );
+  const backupStatus = evaluateBackupStatus({
+    lastBackupAt: settings?.lastBackupAt,
+    completedSessionDates: completedSessionDates ?? [],
+    now: new Date().toISOString(),
+  });
+
+  async function handleBackup() {
+    setIsBackingUp(true);
+
+    try {
+      const result = await exportDatabaseSnapshot({ preferShare: true });
+      setBackupError(result === 'cancelled' ? 'Sicherung abgebrochen - es wurde nichts gespeichert.' : null);
+    } catch (error) {
+      setBackupError(
+        error instanceof Error ? error.message : 'Sicherung konnte nicht erstellt werden.',
+      );
+    } finally {
+      setIsBackingUp(false);
+    }
+  }
 
   const templateCountLabel = useMemo(() => `${templates?.length ?? 0}`, [templates]);
   const weekControl = resolveWeekControl(settings?.weekOverride, program, programWeeks ?? []);
@@ -102,6 +134,43 @@ export default function Home() {
   return (
     <AppShell title="Gym Book" eyebrow="Offline-First Training">
       <div className="space-y-4">
+        {/*
+          Die Historie liegt ausschließlich auf diesem Gerät. Löscht man die
+          Web-App vom Homescreen, nimmt iOS den kompletten Speicher-Container
+          mit - ohne Vorwarnung und ohne Wiederherstellung. Deshalb die
+          Erinnerung genau dann, wenn ungesicherte Trainings existieren.
+        */}
+        {backupStatus.needsReminder ? (
+          <section className="rounded-card border border-warning/20 bg-warning-soft px-4 py-4">
+            <div className="flex items-start gap-3">
+              <ShieldAlert size={18} className="mt-0.5 shrink-0 text-warning" />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-warning">
+                  {backupStatus.unsavedSessionCount === 1
+                    ? '1 Training ist nicht gesichert'
+                    : `${backupStatus.unsavedSessionCount} Trainings sind nicht gesichert`}
+                </p>
+                <p className="mt-1 text-sm text-content-secondary">
+                  {typeof backupStatus.daysSinceBackup === 'number'
+                    ? `Letzte Sicherung vor ${backupStatus.daysSinceBackup} Tagen.`
+                    : 'Es gibt noch keine Sicherung.'}{' '}
+                  Deine Daten liegen nur auf diesem Gerät.
+                </p>
+                {backupError ? <Alert className="mt-3">{backupError}</Alert> : null}
+                <Button
+                  variant="primary"
+                  size="md"
+                  className="mt-3"
+                  onClick={() => void handleBackup()}
+                  disabled={isBackingUp}
+                >
+                  {isBackingUp ? 'Sichert...' : 'Jetzt sichern'}
+                </Button>
+              </div>
+            </div>
+          </section>
+        ) : null}
+
         {/*
           Bei zwei gleich breiten Spalten reicht der Platz nicht für Label
           plus drei 44px-Buttons - sie liefen über den Kartenrand und lagen

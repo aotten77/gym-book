@@ -56,3 +56,19 @@ export async function clearWeekOverride() {
   await setWeekOverride(undefined);
 }
 
+/**
+ * Merkt sich, dass eine Sicherung geschrieben wurde.
+ *
+ * Die Erinnerung auf der Startseite zählt abgeschlossene Trainings, die
+ * jünger sind als dieser Zeitpunkt.
+ */
+export async function markBackupCreated(backupAt = new Date().toISOString()) {
+  const current = await ensureSettings();
+
+  await db.appSettings.put({
+    ...current,
+    id: SETTINGS_ID,
+    lastBackupAt: backupAt,
+    updatedAt: new Date().toISOString(),
+  });
+}

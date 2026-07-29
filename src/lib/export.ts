@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { db } from '@/db/appDb';
+import { markBackupCreated } from '@/db/settings-actions';
 import { blobToDataUrl, dataUrlToBlob, isSupportedMediaType } from '@/lib/media';
 import type {
   AppSettings,
@@ -168,6 +169,8 @@ const appSettingsSchema = z.object({
   id: z.literal('app-settings'),
   activeProgramId: z.string().optional(),
   weekOverride: z.number().int().positive().optional(),
+  // Additiv wie includeWarmup: ältere Backups kennen den Schlüssel nicht.
+  lastBackupAt: z.string().optional(),
   exportSchemaVersion: z.number().int().positive(),
   updatedAt: z.string(),
 });
@@ -455,7 +458,45 @@ export async function restoreDatabaseSnapshot(snapshot: DatabaseSnapshot) {
   );
 }
 
-export async function exportDatabaseSnapshot() {
+export type ExportResult = 'shared' | 'downloaded' | 'cancelled';
+
+interface ExportOptions {
+  /**
+   * Auf iOS ist der Download-Ordner einer Homescreen-App schwer auffindbar.
+   * Über das Teilen-Menü landet die Datei stattdessen dort, wo sie hingehört:
+   * in Dateien, iCloud Drive oder einem Chat.
+   */
+  preferShare?: boolean;
+}
+
+/**
+ * Ob das Teilen-Menü der richtige Weg ist.
+ *
+ * Nur in der installierten App: dort ist der Download-Ordner auf iOS praktisch
+ * unauffindbar. In einem normalen Tab ist der Download der erwartete Weg - und
+ * `navigator.share` bliebe dort ohne Share-Sheet einfach hängen.
+ */
+function canShareSnapshot(file: File) {
+  return (
+    window.matchMedia?.('(display-mode: standalone)').matches === true &&
+    navigator.canShare?.({ files: [file] }) === true
+  );
+}
+
+function downloadSnapshotFile(file: File) {
+  const url = URL.createObjectURL(file);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = file.name;
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  // Erst im nächsten Tick freigeben - ein synchrones revoke bricht den
+  // Download je nach Browser und Dateigröße ab.
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+export async function exportDatabaseSnapshot(options: ExportOptions = {}): Promise<ExportResult> {
   const snapshot = await createDatabaseSnapshot();
   const serializableSnapshot = {
     ...snapshot,
@@ -470,17 +511,36 @@ export async function exportDatabaseSnapshot() {
       })),
     ),
   };
-  const blob = new Blob([JSON.stringify(serializableSnapshot)], {
-    type: 'application/json',
-  });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = `gym-book-export-${snapshot.exportedAt.slice(0, 10)}.json`;
-  document.body.append(anchor);
-  anchor.click();
-  anchor.remove();
-  // Erst im nächsten Tick freigeben - ein synchrones revoke bricht den
-  // Download je nach Browser und Dateigröße ab.
-  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  const file = new File(
+    [JSON.stringify(serializableSnapshot)],
+    `gym-book-export-${snapshot.exportedAt.slice(0, 10)}.json`,
+    { type: 'application/json' },
+  );
+
+  let result: ExportResult = 'downloaded';
+
+  if (options.preferShare && canShareSnapshot(file)) {
+    try {
+      await navigator.share({
+        files: [file],
+        title: 'Gym Book Sicherung',
+      });
+      result = 'shared';
+    } catch (error) {
+      // Abbruch im Teilen-Menü ist kein Fehler - aber auch keine Sicherung.
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        return 'cancelled';
+      }
+
+      // Teilen kann auch scheitern (kein Ziel, Berechtigung); dann bleibt der
+      // Download der verlässliche Weg.
+      downloadSnapshotFile(file);
+    }
+  } else {
+    downloadSnapshotFile(file);
+  }
+
+  await markBackupCreated(snapshot.exportedAt);
+
+  return result;
 }

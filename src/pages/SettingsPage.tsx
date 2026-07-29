@@ -1,6 +1,6 @@
-import { useRef, useState, type ChangeEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Download, Upload } from 'lucide-react';
+import { Download, HardDrive, Upload } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { AppShell } from '@/components/AppShell';
 import { Alert } from '@/components/Alert';
@@ -10,6 +10,7 @@ import { SectionCard } from '@/components/SectionCard';
 import { WeekStepper } from '@/components/WeekStepper';
 import { bootstrapAppData, seedSampleData } from '@/db/bootstrap';
 import { formatDateTime } from '@/lib/format';
+import { formatBytes, readStorageStatus, requestPersistentStorage, type StorageStatus } from '@/lib/storage';
 import { db } from '@/db/appDb';
 import { setProgramActiveWeek } from '@/db/program-actions';
 import { clearWeekOverride, setActiveProgram, setWeekOverride } from '@/db/settings-actions';
@@ -39,6 +40,49 @@ export function SettingsPage() {
   const [seedMessage, setSeedMessage] = useState<string | null>(null);
   const [showResetDialog, setShowResetDialog] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
+  const [storageStatus, setStorageStatus] = useState<StorageStatus | null>(null);
+  const [isRequestingPersistence, setIsRequestingPersistence] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportMessage, setExportMessage] = useState<string | null>(null);
+
+  const refreshStorageStatus = useCallback(async () => {
+    setStorageStatus(await readStorageStatus());
+  }, []);
+
+  useEffect(() => {
+    void refreshStorageStatus();
+  }, [refreshStorageStatus]);
+
+  async function handleRequestPersistence() {
+    setIsRequestingPersistence(true);
+
+    try {
+      await requestPersistentStorage();
+      await refreshStorageStatus();
+    } finally {
+      setIsRequestingPersistence(false);
+    }
+  }
+
+  async function handleExport() {
+    setIsExporting(true);
+
+    try {
+      const result = await exportDatabaseSnapshot({ preferShare: true });
+      setExportMessage(
+        result === 'cancelled'
+          ? 'Sicherung abgebrochen - es wurde nichts gespeichert.'
+          : 'Sicherung erstellt.',
+      );
+      await refreshStorageStatus();
+    } catch (error) {
+      setExportMessage(
+        error instanceof Error ? error.message : 'Sicherung konnte nicht erstellt werden.',
+      );
+    } finally {
+      setIsExporting(false);
+    }
+  }
 
   async function handleSeedSampleData() {
     setIsSeeding(true);
@@ -337,21 +381,92 @@ export function SettingsPage() {
           </div>
         </SectionCard>
 
+        {/*
+          Sichtbar machen, was sonst unsichtbar schiefgeht: ohne dauerhaften
+          Speicher darf der Browser die Datenbank räumen. Gegen das Löschen
+          der Homescreen-App hilft allerdings auch das nicht - nur eine
+          Sicherung.
+        */}
+        <SectionCard
+          title="Speicher"
+          subtitle="Alle Trainingsdaten liegen ausschließlich auf diesem Gerät."
+        >
+          <div className="grid gap-3">
+            <div className="flex items-start gap-3 rounded-panel bg-surface p-4">
+              <HardDrive size={18} className="mt-0.5 shrink-0 text-content-muted" />
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-content">
+                  {!storageStatus?.supported
+                    ? 'Speicherstatus nicht verfügbar'
+                    : storageStatus.persisted
+                      ? 'Dauerhaft gesichert'
+                      : 'Nicht als dauerhaft markiert'}
+                </p>
+                <p className="mt-1 text-sm text-content-muted">
+                  {!storageStatus?.supported
+                    ? 'Dieser Browser gibt keine Auskunft über seinen Speicher.'
+                    : storageStatus.persisted
+                      ? 'Der Browser räumt die Datenbank nicht von sich aus weg.'
+                      : 'Der Browser darf die Datenbank bei Speicherdruck entfernen.'}
+                </p>
+                {storageStatus?.supported ? (
+                  <p className="mt-1 text-sm text-content-muted">
+                    Belegt: {formatBytes(storageStatus.usageBytes)} von{' '}
+                    {formatBytes(storageStatus.quotaBytes)}
+                  </p>
+                ) : null}
+              </div>
+            </div>
+
+            {storageStatus?.supported && !storageStatus.persisted ? (
+              <Button
+                variant="ghost"
+                onClick={() => void handleRequestPersistence()}
+                disabled={isRequestingPersistence}
+              >
+                {isRequestingPersistence ? 'Wird angefragt...' : 'Dauerhaften Speicher anfordern'}
+              </Button>
+            ) : null}
+
+            <p className="rounded-panel border border-line bg-surface px-4 py-3 text-sm text-content-muted">
+              Wichtig: Löschst du die App vom Homescreen, entfernt iOS auch ihre Daten. Davor
+              schützt nur eine Sicherung.
+            </p>
+          </div>
+        </SectionCard>
+
         <SectionCard title="Backup" subtitle="Export und validierter Restore laufen komplett lokal in IndexedDB.">
           <div className="grid gap-3">
+            <div className="rounded-panel bg-surface p-4">
+              <p className="text-xs uppercase tracking-[0.18em] text-content-muted">Letzte Sicherung</p>
+              <p className="mt-2 text-sm text-content">
+                {settings?.lastBackupAt ? formatDateTime(settings.lastBackupAt) : 'Noch nie gesichert'}
+              </p>
+            </div>
+
             <button
               type="button"
-              onClick={() => exportDatabaseSnapshot()}
-              className="flex items-center justify-between rounded-panel bg-accent px-4 py-4 text-left text-accent-contrast transition hover:brightness-105"
+              onClick={() => void handleExport()}
+              disabled={isExporting}
+              className="flex items-center justify-between rounded-panel bg-accent px-4 py-4 text-left text-accent-contrast transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <div>
-                <p className="text-sm font-semibold">JSON-Export herunterladen</p>
+                <p className="text-sm font-semibold">
+                  {isExporting ? 'Sicherung läuft...' : 'Sicherung erstellen'}
+                </p>
                 <p className="mt-1 text-sm text-accent-contrast/80">
-                  Enthalten sind Templates, Sessions, Logs, Tests und Settings.
+                  Über das Teilen-Menü in Dateien oder iCloud ablegen. Enthalten sind Templates,
+                  Sessions, Logs, Tests und Settings.
                 </p>
               </div>
               <Download size={18} />
             </button>
+
+            {exportMessage ? (
+              <div className="rounded-panel border border-line bg-surface px-4 py-3 text-sm text-content-secondary">
+                {exportMessage}
+              </div>
+            ) : null}
 
             <input
               ref={fileInputRef}

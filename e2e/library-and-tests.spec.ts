@@ -207,3 +207,31 @@ test.describe('Destruktive Aktionen', () => {
     await expect(dialog).toBeHidden();
   });
 });
+
+test.describe('Sicherung', () => {
+  test.beforeEach(async ({ page }) => {
+    await resetDatabase(page);
+  });
+
+  test('erinnert an ungesicherte Trainings und merkt sich die Sicherung', async ({ page }) => {
+    await seedSampleData(page);
+    await page.goto('./');
+    await page.waitForTimeout(800);
+
+    // Die Beispieldaten bringen ein abgeschlossenes Training mit - und es gibt
+    // noch keine Sicherung.
+    await expect(page.getByText(/nicht gesichert/)).toBeVisible();
+
+    const download = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Jetzt sichern' }).click();
+    await download;
+    await page.waitForTimeout(900);
+
+    await expect(page.getByText(/nicht gesichert/)).toBeHidden();
+
+    // Der Zeitpunkt liegt in IndexedDB, überlebt also einen Neustart.
+    await page.reload();
+    await page.waitForTimeout(1000);
+    await expect(page.getByText(/nicht gesichert/)).toBeHidden();
+  });
+});
