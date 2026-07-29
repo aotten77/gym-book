@@ -51,6 +51,27 @@ export function formatLoadLabel(setLog: WorkoutSetLog) {
   return parts.length > 0 ? parts.join(' · ') : 'Noch nicht protokolliert';
 }
 
+export function formatSideLabel(side: WorkoutSetLog['side']) {
+  if (side === 'left') {
+    return 'links';
+  }
+
+  if (side === 'right') {
+    return 'rechts';
+  }
+
+  return '';
+}
+
+/**
+ * Bei unilateralen Uebungen ist die Zahl ohne Seitenangabe wertlos - man
+ * weiss sonst nicht, ob "50 kg | 45 kg" zwei Saetze oder zwei Seiten sind.
+ */
+export function formatSetLogWithSide(log: WorkoutSetLog) {
+  const sideLabel = formatSideLabel(log.side);
+  return sideLabel ? `${formatLoadLabel(log)} (${sideLabel})` : formatLoadLabel(log);
+}
+
 export function formatTimer(seconds: number) {
   const minutes = Math.floor(seconds / 60);
   const restSeconds = seconds % 60;

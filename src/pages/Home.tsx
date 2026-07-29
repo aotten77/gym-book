@@ -1,16 +1,18 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { ArrowRight, Minus, Play, Plus, RotateCcw } from 'lucide-react';
+import { ArrowRight, Play, RotateCcw } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
 import { Empty } from '@/components/Empty';
 import { Alert } from '@/components/Alert';
-import { Button, IconButton } from '@/components/ui/Button';
+import { Button } from '@/components/ui/Button';
 import { SectionCard } from '@/components/SectionCard';
 import { StatCard } from '@/components/StatCard';
+import { WeekStepper } from '@/components/WeekStepper';
 import { db } from '@/db/appDb';
 import { clearWeekOverride, setWeekOverride } from '@/db/settings-actions';
 import { startSessionFromTemplate } from '@/db/session-actions';
+import { resolveWeekControl } from '@/domain/program';
 import { formatDateTime } from '@/lib/format';
 
 export default function Home() {
@@ -51,16 +53,9 @@ export default function Home() {
   );
 
   const templateCountLabel = useMemo(() => `${templates?.length ?? 0}`, [templates]);
-  const maxProgramWeek = Math.max(
-    1,
-    ...(programWeeks ?? []).map((week) => week.weekNumber),
-    program?.activeWeek ?? 1,
-    settings?.weekOverride ?? 1,
-  );
-  const effectiveWeek = settings?.weekOverride ?? program?.activeWeek ?? 1;
-  const effectiveWeekLabel = `W${effectiveWeek}`;
+  const weekControl = resolveWeekControl(settings?.weekOverride, program, programWeeks ?? []);
   const weekHint = program?.name ?? 'Programm in /programme anlegen';
-  const weekModeHint = settings?.weekOverride ? 'Override aktiv' : 'Programm';
+  const weekModeHint = weekControl.mode === 'override' ? 'Override aktiv' : 'Programm';
 
   async function handleStartSession(templateId: string) {
     setIsStartingSession(true);
@@ -87,7 +82,7 @@ export default function Home() {
     setIsUpdatingWeek(true);
 
     try {
-      const next = Math.min(maxProgramWeek, Math.max(1, effectiveWeek + direction));
+      const next = Math.min(weekControl.maxWeek, Math.max(1, weekControl.effectiveWeek + direction));
       await setWeekOverride(next);
     } finally {
       setIsUpdatingWeek(false);
@@ -107,42 +102,30 @@ export default function Home() {
   return (
     <AppShell title="Gym Book" eyebrow="Offline-First Training">
       <div className="space-y-4">
-        <section className="grid grid-cols-2 gap-3">
-          <div className="rounded-panel border border-line bg-surface p-4">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-xs uppercase tracking-[0.18em] text-content-muted">Aktive Woche</p>
-                <p className="mt-3 text-2xl font-semibold tracking-tight text-content">
-                  {effectiveWeekLabel}
-                </p>
-              </div>
-              <div className="flex gap-2">
-                <IconButton
-                  label="Eine Woche zurueck"
-                  onClick={() => handleStepWeek(-1)}
-                  disabled={!program || isUpdatingWeek}
-                >
-                  <Minus size={18} />
-                </IconButton>
-                <IconButton
-                  label="Eine Woche vor"
-                  onClick={() => handleStepWeek(1)}
-                  disabled={!program || isUpdatingWeek}
-                >
-                  <Plus size={18} />
-                </IconButton>
-                <IconButton
-                  label="Wochen-Override zuruecksetzen"
-                  onClick={handleClearWeek}
-                  disabled={!settings?.weekOverride || isUpdatingWeek}
-                >
-                  <RotateCcw size={18} />
-                </IconButton>
-              </div>
-            </div>
-            <p className="mt-2 text-sm text-content-muted">{weekHint}</p>
-            <p className="mt-1 text-xs text-content-muted">{weekModeHint}</p>
-          </div>
+        {/*
+          Bei zwei gleich breiten Spalten reicht der Platz nicht fuer Label
+          plus drei 44px-Buttons - sie liefen ueber den Kartenrand und lagen
+          dann unter der Vorlagen-Karte, ausserhalb der Klickflaeche.
+        */}
+        <section className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <WeekStepper
+            label="Aktive Woche"
+            week={weekControl.effectiveWeek}
+            hint={
+              <>
+                <p className="mt-2 text-sm text-content-muted">{weekHint}</p>
+                <p className="mt-1 text-xs text-content-muted">{weekModeHint}</p>
+              </>
+            }
+            backLabel="Eine Woche zurueck"
+            forwardLabel="Eine Woche vor"
+            onStepBack={() => handleStepWeek(-1)}
+            onStepForward={() => handleStepWeek(1)}
+            disabled={!program || isUpdatingWeek}
+            onReset={handleClearWeek}
+            resetLabel="Wochen-Override zuruecksetzen"
+            resetDisabled={!settings?.weekOverride || isUpdatingWeek}
+          />
           <StatCard
             label="Vorlagen"
             value={templateCountLabel}

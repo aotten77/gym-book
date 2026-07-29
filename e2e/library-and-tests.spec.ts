@@ -134,6 +134,56 @@ test.describe('Test-Erfassung', () => {
     // dass genau der eben erfasste verschwunden ist.
     await expect(page.getByText('25%')).toBeHidden();
   });
+
+  test('erfasster Test erscheint auch in der Uebungsansicht', async ({ page }) => {
+    await resetDatabase(page);
+    await seedSampleData(page);
+
+    // loadTestsForExercise existierte schon vorher, wurde aber nirgends
+    // aufgerufen - Tests waren nur ueber /tests auffindbar.
+    await page.goto('./#/tests');
+    await page.waitForTimeout(900);
+
+    await page.getByRole('button', { name: 'Erfassen' }).click();
+    await page.getByLabel('Links').fill('12');
+    await page.getByLabel('Rechts').fill('15');
+    await page.getByRole('button', { name: 'Speichern' }).click();
+    await page.waitForTimeout(900);
+
+    await page.goto('./#/exercises');
+    await page.waitForTimeout(900);
+    // Test und Formular defaulten beide auf die alphabetisch erste Uebung.
+    await page.getByRole('button', { name: 'Verlauf anzeigen' }).first().click();
+    await page.waitForTimeout(500);
+
+    await expect(page.getByText('Links 12 · Rechts 15 · Asymmetrie 20%')).toBeVisible();
+  });
+});
+
+test.describe('Vorlagen', () => {
+  test('Uebung zur Vorlage nur ueber Auswahl aus der Bibliothek hinzufuegen', async ({ page }) => {
+    await resetDatabase(page);
+    await seedSampleData(page);
+
+    await page.goto('./#/templates');
+    await page.waitForTimeout(900);
+    await page.getByRole('link', { name: 'Bearbeiten' }).first().click();
+    await page.waitForTimeout(900);
+
+    // Der "Bestehend"/"Neu"-Toggle samt Neuanlage-Formular ist mit der
+    // Bibliothek ueberfluessig geworden - nur noch Auswahl.
+    const addExerciseSection = page.locator('section', {
+      has: page.getByRole('heading', { name: 'Template-Uebung hinzufuegen' }),
+    });
+    await expect(page.getByRole('button', { name: 'Neue Uebung' })).toHaveCount(0);
+    await expect(addExerciseSection.locator('select')).toHaveCount(1);
+
+    await addExerciseSection.locator('select').selectOption({ label: 'Nordic Curl Iso' });
+    await page.waitForTimeout(400);
+
+    // Vorschau-Absatz statt der <option> - sonst matcht auch der Select selbst.
+    await expect(addExerciseSection.getByRole('paragraph').filter({ hasText: 'Nordic Curl Iso' })).toBeVisible();
+  });
 });
 
 test.describe('Destruktive Aktionen', () => {

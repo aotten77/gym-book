@@ -94,6 +94,28 @@ test.describe('Pausentimer', () => {
   });
 });
 
+test.describe('Uebung zur Session hinzufuegen', () => {
+  test.beforeEach(async ({ page }) => {
+    await resetDatabase(page);
+    await seedSampleData(page);
+  });
+
+  test('nur Auswahl aus der Bibliothek, kein Neuanlage-Formular', async ({ page }) => {
+    await startSampleSession(page);
+
+    await page.getByRole('button', { name: 'Uebung hinzufuegen' }).click();
+    await page.waitForTimeout(400);
+
+    await expect(page.getByRole('button', { name: 'Neu', exact: true })).toHaveCount(0);
+
+    await page.locator('select').selectOption({ label: 'Nordic Curl Iso' });
+    await page.getByRole('button', { name: 'Zur Session hinzufuegen' }).click();
+    await page.waitForTimeout(900);
+
+    await expect(page.getByText('Nordic Curl Iso').first()).toBeVisible();
+  });
+});
+
 test.describe('Session-Lebenszyklus', () => {
   test.beforeEach(async ({ page }) => {
     await resetDatabase(page);

@@ -1,17 +1,19 @@
 import { useRef, useState, type ChangeEvent } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Download, Minus, Plus, RotateCcw, Upload } from 'lucide-react';
+import { Download, Upload } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { AppShell } from '@/components/AppShell';
 import { Alert } from '@/components/Alert';
-import { Button, IconButton } from '@/components/ui/Button';
+import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { SectionCard } from '@/components/SectionCard';
+import { WeekStepper } from '@/components/WeekStepper';
 import { bootstrapAppData, seedSampleData } from '@/db/bootstrap';
 import { formatDateTime } from '@/lib/format';
 import { db } from '@/db/appDb';
 import { setProgramActiveWeek } from '@/db/program-actions';
 import { clearWeekOverride, setActiveProgram, setWeekOverride } from '@/db/settings-actions';
+import { resolveWeekControl } from '@/domain/program';
 import {
   type DatabaseSnapshot,
   exportDatabaseSnapshot,
@@ -107,13 +109,8 @@ export function SettingsPage() {
     mediaAssets: await db.mediaAssets.count(),
   }), []);
   const pendingSummary = pendingImport ? summarizeDatabaseSnapshot(pendingImport.snapshot) : null;
-  const maxProgramWeek = Math.max(
-    1,
-    ...(programWeeks ?? []).map((week) => week.weekNumber),
-    activeProgram?.activeWeek ?? 1,
-  );
-  const effectiveWeek = settings?.weekOverride ?? activeProgram?.activeWeek ?? 1;
-  const effectiveWeekLabel = `W${effectiveWeek}`;
+  const weekControl = resolveWeekControl(settings?.weekOverride, activeProgram, programWeeks ?? []);
+  const effectiveWeekLabel = `W${weekControl.effectiveWeek}`;
 
   async function handleImportFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -189,15 +186,8 @@ export function SettingsPage() {
     setIsSavingProgram(true);
 
     try {
-      const base = settings?.weekOverride ?? activeProgram.activeWeek;
-      const next = Math.min(maxProgramWeek, Math.max(1, base + direction));
-
-      if (settings?.weekOverride) {
-        await setWeekOverride(next);
-      } else {
-        await setWeekOverride(next);
-      }
-
+      const next = Math.min(weekControl.maxWeek, Math.max(1, weekControl.effectiveWeek + direction));
+      await setWeekOverride(next);
       setProgramError(null);
     } catch (error) {
       setProgramError(error instanceof Error ? error.message : 'Woche konnte nicht aktualisiert werden.');
@@ -227,7 +217,7 @@ export function SettingsPage() {
     setIsSavingProgram(true);
 
     try {
-      const next = Math.min(maxProgramWeek, Math.max(1, activeProgram.activeWeek + direction));
+      const next = Math.min(weekControl.maxWeek, Math.max(1, activeProgram.activeWeek + direction));
       await setProgramActiveWeek(activeProgram.id, next);
       setProgramError(null);
     } catch (error) {
@@ -301,50 +291,43 @@ export function SettingsPage() {
               </div>
             )}
 
-            <div className="rounded-panel border border-line bg-surface p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.18em] text-content-muted">Aktive Woche</p>
-                  <p className="mt-2 text-2xl font-semibold text-content">{effectiveWeekLabel}</p>
-                  <p className="mt-1 text-sm text-content-muted">
-                    {settings?.weekOverride ? 'Override' : 'Programm'}
-                  </p>
-                </div>
-                <div className="flex gap-2">
-                  <IconButton label="Override-Woche zurueck" onClick={() => handleStepActiveWeek(-1)} disabled={!activeProgram || isSavingProgram}>
-                    <Minus size={18} />
-                  </IconButton>
-                  <IconButton label="Override-Woche vor" onClick={() => handleStepActiveWeek(1)} disabled={!activeProgram || isSavingProgram}>
-                    <Plus size={18} />
-                  </IconButton>
-                  <IconButton label="Wochen-Override zuruecksetzen" onClick={handleResetWeekOverride} disabled={!settings?.weekOverride || isSavingProgram}>
-                    <RotateCcw size={18} />
-                  </IconButton>
-                </div>
-              </div>
-            </div>
+            <p className="text-sm text-content-muted">
+              Die Programm-Woche laeuft kalendarisch mit dem Programm; ein Override
+              ueberschreibt sie, bis du ihn zuruecksetzt.
+            </p>
 
-            <div className="rounded-panel border border-line bg-surface p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.18em] text-content-muted">Programm-Woche</p>
-                  <p className="mt-2 text-2xl font-semibold text-content">
-                    W{activeProgram?.activeWeek ?? 1}
-                  </p>
-                  <p className="mt-1 text-sm text-content-muted">
-                    Wirkt nur, wenn keine Override-Woche aktiv ist.
-                  </p>
-                </div>
-                <div className="flex gap-2">
-                  <IconButton label="Programm-Woche zurueck" onClick={() => handleStepProgramWeek(-1)} disabled={!activeProgram || isSavingProgram}>
-                    <Minus size={18} />
-                  </IconButton>
-                  <IconButton label="Programm-Woche vor" onClick={() => handleStepProgramWeek(1)} disabled={!activeProgram || isSavingProgram}>
-                    <Plus size={18} />
-                  </IconButton>
-                </div>
-              </div>
-            </div>
+            <WeekStepper
+              label="Aktive Woche"
+              week={weekControl.effectiveWeek}
+              hint={
+                <p className="mt-1 text-sm text-content-muted">
+                  {weekControl.mode === 'override' ? 'Override' : 'Programm'}
+                </p>
+              }
+              backLabel="Override-Woche zurueck"
+              forwardLabel="Override-Woche vor"
+              onStepBack={() => handleStepActiveWeek(-1)}
+              onStepForward={() => handleStepActiveWeek(1)}
+              disabled={!activeProgram || isSavingProgram}
+              onReset={handleResetWeekOverride}
+              resetLabel="Wochen-Override zuruecksetzen"
+              resetDisabled={!settings?.weekOverride || isSavingProgram}
+            />
+
+            <WeekStepper
+              label="Programm-Woche"
+              week={activeProgram?.activeWeek ?? 1}
+              hint={
+                <p className="mt-1 text-sm text-content-muted">
+                  Wirkt nur, wenn keine Override-Woche aktiv ist.
+                </p>
+              }
+              backLabel="Programm-Woche zurueck"
+              forwardLabel="Programm-Woche vor"
+              onStepBack={() => handleStepProgramWeek(-1)}
+              onStepForward={() => handleStepProgramWeek(1)}
+              disabled={!activeProgram || isSavingProgram}
+            />
 
             {programError ? (
               <div className="rounded-panel border border-rose-300/20 bg-rose-300/10 px-4 py-4 text-sm text-rose-100">
