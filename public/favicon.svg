@@ -1,4 +1,22 @@
-<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-<rect width="32" height="32" fill="#09090B"/>
-<path d="M26.6677 23.7149H8.38057V20.6496H5.33301V8.38159H26.6677V23.7149ZM8.38057 20.6496H23.6201V11.4482H8.38057V20.6496ZM16.0011 16.0021L13.8461 18.1705L11.6913 16.0021L13.8461 13.8337L16.0011 16.0021ZM22.0963 16.0008L19.9414 18.1691L17.7865 16.0008L19.9414 13.8324L22.0963 16.0008Z" fill="#BEF264"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="lime" x1="256" y1="164" x2="256" y2="348" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#D9F99D"/>
+      <stop offset="1" stop-color="#A3E635"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="256" cy="256" r="256" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#BEF264" stop-opacity="0.1"/>
+      <stop offset="1" stop-color="#BEF264" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="512" height="512" rx="96" fill="#09090B"/>
+  <g transform="translate(256 256) scale(1.04) translate(-256 -256)">
+    <g fill="url(#lime)">
+      <rect x="98" y="198" width="34" height="116" rx="11"/>
+      <rect x="132" y="164" width="44" height="184" rx="14"/>
+      <rect x="176" y="232" width="160" height="48" rx="8"/>
+      <rect x="336" y="164" width="44" height="184" rx="14"/>
+      <rect x="380" y="198" width="34" height="116" rx="11"/>
+    </g>
+  </g>
 </svg>
