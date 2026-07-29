@@ -202,6 +202,7 @@ export function AppShell({ title, eyebrow, children }: AppShellProps) {
                 <li key={to}>
                   <NavLink
                     to={to}
+                    aria-label={label}
                     className={({ isActive }) =>
                       cn(
                         'flex min-h-touch flex-col items-center justify-center gap-1 rounded-control px-1 py-2 text-[10px] font-medium leading-tight text-content-muted transition hover:bg-surface-raised hover:text-content',
@@ -211,9 +212,10 @@ export function AppShell({ title, eyebrow, children }: AppShellProps) {
                     }
                   >
                     <Icon size={18} />
-                    {/* Ohne truncate brechen "Programme" und "Historie" auf
-                        einem iPhone SE mitten im Wort um. */}
-                    <span className="w-full truncate text-center">{label}</span>
+                    {/* Unterhalb von 360px reicht die Zellenbreite nicht fuer
+                        die Beschriftung; das aria-label am Link traegt den
+                        Namen dann weiter. */}
+                    <span className="hidden w-full truncate text-center xs:block">{label}</span>
                   </NavLink>
                 </li>
               ))}

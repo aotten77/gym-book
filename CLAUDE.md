@@ -5,12 +5,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-npm run dev      # Vite dev server — app is served under the base path: http://localhost:5173/gym-book/
-npm run check    # tsc -b --noEmit (typecheck only)
-npm test         # vitest run (jsdom + fake-indexeddb)
-npm run lint     # eslint .
-npm run build    # tsc -b && vite build
-npm run preview  # serve dist/
+npm run dev       # Vite dev server — app is served under the base path: http://localhost:5173/gym-book/
+npm run check     # tsc -b --noEmit (typecheck only)
+npm test          # vitest run (jsdom + fake-indexeddb)
+npm run test:e2e  # playwright, WebKit on two iPhone sizes (starts the dev server itself)
+npm run lint      # eslint .
+npm run build     # tsc -b && vite build
 ```
 
 Single test file / single case:
@@ -83,7 +83,9 @@ Two rules that are not negotiable, because both were broken across the whole app
 
 `src/test/setup.ts` wipes and reopens the fake IndexedDB before every test, so `db/*.test.ts` files can call actions against a clean database with no manual teardown. Test coverage is deliberately concentrated on domain rules, db actions, and import/export validation — not components.
 
-For anything the jsdom environment cannot express — safe-area insets, the sticky rest timer, keyboard behaviour, contrast, focus rings — drive the real browser instead. The `webapp-testing` skill (Playwright) is installed for exactly this; a debounced autosave bug that all unit tests passed was only caught that way.
+For anything jsdom cannot express — safe-area insets, the sticky rest timer, contrast, focus rings, native control sizing — `e2e/` runs Playwright against **WebKit** on two iPhone widths. WebKit is deliberate: the app targets iOS Safari, and Chromium hides real problems. Two examples that only surfaced there: `<select>` ignores `min-height` under native `appearance` and collapsed to 22px, and a debounced autosave bug survived every unit test.
+
+`vitest.config.ts` excludes `e2e/`, so `npm test` and `npm run test:e2e` stay separate. When writing e2e tests, note that `seedSampleData` brings its own asymmetry test at 8.3% — pick different numbers or you will assert against the wrong row.
 
 ## First run
 

@@ -287,7 +287,7 @@ export function SettingsPage() {
                 value={settings?.activeProgramId ?? ''}
                 onChange={(event) => handleProgramChange(event.target.value)}
                 disabled={isSavingProgram}
-                className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
+                className="select-control min-h-touch w-full rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {programs?.map((program) => (
                   <option key={program.id} value={program.id}>

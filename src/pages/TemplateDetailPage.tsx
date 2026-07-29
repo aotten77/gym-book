@@ -20,7 +20,7 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { ExerciseMedia } from '@/components/ExerciseMedia';
 import { SectionCard } from '@/components/SectionCard';
 import { db } from '@/db/appDb';
-import { clearExerciseMedia, createPendingExerciseMedia, replaceExerciseMedia } from '@/db/media-actions';
+import { clearExerciseMedia, replaceExerciseMedia } from '@/db/media-actions';
 import {
   clearProgressionRule,
   deleteTemplate,
@@ -30,18 +30,10 @@ import {
   saveTemplateExercise,
   updateTemplate,
 } from '@/db/template-actions';
-import type { Exercise, MediaAsset, TrackingMode, WorkoutTemplateExercise } from '@/domain/models';
-
-type ExerciseSource = 'existing' | 'new';
+import type { MediaAsset, TrackingMode, WorkoutTemplateExercise } from '@/domain/models';
 
 interface TemplateExerciseFormState {
-  exerciseSource: ExerciseSource;
   exerciseId: string;
-  exerciseName: string;
-  instructions: string;
-  tempo: string;
-  trackingMode: TrackingMode;
-  unilateral: boolean;
   workSetCount: string;
   targetReps: string;
   targetSeconds: string;
@@ -51,13 +43,7 @@ interface TemplateExerciseFormState {
 }
 
 const defaultFormState: TemplateExerciseFormState = {
-  exerciseSource: 'existing',
   exerciseId: '',
-  exerciseName: '',
-  instructions: '',
-  tempo: '',
-  trackingMode: 'reps_weight',
-  unilateral: false,
   workSetCount: '3',
   targetReps: '',
   targetSeconds: '',
@@ -105,19 +91,13 @@ function parseOptionalNumber(value: string) {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-function buildFormState(item?: WorkoutTemplateExercise, exercise?: Exercise): TemplateExerciseFormState {
+function buildFormState(item?: WorkoutTemplateExercise): TemplateExerciseFormState {
   if (!item) {
     return defaultFormState;
   }
 
   return {
-    exerciseSource: 'existing',
     exerciseId: item.exerciseId,
-    exerciseName: '',
-    instructions: '',
-    tempo: '',
-    trackingMode: exercise?.trackingMode ?? 'reps_weight',
-    unilateral: exercise?.unilateral ?? false,
     workSetCount: String(item.workSetCount),
     targetReps: numberToInputValue(item.targetReps),
     targetSeconds: numberToInputValue(item.targetSeconds),
@@ -299,7 +279,6 @@ export function TemplateDetailPage() {
   const [progressionFormsByWeekId, setProgressionFormsByWeekId] = useState<
     Record<string, ProgressionRuleFormState>
   >({});
-  const [pendingNewExerciseMediaFile, setPendingNewExerciseMediaFile] = useState<File | null>(null);
   const [mediaError, setMediaError] = useState<string | null>(null);
   const template = useLiveQuery(() => db.workoutTemplates.get(templateId), [templateId]);
   const templateExercises = useLiveQuery(
@@ -372,10 +351,7 @@ export function TemplateDetailPage() {
         .map((rule) => [rule.programWeekId, rule]),
     );
   }, [progressionRules, selectedProgramWeeks, selectedProgressionTemplateExerciseId]);
-  const selectedExistingExercise =
-    form.exerciseSource === 'existing'
-      ? sortedExercises.find((item) => item.id === form.exerciseId)
-      : undefined;
+  const selectedExistingExercise = sortedExercises.find((item) => item.id === form.exerciseId);
   const selectedExistingExerciseMedia =
     selectedExistingExercise?.mediaAssetId ? mediaAssetById[selectedExistingExercise.mediaAssetId] : undefined;
   const sensors = useSensors(
@@ -430,10 +406,8 @@ export function TemplateDetailPage() {
     }
 
     const item = templateExercises.find((entry) => entry.id === editingTemplateExerciseId);
-    const exercise = sortedExercises.find((entry) => entry.id === item?.exerciseId);
 
-    setForm(buildFormState(item, exercise));
-    setPendingNewExerciseMediaFile(null);
+    setForm(buildFormState(item));
     setMediaError(null);
   }, [editingTemplateExerciseId, sortedExercises, templateExercises]);
 
@@ -520,11 +494,7 @@ export function TemplateDetailPage() {
       return;
     }
 
-    if (form.exerciseSource === 'existing' && !form.exerciseId) {
-      return;
-    }
-
-    if (form.exerciseSource === 'new' && !form.exerciseName.trim()) {
+    if (!form.exerciseId) {
       return;
     }
 
@@ -534,16 +504,8 @@ export function TemplateDetailPage() {
       const currentItem = editingTemplateExerciseId
         ? templateExercises?.find((entry) => entry.id === editingTemplateExerciseId)
         : undefined;
-      const pendingMediaAssetId =
-        form.exerciseSource === 'new' && pendingNewExerciseMediaFile
-          ? await createPendingExerciseMedia({
-              file: pendingNewExerciseMediaFile,
-              fileName: pendingNewExerciseMediaFile.name,
-              mimeType: pendingNewExerciseMediaFile.type,
-            })
-          : undefined;
 
-      const result = await saveTemplateExercise({
+      await saveTemplateExercise({
         id: editingTemplateExerciseId ?? undefined,
         templateId: template.id,
         orderIndex: currentItem?.orderIndex ?? orderedTemplateExercises.length + 1,
@@ -553,34 +515,10 @@ export function TemplateDetailPage() {
         targetWeight: parseOptionalNumber(form.targetWeight),
         restSeconds: parseOptionalNumber(form.restSeconds),
         notes: form.notes,
-        exerciseId: form.exerciseSource === 'existing' ? form.exerciseId : undefined,
-        exerciseName: form.exerciseSource === 'new' ? form.exerciseName : undefined,
-        instructions: form.exerciseSource === 'new' ? form.instructions : undefined,
-        tempo: form.exerciseSource === 'new' ? form.tempo : undefined,
-        mediaAssetId: pendingMediaAssetId,
-        trackingMode:
-          form.exerciseSource === 'new'
-            ? form.trackingMode
-            : selectedExistingExercise?.trackingMode ?? 'reps_weight',
-        unilateral:
-          form.exerciseSource === 'new'
-            ? form.unilateral
-            : selectedExistingExercise?.unilateral ?? false,
+        exerciseId: form.exerciseId,
+        trackingMode: selectedExistingExercise?.trackingMode ?? 'reps_weight',
+        unilateral: selectedExistingExercise?.unilateral ?? false,
       });
-
-      if (form.exerciseSource === 'new') {
-        setPendingNewExerciseMediaFile(null);
-      }
-
-      if (form.exerciseSource === 'existing' && pendingNewExerciseMediaFile) {
-        await replaceExerciseMedia({
-          exerciseId: result.exerciseId,
-          file: pendingNewExerciseMediaFile,
-          fileName: pendingNewExerciseMediaFile.name,
-          mimeType: pendingNewExerciseMediaFile.type,
-        });
-        setPendingNewExerciseMediaFile(null);
-      }
 
       setEditingTemplateExerciseId(null);
       setMediaError(null);
@@ -870,7 +808,7 @@ export function TemplateDetailPage() {
                 <select
                   value={selectedProgramId}
                   onChange={(event) => setSelectedProgramId(event.target.value)}
-                  className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
+                  className="select-control w-full rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
                 >
                   {(programs ?? []).map((program) => (
                     <option key={program.id} value={program.id}>
@@ -881,7 +819,7 @@ export function TemplateDetailPage() {
                 <select
                   value={selectedProgressionTemplateExerciseId}
                   onChange={(event) => setSelectedProgressionTemplateExerciseId(event.target.value)}
-                  className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
+                  className="select-control w-full rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
                 >
                   {orderedTemplateExercises.map((item) => (
                     <option key={item.id} value={item.id}>
@@ -1040,7 +978,7 @@ export function TemplateDetailPage() {
         <div ref={editExerciseSectionRef}>
           <SectionCard
             title={editingTemplateExerciseId ? 'Template-Uebung bearbeiten' : 'Template-Uebung hinzufuegen'}
-            subtitle="Bestehende Uebung auswaehlen oder direkt eine neue globale Uebung anlegen."
+            subtitle="Uebung aus der Bibliothek auswaehlen."
             action={
               <div className="flex h-10 w-10 items-center justify-center rounded-control bg-accent-soft text-accent">
                 <Plus size={18} />
@@ -1048,43 +986,20 @@ export function TemplateDetailPage() {
             }
           >
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                type="button"
-                onClick={() => setForm((current) => ({ ...current, exerciseSource: 'existing' }))}
-                className={`rounded-panel px-4 py-4 text-sm font-medium transition ${
-                  form.exerciseSource === 'existing'
-                    ? 'bg-accent text-accent-contrast'
-                    : 'bg-surface-raised text-content-secondary hover:bg-surface-hover'
-                }`}
-              >
-                Bestehende Uebung
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  setForm((current) => ({
-                    ...current,
-                    exerciseSource: 'new',
-                    exerciseId: '',
-                  }))
-                }
-                className={`rounded-panel px-4 py-4 text-sm font-medium transition ${
-                  form.exerciseSource === 'new'
-                    ? 'bg-accent text-accent-contrast'
-                    : 'bg-surface-raised text-content-secondary hover:bg-surface-hover'
-                }`}
-              >
-                Neue Uebung
-              </button>
-            </div>
-
-            {form.exerciseSource === 'existing' ? (
+            {sortedExercises.length === 0 ? (
+              <div className="rounded-panel border border-dashed border-line bg-surface px-4 py-5 text-sm text-content-muted">
+                Noch keine Uebung in der Bibliothek.{' '}
+                <Link to="/exercises" className="text-accent underline underline-offset-2">
+                  Jetzt anlegen
+                </Link>
+                .
+              </div>
+            ) : (
               <div className="space-y-3">
                 <select
                   value={form.exerciseId}
                   onChange={(event) => setForm((current) => ({ ...current, exerciseId: event.target.value }))}
-                  className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
+                  className="select-control min-h-touch w-full rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
                 >
                   {sortedExercises.map((exercise) => (
                     <option key={exercise.id} value={exercise.id}>
@@ -1137,86 +1052,6 @@ export function TemplateDetailPage() {
                   </div>
                 ) : null}
               </div>
-            ) : (
-              <div className="space-y-3">
-                <input
-                  value={form.exerciseName}
-                  onChange={(event) => setForm((current) => ({ ...current, exerciseName: event.target.value }))}
-                  aria-label="Uebungsname" placeholder="Uebungsname"
-                  className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
-                />
-                <textarea
-                  value={form.instructions}
-                  onChange={(event) => setForm((current) => ({ ...current, instructions: event.target.value }))}
-                  aria-label="Ausfuehrungshinweis" placeholder="Ausfuehrungshinweis"
-                  rows={3}
-                  className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
-                />
-                <input
-                  value={form.tempo}
-                  onChange={(event) => setForm((current) => ({ ...current, tempo: event.target.value }))}
-                  aria-label="Tempo, z. B. 4-1-1" placeholder="Tempo, z. B. 4-1-1"
-                  className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
-                />
-                <div className="grid grid-cols-2 gap-3">
-                  <select
-                    value={form.trackingMode}
-                    onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        trackingMode: event.target.value as TrackingMode,
-                      }))
-                    }
-                    className="rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
-                  >
-                    <option value="reps_weight">Wdh + Gewicht</option>
-                    <option value="time">Sekunden</option>
-                    <option value="time_weight">Sekunden + Gewicht</option>
-                  </select>
-                  <button
-                    type="button"
-                    onClick={() => setForm((current) => ({ ...current, unilateral: !current.unilateral }))}
-                    className={`rounded-panel px-4 py-4 text-sm font-medium transition ${
-                      form.unilateral
-                        ? 'bg-accent text-accent-contrast'
-                        : 'bg-surface-raised text-content-secondary hover:bg-surface-hover'
-                    }`}
-                  >
-                    {form.unilateral ? 'Unilateral' : 'Beidseitig'}
-                  </button>
-                </div>
-                <div className="space-y-3 rounded-panel bg-surface p-4">
-                  <label className="block rounded-control border border-line px-3 py-3 text-sm text-content-secondary transition hover:bg-surface-raised">
-                    <input
-                      type="file"
-                      accept="image/jpeg,image/png,image/webp,image/gif"
-                      className="hidden"
-                      onChange={(event) => {
-                        const file = event.target.files?.[0] ?? null;
-                        setPendingNewExerciseMediaFile(file);
-                        setMediaError(null);
-                        event.target.value = '';
-                      }}
-                    />
-                    {pendingNewExerciseMediaFile ? 'Bild ersetzen' : 'Bild fuer neue Uebung waehlen'}
-                  </label>
-                  <ExerciseMedia
-                    blob={pendingNewExerciseMediaFile ?? undefined}
-                    alt={form.exerciseName || 'Neue Uebung'}
-                    className="h-40 w-full"
-                    imageClassName="h-full w-full"
-                  />
-                  {pendingNewExerciseMediaFile ? (
-                    <button
-                      type="button"
-                      onClick={() => setPendingNewExerciseMediaFile(null)}
-                      className="min-h-touch inline-flex items-center justify-center rounded-control border border-line px-3 py-2 text-sm text-content-secondary transition hover:bg-surface-raised"
-                    >
-                      Bild entfernen
-                    </button>
-                  ) : null}
-                </div>
-              </div>
             )}
 
             <div className="space-y-2">
@@ -1230,8 +1065,7 @@ export function TemplateDetailPage() {
                 <p className="text-xs text-content-muted">Die Reihenfolge aenderst du oben direkt per Drag am Handle.</p>
             </div>
 
-            {(form.exerciseSource === 'new' ? form.trackingMode : selectedExistingExercise?.trackingMode) ===
-            'reps_weight' ? (
+            {selectedExistingExercise?.trackingMode === 'reps_weight' ? (
               <input
                 value={form.targetReps}
                 onChange={(event) => setForm((current) => ({ ...current, targetReps: event.target.value }))}
@@ -1241,8 +1075,7 @@ export function TemplateDetailPage() {
               />
             ) : null}
 
-            {(form.exerciseSource === 'new' ? form.trackingMode : selectedExistingExercise?.trackingMode) !==
-            'reps_weight' ? (
+            {selectedExistingExercise?.trackingMode !== 'reps_weight' ? (
               <input
                 value={form.targetSeconds}
                 onChange={(event) => setForm((current) => ({ ...current, targetSeconds: event.target.value }))}
@@ -1252,8 +1085,7 @@ export function TemplateDetailPage() {
               />
             ) : null}
 
-            {(form.exerciseSource === 'new' ? form.trackingMode : selectedExistingExercise?.trackingMode) !==
-            'time' ? (
+            {selectedExistingExercise?.trackingMode !== 'time' ? (
               <input
                 value={form.targetWeight}
                 onChange={(event) => setForm((current) => ({ ...current, targetWeight: event.target.value }))}

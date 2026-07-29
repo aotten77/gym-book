@@ -8,6 +8,11 @@ export default {
       center: true,
     },
     extend: {
+      screens: {
+        // iPhone SE der ersten Generation ist 320px breit - dort passen sechs
+        // beschriftete Tabs nicht nebeneinander.
+        xs: '360px',
+      },
       colors: {
         // Flaechen. Vorher existierten zwoelf Varianten von "Karte auf dunklem
         // Grund" (bg-zinc-950/35 bis /55, bg-white/[0.04] bis [0.07]) - das

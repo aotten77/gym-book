@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
   closestCenter,
@@ -58,16 +58,8 @@ interface SetLogDraft {
   weight: string;
 }
 
-type ExerciseSource = 'existing' | 'new';
-
 interface SessionExerciseFormState {
-  exerciseSource: ExerciseSource;
   exerciseId: string;
-  exerciseName: string;
-  instructions: string;
-  tempo: string;
-  trackingMode: TrackingMode;
-  unilateral: boolean;
   workSetCount: string;
   targetReps: string;
   targetSeconds: string;
@@ -77,13 +69,7 @@ interface SessionExerciseFormState {
 }
 
 const defaultSessionExerciseFormState: SessionExerciseFormState = {
-  exerciseSource: 'existing',
   exerciseId: '',
-  exerciseName: '',
-  instructions: '',
-  tempo: '',
-  trackingMode: 'reps_weight',
-  unilateral: false,
   workSetCount: '3',
   targetReps: '',
   targetSeconds: '',
@@ -645,10 +631,6 @@ export function SessionPage() {
     }
 
     setExerciseForm((current) => {
-      if (current.exerciseSource !== 'existing') {
-        return current;
-      }
-
       if (
         current.exerciseId &&
         availableExercises.some((exercise) => exercise.id === current.exerciseId)
@@ -692,25 +674,15 @@ export function SessionPage() {
         : undefined,
     [selectedExistingExercise?.mediaAssetId],
   );
-  const effectiveTrackingMode =
-    exerciseForm.exerciseSource === 'new'
-      ? exerciseForm.trackingMode
-      : selectedExistingExercise?.trackingMode ?? 'reps_weight';
-  const effectiveUnilateral =
-    exerciseForm.exerciseSource === 'new'
-      ? exerciseForm.unilateral
-      : selectedExistingExercise?.unilateral ?? false;
+  const effectiveTrackingMode = selectedExistingExercise?.trackingMode ?? 'reps_weight';
+  const effectiveUnilateral = selectedExistingExercise?.unilateral ?? false;
 
   async function handleAddExercise() {
     if (!session || session.status !== 'active') {
       return;
     }
 
-    if (exerciseForm.exerciseSource === 'existing' && !exerciseForm.exerciseId) {
-      return;
-    }
-
-    if (exerciseForm.exerciseSource === 'new' && !exerciseForm.exerciseName.trim()) {
+    if (!exerciseForm.exerciseId) {
       return;
     }
 
@@ -731,13 +703,7 @@ export function SessionPage() {
           : undefined,
         restSeconds: optionalNumberInput(exerciseForm.restSeconds),
         notes: exerciseForm.notes,
-        exerciseId:
-          exerciseForm.exerciseSource === 'existing' ? exerciseForm.exerciseId : undefined,
-        exerciseName:
-          exerciseForm.exerciseSource === 'new' ? exerciseForm.exerciseName : undefined,
-        instructions:
-          exerciseForm.exerciseSource === 'new' ? exerciseForm.instructions : undefined,
-        tempo: exerciseForm.exerciseSource === 'new' ? exerciseForm.tempo : undefined,
+        exerciseId: exerciseForm.exerciseId,
         trackingMode: effectiveTrackingMode,
         unilateral: effectiveUnilateral,
       });
@@ -907,153 +873,43 @@ export function SessionPage() {
 
                   {showAddExerciseForm ? (
                     <div className="space-y-4 rounded-panel border border-line bg-surface p-4">
-                      <div className="grid grid-cols-2 gap-3">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setExerciseForm((current) => ({
-                              ...current,
-                              exerciseSource: 'existing',
-                              exerciseId:
-                                current.exerciseId || availableExercises?.[0]?.id || '',
-                            }))
-                          }
-                          className={cn(
-                            'rounded-panel px-4 py-3 text-sm font-medium transition',
-                            exerciseForm.exerciseSource === 'existing'
-                              ? 'bg-accent text-accent-contrast'
-                              : 'bg-surface-raised text-content-secondary hover:bg-surface-hover',
-                          )}
-                        >
-                          Bestehend
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setExerciseForm((current) => ({
-                              ...current,
-                              exerciseSource: 'new',
-                            }))
-                          }
-                          className={cn(
-                            'rounded-panel px-4 py-3 text-sm font-medium transition',
-                            exerciseForm.exerciseSource === 'new'
-                              ? 'bg-accent text-accent-contrast'
-                              : 'bg-surface-raised text-content-secondary hover:bg-surface-hover',
-                          )}
-                        >
-                          Neu
-                        </button>
-                      </div>
-
-                      {exerciseForm.exerciseSource === 'existing' ? (
+                      {(availableExercises?.length ?? 0) > 0 ? (
                         <div className="space-y-3">
-                          {(availableExercises?.length ?? 0) > 0 ? (
-                            <>
-                              <select
-                                value={exerciseForm.exerciseId}
-                                onChange={(event) =>
-                                  setExerciseForm((current) => ({
-                                    ...current,
-                                    exerciseId: event.target.value,
-                                  }))
-                                }
-                                className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
-                              >
-                                {(availableExercises ?? []).map((exercise) => (
-                                  <option key={exercise.id} value={exercise.id}>
-                                    {exercise.name}
-                                  </option>
-                                ))}
-                              </select>
+                          <select
+                            value={exerciseForm.exerciseId}
+                            onChange={(event) =>
+                              setExerciseForm((current) => ({
+                                ...current,
+                                exerciseId: event.target.value,
+                              }))
+                            }
+                            className="select-control w-full rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
+                          >
+                            {(availableExercises ?? []).map((exercise) => (
+                              <option key={exercise.id} value={exercise.id}>
+                                {exercise.name}
+                              </option>
+                            ))}
+                          </select>
 
-                              <p className="text-sm text-content-muted">
-                                Modus: {effectiveTrackingMode} ·{' '}
-                                {effectiveUnilateral ? 'links/rechts getrennt' : 'beidseitig'}
-                              </p>
-                              <ExerciseMedia
-                                mediaAsset={selectedExerciseMedia}
-                                alt={selectedExistingExercise?.name ?? 'Uebung'}
-                                className="h-32 w-full"
-                                imageClassName="h-full w-full"
-                              />
-                            </>
-                          ) : (
-                            <div className="rounded-panel bg-surface-raised px-4 py-4 text-sm text-content-muted">
-                              Noch keine gespeicherten Uebungen vorhanden. Lege die Uebung direkt
-                              hier unter &quot;Neu&quot; an.
-                            </div>
-                          )}
+                          <p className="text-sm text-content-muted">
+                            Modus: {effectiveTrackingMode} ·{' '}
+                            {effectiveUnilateral ? 'links/rechts getrennt' : 'beidseitig'}
+                          </p>
+                          <ExerciseMedia
+                            mediaAsset={selectedExerciseMedia}
+                            alt={selectedExistingExercise?.name ?? 'Uebung'}
+                            className="h-32 w-full"
+                            imageClassName="h-full w-full"
+                          />
                         </div>
                       ) : (
-                        <div className="space-y-3">
-                          <input
-                            value={exerciseForm.exerciseName}
-                            onChange={(event) =>
-                              setExerciseForm((current) => ({
-                                ...current,
-                                exerciseName: event.target.value,
-                              }))
-                            }
-                            aria-label="Neue Uebung" placeholder="Neue Uebung"
-                            className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
-                          />
-                          <div className="grid grid-cols-2 gap-3">
-                            <select
-                              value={exerciseForm.trackingMode}
-                              onChange={(event) =>
-                                setExerciseForm((current) => ({
-                                  ...current,
-                                  trackingMode: event.target.value as TrackingMode,
-                                }))
-                              }
-                              className="rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
-                            >
-                              <option value="reps_weight">Wdh + Gewicht</option>
-                              <option value="time">Zeit</option>
-                              <option value="time_weight">Zeit + Gewicht</option>
-                            </select>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setExerciseForm((current) => ({
-                                  ...current,
-                                  unilateral: !current.unilateral,
-                                }))
-                              }
-                              className={cn(
-                                'rounded-panel px-4 py-4 text-sm font-medium transition',
-                                exerciseForm.unilateral
-                                  ? 'bg-accent text-accent-contrast'
-                                  : 'bg-surface-raised text-content-secondary hover:bg-surface-hover',
-                              )}
-                            >
-                              {exerciseForm.unilateral ? 'Unilateral' : 'Beidseitig'}
-                            </button>
-                          </div>
-                          <input
-                            value={exerciseForm.tempo}
-                            onChange={(event) =>
-                              setExerciseForm((current) => ({
-                                ...current,
-                                tempo: event.target.value,
-                              }))
-                            }
-                            aria-label="Tempo, optional" placeholder="Tempo, optional"
-                            className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
-                          />
-                          <textarea
-                            value={exerciseForm.instructions}
-                            onChange={(event) =>
-                              setExerciseForm((current) => ({
-                                ...current,
-                                instructions: event.target.value,
-                              }))
-                            }
-                            rows={3}
-                            aria-label="Hinweise zur Ausfuehrung, optional" placeholder="Hinweise zur Ausfuehrung, optional"
-                            className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
-                          />
+                        <div className="rounded-panel bg-surface-raised px-4 py-4 text-sm text-content-muted">
+                          Noch keine Uebung in der Bibliothek.{' '}
+                          <Link to="/exercises" className="text-accent underline underline-offset-2">
+                            Jetzt anlegen
+                          </Link>
+                          .
                         </div>
                       )}
 
@@ -1156,14 +1012,7 @@ export function SessionPage() {
                         <button
                           type="button"
                           onClick={handleAddExercise}
-                          disabled={
-                            isSavingExercise ||
-                            (exerciseForm.exerciseSource === 'existing' &&
-                              !exerciseForm.exerciseId &&
-                              (availableExercises?.length ?? 0) === 0) ||
-                            (exerciseForm.exerciseSource === 'new' &&
-                              !exerciseForm.exerciseName.trim())
-                          }
+                          disabled={isSavingExercise || !exerciseForm.exerciseId}
                           className="rounded-panel bg-accent px-4 py-4 text-sm font-semibold text-accent-contrast transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           {isSavingExercise ? 'Speichert...' : 'Zur Session hinzufuegen'}

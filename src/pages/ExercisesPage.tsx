@@ -20,6 +20,7 @@ import {
 } from '@/db/exercise-actions';
 import { loadExerciseExecutions } from '@/db/history-queries';
 import { clearExerciseMedia, replaceExerciseMedia } from '@/db/media-actions';
+import { loadTestsForExercise } from '@/db/test-actions';
 import type { Exercise, TrackingMode } from '@/domain/models';
 import { buildProgressSeries, progressMetricFor } from '@/domain/progress';
 import { formatDateTime, formatLoadLabel } from '@/lib/format';
@@ -41,6 +42,7 @@ const emptyForm: ExerciseInput = {
 
 function ExerciseDetail({ exercise }: { exercise: Exercise }) {
   const executions = useLiveQuery(() => loadExerciseExecutions(exercise.id), [exercise.id]);
+  const tests = useLiveQuery(() => loadTestsForExercise(exercise.id), [exercise.id]);
   const media = useLiveQuery(
     async () => (exercise.mediaAssetId ? db.mediaAssets.get(exercise.mediaAssetId) : undefined),
     [exercise.mediaAssetId],
@@ -49,6 +51,7 @@ function ExerciseDetail({ exercise }: { exercise: Exercise }) {
   const points = buildProgressSeries(executions ?? [], exercise.trackingMode);
   const metric = progressMetricFor(exercise.trackingMode);
   const recent = [...(executions ?? [])].reverse().slice(0, 5);
+  const recentTests = [...(tests ?? [])].reverse().slice(0, 5);
 
   return (
     <div className="mt-3 space-y-3 border-t border-line pt-3">
@@ -91,6 +94,25 @@ function ExerciseDetail({ exercise }: { exercise: Exercise }) {
                 <p className="mt-0.5 text-content-muted">
                   {execution.workLogs.map((log) => formatLoadLabel(log)).join(' · ') ||
                     'Keine Arbeitssaetze geloggt'}
+                </p>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {recentTests.length > 0 ? (
+        <div className="rounded-panel bg-surface p-4">
+          <p className="text-xs uppercase tracking-[0.18em] text-content-muted">
+            Tests · links/rechts
+          </p>
+          <ul className="mt-3 space-y-3">
+            {recentTests.map((test) => (
+              <li key={test.id} className="text-sm">
+                <p className="text-content-secondary">{formatDateTime(test.recordedAt)}</p>
+                <p className="mt-0.5 text-content-muted">
+                  Links {test.leftValue} · Rechts {test.rightValue} · Asymmetrie{' '}
+                  {test.asymmetryPercent}%
                 </p>
               </li>
             ))}
@@ -363,6 +385,7 @@ export function ExercisesPage() {
                     <input
                       type="file"
                       accept="image/jpeg,image/png,image/webp,image/gif"
+                      aria-label={`Bild fuer ${exercise.name} waehlen`}
                       className="sr-only"
                       onChange={(event) => {
                         void handleMediaChange(exercise.id, event.target.files?.[0]);

@@ -120,7 +120,7 @@ export function SelectField({
 
   return (
     <FieldShell label={label} hint={hint} error={error} htmlFor={id} className={containerClassName}>
-      <select id={id} className={cn(CONTROL_CLASSES, className)} {...rest}>
+      <select id={id} className={cn(CONTROL_CLASSES, 'select-control', className)} {...rest}>
         {children}
       </select>
     </FieldShell>

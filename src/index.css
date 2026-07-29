@@ -58,6 +58,23 @@ select {
   font: inherit;
 }
 
+/*
+ * WebKit ignoriert min-height auf einem <select> mit nativem Erscheinungsbild -
+ * das Feld schrumpft dort auf 22px, weit unter jede Touch-Empfehlung.
+ * `appearance: none` macht daraus eine normale CSS-Box; der Pfeil kommt als
+ * Hintergrundbild zurueck, weil das native Chrome ohnehin hell rendert.
+ */
+.select-control {
+  appearance: none;
+  -webkit-appearance: none;
+  min-height: 44px;
+  padding-right: 2.75rem;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a1a1aa' stroke-width='2' stroke-linecap='round'><path d='M6 9l6 6 6-6'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 1rem center;
+  background-size: 1.15rem;
+}
+
 @layer base {
   /*
    * Sichtbarer Fokus als Grundregel.
