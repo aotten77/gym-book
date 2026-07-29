@@ -3,14 +3,17 @@
 @tailwind utilities;
 
 :root {
-  font-family: "SF Pro Display", "SF Pro Text", "Segoe UI", sans-serif;
+  /*
+   * `-apple-system` zuerst: "SF Pro Display" ist fuer Web-Inhalte in Safari
+   * nicht aufloesbar, die App rendete dadurch faktisch in generischem
+   * sans-serif statt in der beabsichtigten Systemschrift.
+   */
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   line-height: 1.5;
   font-weight: 400;
-  color: rgba(244, 244, 245, 1);
-  background:
-    radial-gradient(circle at top, rgba(132, 204, 22, 0.2), transparent 28%),
-    radial-gradient(circle at bottom right, rgba(245, 158, 11, 0.16), transparent 24%),
-    linear-gradient(180deg, #101214 0%, #09090b 100%);
+  color: #fafafa;
+  /* Native Controls (select, Scrollbars, Datepicker) im dunklen Chrome rendern. */
+  color-scheme: dark;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -21,18 +24,31 @@
   box-sizing: border-box;
 }
 
-html {
-  background: #09090b;
+html,
+body {
+  /*
+   * Der Verlauf sitzt auf dem Dokument, nicht auf einem Inhalts-Div: sonst
+   * wird er ueber die gesamte Seitenhoehe gestreckt und beim iOS-Overscroll
+   * blitzt eine andere Farbe auf.
+   */
+  background:
+    radial-gradient(circle at top, rgba(132, 204, 22, 0.16), transparent 26%),
+    radial-gradient(circle at bottom right, rgba(245, 158, 11, 0.12), transparent 22%),
+    linear-gradient(180deg, #18181b 0%, #09090b 100%);
+  background-attachment: fixed;
 }
 
 body {
   margin: 0;
   min-width: 320px;
-  min-height: 100vh;
+  /* dvh statt vh: sonst springt das Layout, wenn iOS die URL-Leiste ein- und ausblendet. */
+  min-height: 100dvh;
+  /* Verhindert, dass Pull-to-Refresh mitten in einer Session neu laedt. */
+  overscroll-behavior-y: contain;
 }
 
 #root {
-  min-height: 100vh;
+  min-height: 100dvh;
 }
 
 button,
@@ -42,15 +58,33 @@ select {
   font: inherit;
 }
 
-.bg-app {
-  background:
-    radial-gradient(circle at top, rgba(132, 204, 22, 0.16), transparent 26%),
-    radial-gradient(circle at bottom right, rgba(245, 158, 11, 0.12), transparent 22%),
-    linear-gradient(180deg, rgba(24, 24, 27, 1) 0%, rgba(9, 9, 11, 1) 100%);
+@layer base {
+  /*
+   * Sichtbarer Fokus als Grundregel.
+   *
+   * Der Browser-Default-Ring ist auf dunklem Grund praktisch unsichtbar, und
+   * per Hand war er nirgends gesetzt. `:where()` hat Spezifitaet 0, jede
+   * Komponente kann also weiterhin ihren eigenen Ring definieren.
+   */
+  :where(a, button, input, select, textarea, [tabindex]):focus-visible {
+    outline: 2px solid #bef264;
+    outline-offset: 2px;
+  }
 }
 
 .shadow-soft {
   box-shadow:
     0 12px 30px rgba(0, 0, 0, 0.28),
     inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

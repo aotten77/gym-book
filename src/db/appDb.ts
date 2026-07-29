@@ -45,6 +45,25 @@ class GymBookDatabase extends Dexie {
       mediaAssets: 'id, mimeType, createdAt',
       appSettings: 'id, activeProgramId, updatedAt',
     });
+
+    // v2 raeumt Indizes auf, die nie greifen konnten, und indiziert die Pfade,
+    // auf denen bisher ganze Tabellen gescannt wurden.
+    //
+    // `wasSkipped` und `completed` waren tot: IndexedDB akzeptiert Booleans
+    // nicht als Keys, solche Datensaetze landen gar nicht erst im Index -
+    // sie kosteten nur Pflegeaufwand bei jedem Write.
+    //
+    // Neue Felder auf bestehenden Objekten (`restTimerEndsAt` auf
+    // WorkoutSession) brauchen keine Migration: Dexie speichert das ganze
+    // Objekt, unabhaengig von den deklarierten Indizes.
+    this.version(2).stores({
+      exercises: 'id, name, updatedAt, mediaAssetId',
+      workoutSessionExercises: 'id, sessionId, exerciseId, orderIndex',
+      workoutSetLogs: 'id, sessionExerciseId, setKind, side, setNumber',
+      programWeeks: 'id, programId, weekNumber, [programId+weekNumber]',
+      progressionRules: 'id, templateExerciseId, programWeekId, [templateExerciseId+programWeekId]',
+      programs: 'id, activeWeek, updatedAt, name, createdAt',
+    });
   }
 }
 

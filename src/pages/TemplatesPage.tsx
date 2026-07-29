@@ -42,7 +42,7 @@ export function TemplatesPage() {
           title="Neue Vorlage"
           subtitle="Direkt in Dexie anlegen und anschliessend im Detail mit Uebungen befuellen."
           action={
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-lime-300/10 text-lime-200">
+            <div className="flex h-10 w-10 items-center justify-center rounded-control bg-accent-soft text-accent">
               <Plus size={18} />
             </div>
           }
@@ -51,21 +51,21 @@ export function TemplatesPage() {
             <input
               value={name}
               onChange={(event) => setName(event.target.value)}
-              placeholder="z. B. Einheit B"
-              className="w-full rounded-3xl border border-white/10 bg-zinc-950/45 px-4 py-4 text-sm text-zinc-50 outline-none transition placeholder:text-zinc-500 focus:border-lime-300/40"
+              aria-label="z. B. Einheit B" placeholder="z. B. Einheit B"
+              className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
             />
             <textarea
               value={notes}
               onChange={(event) => setNotes(event.target.value)}
-              placeholder="Kurznotiz fuer Fokus, Ziel oder Belastungssteuerung"
+              aria-label="Kurznotiz fuer Fokus, Ziel oder Belastungssteuerung" placeholder="Kurznotiz fuer Fokus, Ziel oder Belastungssteuerung"
               rows={3}
-              className="w-full rounded-3xl border border-white/10 bg-zinc-950/45 px-4 py-4 text-sm text-zinc-50 outline-none transition placeholder:text-zinc-500 focus:border-lime-300/40"
+              className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
             />
             <button
               type="button"
               onClick={handleCreateTemplate}
               disabled={!name.trim() || isSaving}
-              className="w-full rounded-3xl bg-lime-300 px-4 py-4 text-sm font-semibold text-zinc-950 transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
+              className="w-full rounded-panel bg-accent px-4 py-4 text-sm font-semibold text-accent-contrast transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Vorlage anlegen
             </button>
@@ -85,7 +85,7 @@ export function TemplatesPage() {
               action={
                 <Link
                   to={`/templates/${template.id}`}
-                  className="rounded-2xl border border-white/10 px-3 py-2 text-sm text-zinc-300 transition hover:bg-white/5"
+                  className="min-h-touch inline-flex items-center justify-center rounded-control border border-line px-3 py-2 text-sm text-content-secondary transition hover:bg-surface-raised"
                 >
                   Bearbeiten
                 </Link>
@@ -97,24 +97,24 @@ export function TemplatesPage() {
                     <Link
                       key={item.id}
                       to={`/templates/${template.id}`}
-                      className="flex items-center justify-between rounded-3xl border border-white/10 bg-zinc-950/45 px-4 py-4"
+                      className="flex items-center justify-between rounded-panel border border-line bg-surface px-4 py-4"
                     >
                       <div>
-                        <p className="text-sm font-semibold text-zinc-50">
+                        <p className="text-sm font-semibold text-content">
                           {item.orderIndex}. {exerciseNameById[item.exerciseId] ?? 'Unbekannte Uebung'}
                         </p>
-                        <p className="mt-1 text-sm text-zinc-400">
+                        <p className="mt-1 text-sm text-content-muted">
                           {item.targetReps ? `${item.workSetCount} x ${item.targetReps} Wdh` : null}
                           {item.targetReps && item.targetSeconds ? ' · ' : null}
                           {item.targetSeconds ? `${item.workSetCount} x ${item.targetSeconds}s` : null}
                           {item.targetWeight ? ` · ${item.targetWeight} kg` : ''}
                         </p>
                       </div>
-                      <ChevronRight size={18} className="text-zinc-600" />
+                      <ChevronRight size={18} className="text-content-muted" />
                     </Link>
                   ))
                 ) : (
-                  <div className="rounded-3xl border border-dashed border-white/10 bg-zinc-950/35 px-4 py-5 text-sm text-zinc-400">
+                  <div className="rounded-panel border border-dashed border-line bg-surface px-4 py-5 text-sm text-content-muted">
                     Noch keine Uebungen hinterlegt. Im Detailscreen kannst du bestehende Uebungen
                     referenzieren oder neue anlegen.
                   </div>

@@ -1,4 +1,23 @@
-import type { WorkoutSetLog } from '@/domain/models';
+import type { WorkoutSession, WorkoutSetLog } from '@/domain/models';
+
+/**
+ * Beschreibt, aus welcher Programmwoche eine Session materialisiert wurde.
+ *
+ * Bisher in drei Seiten kopiert - und alle drei zeigten "Woche 8 · Woche 8",
+ * weil die aufgeloeste Wochennummer und das Wochen-Label meist denselben Text
+ * ergeben. Das Label gewinnt, die Nummer springt nur ein, wenn keines da ist.
+ */
+export function formatSessionWeekContext(session: WorkoutSession) {
+  const weekLabel = session.programWeekLabelSnapshot?.trim();
+  const parts = [
+    weekLabel || `Woche ${session.resolvedProgramWeek}`,
+    session.programNameSnapshot,
+    // "Programm" ist der Normalfall und damit keine Information wert.
+    session.usedWeekOverride ? 'Override' : undefined,
+  ];
+
+  return parts.filter(Boolean).join(' · ');
+}
 
 export function formatDateTime(value?: string) {
   if (!value) {

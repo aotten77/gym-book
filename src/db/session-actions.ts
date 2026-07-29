@@ -3,7 +3,7 @@ import type { TrackingMode, WorkoutSetLog } from '@/domain/models';
 import { materializeSession } from '@/domain/session';
 import { createId } from '@/lib/id';
 
-interface SetLogValuesInput {
+export interface SetLogValuesInput {
   reps?: number;
   seconds?: number;
   weight?: number;
@@ -89,13 +89,11 @@ async function isSetLogEditable(setLogId: string) {
   return isSessionExerciseEditable(setLog.sessionExerciseId);
 }
 
+export async function findActiveSession() {
+  return db.workoutSessions.where('status').equals('active').first();
+}
+
 export async function startSessionFromTemplate(templateId: string) {
-  const existingActiveSession = await db.workoutSessions.where('status').equals('active').first();
-
-  if (existingActiveSession) {
-    return existingActiveSession.id;
-  }
-
   const template = await db.workoutTemplates.get(templateId);
 
   if (!template) {
@@ -146,38 +144,65 @@ export async function startSessionFromTemplate(templateId: string) {
     startedAt: new Date().toISOString(),
   });
 
+  return db.transaction(
+    'rw',
+    db.workoutSessions,
+    db.workoutSessionExercises,
+    db.workoutSetLogs,
+    async () => {
+      // Der Check gehoert in dieselbe Transaktion wie das Insert, sonst
+      // erzeugen zwei schnelle Taps zwei parallele aktive Sessions.
+      const existingActiveSession = await findActiveSession();
+
+      if (existingActiveSession) {
+        return existingActiveSession.id;
+      }
+
+      await db.workoutSessions.add(bundle.session);
+      await db.workoutSessionExercises.bulkAdd(bundle.sessionExercises);
+      await db.workoutSetLogs.bulkAdd(bundle.setLogs);
+
+      return bundle.session.id;
+    },
+  );
+}
+
+export async function toggleSetCompletion(setLogId: string) {
   await db.transaction(
     'rw',
     db.workoutSessions,
     db.workoutSessionExercises,
     db.workoutSetLogs,
     async () => {
-      await db.workoutSessions.add(bundle.session);
-      await db.workoutSessionExercises.bulkAdd(bundle.sessionExercises);
-      await db.workoutSetLogs.bulkAdd(bundle.setLogs);
+      if (!(await isSetLogEditable(setLogId))) {
+        return;
+      }
+
+      // Lesen und Schreiben in einem Zug: bei einem Doppeltipp wuerde ein
+      // getrenntes get/update beide Male denselben Ausgangswert sehen.
+      await db.workoutSetLogs.where('id').equals(setLogId).modify((log) => {
+        const nextCompleted = !log.completed;
+        log.completed = nextCompleted;
+
+        if (nextCompleted) {
+          log.completedAt = new Date().toISOString();
+        } else {
+          delete log.completedAt;
+        }
+      });
     },
   );
-
-  return bundle.session.id;
 }
 
-export async function toggleSetCompletion(setLogId: string) {
-  if (!(await isSetLogEditable(setLogId))) {
-    return;
-  }
-
-  const current = await db.workoutSetLogs.get(setLogId);
-
-  if (!current) {
-    return;
-  }
-
-  await db.workoutSetLogs.update(setLogId, {
-    completed: !current.completed,
-    completedAt: !current.completed ? new Date().toISOString() : undefined,
-  });
-}
-
+/**
+ * Schreibt Satzwerte.
+ *
+ * Nur Felder, die im Input als eigene Property vorhanden sind, werden
+ * angefasst. Ein fehlendes Feld bleibt unveraendert; ein Feld mit `undefined`
+ * wird bewusst geleert. Ohne diese Unterscheidung wuerde eine Fehleingabe
+ * ueber Dexies `undefined = Property loeschen` einen gespeicherten Wert
+ * vernichten.
+ */
 export async function updateSetLogValues(setLogId: string, values: SetLogValuesInput) {
   if (!(await isSetLogEditable(setLogId))) {
     return;
@@ -189,11 +214,25 @@ export async function updateSetLogValues(setLogId: string, values: SetLogValuesI
     return;
   }
 
-  await db.workoutSetLogs.update(setLogId, {
-    reps: values.reps,
-    seconds: values.seconds,
-    weight: values.weight,
-  });
+  const changes: Partial<Pick<WorkoutSetLog, 'reps' | 'seconds' | 'weight'>> = {};
+
+  if ('reps' in values) {
+    changes.reps = normalizeOptionalNumber(values.reps);
+  }
+
+  if ('seconds' in values) {
+    changes.seconds = normalizeOptionalNumber(values.seconds);
+  }
+
+  if ('weight' in values) {
+    changes.weight = normalizeOptionalNumber(values.weight);
+  }
+
+  if (Object.keys(changes).length === 0) {
+    return;
+  }
+
+  await db.workoutSetLogs.update(setLogId, changes);
 }
 
 export async function addSessionExercise(input: AddSessionExerciseInput) {
@@ -271,18 +310,16 @@ export async function addSessionExercise(input: AddSessionExerciseInput) {
 }
 
 export async function toggleSkipSessionExercise(sessionExerciseId: string) {
-  if (!(await isSessionExerciseEditable(sessionExerciseId))) {
-    return;
-  }
+  await db.transaction('rw', db.workoutSessions, db.workoutSessionExercises, async () => {
+    if (!(await isSessionExerciseEditable(sessionExerciseId))) {
+      return;
+    }
 
-  const current = await db.workoutSessionExercises.get(sessionExerciseId);
-
-  if (!current) {
-    return;
-  }
-
-  await db.workoutSessionExercises.update(sessionExerciseId, {
-    wasSkipped: !current.wasSkipped,
+    // `modify` liest und schreibt in einem Zug, damit ein Doppeltipp den
+    // Zustand nicht zweimal auf denselben Wert setzt.
+    await db.workoutSessionExercises.where('id').equals(sessionExerciseId).modify((item) => {
+      item.wasSkipped = !item.wasSkipped;
+    });
   });
 }
 
@@ -319,9 +356,72 @@ export async function reorderSessionExercises(sessionId: string, orderedSessionE
   });
 }
 
-export async function completeSession(sessionId: string) {
-  await db.workoutSessions.update(sessionId, {
-    status: 'completed',
-    completedAt: new Date().toISOString(),
+export async function startRestTimer(sessionId: string, seconds: number) {
+  await db.transaction('rw', db.workoutSessions, async () => {
+    const session = await db.workoutSessions.get(sessionId);
+
+    if (session?.status !== 'active') {
+      return;
+    }
+
+    await db.workoutSessions.update(sessionId, {
+      restTimerEndsAt: Date.now() + Math.max(1, Math.round(seconds)) * 1000,
+    });
   });
+}
+
+export async function extendRestTimer(sessionId: string, seconds: number) {
+  await db.transaction('rw', db.workoutSessions, async () => {
+    const session = await db.workoutSessions.get(sessionId);
+
+    if (session?.status !== 'active') {
+      return;
+    }
+
+    // Von der Restlaufzeit aus verlaengern, nicht vom urspruenglichen Ende:
+    // ein abgelaufener Timer startet damit sauber neu.
+    const base = Math.max(session.restTimerEndsAt ?? 0, Date.now());
+
+    await db.workoutSessions.update(sessionId, {
+      restTimerEndsAt: base + Math.round(seconds) * 1000,
+    });
+  });
+}
+
+export async function clearRestTimer(sessionId: string) {
+  await db.workoutSessions.update(sessionId, { restTimerEndsAt: undefined });
+}
+
+async function closeSession(sessionId: string, status: 'completed' | 'aborted') {
+  await db.transaction('rw', db.workoutSessions, async () => {
+    const session = await db.workoutSessions.get(sessionId);
+
+    if (!session) {
+      throw new Error('Session nicht gefunden');
+    }
+
+    // Nur eine laufende Session laesst sich abschliessen. Ohne diesen Guard
+    // ueberschreibt ein zweiter Tipp den bereits gesetzten Abschlusszeitpunkt.
+    if (session.status !== 'active') {
+      return;
+    }
+
+    await db.workoutSessions.update(sessionId, {
+      status,
+      completedAt: new Date().toISOString(),
+      restTimerEndsAt: undefined,
+    });
+  });
+}
+
+export async function completeSession(sessionId: string) {
+  await closeSession(sessionId, 'completed');
+}
+
+/**
+ * Bricht eine laufende Session ab. Ohne diesen Weg bleibt eine versehentlich
+ * gestartete Session fuer immer aktiv und blockiert jeden neuen Trainingsstart.
+ */
+export async function abortSession(sessionId: string) {
+  await closeSession(sessionId, 'aborted');
 }

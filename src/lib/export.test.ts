@@ -45,6 +45,7 @@ describe('parseDatabaseSnapshot', () => {
               name: 'Deadlift',
               trackingMode: 'reps_weight',
               unilateral: false,
+              mediaAssetId: 'asset-1',
               createdAt: '2026-07-01T08:00:00.000Z',
               updatedAt: '2026-07-01T08:00:00.000Z',
             },
@@ -69,6 +70,20 @@ describe('parseDatabaseSnapshot', () => {
               startedAt: '2026-07-27T09:00:00.000Z',
               completedAt: '2026-07-27T10:00:00.000Z',
               status: 'completed',
+            },
+          ],
+          workoutSessionExercises: [
+            {
+              id: 'session-exercise-1',
+              sessionId: 'session-1',
+              exerciseId: 'exercise-1',
+              exerciseNameSnapshot: 'Deadlift',
+              trackingMode: 'reps_weight',
+              unilateral: false,
+              orderIndex: 1,
+              wasSkipped: false,
+              addedInSession: false,
+              workSetCount: 3,
             },
           ],
           workoutSetLogs: [
@@ -125,7 +140,7 @@ describe('parseDatabaseSnapshot', () => {
     });
   });
 
-  it('rejects unsupported schema versions', () => {
+  it('rejects unsupported schema versions with a readable message', () => {
     expect(() =>
       parseDatabaseSnapshot(
         JSON.stringify({
@@ -133,7 +148,67 @@ describe('parseDatabaseSnapshot', () => {
           schemaVersion: 999,
         }),
       ),
-    ).toThrow(/schemaVersion/i);
+    ).toThrow(/neueren App-Version/i);
+  });
+
+  it('rejects a snapshot whose references do not resolve', () => {
+    expect(() =>
+      parseDatabaseSnapshot(
+        JSON.stringify(
+          createSnapshot({
+            workoutSetLogs: [
+              {
+                id: 'set-log-orphan',
+                sessionExerciseId: 'does-not-exist',
+                setKind: 'work',
+                side: 'both',
+                setNumber: 1,
+                completed: true,
+              },
+            ],
+          }),
+        ),
+      ),
+    ).toThrow(/nicht schluessig/i);
+  });
+
+  it('rejects settings pointing at a missing program', () => {
+    expect(() =>
+      parseDatabaseSnapshot(
+        JSON.stringify(
+          createSnapshot({
+            appSettings: [
+              {
+                id: 'app-settings',
+                activeProgramId: 'program-missing',
+                exportSchemaVersion: SNAPSHOT_SCHEMA_VERSION,
+                updatedAt: '2026-07-27T20:00:00.000Z',
+              },
+            ],
+          }),
+        ),
+      ),
+    ).toThrow(/aktives Programm/i);
+  });
+
+  it('rejects media types the app cannot render', () => {
+    expect(() =>
+      parseDatabaseSnapshot(
+        JSON.stringify(
+          createSnapshot({
+            mediaAssets: [
+              {
+                id: 'asset-video',
+                mimeType: 'video/mp4',
+                fileName: 'clip.mp4',
+                byteSize: 10,
+                createdAt: '2026-07-27T12:30:00.000Z',
+              },
+            ] as unknown as DatabaseSnapshot['mediaAssets'],
+          }),
+        ),
+      ),
+    ).toThrow(/nicht unterstuetzt/i);
   });
 });
 

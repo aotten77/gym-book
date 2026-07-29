@@ -12,6 +12,18 @@ dist
 dist-ssr
 *.local
 
+# Installierte Agent-Skills: verhalten sich wie node_modules. Die Auswahl
+# steht in skills-lock.json, der Inhalt laesst sich mit `npx skills add`
+# jederzeit wiederherstellen. Der projekteigene Skill unter
+# .claude/skills/gym-book-architect/ ist dagegen versioniert.
+.agents/
+.claude/skills/*-design-guidelines
+.claude/skills/vercel-react-best-practices
+.claude/skills/webapp-testing
+.trae/skills/*-design-guidelines
+.trae/skills/vercel-react-best-practices
+.trae/skills/webapp-testing
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

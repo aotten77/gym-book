@@ -6,7 +6,7 @@ import { Empty } from '@/components/Empty';
 import { SectionCard } from '@/components/SectionCard';
 import { db } from '@/db/appDb';
 import type { WorkoutSession, WorkoutSessionExercise, WorkoutSetLog } from '@/domain/models';
-import { formatDateTime, formatLoadLabel } from '@/lib/format';
+import { formatDateTime, formatLoadLabel, formatSessionWeekContext } from '@/lib/format';
 
 interface HistoryEntry {
   sessionId: string;
@@ -34,16 +34,7 @@ function buildExerciseHistory(
 
   return sessionExercises.reduce<Record<string, HistoryEntry[]>>((groups, item) => {
     const session = sessionsById[item.sessionId];
-    const weekContext = session
-      ? [
-          `Woche ${session.resolvedProgramWeek}`,
-          session.programWeekLabelSnapshot,
-          session.programNameSnapshot,
-          session.usedWeekOverride ? 'Override' : 'Programm',
-        ]
-          .filter(Boolean)
-          .join(' · ')
-      : `Woche ?`;
+    const weekContext = session ? formatSessionWeekContext(session) : 'Woche ?';
     const preview = (logsBySessionExerciseId[item.id] ?? [])
       .filter((log) => log.setKind === 'work' && log.completed)
       .slice(0, 3)
@@ -118,24 +109,24 @@ export function HistoryPage() {
                   <Link
                     key={`${exerciseId}-${entry.sessionId}`}
                     to={`/history/session/${entry.sessionId}`}
-                    className="block rounded-3xl bg-zinc-950/45 p-4 transition hover:bg-zinc-950/55"
+                    className="block rounded-panel bg-surface p-4 transition hover:bg-surface-sunken"
                   >
-                    <p className="text-sm font-semibold text-zinc-50">
+                    <p className="text-sm font-semibold text-content">
                       {formatDateTime(entry.completedAt)} · {entry.templateName}
                     </p>
-                    <p className="mt-1 text-sm text-zinc-400">{entry.weekContext}</p>
+                    <p className="mt-1 text-sm text-content-muted">{entry.weekContext}</p>
                     <div className="mt-3 flex flex-wrap gap-2">
                       {entry.preview.length > 0 ? (
                         entry.preview.map((value) => (
                           <span
                             key={`${exerciseId}-${entry.completedAt}-${value}`}
-                            className="rounded-full bg-white/5 px-3 py-1 text-xs text-zinc-300"
+                            className="rounded-full bg-surface-raised px-3 py-1 text-xs text-content-secondary"
                           >
                             {value}
                           </span>
                         ))
                       ) : (
-                        <span className="text-sm text-zinc-400">Noch keine abgeschlossenen Arbeitssaetze.</span>
+                        <span className="text-sm text-content-muted">Noch keine abgeschlossenen Arbeitssaetze.</span>
                       )}
                     </div>
                   </Link>
@@ -154,7 +145,7 @@ export function HistoryPage() {
           title="Was schon steht"
           subtitle="Historie liest bereits aus den persistierten Session-Snapshots."
         >
-          <p className="text-sm text-zinc-400">
+          <p className="text-sm text-content-muted">
             Als naechstes koennen wir hier sparklines oder echte Verlaufsdiagramme pro Uebung andocken, ohne die
             Datenbasis nochmal umzuwerfen.
           </p>

@@ -9,20 +9,21 @@ import {
   FolderKanban,
   RefreshCcw,
   Settings,
-  Wifi,
   WifiOff,
   X,
 } from 'lucide-react';
+import { Button, IconButton } from '@/components/ui/Button';
 import { cn } from '@/lib/utils';
 import { useUiStore } from '@/store/ui-store';
 
 const navigationItems = [
   { to: '/', label: 'Heute', icon: Activity },
-  { to: '/programs', label: 'Programme', icon: CalendarRange },
+  // "Programme" passt bei sechs Spalten auf keinem Handy in eine Zeile.
+  { to: '/programs', label: 'Plan', icon: CalendarRange },
   { to: '/templates', label: 'Vorlagen', icon: FolderKanban },
-  { to: '/history', label: 'Historie', icon: BarChart3 },
+  { to: '/exercises', label: 'Uebung', icon: Dumbbell },
+  { to: '/history', label: 'Verlauf', icon: BarChart3 },
   { to: '/tests', label: 'Tests', icon: FlaskConical },
-  { to: '/settings', label: 'Settings', icon: Settings },
 ];
 
 interface AppShellProps {
@@ -58,100 +59,131 @@ export function AppShell({ title, eyebrow, children }: AppShellProps) {
   }
 
   return (
-    <div className="min-h-screen bg-app text-zinc-50">
-      <div className="mx-auto flex min-h-screen max-w-md flex-col px-4 pb-28 pt-4">
-        <header className="rounded-3xl border border-white/10 bg-white/5 px-5 py-4 shadow-soft backdrop-blur">
+    <div className="min-h-[100dvh] text-content">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-50 focus:rounded-control focus:bg-accent focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-accent-contrast"
+      >
+        Zum Inhalt springen
+      </a>
+      <div
+        className={cn(
+          'mx-auto flex min-h-[100dvh] max-w-md flex-col px-4 pt-[max(1rem,env(safe-area-inset-top))]',
+          // Platz fuer die Bottom-Nav samt Home-Indicator - aber nur dort, wo
+          // die Nav ueberhaupt gerendert wird.
+          inSession
+            ? 'pb-[calc(5rem+env(safe-area-inset-bottom))]'
+            : 'pb-[calc(7rem+env(safe-area-inset-bottom))]',
+        )}
+      >
+        <header className="rounded-card border border-line bg-surface-raised px-5 py-4 shadow-soft backdrop-blur">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-[11px] uppercase tracking-[0.24em] text-lime-300/80">{eyebrow}</p>
+              <p className="text-xs uppercase tracking-[0.24em] text-accent">{eyebrow}</p>
               <h1 className="mt-2 text-2xl font-semibold tracking-tight">{title}</h1>
             </div>
             <div className="flex flex-col items-end gap-2">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-lime-300/15 text-lime-200">
-                <Dumbbell size={22} />
-              </div>
-              <div
-                className={cn(
-                  'inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-[11px] font-medium',
-                  isOnline ? 'bg-lime-300/10 text-lime-200' : 'bg-amber-300/10 text-amber-100',
-                )}
+              {/*
+                Die Bottom-Nav traegt sechs Eintraege; Einstellungen werden
+                selten gebraucht und sitzen deshalb hier statt dort.
+              */}
+              <NavLink
+                to="/settings"
+                aria-label="Einstellungen"
+                title="Einstellungen"
+                className={({ isActive }) =>
+                  cn(
+                    'flex h-12 w-12 items-center justify-center rounded-control border transition',
+                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+                    isActive
+                      ? 'border-accent-border bg-accent-soft text-accent'
+                      : 'border-line text-content-secondary hover:bg-surface-raised',
+                  )
+                }
               >
-                {isOnline ? <Wifi size={12} /> : <WifiOff size={12} />}
-                <span>{isOnline ? 'Online' : 'Offline'}</span>
-              </div>
+                <Settings size={20} />
+              </NavLink>
+              {/*
+                Der Offline-Zustand steht schon im Banner darunter; hier reicht
+                das Abzeichen fuer den Offline-Fall, sonst ist es Rauschen.
+              */}
+              {!isOnline ? (
+                <div
+                  role="status"
+                  className="inline-flex items-center gap-2 rounded-full bg-warning-soft px-2.5 py-1 text-xs font-medium text-warning"
+                >
+                  <WifiOff size={12} />
+                  <span>Offline</span>
+                </div>
+              ) : null}
             </div>
           </div>
         </header>
 
-        <main className="flex-1 py-5">
-          <div className="space-y-3">
+        <main id="main-content" className="flex-1 py-5">
+          <div className="space-y-4">
             {!isOnline ? (
-              <div className="rounded-3xl border border-amber-300/20 bg-amber-300/10 px-4 py-4">
-                <p className="text-sm font-semibold text-amber-100">Offline aktiv</p>
-                <p className="mt-1 text-sm text-amber-50/80">
+              <div role="status" className="rounded-card border border-warning/20 bg-warning-soft px-4 py-4">
+                <p className="text-sm font-semibold text-warning">Offline aktiv</p>
+                <p className="mt-1 text-sm text-content-secondary">
                   Bereits geladene Daten und lokale Aenderungen bleiben weiter nutzbar.
                 </p>
               </div>
             ) : null}
 
             {deferredInstallPrompt ? (
-              <div className="rounded-3xl border border-lime-300/20 bg-lime-300/10 px-4 py-4">
+              <div className="rounded-card border border-accent-border bg-accent-soft px-4 py-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-sm font-semibold text-lime-100">App installieren</p>
-                    <p className="mt-1 text-sm text-lime-50/80">
+                    <p className="text-sm font-semibold text-accent">App installieren</p>
+                    <p className="mt-1 text-sm text-content-secondary">
                       Damit startet Gym Book wie eine native App und bleibt im Training schneller erreichbar.
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={handleInstallApp}
-                    className="rounded-2xl bg-lime-300 px-3 py-2 text-sm font-medium text-zinc-950 transition hover:brightness-105"
-                  >
-                    Installieren
-                  </button>
+                  <div className="flex shrink-0 flex-col gap-2">
+                    <Button size="md" variant="primary" onClick={handleInstallApp}>
+                      Installieren
+                    </Button>
+                    <IconButton
+                      label="Installationshinweis ausblenden"
+                      onClick={() => setDeferredInstallPrompt(null)}
+                    >
+                      <X size={14} />
+                    </IconButton>
+                  </div>
                 </div>
               </div>
             ) : null}
 
             {isUpdateAvailable ? (
-              <div className="rounded-3xl border border-sky-300/20 bg-sky-300/10 px-4 py-4">
+              <div role="status" className="rounded-card border border-line bg-surface-raised px-4 py-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-sm font-semibold text-sky-100">Update verfuegbar</p>
-                    <p className="mt-1 text-sm text-sky-50/80">
+                    <p className="text-sm font-semibold text-content">Update verfuegbar</p>
+                    <p className="mt-1 text-sm text-content-muted">
                       Neue Dateien sind geladen. Ein kurzer Reload zieht die aktuelle Version.
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={handleRefreshApp}
-                    className="inline-flex items-center gap-2 rounded-2xl bg-sky-300 px-3 py-2 text-sm font-medium text-zinc-950 transition hover:brightness-105"
-                  >
+                  <Button size="md" variant="primary" onClick={handleRefreshApp} className="shrink-0">
                     <RefreshCcw size={14} />
                     Aktualisieren
-                  </button>
+                  </Button>
                 </div>
               </div>
             ) : null}
 
             {isOfflineReady ? (
-              <div className="rounded-3xl border border-white/10 bg-zinc-950/45 px-4 py-4">
+              <div role="status" className="rounded-card border border-line bg-surface px-4 py-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-sm font-semibold text-zinc-100">Offline-Basis bereit</p>
-                    <p className="mt-1 text-sm text-zinc-400">
+                    <p className="text-sm font-semibold text-content">Offline-Basis bereit</p>
+                    <p className="mt-1 text-sm text-content-muted">
                       Die App wurde fuer die lokale Nutzung zwischengespeichert.
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setOfflineReady(false)}
-                    className="rounded-2xl border border-white/10 p-2 text-zinc-400 transition hover:bg-white/5 hover:text-zinc-200"
-                    aria-label="Hinweis schliessen"
-                  >
+                  <IconButton label="Hinweis schliessen" onClick={() => setOfflineReady(false)}>
                     <X size={14} />
-                  </button>
+                  </IconButton>
                 </div>
               </div>
             ) : null}
@@ -161,21 +193,27 @@ export function AppShell({ title, eyebrow, children }: AppShellProps) {
         </main>
 
         {!inSession ? (
-          <nav className="fixed bottom-4 left-1/2 z-20 w-[calc(100%-24px)] max-w-md -translate-x-1/2 rounded-[28px] border border-white/10 bg-zinc-950/90 p-2 shadow-soft backdrop-blur-xl">
-            <ul className="grid grid-cols-6 gap-2">
+          <nav
+            aria-label="Hauptnavigation"
+            className="fixed inset-x-0 bottom-0 z-20 mx-auto w-full max-w-md px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
+          >
+            <ul className="grid grid-cols-6 gap-1 rounded-card border border-line bg-zinc-950/90 p-2 shadow-soft backdrop-blur-xl">
               {navigationItems.map(({ to, label, icon: Icon }) => (
                 <li key={to}>
                   <NavLink
                     to={to}
                     className={({ isActive }) =>
                       cn(
-                        'flex flex-col items-center gap-1 rounded-2xl px-2 py-3 text-[11px] font-medium text-zinc-400 transition hover:bg-white/5 hover:text-zinc-100',
-                        isActive && 'bg-lime-300/10 text-lime-200',
+                        'flex min-h-touch flex-col items-center justify-center gap-1 rounded-control px-1 py-2 text-[10px] font-medium leading-tight text-content-muted transition hover:bg-surface-raised hover:text-content',
+                        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+                        isActive && 'bg-accent-soft text-accent',
                       )
                     }
                   >
                     <Icon size={18} />
-                    <span>{label}</span>
+                    {/* Ohne truncate brechen "Programme" und "Historie" auf
+                        einem iPhone SE mitten im Wort um. */}
+                    <span className="w-full truncate text-center">{label}</span>
                   </NavLink>
                 </li>
               ))}

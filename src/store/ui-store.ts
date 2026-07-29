@@ -1,15 +1,14 @@
 import { create } from 'zustand';
 
+// Nur fluechtiger UI-Zustand. Alles, was einen Reload ueberleben muss -
+// insbesondere der Pausentimer - liegt in IndexedDB, siehe session-actions.
 interface UiStoreState {
   activeSessionExerciseId: string | null;
-  restTimerEndsAt: number | null;
   isOnline: boolean;
   isOfflineReady: boolean;
   isUpdateAvailable: boolean;
   deferredInstallPrompt: BeforeInstallPromptEvent | null;
   setActiveSessionExerciseId: (sessionExerciseId: string | null) => void;
-  startRestTimer: (seconds: number) => void;
-  clearRestTimer: () => void;
   setOnlineStatus: (isOnline: boolean) => void;
   setOfflineReady: (isOfflineReady: boolean) => void;
   setUpdateAvailable: (isUpdateAvailable: boolean) => void;
@@ -26,17 +25,11 @@ interface BeforeInstallPromptEvent extends Event {
 
 export const useUiStore = create<UiStoreState>((set) => ({
   activeSessionExerciseId: null,
-  restTimerEndsAt: null,
   isOnline: true,
   isOfflineReady: false,
   isUpdateAvailable: false,
   deferredInstallPrompt: null,
   setActiveSessionExerciseId: (activeSessionExerciseId) => set({ activeSessionExerciseId }),
-  startRestTimer: (seconds) =>
-    set({
-      restTimerEndsAt: Date.now() + seconds * 1000,
-    }),
-  clearRestTimer: () => set({ restTimerEndsAt: null }),
   setOnlineStatus: (isOnline) => set({ isOnline }),
   setOfflineReady: (isOfflineReady) => set({ isOfflineReady }),
   setUpdateAvailable: (isUpdateAvailable) => set({ isUpdateAvailable }),

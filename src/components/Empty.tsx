@@ -12,12 +12,12 @@ export function Empty({ title, description, action, className }: EmptyProps) {
   return (
     <div
       className={cn(
-        'rounded-3xl border border-dashed border-white/10 bg-zinc-950/35 px-4 py-5 text-center',
+        'rounded-panel border border-dashed border-line bg-surface px-4 py-5 text-center',
         className,
       )}
     >
-      <p className="text-sm font-semibold text-zinc-100">{title}</p>
-      <p className="mt-2 text-sm text-zinc-400">{description}</p>
+      <p className="text-sm font-semibold text-content">{title}</p>
+      <p className="mt-2 text-sm text-content-muted">{description}</p>
       {action ? <div className="mt-4">{action}</div> : null}
     </div>
   );

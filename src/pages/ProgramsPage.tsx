@@ -2,7 +2,10 @@ import { useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
+import { Alert } from '@/components/Alert';
 import { SectionCard } from '@/components/SectionCard';
+import { Button, IconButton } from '@/components/ui/Button';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { db } from '@/db/appDb';
 import {
   addProgramWeek,
@@ -23,6 +26,13 @@ export function ProgramsPage() {
   const [editingWeekLabel, setEditingWeekLabel] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /*
+   * Loeschen war hier bisher ein einziger Tap ohne Rueckfrage - und nimmt beim
+   * Programm alle Wochen und Progressionsregeln mit.
+   */
+  const [pendingDelete, setPendingDelete] = useState<
+    { kind: 'program' | 'week'; id: string; name: string } | null
+  >(null);
   const programs = useLiveQuery(async () => {
     const items = await db.programs.toArray();
     return items.sort((a, b) => (a.createdAt ?? '').localeCompare(b.createdAt ?? ''));
@@ -80,14 +90,27 @@ export function ProgramsPage() {
     }
   }
 
-  async function handleDeleteProgram(programId: string) {
+  async function handleConfirmDelete() {
+    if (!pendingDelete) {
+      return;
+    }
+
     setIsSaving(true);
 
     try {
-      await deleteProgram(programId);
+      if (pendingDelete.kind === 'program') {
+        await deleteProgram(pendingDelete.id);
+      } else {
+        await deleteProgramWeek(pendingDelete.id);
+      }
+
       setError(null);
+      setPendingDelete(null);
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : 'Programm konnte nicht geloescht werden.');
+      setError(
+        nextError instanceof Error ? nextError.message : 'Loeschen ist fehlgeschlagen.',
+      );
+      setPendingDelete(null);
     } finally {
       setIsSaving(false);
     }
@@ -121,19 +144,6 @@ export function ProgramsPage() {
     }
   }
 
-  async function handleDeleteWeek(programWeekId: string) {
-    setIsSaving(true);
-
-    try {
-      await deleteProgramWeek(programWeekId);
-      setError(null);
-    } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : 'Woche konnte nicht geloescht werden.');
-    } finally {
-      setIsSaving(false);
-    }
-  }
-
   async function handleSetActiveProgram(programId: string) {
     setIsSaving(true);
 
@@ -154,7 +164,7 @@ export function ProgramsPage() {
           title="Neues Programm"
           subtitle="Trainingsblock anlegen und direkt mit einer brauchbaren Wochenstruktur starten."
           action={
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-lime-300/10 text-lime-200">
+            <div className="flex h-10 w-10 items-center justify-center rounded-control bg-accent-soft text-accent">
               <Plus size={18} />
             </div>
           }
@@ -163,22 +173,22 @@ export function ProgramsPage() {
             <input
               value={newProgramName}
               onChange={(event) => setNewProgramName(event.target.value)}
-              placeholder="z. B. Block Hypertrophie"
-              className="w-full rounded-3xl border border-white/10 bg-zinc-950/45 px-4 py-4 text-sm text-zinc-50 outline-none transition placeholder:text-zinc-500 focus:border-lime-300/40"
+              aria-label="z. B. Block Hypertrophie" placeholder="z. B. Block Hypertrophie"
+              className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
             />
             <div className="grid grid-cols-[1fr_auto] gap-3">
               <input
                 value={newProgramWeekCount}
                 onChange={(event) => setNewProgramWeekCount(event.target.value)}
                 inputMode="numeric"
-                placeholder="8"
-                className="w-full rounded-3xl border border-white/10 bg-zinc-950/45 px-4 py-4 text-sm text-zinc-50 outline-none transition placeholder:text-zinc-500 focus:border-lime-300/40"
+                aria-label="8" placeholder="8"
+                className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
               />
               <button
                 type="button"
                 onClick={handleCreateProgram}
                 disabled={!newProgramName.trim() || isSaving}
-                className="rounded-3xl bg-lime-300 px-5 py-4 text-sm font-semibold text-zinc-950 transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-panel bg-accent px-5 py-4 text-sm font-semibold text-accent-contrast transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Anlegen
               </button>
@@ -186,11 +196,7 @@ export function ProgramsPage() {
           </div>
         </SectionCard>
 
-        {error ? (
-          <div className="rounded-3xl border border-rose-300/20 bg-rose-300/10 px-4 py-4 text-sm text-rose-100">
-            {error}
-          </div>
-        ) : null}
+        {error ? <Alert>{error}</Alert> : null}
 
         {(programs ?? []).map((program) => {
           const programWeeks = [...(weeksByProgramId[program.id] ?? [])].sort(
@@ -209,7 +215,7 @@ export function ProgramsPage() {
                   type="button"
                   onClick={() => handleSetActiveProgram(program.id)}
                   disabled={isActive || isSaving}
-                  className="rounded-2xl border border-white/10 px-3 py-2 text-sm text-zinc-300 transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="min-h-touch rounded-control border border-line px-3 py-2 text-sm text-content-secondary transition hover:bg-surface-raised disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {isActive ? 'Aktiv' : 'Aktiv setzen'}
                 </button>
@@ -221,13 +227,13 @@ export function ProgramsPage() {
                     <input
                       value={editingProgramName}
                       onChange={(event) => setEditingProgramName(event.target.value)}
-                      className="w-full rounded-3xl border border-white/10 bg-zinc-950/45 px-4 py-4 text-sm text-zinc-50 outline-none transition focus:border-lime-300/40"
+                      className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
                     />
                     <button
                       type="button"
                       onClick={() => handleSaveProgram(program.id)}
                       disabled={!editingProgramName.trim() || isSaving}
-                      className="rounded-3xl bg-lime-300 px-5 py-4 text-sm font-semibold text-zinc-950 transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
+                      className="rounded-panel bg-accent px-5 py-4 text-sm font-semibold text-accent-contrast transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       Speichern
                     </button>
@@ -235,33 +241,27 @@ export function ProgramsPage() {
                 ) : null}
 
                 <div className="flex gap-2">
-                  <button
-                    type="button"
+                  <IconButton
+                    label={`Programm ${program.name} umbenennen`}
                     onClick={() => {
                       setEditingProgramId(program.id);
                       setEditingProgramName(program.name);
                     }}
                     disabled={isSaving}
-                    className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 text-zinc-200 transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <Pencil size={18} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteProgram(program.id)}
+                  </IconButton>
+                  <IconButton
+                    label={`Programm ${program.name} loeschen`}
+                    variant="danger"
+                    onClick={() => setPendingDelete({ kind: 'program', id: program.id, name: program.name })}
                     disabled={isSaving}
-                    className="flex h-11 w-11 items-center justify-center rounded-2xl border border-rose-300/20 text-rose-100 transition hover:bg-rose-300/10 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <Trash2 size={18} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleAddWeek(program.id)}
-                    disabled={isSaving}
-                    className="rounded-2xl border border-white/10 px-4 py-3 text-sm text-zinc-300 transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
+                  </IconButton>
+                  <Button variant="ghost" size="md" onClick={() => handleAddWeek(program.id)} disabled={isSaving}>
                     Woche hinzufuegen
-                  </button>
+                  </Button>
                 </div>
 
                 <div className="space-y-3">
@@ -271,7 +271,7 @@ export function ProgramsPage() {
                     return (
                       <div
                         key={week.id}
-                        className="rounded-3xl border border-white/10 bg-zinc-950/45 px-4 py-4"
+                        className="rounded-panel border border-line bg-surface px-4 py-4"
                       >
                         {isEditingWeek ? (
                           <div className="grid grid-cols-[1fr_auto] gap-3">
@@ -279,13 +279,13 @@ export function ProgramsPage() {
                               value={editingWeekLabel}
                               onChange={(event) => setEditingWeekLabel(event.target.value)}
                               placeholder={`Woche ${week.weekNumber}`}
-                              className="w-full rounded-3xl border border-white/10 bg-zinc-900 px-4 py-4 text-sm text-zinc-50 outline-none transition focus:border-lime-300/40"
+                              className="w-full rounded-panel border border-line bg-surface-sunken px-4 py-4 text-sm text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
                             />
                             <button
                               type="button"
                               onClick={() => handleSaveWeek(week.id)}
                               disabled={isSaving}
-                              className="rounded-3xl bg-lime-300 px-5 py-4 text-sm font-semibold text-zinc-950 transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
+                              className="rounded-panel bg-accent px-5 py-4 text-sm font-semibold text-accent-contrast transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
                             >
                               Speichern
                             </button>
@@ -293,31 +293,30 @@ export function ProgramsPage() {
                         ) : (
                           <div className="flex items-center justify-between gap-3">
                             <div>
-                              <p className="text-sm font-semibold text-zinc-50">W{week.weekNumber}</p>
-                              <p className="mt-1 text-sm text-zinc-400">
+                              <p className="text-sm font-semibold text-content">W{week.weekNumber}</p>
+                              <p className="mt-1 text-sm text-content-muted">
                                 {week.label ?? `Woche ${week.weekNumber}`}
                               </p>
                             </div>
                             <div className="flex gap-2">
-                              <button
-                                type="button"
+                              <IconButton
+                                label={`Woche ${week.weekNumber} umbenennen`}
                                 onClick={() => {
                                   setEditingWeekId(week.id);
                                   setEditingWeekLabel(week.label ?? '');
                                 }}
                                 disabled={isSaving}
-                                className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 text-zinc-200 transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
                               >
                                 <Pencil size={18} />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteWeek(week.id)}
+                              </IconButton>
+                              <IconButton
+                                label={`Woche ${week.weekNumber} loeschen`}
+                                variant="danger"
+                                onClick={() => setPendingDelete({ kind: 'week', id: week.id, name: `Woche ${week.weekNumber}` })}
                                 disabled={isSaving}
-                                className="flex h-11 w-11 items-center justify-center rounded-2xl border border-rose-300/20 text-rose-100 transition hover:bg-rose-300/10 disabled:cursor-not-allowed disabled:opacity-50"
                               >
                                 <Trash2 size={18} />
-                              </button>
+                              </IconButton>
                             </div>
                           </div>
                         )}
@@ -330,6 +329,19 @@ export function ProgramsPage() {
           );
         })}
       </div>
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title={pendingDelete?.kind === 'program' ? 'Programm loeschen?' : 'Woche loeschen?'}
+        description={
+          pendingDelete?.kind === 'program'
+            ? `"${pendingDelete.name}" wird mit allen Wochen und Progressionsregeln entfernt. Bereits absolvierte Sessions bleiben in der Historie erhalten.`
+            : `"${pendingDelete?.name}" wird entfernt, die folgenden Wochen ruecken auf. Progressionsregeln dieser Woche gehen verloren.`
+        }
+        busy={isSaving}
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setPendingDelete(null)}
+      />
     </AppShell>
   );
 }

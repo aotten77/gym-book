@@ -28,13 +28,49 @@ function currentProgramWeek() {
   return Math.max(1, Math.min(8, Math.ceil((day + start.getDay() + 1) / 7)));
 }
 
+/**
+ * Legt beim allerersten Start nur die Einstellungszeile an.
+ *
+ * Frueher schrieb der Bootstrap ein komplettes Demo-Programm inklusive einer
+ * fertig ausgefuellten Session von "vor sechs Tagen" und eines erfundenen
+ * Asymmetrie-Tests. Fuer einen echten Nutzer bedeutete das: die Historie zeigt
+ * ein Training, das nie stattfand, und "Letzte Werte" schlaegt Gewichte fuer
+ * Uebungen vor, die er nie gemacht hat. Beispieldaten gibt es jetzt nur noch
+ * auf ausdruecklichen Wunsch ueber die Einstellungen.
+ */
 export async function bootstrapAppData() {
+  // Der Guard laeuft ausserhalb der Transaktion: sonst wurden bei jedem
+  // App-Start alle zwoelf Tabellen schreibend gesperrt, nur um sofort wieder
+  // auszusteigen.
+  const existingSettings = await db.appSettings.get('app-settings');
+
+  if (existingSettings) {
+    return;
+  }
+
+  await db.transaction('rw', db.appSettings, async () => {
+    if (await db.appSettings.get('app-settings')) {
+      return;
+    }
+
+    await db.appSettings.add({
+      id: 'app-settings',
+      exportSchemaVersion: 1,
+      updatedAt: new Date().toISOString(),
+    });
+  });
+}
+
+/**
+ * Legt ein durchgespieltes Beispielprogramm an - ausdruecklich angefordert
+ * ueber die Einstellungen, nicht beim ersten Start.
+ */
+export async function seedSampleData() {
   await db.transaction('rw', db.tables, async () => {
-    const existingSettings = await db.appSettings.get('app-settings');
     const existingExerciseCount = await db.exercises.count();
 
-    if (existingSettings || existingExerciseCount > 0) {
-      return;
+    if (existingExerciseCount > 0) {
+      throw new Error('Beispieldaten lassen sich nur in eine leere Bibliothek laden.');
     }
 
     const now = new Date().toISOString();
@@ -217,7 +253,7 @@ export async function bootstrapAppData() {
     await db.exercises.bulkAdd(exercises);
     await db.workoutTemplateExercises.bulkAdd(templateExercises);
     await db.progressionRules.bulkAdd(progressionRules);
-    await db.appSettings.add(settings);
+    await db.appSettings.put(settings);
     await db.workoutSessions.add(completedBundle.session);
     await db.workoutSessionExercises.bulkAdd(completedBundle.sessionExercises);
     await db.workoutSetLogs.bulkAdd(completedBundle.setLogs);

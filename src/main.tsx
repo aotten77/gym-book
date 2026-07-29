@@ -5,6 +5,12 @@ import App from './App';
 import './index.css';
 import { useUiStore } from '@/store/ui-store';
 
+/*
+ * Mit registerType: 'prompt' (siehe vite.config.ts) feuert `onNeedRefresh`
+ * tatsaechlich, sobald eine neue Version bereitliegt. Der Nutzer entscheidet
+ * dann ueber das Banner, wann aktualisiert wird - nicht der Service Worker
+ * mitten im Satz.
+ */
 const updateServiceWorker = registerSW({
   immediate: true,
   onOfflineReady() {
@@ -12,6 +18,9 @@ const updateServiceWorker = registerSW({
   },
   onNeedRefresh() {
     useUiStore.getState().setUpdateAvailable(true);
+  },
+  onRegisterError(error) {
+    console.error('Service Worker konnte nicht registriert werden', error);
   },
 });
 
@@ -43,7 +52,11 @@ window.addEventListener('appinstalled', () => {
 });
 
 window.addEventListener('gym-book:update-app', () => {
-  void updateServiceWorker(true);
+  void updateServiceWorker(true).catch((error) => {
+    console.error('Update fehlgeschlagen', error);
+    // Banner zuruecksetzen, damit der Nutzer es erneut versuchen kann.
+    useUiStore.getState().setUpdateAvailable(true);
+  });
 });
 
 createRoot(document.getElementById('root')!).render(

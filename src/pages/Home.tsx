@@ -4,6 +4,8 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { ArrowRight, Minus, Play, Plus, RotateCcw } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
 import { Empty } from '@/components/Empty';
+import { Alert } from '@/components/Alert';
+import { Button, IconButton } from '@/components/ui/Button';
 import { SectionCard } from '@/components/SectionCard';
 import { StatCard } from '@/components/StatCard';
 import { db } from '@/db/appDb';
@@ -14,6 +16,8 @@ import { formatDateTime } from '@/lib/format';
 export default function Home() {
   const navigate = useNavigate();
   const [isUpdatingWeek, setIsUpdatingWeek] = useState(false);
+  const [isStartingSession, setIsStartingSession] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
   const templates = useLiveQuery(() => db.workoutTemplates.toArray(), []);
   const settings = useLiveQuery(() => db.appSettings.get('app-settings'), []);
   const program = useLiveQuery(async () => {
@@ -41,10 +45,7 @@ export default function Home() {
   );
   const lastCompletedSession = useLiveQuery(
     async () => {
-      const completed = await db.workoutSessions.where('status').equals('completed').toArray();
-      return completed.sort((left, right) =>
-        (right.completedAt ?? '').localeCompare(left.completedAt ?? ''),
-      )[0];
+      return db.workoutSessions.orderBy('completedAt').reverse().filter((item) => item.status === 'completed').first();
     },
     [],
   );
@@ -60,6 +61,23 @@ export default function Home() {
   const effectiveWeekLabel = `W${effectiveWeek}`;
   const weekHint = program?.name ?? 'Programm in /programme anlegen';
   const weekModeHint = settings?.weekOverride ? 'Override aktiv' : 'Programm';
+
+  async function handleStartSession(templateId: string) {
+    setIsStartingSession(true);
+
+    try {
+      const sessionId = await startSessionFromTemplate(templateId);
+      setStartError(null);
+      navigate(`/session/${sessionId}`);
+    } catch (error) {
+      // Haeufigster Fall: das Template zeigt auf eine Uebung, die es nicht
+      // mehr gibt. Ohne Meldung wirkt der Tap einfach wirkungslos.
+      setStartError(
+        error instanceof Error ? error.message : 'Session konnte nicht gestartet werden.',
+      );
+      setIsStartingSession(false);
+    }
+  }
 
   async function handleStepWeek(direction: -1 | 1) {
     if (!program) {
@@ -90,43 +108,40 @@ export default function Home() {
     <AppShell title="Gym Book" eyebrow="Offline-First Training">
       <div className="space-y-4">
         <section className="grid grid-cols-2 gap-3">
-          <div className="rounded-3xl border border-white/10 bg-zinc-950/50 p-4">
+          <div className="rounded-panel border border-line bg-surface p-4">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Aktive Woche</p>
-                <p className="mt-3 text-2xl font-semibold tracking-tight text-zinc-50">
+                <p className="text-xs uppercase tracking-[0.18em] text-content-muted">Aktive Woche</p>
+                <p className="mt-3 text-2xl font-semibold tracking-tight text-content">
                   {effectiveWeekLabel}
                 </p>
               </div>
               <div className="flex gap-2">
-                <button
-                  type="button"
+                <IconButton
+                  label="Eine Woche zurueck"
                   onClick={() => handleStepWeek(-1)}
                   disabled={!program || isUpdatingWeek}
-                  className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 text-zinc-200 transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Minus size={18} />
-                </button>
-                <button
-                  type="button"
+                </IconButton>
+                <IconButton
+                  label="Eine Woche vor"
                   onClick={() => handleStepWeek(1)}
                   disabled={!program || isUpdatingWeek}
-                  className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 text-zinc-200 transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Plus size={18} />
-                </button>
-                <button
-                  type="button"
+                </IconButton>
+                <IconButton
+                  label="Wochen-Override zuruecksetzen"
                   onClick={handleClearWeek}
                   disabled={!settings?.weekOverride || isUpdatingWeek}
-                  className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 text-zinc-200 transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <RotateCcw size={18} />
-                </button>
+                </IconButton>
               </div>
             </div>
-            <p className="mt-2 text-sm text-zinc-400">{weekHint}</p>
-            <p className="mt-1 text-xs text-zinc-500">{weekModeHint}</p>
+            <p className="mt-2 text-sm text-content-muted">{weekHint}</p>
+            <p className="mt-1 text-xs text-content-muted">{weekModeHint}</p>
           </div>
           <StatCard
             label="Vorlagen"
@@ -140,21 +155,33 @@ export default function Home() {
           subtitle="Schneller Einstieg fuer verschwitzte Haende und kurze Aufmerksamkeit."
         >
           <div className="space-y-3">
+            {startError ? <Alert>{startError}</Alert> : null}
+
             {activeSession ? (
-              <button
-                type="button"
-                onClick={() => navigate(`/session/${activeSession.id}`)}
-                className="flex w-full items-center justify-between rounded-3xl bg-lime-300 px-4 py-4 text-left text-zinc-950 transition hover:brightness-105"
-              >
-                <div>
-                  <p className="text-xs uppercase tracking-[0.18em] text-zinc-700">Aktive Session</p>
-                  <p className="mt-2 text-lg font-semibold">{activeSession.templateNameSnapshot}</p>
-                  <p className="mt-1 text-sm text-zinc-700">
-                    Gestartet {formatDateTime(activeSession.startedAt)}
-                  </p>
-                </div>
-                <RotateCcw size={18} />
-              </button>
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={() => navigate(`/session/${activeSession.id}`)}
+                  className="flex w-full items-center justify-between rounded-panel bg-accent px-4 py-4 text-left text-accent-contrast transition hover:brightness-105 focus-visible:ring-2 focus-visible:ring-lime-300/70"
+                >
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.18em] text-accent-contrast/80">Aktive Session</p>
+                    <p className="mt-2 text-lg font-semibold">{activeSession.templateNameSnapshot}</p>
+                    <p className="mt-1 text-sm text-accent-contrast/80">
+                      Gestartet {formatDateTime(activeSession.startedAt)}
+                    </p>
+                  </div>
+                  <RotateCcw size={18} />
+                </button>
+                {/*
+                  Solange eine Session laeuft, fuehrt jeder Vorlagen-Tap dorthin
+                  zurueck. Das muss sichtbar sein, sonst wirkt die App defekt.
+                */}
+                <p className="px-1 text-sm text-content-muted">
+                  Ein Training laeuft bereits. Schliesse es ab oder brich es ab, um eine andere
+                  Vorlage zu starten.
+                </p>
+              </div>
             ) : (
               <Empty
                 title="Keine aktive Session"
@@ -168,17 +195,15 @@ export default function Home() {
                   <button
                     key={template.id}
                     type="button"
-                    onClick={async () => {
-                      const sessionId = await startSessionFromTemplate(template.id);
-                      navigate(`/session/${sessionId}`);
-                    }}
-                    className="flex items-center justify-between rounded-3xl border border-white/10 bg-white/[0.04] px-4 py-4 text-left transition hover:border-lime-300/30 hover:bg-white/[0.07]"
+                    onClick={() => void handleStartSession(template.id)}
+                    disabled={isStartingSession}
+                    className="flex items-center justify-between rounded-panel border border-line bg-surface-raised px-4 py-4 text-left transition hover:border-accent-border hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-lime-300/70 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <div>
-                      <p className="text-sm font-semibold text-zinc-50">{template.name}</p>
-                      <p className="mt-1 text-sm text-zinc-400">{template.notes}</p>
+                      <p className="text-sm font-semibold text-content">{template.name}</p>
+                      <p className="mt-1 text-sm text-content-muted">{template.notes}</p>
                     </div>
-                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-lime-300/10 text-lime-200">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-control bg-accent-soft text-accent">
                       <Play size={18} />
                     </div>
                   </button>
@@ -191,7 +216,7 @@ export default function Home() {
                     <button
                       type="button"
                       onClick={() => navigate('/templates')}
-                      className="rounded-2xl border border-white/10 px-4 py-2 text-sm text-zinc-200 transition hover:bg-white/5"
+                      className="min-h-touch inline-flex items-center justify-center rounded-control border border-line px-4 py-2 text-sm text-content-secondary transition hover:bg-surface-raised"
                     >
                       Zu den Vorlagen
                     </button>
@@ -206,35 +231,31 @@ export default function Home() {
           title="Letzter Abschluss"
           subtitle="Historie bleibt stabil, auch wenn du spaeter Templates aenderst."
           action={
-            <button
-              type="button"
-              onClick={() => navigate('/history')}
-              className="rounded-2xl border border-white/10 px-3 py-2 text-sm text-zinc-300 transition hover:bg-white/5"
-            >
+            <Button variant="ghost" size="md" onClick={() => navigate('/history')}>
               Historie
-            </button>
+            </Button>
           }
         >
           {lastCompletedSession ? (
-            <div className="rounded-3xl bg-zinc-950/45 p-4">
-              <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Zuletzt beendet</p>
+            <div className="rounded-panel bg-surface p-4">
+              <p className="text-xs uppercase tracking-[0.18em] text-content-muted">Zuletzt beendet</p>
               <div className="mt-2 flex items-center justify-between gap-3">
                 <div>
-                  <p className="text-lg font-semibold text-zinc-50">
+                  <p className="text-lg font-semibold text-content">
                     {lastCompletedSession.templateNameSnapshot}
                   </p>
-                  <p className="mt-1 text-sm text-zinc-400">
+                  <p className="mt-1 text-sm text-content-muted">
                     {formatDateTime(lastCompletedSession.completedAt)}
                   </p>
                 </div>
-                <ArrowRight className="text-zinc-500" size={18} />
+                <ArrowRight className="text-content-muted" size={18} />
               </div>
             </div>
           ) : (
             <Empty
               title="Noch kein Abschluss"
               description="Sobald du eine Session abschliesst, taucht sie hier als schneller Ruecksprung auf."
-              className="border-white/0 bg-zinc-950/45 text-left"
+              className="border-transparent bg-surface text-left"
             />
           )}
         </SectionCard>

@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
 import Home from '@/pages/Home';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { bootstrapAppData } from '@/db/bootstrap';
+import { ExercisesPage } from '@/pages/ExercisesPage';
 import { HistoryPage } from '@/pages/HistoryPage';
 import { HistorySessionPage } from '@/pages/HistorySessionPage';
 import { ProgramsPage } from '@/pages/ProgramsPage';
@@ -54,19 +56,22 @@ export default function App() {
   }
 
   return (
-    <HashRouter>
-      <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/programs" element={<ProgramsPage />} />
-        <Route path="/templates" element={<TemplatesPage />} />
-        <Route path="/templates/:templateId" element={<TemplateDetailPage />} />
-        <Route path="/session/:sessionId" element={<SessionPage />} />
-        <Route path="/history" element={<HistoryPage />} />
-        <Route path="/history/session/:sessionId" element={<HistorySessionPage />} />
-        <Route path="/tests" element={<TestsPage />} />
-        <Route path="/settings" element={<SettingsPage />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </HashRouter>
+    <ErrorBoundary>
+      <HashRouter>
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/programs" element={<ProgramsPage />} />
+          <Route path="/exercises" element={<ExercisesPage />} />
+          <Route path="/templates" element={<TemplatesPage />} />
+          <Route path="/templates/:templateId" element={<TemplateDetailPage />} />
+          <Route path="/session/:sessionId" element={<SessionPage />} />
+          <Route path="/history" element={<HistoryPage />} />
+          <Route path="/history/session/:sessionId" element={<HistorySessionPage />} />
+          <Route path="/tests" element={<TestsPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </HashRouter>
+    </ErrorBoundary>
   );
 }

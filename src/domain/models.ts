@@ -48,6 +48,13 @@ export interface WorkoutSession {
   startedAt: string;
   completedAt?: string;
   status: SessionStatus;
+  /**
+   * Ablaufzeitpunkt des Pausentimers als Epoch-Millisekunden.
+   *
+   * Liegt bewusst in IndexedDB und nicht im UI-Store: der Timer muss einen
+   * Reload und ein Service-Worker-Update mitten im Training ueberleben.
+   */
+  restTimerEndsAt?: number;
 }
 
 export interface WorkoutSessionExercise {

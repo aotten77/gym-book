@@ -16,6 +16,7 @@ import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, v
 import { CSS } from '@dnd-kit/utilities';
 import { GripVertical, Pencil, Plus, Trash2 } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { ExerciseMedia } from '@/components/ExerciseMedia';
 import { SectionCard } from '@/components/SectionCard';
 import { db } from '@/db/appDb';
@@ -171,21 +172,21 @@ function TemplateExerciseMeta({
       <ExerciseMedia
         mediaAsset={mediaAsset}
         alt={exerciseName}
-        className="h-16 w-16 shrink-0 rounded-2xl"
+        className="h-16 w-16 shrink-0 rounded-control"
         imageClassName="h-full w-full"
       />
       <div className="min-w-0">
-        <p className="text-sm font-semibold text-zinc-50">
+        <p className="text-sm font-semibold text-content">
           {item.orderIndex}. {exerciseName}
         </p>
-        <p className="mt-1 text-sm text-zinc-400">
+        <p className="mt-1 text-sm text-content-muted">
           {item.targetReps ? `${item.workSetCount} x ${item.targetReps} Wdh` : null}
           {item.targetReps && item.targetSeconds ? ' · ' : null}
           {item.targetSeconds ? `${item.workSetCount} x ${item.targetSeconds}s` : null}
           {item.targetWeight ? ` · ${item.targetWeight} kg` : ''}
           {item.restSeconds ? ` · Pause ${item.restSeconds}s` : ''}
         </p>
-        {item.notes ? <p className="mt-3 text-sm text-zinc-400">{item.notes}</p> : null}
+        {item.notes ? <p className="mt-3 text-sm text-content-muted">{item.notes}</p> : null}
       </div>
     </div>
   );
@@ -197,7 +198,7 @@ interface SortableTemplateExerciseCardProps {
   mediaAsset?: MediaAsset;
   isBusy: boolean;
   onEdit: (templateExerciseId: string) => void;
-  onDelete: (templateExerciseId: string) => void;
+  onDelete: (templateExerciseId: string, exerciseName: string) => void;
 }
 
 function SortableTemplateExerciseCard({
@@ -221,10 +222,10 @@ function SortableTemplateExerciseCard({
     <div
       ref={setNodeRef}
       style={style}
-      className={`rounded-3xl border bg-zinc-950/45 p-4 transition ${
+      className={`rounded-panel border bg-surface p-4 transition ${
         isDragging
-          ? 'border-lime-300/30 opacity-35 shadow-soft ring-2 ring-lime-300/20'
-          : 'border-white/10 hover:border-lime-300/20 hover:bg-zinc-950/55'
+          ? 'border-accent-border opacity-35 shadow-soft ring-2 ring-lime-300/20'
+          : 'border-line hover:border-accent-border hover:bg-surface-sunken'
       }`}
     >
       <div className="flex items-start justify-between gap-3">
@@ -233,10 +234,10 @@ function SortableTemplateExerciseCard({
             type="button"
             aria-label={`${exerciseName} ziehen und umsortieren`}
             disabled={isBusy}
-            className={`touch-none rounded-2xl border p-2 transition disabled:cursor-not-allowed disabled:opacity-35 ${
+            className={`touch-none rounded-control border p-2 transition disabled:cursor-not-allowed disabled:opacity-35 ${
               isDragging
-                ? 'cursor-grabbing border-lime-300/30 bg-lime-300/10 text-lime-200'
-                : 'cursor-grab border-white/10 text-zinc-300 hover:bg-white/5 active:cursor-grabbing'
+                ? 'cursor-grabbing border-accent-border bg-accent-soft text-accent'
+                : 'cursor-grab border-line text-content-secondary hover:bg-surface-raised active:cursor-grabbing'
             }`}
             {...attributes}
             {...listeners}
@@ -250,15 +251,17 @@ function SortableTemplateExerciseCard({
             type="button"
             onClick={() => onEdit(item.id)}
             disabled={isBusy}
-            className="rounded-2xl border border-white/10 p-2 text-zinc-300 transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-35"
+            aria-label={`${exerciseName} bearbeiten`}
+            className="flex h-11 w-11 items-center justify-center rounded-control border border-line text-content-secondary transition hover:bg-surface-raised disabled:cursor-not-allowed disabled:opacity-35"
           >
             <Pencil size={16} />
           </button>
           <button
             type="button"
-            onClick={() => onDelete(item.id)}
+            onClick={() => onDelete(item.id, exerciseName)}
             disabled={isBusy}
-            className="rounded-2xl border border-rose-400/20 p-2 text-rose-200 transition hover:bg-rose-400/10 disabled:cursor-not-allowed disabled:opacity-35"
+            aria-label={`${exerciseName} aus Vorlage entfernen`}
+            className="flex h-11 w-11 items-center justify-center rounded-control border border-danger-border text-danger transition hover:bg-danger-soft disabled:cursor-not-allowed disabled:opacity-35"
           >
             <Trash2 size={16} />
           </button>
@@ -269,6 +272,13 @@ function SortableTemplateExerciseCard({
 }
 
 export function TemplateDetailPage() {
+  /*
+   * Statt window.confirm: der native Systemdialog bricht in einer
+   * installierten PWA das Erscheinungsbild und blockiert auf iOS den Thread.
+   */
+  const [pendingDelete, setPendingDelete] = useState<
+    { kind: 'template' } | { kind: 'exercise'; id: string; name: string } | null
+  >(null);
   const { templateId = '' } = useParams();
   const navigate = useNavigate();
   const editExerciseSectionRef = useRef<HTMLDivElement | null>(null);
@@ -500,13 +510,6 @@ export function TemplateDetailPage() {
       return;
     }
 
-    const shouldDelete = window.confirm(
-      `Vorlage "${template.name}" loeschen? Bereits absolvierte Sessions bleiben erhalten.`,
-    );
-
-    if (!shouldDelete) {
-      return;
-    }
 
     await deleteTemplate(template.id);
     navigate('/templates');
@@ -667,12 +670,6 @@ export function TemplateDetailPage() {
   }
 
   async function handleDeleteTemplateExercise(templateExerciseId: string) {
-    const shouldDelete = window.confirm('Diese Uebung aus der Vorlage entfernen?');
-
-    if (!shouldDelete) {
-      return;
-    }
-
     await deleteTemplateExercise(templateExerciseId);
 
     if (editingTemplateExerciseId === templateExerciseId) {
@@ -736,8 +733,8 @@ export function TemplateDetailPage() {
           action={
             <button
               type="button"
-              onClick={handleDeleteTemplate}
-              className="rounded-2xl border border-rose-400/20 px-3 py-2 text-sm text-rose-200 transition hover:bg-rose-400/10"
+              onClick={() => setPendingDelete({ kind: 'template' })}
+              className="min-h-touch inline-flex items-center justify-center rounded-control border border-rose-400/20 px-3 py-2 text-sm text-rose-200 transition hover:bg-rose-400/10"
             >
               Loeschen
             </button>
@@ -747,21 +744,21 @@ export function TemplateDetailPage() {
             <input
               value={templateName}
               onChange={(event) => setTemplateName(event.target.value)}
-              placeholder="Vorlagenname"
-              className="w-full rounded-3xl border border-white/10 bg-zinc-950/45 px-4 py-4 text-sm text-zinc-50 outline-none transition placeholder:text-zinc-500 focus:border-lime-300/40"
+              aria-label="Vorlagenname" placeholder="Vorlagenname"
+              className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
             />
             <textarea
               value={templateNotes}
               onChange={(event) => setTemplateNotes(event.target.value)}
-              placeholder="Notizen zur Einheit"
+              aria-label="Notizen zur Einheit" placeholder="Notizen zur Einheit"
               rows={3}
-              className="w-full rounded-3xl border border-white/10 bg-zinc-950/45 px-4 py-4 text-sm text-zinc-50 outline-none transition placeholder:text-zinc-500 focus:border-lime-300/40"
+              className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
             />
             <button
               type="button"
               onClick={handleSaveTemplate}
               disabled={!templateName.trim() || isSavingTemplate}
-              className="w-full rounded-3xl bg-lime-300 px-4 py-4 text-sm font-semibold text-zinc-950 transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
+              className="w-full rounded-panel bg-accent px-4 py-4 text-sm font-semibold text-accent-contrast transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Vorlage speichern
             </button>
@@ -775,7 +772,7 @@ export function TemplateDetailPage() {
             <button
               type="button"
               onClick={handleOpenAddTemplateExercise}
-              className="flex h-10 items-center gap-2 rounded-2xl bg-lime-300/10 px-3 py-2 text-sm text-lime-200 transition hover:bg-lime-300/20"
+              className="min-h-touch inline-flex items-center justify-center flex h-10 items-center gap-2 rounded-control bg-accent-soft px-3 py-2 text-sm text-accent transition hover:bg-accent/20"
             >
               <Plus size={16} />
               Hinzufuegen
@@ -793,8 +790,8 @@ export function TemplateDetailPage() {
               >
                 <SortableContext items={templateExerciseOrder} strategy={verticalListSortingStrategy}>
                   <div
-                    className={`space-y-3 rounded-[28px] transition ${
-                      activeTemplateExerciseId ? 'bg-lime-300/[0.03] p-1 ring-1 ring-lime-300/15' : ''
+                    className={`space-y-3 rounded-card transition ${
+                      activeTemplateExerciseId ? 'bg-accent/[0.03] p-1 ring-1 ring-lime-300/15' : ''
                     }`}
                   >
                     {orderedTemplateExercises.map((item) => (
@@ -809,20 +806,20 @@ export function TemplateDetailPage() {
                         }
                         isBusy={isReorderingExercises}
                         onEdit={handleEditTemplateExercise}
-                        onDelete={handleDeleteTemplateExercise}
+                        onDelete={(id, name) => setPendingDelete({ kind: 'exercise', id, name })}
                       />
                     ))}
                   </div>
                 </SortableContext>
                 <DragOverlay>
                   {activeTemplateExercise ? (
-                    <div className="w-[min(100vw-40px,32rem)] rounded-3xl border border-lime-300/35 bg-zinc-900/95 p-4 shadow-soft ring-2 ring-lime-300/20 backdrop-blur">
-                      <div className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-lime-200/90">
+                    <div className="w-[min(100vw-40px,32rem)] rounded-panel border border-lime-300/35 bg-zinc-950/95 p-4 shadow-soft ring-2 ring-lime-300/20 backdrop-blur">
+                      <div className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-accent/90">
                         <GripVertical size={14} />
                         <span>Loslassen zum Ablegen</span>
                       </div>
                       <div className="flex min-w-0 gap-3">
-                        <div className="rounded-2xl border border-lime-300/30 bg-lime-300/10 p-2 text-lime-200">
+                        <div className="rounded-control border border-accent-border bg-accent-soft p-2 text-accent">
                           <GripVertical size={16} />
                         </div>
                         <TemplateExerciseMeta
@@ -840,7 +837,7 @@ export function TemplateDetailPage() {
                 </DragOverlay>
               </DndContext>
             ) : (
-              <div className="rounded-3xl border border-dashed border-white/10 bg-zinc-950/35 px-4 py-5 text-sm text-zinc-400">
+              <div className="rounded-panel border border-dashed border-line bg-surface px-4 py-5 text-sm text-content-muted">
                 Noch keine Template-Uebungen vorhanden.
               </div>
             )}
@@ -853,18 +850,18 @@ export function TemplateDetailPage() {
           action={
             <Link
               to="/programs"
-              className="rounded-2xl border border-white/10 px-3 py-2 text-sm text-zinc-300 transition hover:bg-white/5"
+              className="min-h-touch inline-flex items-center justify-center rounded-control border border-line px-3 py-2 text-sm text-content-secondary transition hover:bg-surface-raised"
             >
               Programme
             </Link>
           }
         >
           {(programs?.length ?? 0) === 0 ? (
-            <div className="rounded-3xl border border-dashed border-white/10 bg-zinc-950/35 px-4 py-5 text-sm text-zinc-400">
+            <div className="rounded-panel border border-dashed border-line bg-surface px-4 py-5 text-sm text-content-muted">
               Lege zuerst ein Programm mit Wochen an, damit du Wochen-Overrides pflegen kannst.
             </div>
           ) : orderedTemplateExercises.length === 0 ? (
-            <div className="rounded-3xl border border-dashed border-white/10 bg-zinc-950/35 px-4 py-5 text-sm text-zinc-400">
+            <div className="rounded-panel border border-dashed border-line bg-surface px-4 py-5 text-sm text-content-muted">
               Fuege zuerst eine Template-Uebung hinzu. Danach kannst du hier die Progression je Woche editieren.
             </div>
           ) : (
@@ -873,7 +870,7 @@ export function TemplateDetailPage() {
                 <select
                   value={selectedProgramId}
                   onChange={(event) => setSelectedProgramId(event.target.value)}
-                  className="w-full rounded-3xl border border-white/10 bg-zinc-950/45 px-4 py-4 text-sm text-zinc-50 outline-none transition focus:border-lime-300/40"
+                  className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
                 >
                   {(programs ?? []).map((program) => (
                     <option key={program.id} value={program.id}>
@@ -884,7 +881,7 @@ export function TemplateDetailPage() {
                 <select
                   value={selectedProgressionTemplateExerciseId}
                   onChange={(event) => setSelectedProgressionTemplateExerciseId(event.target.value)}
-                  className="w-full rounded-3xl border border-white/10 bg-zinc-950/45 px-4 py-4 text-sm text-zinc-50 outline-none transition focus:border-lime-300/40"
+                  className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
                 >
                   {orderedTemplateExercises.map((item) => (
                     <option key={item.id} value={item.id}>
@@ -895,8 +892,8 @@ export function TemplateDetailPage() {
               </div>
 
               {selectedProgressionTemplateExercise ? (
-                <div className="rounded-3xl bg-zinc-950/45 p-4 text-sm text-zinc-400">
-                  <p className="font-semibold text-zinc-100">
+                <div className="rounded-panel bg-surface p-4 text-sm text-content-muted">
+                  <p className="font-semibold text-content">
                     {nameById[selectedProgressionTemplateExercise.exerciseId] ?? 'Unbekannte Uebung'}
                   </p>
                   <p className="mt-2">
@@ -918,20 +915,20 @@ export function TemplateDetailPage() {
                     return (
                       <div
                         key={week.id}
-                        className="rounded-3xl border border-white/10 bg-zinc-950/45 p-4"
+                        className="rounded-panel border border-line bg-surface p-4"
                       >
                         <div className="mb-3 flex items-start justify-between gap-3">
                           <div>
-                            <p className="text-sm font-semibold text-zinc-50">
+                            <p className="text-sm font-semibold text-content">
                               W{week.weekNumber}
                               {week.label ? ` · ${week.label}` : ''}
                             </p>
-                            <p className="mt-1 text-xs text-zinc-500">
+                            <p className="mt-1 text-xs text-content-muted">
                               Leer lassen = Basiswerte der Template-Uebung verwenden
                             </p>
                           </div>
                           {hasSavedRule ? (
-                            <span className="rounded-2xl bg-lime-300/10 px-3 py-2 text-xs font-medium text-lime-200">
+                            <span className="min-h-touch inline-flex items-center justify-center rounded-control bg-accent-soft px-3 py-2 text-xs font-medium text-accent">
                               Override aktiv
                             </span>
                           ) : null}
@@ -951,8 +948,8 @@ export function TemplateDetailPage() {
                                 }))
                               }
                               inputMode="numeric"
-                              placeholder="Ziel-Wdh"
-                              className="w-full rounded-3xl border border-white/10 bg-zinc-900 px-4 py-4 text-sm text-zinc-50 outline-none transition focus:border-lime-300/40"
+                              aria-label="Ziel-Wdh" placeholder="Ziel-Wdh"
+                              className="w-full rounded-panel border border-line bg-surface-sunken px-4 py-4 text-sm text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
                             />
                           ) : null}
 
@@ -969,8 +966,8 @@ export function TemplateDetailPage() {
                                 }))
                               }
                               inputMode="decimal"
-                              placeholder="Ziel-Sekunden"
-                              className="w-full rounded-3xl border border-white/10 bg-zinc-900 px-4 py-4 text-sm text-zinc-50 outline-none transition focus:border-lime-300/40"
+                              aria-label="Ziel-Sekunden" placeholder="Ziel-Sekunden"
+                              className="w-full rounded-panel border border-line bg-surface-sunken px-4 py-4 text-sm text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
                             />
                           ) : null}
 
@@ -987,8 +984,8 @@ export function TemplateDetailPage() {
                                 }))
                               }
                               inputMode="decimal"
-                              placeholder="Ziel-Gewicht in kg"
-                              className="w-full rounded-3xl border border-white/10 bg-zinc-900 px-4 py-4 text-sm text-zinc-50 outline-none transition focus:border-lime-300/40"
+                              aria-label="Ziel-Gewicht in kg" placeholder="Ziel-Gewicht in kg"
+                              className="w-full rounded-panel border border-line bg-surface-sunken px-4 py-4 text-sm text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
                             />
                           ) : null}
 
@@ -1004,8 +1001,8 @@ export function TemplateDetailPage() {
                               }))
                             }
                             rows={2}
-                            placeholder="Wochen-spezifische Notiz"
-                            className="w-full rounded-3xl border border-white/10 bg-zinc-900 px-4 py-4 text-sm text-zinc-50 outline-none transition placeholder:text-zinc-500 focus:border-lime-300/40"
+                            aria-label="Wochen-spezifische Notiz" placeholder="Wochen-spezifische Notiz"
+                            className="w-full rounded-panel border border-line bg-surface-sunken px-4 py-4 text-sm text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
                           />
 
                           <div className="grid grid-cols-2 gap-3">
@@ -1013,7 +1010,7 @@ export function TemplateDetailPage() {
                               type="button"
                               onClick={() => handleSaveProgressionForWeek(week.id)}
                               disabled={isSavingProgressionRule}
-                              className="rounded-3xl bg-lime-300 px-4 py-4 text-sm font-semibold text-zinc-950 transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
+                              className="rounded-panel bg-accent px-4 py-4 text-sm font-semibold text-accent-contrast transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
                             >
                               Wochenwerte speichern
                             </button>
@@ -1021,7 +1018,7 @@ export function TemplateDetailPage() {
                               type="button"
                               onClick={() => handleClearProgressionForWeek(week.id)}
                               disabled={isSavingProgressionRule}
-                              className="rounded-3xl bg-white/5 px-4 py-4 text-sm font-medium text-zinc-300 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                              className="rounded-panel bg-surface-raised px-4 py-4 text-sm font-medium text-content-secondary transition hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-50"
                             >
                               Override entfernen
                             </button>
@@ -1032,7 +1029,7 @@ export function TemplateDetailPage() {
                   })}
                 </div>
               ) : (
-                <div className="rounded-3xl border border-dashed border-white/10 bg-zinc-950/35 px-4 py-5 text-sm text-zinc-400">
+                <div className="rounded-panel border border-dashed border-line bg-surface px-4 py-5 text-sm text-content-muted">
                   Dieses Programm hat noch keine Wochen. Fuege sie in der Programm-Verwaltung hinzu.
                 </div>
               )}
@@ -1045,7 +1042,7 @@ export function TemplateDetailPage() {
             title={editingTemplateExerciseId ? 'Template-Uebung bearbeiten' : 'Template-Uebung hinzufuegen'}
             subtitle="Bestehende Uebung auswaehlen oder direkt eine neue globale Uebung anlegen."
             action={
-              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-lime-300/10 text-lime-200">
+              <div className="flex h-10 w-10 items-center justify-center rounded-control bg-accent-soft text-accent">
                 <Plus size={18} />
               </div>
             }
@@ -1055,10 +1052,10 @@ export function TemplateDetailPage() {
               <button
                 type="button"
                 onClick={() => setForm((current) => ({ ...current, exerciseSource: 'existing' }))}
-                className={`rounded-3xl px-4 py-4 text-sm font-medium transition ${
+                className={`rounded-panel px-4 py-4 text-sm font-medium transition ${
                   form.exerciseSource === 'existing'
-                    ? 'bg-lime-300 text-zinc-950'
-                    : 'bg-white/5 text-zinc-300 hover:bg-white/10'
+                    ? 'bg-accent text-accent-contrast'
+                    : 'bg-surface-raised text-content-secondary hover:bg-surface-hover'
                 }`}
               >
                 Bestehende Uebung
@@ -1072,10 +1069,10 @@ export function TemplateDetailPage() {
                     exerciseId: '',
                   }))
                 }
-                className={`rounded-3xl px-4 py-4 text-sm font-medium transition ${
+                className={`rounded-panel px-4 py-4 text-sm font-medium transition ${
                   form.exerciseSource === 'new'
-                    ? 'bg-lime-300 text-zinc-950'
-                    : 'bg-white/5 text-zinc-300 hover:bg-white/10'
+                    ? 'bg-accent text-accent-contrast'
+                    : 'bg-surface-raised text-content-secondary hover:bg-surface-hover'
                 }`}
               >
                 Neue Uebung
@@ -1087,7 +1084,7 @@ export function TemplateDetailPage() {
                 <select
                   value={form.exerciseId}
                   onChange={(event) => setForm((current) => ({ ...current, exerciseId: event.target.value }))}
-                  className="w-full rounded-3xl border border-white/10 bg-zinc-950/45 px-4 py-4 text-sm text-zinc-50 outline-none transition focus:border-lime-300/40"
+                  className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
                 >
                   {sortedExercises.map((exercise) => (
                     <option key={exercise.id} value={exercise.id}>
@@ -1097,14 +1094,14 @@ export function TemplateDetailPage() {
                 </select>
 
                 {selectedExistingExercise ? (
-                  <div className="rounded-3xl bg-zinc-950/45 p-4 text-sm text-zinc-400">
+                  <div className="rounded-panel bg-surface p-4 text-sm text-content-muted">
                     <ExerciseMedia
                       mediaAsset={selectedExistingExerciseMedia}
                       alt={selectedExistingExercise.name}
                       className="mb-4 h-40 w-full"
                       imageClassName="h-full w-full"
                     />
-                    <p className="font-semibold text-zinc-100">{selectedExistingExercise.name}</p>
+                    <p className="font-semibold text-content">{selectedExistingExercise.name}</p>
                     <p className="mt-2">
                       Tracking: {selectedExistingExercise.trackingMode} ·{' '}
                       {selectedExistingExercise.unilateral ? 'unilateral' : 'beidseitig'}
@@ -1113,7 +1110,7 @@ export function TemplateDetailPage() {
                       <p className="mt-2">{selectedExistingExercise.instructions}</p>
                     ) : null}
                     <div className="mt-4 flex flex-wrap gap-2">
-                      <label className="rounded-2xl border border-white/10 px-3 py-2 text-sm text-zinc-300 transition hover:bg-white/5">
+                      <label className="min-h-touch inline-flex items-center justify-center rounded-control border border-line px-3 py-2 text-sm text-content-secondary transition hover:bg-surface-raised">
                         <input
                           type="file"
                           accept="image/jpeg,image/png,image/webp,image/gif"
@@ -1131,7 +1128,7 @@ export function TemplateDetailPage() {
                           type="button"
                           onClick={handleClearExistingExerciseMedia}
                           disabled={isUpdatingExerciseMedia}
-                          className="rounded-2xl border border-rose-400/20 px-3 py-2 text-sm text-rose-200 transition hover:bg-rose-400/10 disabled:cursor-not-allowed disabled:opacity-50"
+                          className="min-h-touch inline-flex items-center justify-center rounded-control border border-rose-400/20 px-3 py-2 text-sm text-rose-200 transition hover:bg-rose-400/10 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           Bild entfernen
                         </button>
@@ -1145,21 +1142,21 @@ export function TemplateDetailPage() {
                 <input
                   value={form.exerciseName}
                   onChange={(event) => setForm((current) => ({ ...current, exerciseName: event.target.value }))}
-                  placeholder="Uebungsname"
-                  className="w-full rounded-3xl border border-white/10 bg-zinc-950/45 px-4 py-4 text-sm text-zinc-50 outline-none transition placeholder:text-zinc-500 focus:border-lime-300/40"
+                  aria-label="Uebungsname" placeholder="Uebungsname"
+                  className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
                 />
                 <textarea
                   value={form.instructions}
                   onChange={(event) => setForm((current) => ({ ...current, instructions: event.target.value }))}
-                  placeholder="Ausfuehrungshinweis"
+                  aria-label="Ausfuehrungshinweis" placeholder="Ausfuehrungshinweis"
                   rows={3}
-                  className="w-full rounded-3xl border border-white/10 bg-zinc-950/45 px-4 py-4 text-sm text-zinc-50 outline-none transition placeholder:text-zinc-500 focus:border-lime-300/40"
+                  className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
                 />
                 <input
                   value={form.tempo}
                   onChange={(event) => setForm((current) => ({ ...current, tempo: event.target.value }))}
-                  placeholder="Tempo, z. B. 4-1-1"
-                  className="w-full rounded-3xl border border-white/10 bg-zinc-950/45 px-4 py-4 text-sm text-zinc-50 outline-none transition placeholder:text-zinc-500 focus:border-lime-300/40"
+                  aria-label="Tempo, z. B. 4-1-1" placeholder="Tempo, z. B. 4-1-1"
+                  className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
                 />
                 <div className="grid grid-cols-2 gap-3">
                   <select
@@ -1170,7 +1167,7 @@ export function TemplateDetailPage() {
                         trackingMode: event.target.value as TrackingMode,
                       }))
                     }
-                    className="rounded-3xl border border-white/10 bg-zinc-950/45 px-4 py-4 text-sm text-zinc-50 outline-none transition focus:border-lime-300/40"
+                    className="rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
                   >
                     <option value="reps_weight">Wdh + Gewicht</option>
                     <option value="time">Sekunden</option>
@@ -1179,17 +1176,17 @@ export function TemplateDetailPage() {
                   <button
                     type="button"
                     onClick={() => setForm((current) => ({ ...current, unilateral: !current.unilateral }))}
-                    className={`rounded-3xl px-4 py-4 text-sm font-medium transition ${
+                    className={`rounded-panel px-4 py-4 text-sm font-medium transition ${
                       form.unilateral
-                        ? 'bg-lime-300 text-zinc-950'
-                        : 'bg-white/5 text-zinc-300 hover:bg-white/10'
+                        ? 'bg-accent text-accent-contrast'
+                        : 'bg-surface-raised text-content-secondary hover:bg-surface-hover'
                     }`}
                   >
                     {form.unilateral ? 'Unilateral' : 'Beidseitig'}
                   </button>
                 </div>
-                <div className="space-y-3 rounded-3xl bg-zinc-950/45 p-4">
-                  <label className="block rounded-2xl border border-white/10 px-3 py-3 text-sm text-zinc-300 transition hover:bg-white/5">
+                <div className="space-y-3 rounded-panel bg-surface p-4">
+                  <label className="block rounded-control border border-line px-3 py-3 text-sm text-content-secondary transition hover:bg-surface-raised">
                     <input
                       type="file"
                       accept="image/jpeg,image/png,image/webp,image/gif"
@@ -1213,7 +1210,7 @@ export function TemplateDetailPage() {
                     <button
                       type="button"
                       onClick={() => setPendingNewExerciseMediaFile(null)}
-                      className="rounded-2xl border border-white/10 px-3 py-2 text-sm text-zinc-300 transition hover:bg-white/5"
+                      className="min-h-touch inline-flex items-center justify-center rounded-control border border-line px-3 py-2 text-sm text-content-secondary transition hover:bg-surface-raised"
                     >
                       Bild entfernen
                     </button>
@@ -1227,10 +1224,10 @@ export function TemplateDetailPage() {
                 value={form.workSetCount}
                 onChange={(event) => setForm((current) => ({ ...current, workSetCount: event.target.value }))}
                 inputMode="numeric"
-                placeholder="Arbeitssaetze"
-                className="w-full rounded-3xl border border-white/10 bg-zinc-950/45 px-4 py-4 text-sm text-zinc-50 outline-none transition placeholder:text-zinc-500 focus:border-lime-300/40"
+                aria-label="Arbeitssaetze" placeholder="Arbeitssaetze"
+                className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
               />
-                <p className="text-xs text-zinc-500">Die Reihenfolge aenderst du oben direkt per Drag am Handle.</p>
+                <p className="text-xs text-content-muted">Die Reihenfolge aenderst du oben direkt per Drag am Handle.</p>
             </div>
 
             {(form.exerciseSource === 'new' ? form.trackingMode : selectedExistingExercise?.trackingMode) ===
@@ -1239,8 +1236,8 @@ export function TemplateDetailPage() {
                 value={form.targetReps}
                 onChange={(event) => setForm((current) => ({ ...current, targetReps: event.target.value }))}
                 inputMode="numeric"
-                placeholder="Ziel-Wdh"
-                className="w-full rounded-3xl border border-white/10 bg-zinc-950/45 px-4 py-4 text-sm text-zinc-50 outline-none transition placeholder:text-zinc-500 focus:border-lime-300/40"
+                aria-label="Ziel-Wdh" placeholder="Ziel-Wdh"
+                className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
               />
             ) : null}
 
@@ -1250,8 +1247,8 @@ export function TemplateDetailPage() {
                 value={form.targetSeconds}
                 onChange={(event) => setForm((current) => ({ ...current, targetSeconds: event.target.value }))}
                 inputMode="decimal"
-                placeholder="Ziel-Sekunden"
-                className="w-full rounded-3xl border border-white/10 bg-zinc-950/45 px-4 py-4 text-sm text-zinc-50 outline-none transition placeholder:text-zinc-500 focus:border-lime-300/40"
+                aria-label="Ziel-Sekunden" placeholder="Ziel-Sekunden"
+                className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
               />
             ) : null}
 
@@ -1261,8 +1258,8 @@ export function TemplateDetailPage() {
                 value={form.targetWeight}
                 onChange={(event) => setForm((current) => ({ ...current, targetWeight: event.target.value }))}
                 inputMode="decimal"
-                placeholder="Ziel-Gewicht in kg"
-                className="w-full rounded-3xl border border-white/10 bg-zinc-950/45 px-4 py-4 text-sm text-zinc-50 outline-none transition placeholder:text-zinc-500 focus:border-lime-300/40"
+                aria-label="Ziel-Gewicht in kg" placeholder="Ziel-Gewicht in kg"
+                className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
               />
             ) : null}
 
@@ -1270,16 +1267,16 @@ export function TemplateDetailPage() {
               value={form.restSeconds}
               onChange={(event) => setForm((current) => ({ ...current, restSeconds: event.target.value }))}
               inputMode="numeric"
-              placeholder="Pause in Sekunden"
-              className="w-full rounded-3xl border border-white/10 bg-zinc-950/45 px-4 py-4 text-sm text-zinc-50 outline-none transition placeholder:text-zinc-500 focus:border-lime-300/40"
+              aria-label="Pause in Sekunden" placeholder="Pause in Sekunden"
+              className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
             />
 
             <textarea
               value={form.notes}
               onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))}
-              placeholder="Template-spezifische Notiz"
+              aria-label="Template-spezifische Notiz" placeholder="Template-spezifische Notiz"
               rows={3}
-              className="w-full rounded-3xl border border-white/10 bg-zinc-950/45 px-4 py-4 text-sm text-zinc-50 outline-none transition placeholder:text-zinc-500 focus:border-lime-300/40"
+              className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
             />
 
             <div className="grid grid-cols-2 gap-3">
@@ -1287,21 +1284,21 @@ export function TemplateDetailPage() {
                 type="button"
                 onClick={handleSaveTemplateExercise}
                 disabled={isSavingExercise || isUpdatingExerciseMedia}
-                className="rounded-3xl bg-lime-300 px-4 py-4 text-sm font-semibold text-zinc-950 transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-panel bg-accent px-4 py-4 text-sm font-semibold text-accent-contrast transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {editingTemplateExerciseId ? 'Aenderung speichern' : 'Uebung hinzufuegen'}
               </button>
               <button
                 type="button"
                 onClick={() => setEditingTemplateExerciseId(null)}
-                className="rounded-3xl bg-white/5 px-4 py-4 text-sm font-medium text-zinc-300 transition hover:bg-white/10"
+                className="rounded-panel bg-surface-raised px-4 py-4 text-sm font-medium text-content-secondary transition hover:bg-surface-hover"
               >
                 Zuruecksetzen
               </button>
             </div>
 
             {mediaError ? (
-              <div className="rounded-3xl border border-rose-300/20 bg-rose-300/10 px-4 py-4 text-sm text-rose-100">
+              <div className="rounded-panel border border-rose-300/20 bg-rose-300/10 px-4 py-4 text-sm text-rose-100">
                 {mediaError}
               </div>
             ) : null}
@@ -1309,6 +1306,32 @@ export function TemplateDetailPage() {
         </SectionCard>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title={pendingDelete?.kind === 'template' ? 'Vorlage loeschen?' : 'Uebung entfernen?'}
+        description={
+          pendingDelete?.kind === 'template'
+            ? `"${template?.name ?? ''}" wird entfernt. Bereits absolvierte Sessions bleiben in der Historie erhalten.`
+            : `"${pendingDelete?.kind === 'exercise' ? pendingDelete.name : ''}" wird aus dieser Vorlage entfernt. Die Uebung selbst und ihre Historie bleiben bestehen.`
+        }
+        confirmLabel="Entfernen"
+        onConfirm={async () => {
+          if (!pendingDelete) {
+            return;
+          }
+
+          const target = pendingDelete;
+          setPendingDelete(null);
+
+          if (target.kind === 'template') {
+            await handleDeleteTemplate();
+          } else {
+            await handleDeleteTemplateExercise(target.id);
+          }
+        }}
+        onCancel={() => setPendingDelete(null)}
+      />
     </AppShell>
   );
 }

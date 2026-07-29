@@ -1,0 +1,112 @@
+import { useId } from 'react';
+import type { ProgressPoint } from '@/domain/progress';
+import { summarizeTrend } from '@/domain/progress';
+
+interface ProgressChartProps {
+  points: ProgressPoint[];
+  unit: string;
+  label: string;
+}
+
+const WIDTH = 320;
+const HEIGHT = 120;
+const PADDING = { top: 12, right: 8, bottom: 20, left: 8 };
+
+/**
+ * Handgeschriebenes SVG statt einer Chart-Bibliothek.
+ *
+ * Eine einzelne Zeitreihe rechtfertigt in einer Offline-App keine zusaetzliche
+ * Abhaengigkeit im Bundle - und ohne Netz muss ohnehin alles mit ausgeliefert
+ * werden.
+ */
+export function ProgressChart({ points, unit, label }: ProgressChartProps) {
+  const gradientId = useId();
+
+  if (points.length === 0) {
+    return null;
+  }
+
+  const trend = summarizeTrend(points);
+  const values = points.map((point) => point.topValue);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  // Bei konstanten Werten waere die Spanne 0 - dann liegt die Linie mittig.
+  const span = max - min || Math.max(1, max * 0.1);
+  const innerWidth = WIDTH - PADDING.left - PADDING.right;
+  const innerHeight = HEIGHT - PADDING.top - PADDING.bottom;
+
+  const coords = points.map((point, index) => {
+    const x =
+      PADDING.left + (points.length === 1 ? innerWidth / 2 : (index / (points.length - 1)) * innerWidth);
+    const y = PADDING.top + innerHeight - ((point.topValue - min) / span) * innerHeight;
+    return { x, y, point };
+  });
+
+  const line = coords.map(({ x, y }, index) => `${index === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
+  const area = `${line} L${coords[coords.length - 1].x.toFixed(1)},${(HEIGHT - PADDING.bottom).toFixed(1)} L${coords[0].x.toFixed(1)},${(HEIGHT - PADDING.bottom).toFixed(1)} Z`;
+
+  const formatDate = (iso: string) =>
+    new Intl.DateTimeFormat('de-DE', { day: '2-digit', month: '2-digit' }).format(new Date(iso));
+
+  const summary = trend
+    ? `${label} von ${trend.first} auf ${trend.last} ${unit}, ${trend.delta >= 0 ? 'plus' : 'minus'} ${Math.abs(trend.delta)} ${unit}`
+    : `${label}: ${points[0].topValue} ${unit} bei einer Ausfuehrung`;
+
+  return (
+    <figure className="m-0">
+      <svg
+        viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+        className="h-auto w-full"
+        role="img"
+        aria-label={summary}
+        preserveAspectRatio="none"
+      >
+        <defs>
+          <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#bef264" stopOpacity="0.28" />
+            <stop offset="100%" stopColor="#bef264" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+
+        <path d={area} fill={`url(#${gradientId})`} />
+        <path
+          d={line}
+          fill="none"
+          stroke="#bef264"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          vectorEffect="non-scaling-stroke"
+        />
+
+        {coords.map(({ x, y, point }) => (
+          <circle
+            key={point.completedAt}
+            cx={x}
+            cy={y}
+            r="3"
+            fill="#09090b"
+            stroke="#bef264"
+            strokeWidth="2"
+            vectorEffect="non-scaling-stroke"
+          />
+        ))}
+      </svg>
+
+      <figcaption className="mt-2 flex items-baseline justify-between gap-2 text-xs text-content-muted">
+        <span>{formatDate(points[0].completedAt)}</span>
+        <span className="text-content-secondary">
+          {min === max ? `${max} ${unit}` : `${min}–${max} ${unit}`}
+          {trend ? (
+            <span className={trend.delta >= 0 ? ' text-accent' : ' text-danger'}>
+              {' '}
+              {trend.delta >= 0 ? '+' : ''}
+              {trend.delta} {unit}
+            </span>
+          ) : null}
+        </span>
+        <span>{formatDate(points[points.length - 1].completedAt)}</span>
+      </figcaption>
+    </figure>
+  );
+}

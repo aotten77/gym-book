@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { db } from '@/db/appDb';
 import {
+  abortSession,
   addSessionExercise,
+  completeSession,
   reorderSessionExercises,
   startSessionFromTemplate,
   toggleSetCompletion,
@@ -416,6 +418,57 @@ describe('set log guards', () => {
       completed: false,
     });
   });
+
+  it('leaves stored values untouched when a field is omitted', async () => {
+    await db.workoutSessions.add({
+      id: 'session-partial',
+      templateId: 'template-partial',
+      templateNameSnapshot: 'Einheit Partial',
+      resolvedProgramWeek: 1,
+      startedAt: '2026-01-09T09:00:00.000Z',
+      status: 'active',
+    });
+
+    await db.workoutSessionExercises.add({
+      id: 'session-exercise-partial',
+      sessionId: 'session-partial',
+      exerciseId: 'exercise-partial',
+      exerciseNameSnapshot: 'Front Squat',
+      trackingMode: 'reps_weight',
+      unilateral: false,
+      orderIndex: 1,
+      wasSkipped: false,
+      addedInSession: false,
+      workSetCount: 3,
+    });
+
+    await db.workoutSetLogs.add({
+      id: 'set-log-partial',
+      sessionExerciseId: 'session-exercise-partial',
+      setKind: 'work',
+      side: 'both',
+      setNumber: 1,
+      reps: 10,
+      weight: 50,
+      completed: false,
+    });
+
+    // Nur die Wiederholungen werden geschrieben - das Gewicht darf nicht
+    // verschwinden, obwohl es im Input-Objekt fehlt.
+    await updateSetLogValues('set-log-partial', { reps: 8 });
+
+    expect(await db.workoutSetLogs.get('set-log-partial')).toMatchObject({
+      reps: 8,
+      weight: 50,
+    });
+
+    // Ein bewusst geleertes Feld wird dagegen entfernt.
+    await updateSetLogValues('set-log-partial', { weight: undefined });
+
+    const cleared = await db.workoutSetLogs.get('set-log-partial');
+    expect(cleared?.weight).toBeUndefined();
+    expect(cleared?.reps).toBe(8);
+  });
 });
 
 describe('settings and program week actions', () => {
@@ -808,5 +861,90 @@ describe('exercise media actions', () => {
     const clearedExercise = await db.exercises.get('exercise-media');
     expect(clearedExercise?.mediaAssetId).toBeUndefined();
     expect(await db.mediaAssets.get(secondMediaAssetId)).toBeUndefined();
+  });
+});
+
+describe('closing a session', () => {
+  async function seedActiveSession(id: string) {
+    await db.workoutSessions.add({
+      id,
+      templateId: 'template-close',
+      templateNameSnapshot: 'Einheit Close',
+      resolvedProgramWeek: 1,
+      startedAt: '2026-01-10T09:00:00.000Z',
+      status: 'active',
+      restTimerEndsAt: Date.now() + 60_000,
+    });
+  }
+
+  it('aborts an active session and clears the rest timer', async () => {
+    await seedActiveSession('session-abort');
+
+    await abortSession('session-abort');
+
+    const session = await db.workoutSessions.get('session-abort');
+    expect(session?.status).toBe('aborted');
+    expect(session?.completedAt).toBeTruthy();
+    expect(session?.restTimerEndsAt).toBeUndefined();
+  });
+
+  it('does not overwrite an already closed session', async () => {
+    await seedActiveSession('session-double');
+
+    await completeSession('session-double');
+    const firstClose = await db.workoutSessions.get('session-double');
+
+    await completeSession('session-double');
+    await abortSession('session-double');
+
+    const afterRepeats = await db.workoutSessions.get('session-double');
+    expect(afterRepeats?.status).toBe('completed');
+    expect(afterRepeats?.completedAt).toBe(firstClose?.completedAt);
+  });
+
+  it('rejects closing a session that does not exist', async () => {
+    await expect(completeSession('missing-session')).rejects.toThrow('Session nicht gefunden');
+  });
+});
+
+describe('starting a session', () => {
+  async function seedTemplate() {
+    await db.exercises.add({
+      id: 'exercise-race',
+      name: 'Deadlift',
+      trackingMode: 'reps_weight',
+      unilateral: false,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    await db.workoutTemplates.add({
+      id: 'template-race',
+      name: 'Einheit Race',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    await db.workoutTemplateExercises.add({
+      id: 'template-exercise-race',
+      templateId: 'template-race',
+      exerciseId: 'exercise-race',
+      orderIndex: 1,
+      workSetCount: 2,
+      targetReps: 5,
+    });
+  }
+
+  it('creates only one active session when started twice at once', async () => {
+    await seedTemplate();
+
+    const [first, second] = await Promise.all([
+      startSessionFromTemplate('template-race'),
+      startSessionFromTemplate('template-race'),
+    ]);
+
+    const activeSessions = await db.workoutSessions.where('status').equals('active').toArray();
+
+    expect(activeSessions).toHaveLength(1);
+    expect(first).toBe(second);
+    expect(activeSessions[0].id).toBe(first);
   });
 });

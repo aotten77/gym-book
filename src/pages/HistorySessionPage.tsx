@@ -6,19 +6,8 @@ import { AppShell } from '@/components/AppShell';
 import { ExerciseMedia } from '@/components/ExerciseMedia';
 import { SectionCard } from '@/components/SectionCard';
 import { db } from '@/db/appDb';
-import type { WorkoutSetLog, WorkoutSession } from '@/domain/models';
-import { formatDateTime, formatLoadLabel } from '@/lib/format';
-
-function formatSessionWeekContext(session: WorkoutSession) {
-  const parts = [
-    `Woche ${session.resolvedProgramWeek}`,
-    session.programWeekLabelSnapshot,
-    session.programNameSnapshot,
-    session.usedWeekOverride ? 'Override' : 'Programm',
-  ].filter(Boolean);
-
-  return parts.join(' · ');
-}
+import type { WorkoutSetLog } from '@/domain/models';
+import { formatDateTime, formatLoadLabel, formatSessionWeekContext } from '@/lib/format';
 
 function formatSetLabel(setLog: WorkoutSetLog) {
   if (setLog.setKind === 'warmup') {
@@ -67,14 +56,14 @@ export function HistorySessionPage() {
           action={
             <Link
               to="/history"
-              className="flex items-center gap-2 rounded-2xl border border-white/10 px-3 py-2 text-sm text-zinc-300 transition hover:bg-white/5"
+              className="min-h-touch inline-flex items-center justify-center flex items-center gap-2 rounded-control border border-line px-3 py-2 text-sm text-content-secondary transition hover:bg-surface-raised"
             >
               <ArrowLeft size={16} />
               Zurueck
             </Link>
           }
         >
-          <p className="text-sm text-zinc-400">Die Session existiert nicht mehr oder wurde noch nicht exportiert.</p>
+          <p className="text-sm text-content-muted">Die Session existiert nicht mehr oder wurde noch nicht exportiert.</p>
         </SectionCard>
       </AppShell>
     );
@@ -91,7 +80,7 @@ export function HistorySessionPage() {
           action={
             <Link
               to="/history"
-              className="flex items-center gap-2 rounded-2xl border border-white/10 px-3 py-2 text-sm text-zinc-300 transition hover:bg-white/5"
+              className="min-h-touch inline-flex items-center justify-center flex items-center gap-2 rounded-control border border-line px-3 py-2 text-sm text-content-secondary transition hover:bg-surface-raised"
             >
               <ArrowLeft size={16} />
               Zurueck
@@ -99,13 +88,13 @@ export function HistorySessionPage() {
           }
         >
           <div className="grid grid-cols-2 gap-3 text-sm">
-            <div className="rounded-3xl bg-zinc-950/45 p-4">
-              <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Gestartet</p>
-              <p className="mt-2 font-semibold text-zinc-50">{formatDateTime(session.startedAt)}</p>
+            <div className="rounded-panel bg-surface p-4">
+              <p className="text-xs uppercase tracking-[0.18em] text-content-muted">Gestartet</p>
+              <p className="mt-2 font-semibold text-content">{formatDateTime(session.startedAt)}</p>
             </div>
-            <div className="rounded-3xl bg-zinc-950/45 p-4">
-              <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Status</p>
-              <p className="mt-2 font-semibold text-zinc-50">
+            <div className="rounded-panel bg-surface p-4">
+              <p className="text-xs uppercase tracking-[0.18em] text-content-muted">Status</p>
+              <p className="mt-2 font-semibold text-content">
                 {session.status === 'completed' ? 'Abgeschlossen' : session.status === 'active' ? 'Aktiv' : 'Abgebrochen'}
               </p>
             </div>
@@ -158,16 +147,16 @@ export function HistorySessionPage() {
                   logs.map((log) => (
                     <div
                       key={log.id}
-                      className="rounded-3xl border border-white/10 bg-zinc-950/45 p-4"
+                      className="rounded-panel border border-line bg-surface p-4"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <p className="text-sm font-semibold text-zinc-50">{formatSetLabel(log)}</p>
-                          <p className="mt-1 text-sm text-zinc-400">{formatLoadLabel(log)}</p>
+                          <p className="text-sm font-semibold text-content">{formatSetLabel(log)}</p>
+                          <p className="mt-1 text-sm text-content-muted">{formatLoadLabel(log)}</p>
                         </div>
                         <span
-                          className={`rounded-2xl px-3 py-2 text-xs font-medium ${
-                            log.completed ? 'bg-lime-300/10 text-lime-200' : 'bg-white/5 text-zinc-300'
+                          className={`rounded-control px-3 py-2 text-xs font-medium ${
+                            log.completed ? 'bg-accent-soft text-accent' : 'bg-surface-raised text-content-secondary'
                           }`}
                         >
                           {log.completed ? 'Fertig' : 'Offen'}
@@ -176,7 +165,7 @@ export function HistorySessionPage() {
                     </div>
                   ))
                 ) : (
-                  <div className="rounded-3xl border border-dashed border-white/10 bg-zinc-950/35 px-4 py-5 text-sm text-zinc-400">
+                  <div className="rounded-panel border border-dashed border-line bg-surface px-4 py-5 text-sm text-content-muted">
                     Keine Set-Logs vorhanden.
                   </div>
                 )}

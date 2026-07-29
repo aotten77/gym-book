@@ -1,0 +1,47 @@
+export type NumberInputResult =
+  | { status: 'empty' }
+  | { status: 'valid'; value: number }
+  | { status: 'invalid' };
+
+/**
+ * Parst eine Zahleneingabe aus einem Textfeld.
+ *
+ * Deutsche Tastaturen liefern ein Dezimalkomma, das `Number()` als NaN
+ * ablehnt. Ein NaN darf hier nie als "kein Wert" durchgereicht werden:
+ * `Table.update` in Dexie loescht Properties, deren Wert `undefined` ist,
+ * womit eine Fehleingabe einen bereits gespeicherten Wert vernichten wuerde.
+ * Deshalb sind "leer" und "ungueltig" zwei verschiedene Ergebnisse.
+ */
+export function parseNumberInput(value: string): NumberInputResult {
+  const trimmed = value.trim();
+
+  if (!trimmed) {
+    return { status: 'empty' };
+  }
+
+  const parsed = Number(trimmed.replace(',', '.'));
+
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return { status: 'invalid' };
+  }
+
+  return { status: 'valid', value: parsed };
+}
+
+export function isInvalidNumberInput(value: string) {
+  return parseNumberInput(value).status === 'invalid';
+}
+
+/**
+ * Fuer Formulare, die einen Datensatz neu anlegen: leer und ungueltig sind
+ * beide "kein Wert". Nicht verwenden, wenn ein bereits gespeicherter Wert
+ * ueberschrieben wird - dort muss `parseNumberInput` den Unterschied machen.
+ */
+export function optionalNumberInput(value: string) {
+  const parsed = parseNumberInput(value);
+  return parsed.status === 'valid' ? parsed.value : undefined;
+}
+
+export function toInputValue(value?: number) {
+  return typeof value === 'number' ? String(value) : '';
+}

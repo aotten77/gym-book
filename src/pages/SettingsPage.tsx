@@ -3,7 +3,12 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { Download, Minus, Plus, RotateCcw, Upload } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { AppShell } from '@/components/AppShell';
+import { Alert } from '@/components/Alert';
+import { Button, IconButton } from '@/components/ui/Button';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { SectionCard } from '@/components/SectionCard';
+import { bootstrapAppData, seedSampleData } from '@/db/bootstrap';
+import { formatDateTime } from '@/lib/format';
 import { db } from '@/db/appDb';
 import { setProgramActiveWeek } from '@/db/program-actions';
 import { clearWeekOverride, setActiveProgram, setWeekOverride } from '@/db/settings-actions';
@@ -28,6 +33,48 @@ export function SettingsPage() {
   const [programError, setProgramError] = useState<string | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const [importSuccess, setImportSuccess] = useState<string | null>(null);
+  const [isSeeding, setIsSeeding] = useState(false);
+  const [seedMessage, setSeedMessage] = useState<string | null>(null);
+  const [showResetDialog, setShowResetDialog] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
+
+  async function handleSeedSampleData() {
+    setIsSeeding(true);
+
+    try {
+      await seedSampleData();
+      setSeedMessage('Beispieldaten wurden geladen.');
+      setProgramError(null);
+    } catch (error) {
+      setProgramError(
+        error instanceof Error ? error.message : 'Beispieldaten konnten nicht geladen werden.',
+      );
+      setSeedMessage(null);
+    } finally {
+      setIsSeeding(false);
+    }
+  }
+
+  async function handleResetAllData() {
+    setIsResetting(true);
+
+    try {
+      // Alle Tabellen leeren statt die Datenbank zu loeschen: die
+      // Schemaversion und offene Live-Queries bleiben so intakt.
+      await db.transaction('rw', db.tables, async () => {
+        await Promise.all(db.tables.map((table) => table.clear()));
+      });
+      await bootstrapAppData();
+      setShowResetDialog(false);
+      setSeedMessage(null);
+      setProgramError(null);
+    } catch (error) {
+      setProgramError(error instanceof Error ? error.message : 'Zuruecksetzen fehlgeschlagen.');
+      setShowResetDialog(false);
+    } finally {
+      setIsResetting(false);
+    }
+  }
   const settings = useLiveQuery(() => db.appSettings.get('app-settings'), []);
   const programs = useLiveQuery(async () => {
     const items = await db.programs.toArray();
@@ -53,6 +100,7 @@ export function SettingsPage() {
     return weeks.sort((left, right) => left.weekNumber - right.weekNumber);
   }, []);
   const counts = useLiveQuery(async () => ({
+    exercises: await db.exercises.count(),
     templates: await db.workoutTemplates.count(),
     sessions: await db.workoutSessions.count(),
     tests: await db.exerciseTests.count(),
@@ -101,8 +149,13 @@ export function SettingsPage() {
     setIsImporting(true);
 
     try {
+      // Sicherheitsnetz: der Restore leert alle Tabellen. Wer versehentlich
+      // die falsche Datei waehlt, hat sonst keinen Weg zurueck.
+      await exportDatabaseSnapshot();
       await restoreDatabaseSnapshot(pendingImport.snapshot);
-      setImportSuccess(`Import aus ${pendingImport.fileName} erfolgreich eingespielt.`);
+      setImportSuccess(
+        `Import aus ${pendingImport.fileName} erfolgreich eingespielt. Ein Backup des vorherigen Stands wurde heruntergeladen.`,
+      );
       setImportError(null);
       setPendingImport(null);
     } catch (error) {
@@ -189,28 +242,28 @@ export function SettingsPage() {
       <div className="space-y-4">
         <SectionCard title="App-Status" subtitle="Lokale Daten liegen komplett in IndexedDB.">
           <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-3xl bg-zinc-950/45 p-4">
-              <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Programmwoche</p>
-              <p className="mt-2 text-2xl font-semibold text-zinc-50">
+            <div className="rounded-panel bg-surface p-4">
+              <p className="text-xs uppercase tracking-[0.18em] text-content-muted">Programmwoche</p>
+              <p className="mt-2 text-2xl font-semibold text-content">
                 {effectiveWeekLabel}
               </p>
-              <p className="mt-1 text-sm text-zinc-400">
+              <p className="mt-1 text-sm text-content-muted">
                 {settings?.weekOverride ? 'Override aktiv' : activeProgram?.name ?? 'Kein Programm gesetzt'}
               </p>
             </div>
-            <div className="rounded-3xl bg-zinc-950/45 p-4">
-              <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Export-Schema</p>
-              <p className="mt-2 text-2xl font-semibold text-zinc-50">
+            <div className="rounded-panel bg-surface p-4">
+              <p className="text-xs uppercase tracking-[0.18em] text-content-muted">Export-Schema</p>
+              <p className="mt-2 text-2xl font-semibold text-content">
                 v{settings?.exportSchemaVersion ?? 1}
               </p>
             </div>
-            <div className="rounded-3xl bg-zinc-950/45 p-4">
-              <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Sessions</p>
-              <p className="mt-2 text-2xl font-semibold text-zinc-50">{counts?.sessions ?? 0}</p>
+            <div className="rounded-panel bg-surface p-4">
+              <p className="text-xs uppercase tracking-[0.18em] text-content-muted">Sessions</p>
+              <p className="mt-2 text-2xl font-semibold text-content">{counts?.sessions ?? 0}</p>
             </div>
-            <div className="rounded-3xl bg-zinc-950/45 p-4">
-              <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Tests</p>
-              <p className="mt-2 text-2xl font-semibold text-zinc-50">{counts?.tests ?? 0}</p>
+            <div className="rounded-panel bg-surface p-4">
+              <p className="text-xs uppercase tracking-[0.18em] text-content-muted">Tests</p>
+              <p className="mt-2 text-2xl font-semibold text-content">{counts?.tests ?? 0}</p>
             </div>
           </div>
         </SectionCard>
@@ -221,7 +274,7 @@ export function SettingsPage() {
           action={
             <Link
               to="/programs"
-              className="rounded-2xl border border-white/10 px-3 py-2 text-sm text-zinc-300 transition hover:bg-white/5"
+              className="min-h-touch inline-flex items-center justify-center rounded-control border border-line px-3 py-2 text-sm text-content-secondary transition hover:bg-surface-raised"
             >
               Verwalten
             </Link>
@@ -230,10 +283,11 @@ export function SettingsPage() {
           <div className="space-y-4">
             {(programs?.length ?? 0) > 0 ? (
               <select
+                aria-label="Aktives Programm"
                 value={settings?.activeProgramId ?? ''}
                 onChange={(event) => handleProgramChange(event.target.value)}
                 disabled={isSavingProgram}
-                className="w-full rounded-3xl border border-white/10 bg-zinc-950/45 px-4 py-4 text-sm text-zinc-50 outline-none transition focus:border-lime-300/40 disabled:cursor-not-allowed disabled:opacity-60"
+                className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-sm text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {programs?.map((program) => (
                   <option key={program.id} value={program.id}>
@@ -242,83 +296,58 @@ export function SettingsPage() {
                 ))}
               </select>
             ) : (
-              <div className="rounded-3xl border border-dashed border-white/10 bg-zinc-950/35 px-4 py-5 text-sm text-zinc-400">
+              <div className="rounded-panel border border-dashed border-line bg-surface px-4 py-5 text-sm text-content-muted">
                 Noch kein Programm vorhanden. Lege zuerst ein Programm in der Programm-Verwaltung an.
               </div>
             )}
 
-            <div className="rounded-3xl border border-white/10 bg-zinc-950/40 p-4">
+            <div className="rounded-panel border border-line bg-surface p-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Aktive Woche</p>
-                  <p className="mt-2 text-2xl font-semibold text-zinc-50">{effectiveWeekLabel}</p>
-                  <p className="mt-1 text-sm text-zinc-400">
+                  <p className="text-xs uppercase tracking-[0.18em] text-content-muted">Aktive Woche</p>
+                  <p className="mt-2 text-2xl font-semibold text-content">{effectiveWeekLabel}</p>
+                  <p className="mt-1 text-sm text-content-muted">
                     {settings?.weekOverride ? 'Override' : 'Programm'}
                   </p>
                 </div>
                 <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleStepActiveWeek(-1)}
-                    disabled={!activeProgram || isSavingProgram}
-                    className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 text-zinc-200 transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
+                  <IconButton label="Override-Woche zurueck" onClick={() => handleStepActiveWeek(-1)} disabled={!activeProgram || isSavingProgram}>
                     <Minus size={18} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleStepActiveWeek(1)}
-                    disabled={!activeProgram || isSavingProgram}
-                    className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 text-zinc-200 transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
+                  </IconButton>
+                  <IconButton label="Override-Woche vor" onClick={() => handleStepActiveWeek(1)} disabled={!activeProgram || isSavingProgram}>
                     <Plus size={18} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleResetWeekOverride}
-                    disabled={!settings?.weekOverride || isSavingProgram}
-                    className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 text-zinc-200 transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
+                  </IconButton>
+                  <IconButton label="Wochen-Override zuruecksetzen" onClick={handleResetWeekOverride} disabled={!settings?.weekOverride || isSavingProgram}>
                     <RotateCcw size={18} />
-                  </button>
+                  </IconButton>
                 </div>
               </div>
             </div>
 
-            <div className="rounded-3xl border border-white/10 bg-zinc-950/40 p-4">
+            <div className="rounded-panel border border-line bg-surface p-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Programm-Woche</p>
-                  <p className="mt-2 text-2xl font-semibold text-zinc-50">
+                  <p className="text-xs uppercase tracking-[0.18em] text-content-muted">Programm-Woche</p>
+                  <p className="mt-2 text-2xl font-semibold text-content">
                     W{activeProgram?.activeWeek ?? 1}
                   </p>
-                  <p className="mt-1 text-sm text-zinc-400">
+                  <p className="mt-1 text-sm text-content-muted">
                     Wirkt nur, wenn keine Override-Woche aktiv ist.
                   </p>
                 </div>
                 <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleStepProgramWeek(-1)}
-                    disabled={!activeProgram || isSavingProgram}
-                    className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 text-zinc-200 transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
+                  <IconButton label="Programm-Woche zurueck" onClick={() => handleStepProgramWeek(-1)} disabled={!activeProgram || isSavingProgram}>
                     <Minus size={18} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleStepProgramWeek(1)}
-                    disabled={!activeProgram || isSavingProgram}
-                    className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 text-zinc-200 transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
+                  </IconButton>
+                  <IconButton label="Programm-Woche vor" onClick={() => handleStepProgramWeek(1)} disabled={!activeProgram || isSavingProgram}>
                     <Plus size={18} />
-                  </button>
+                  </IconButton>
                 </div>
               </div>
             </div>
 
             {programError ? (
-              <div className="rounded-3xl border border-rose-300/20 bg-rose-300/10 px-4 py-4 text-sm text-rose-100">
+              <div className="rounded-panel border border-rose-300/20 bg-rose-300/10 px-4 py-4 text-sm text-rose-100">
                 {programError}
               </div>
             ) : null}
@@ -330,11 +359,11 @@ export function SettingsPage() {
             <button
               type="button"
               onClick={() => exportDatabaseSnapshot()}
-              className="flex items-center justify-between rounded-3xl bg-lime-300 px-4 py-4 text-left text-zinc-950 transition hover:brightness-105"
+              className="flex items-center justify-between rounded-panel bg-accent px-4 py-4 text-left text-accent-contrast transition hover:brightness-105"
             >
               <div>
                 <p className="text-sm font-semibold">JSON-Export herunterladen</p>
-                <p className="mt-1 text-sm text-zinc-700">
+                <p className="mt-1 text-sm text-accent-contrast/80">
                   Enthalten sind Templates, Sessions, Logs, Tests und Settings.
                 </p>
               </div>
@@ -343,6 +372,7 @@ export function SettingsPage() {
 
             <input
               ref={fileInputRef}
+              aria-label="Backup-Datei auswaehlen"
               type="file"
               accept="application/json"
               onChange={handleImportFileChange}
@@ -352,40 +382,47 @@ export function SettingsPage() {
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="flex items-center justify-between rounded-3xl border border-white/10 bg-white/[0.04] px-4 py-4 text-left transition hover:border-lime-300/30 hover:bg-white/[0.07]"
+              className="flex items-center justify-between rounded-panel border border-line bg-surface-raised px-4 py-4 text-left transition hover:border-accent-border hover:bg-surface-hover"
             >
               <div>
-                <p className="font-medium text-zinc-200">JSON-Restore auswaehlen</p>
-                <p className="mt-1 text-sm text-zinc-400">
+                <p className="font-medium text-content-secondary">JSON-Restore auswaehlen</p>
+                <p className="mt-1 text-sm text-content-muted">
                   Liest einen Export ein, prueft das Schema und zeigt vor dem Restore eine Vorschau.
                 </p>
               </div>
-              <Upload size={18} className="text-zinc-500" />
+              <Upload size={18} className="text-content-muted" />
             </button>
 
             {pendingImport && pendingSummary ? (
-              <div className="rounded-3xl border border-amber-300/20 bg-amber-300/10 p-4">
+              <div className="rounded-panel border border-amber-300/20 bg-amber-300/10 p-4">
                 <p className="text-sm font-semibold text-amber-100">
                   Restore bereit: {pendingImport.fileName}
                 </p>
                 <p className="mt-1 text-sm text-amber-50/80">
-                  Der Import ersetzt den aktuellen lokalen Datenbestand vollstaendig.
+                  Der Import ersetzt den aktuellen lokalen Datenbestand vollstaendig. Vom bisherigen
+                  Stand wird vorher automatisch ein Backup heruntergeladen.
+                </p>
+                {/* Das Exportdatum ist der einzige Weg zu erkennen, ob es die
+                    gemeinte Datei ist. */}
+                <p className="mt-2 text-sm text-amber-50/80">
+                  Erstellt am {formatDateTime(pendingImport.snapshot.exportedAt)} ·{' '}
+                  {pendingSummary.exercises} Uebungen · {pendingSummary.mediaAssets} Bilder
                 </p>
 
                 <div className="mt-4 grid grid-cols-2 gap-3">
-                  <div className="rounded-3xl bg-black/15 p-3">
+                  <div className="rounded-panel bg-black/15 p-3">
                     <p className="text-xs uppercase tracking-[0.18em] text-amber-100/60">Templates</p>
                     <p className="mt-2 text-xl font-semibold text-amber-50">{pendingSummary.templates}</p>
                   </div>
-                  <div className="rounded-3xl bg-black/15 p-3">
+                  <div className="rounded-panel bg-black/15 p-3">
                     <p className="text-xs uppercase tracking-[0.18em] text-amber-100/60">Sessions</p>
                     <p className="mt-2 text-xl font-semibold text-amber-50">{pendingSummary.sessions}</p>
                   </div>
-                  <div className="rounded-3xl bg-black/15 p-3">
+                  <div className="rounded-panel bg-black/15 p-3">
                     <p className="text-xs uppercase tracking-[0.18em] text-amber-100/60">Set-Logs</p>
                     <p className="mt-2 text-xl font-semibold text-amber-50">{pendingSummary.setLogs}</p>
                   </div>
-                  <div className="rounded-3xl bg-black/15 p-3">
+                  <div className="rounded-panel bg-black/15 p-3">
                     <p className="text-xs uppercase tracking-[0.18em] text-amber-100/60">Tests</p>
                     <p className="mt-2 text-xl font-semibold text-amber-50">{pendingSummary.tests}</p>
                   </div>
@@ -396,7 +433,7 @@ export function SettingsPage() {
                     type="button"
                     onClick={handleConfirmImport}
                     disabled={isImporting}
-                    className="flex-1 rounded-3xl bg-lime-300 px-4 py-3 text-sm font-medium text-zinc-950 transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="flex-1 rounded-panel bg-accent px-4 py-3 text-sm font-medium text-accent-contrast transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {isImporting ? 'Import laeuft...' : 'Import bestaetigen'}
                   </button>
@@ -404,7 +441,7 @@ export function SettingsPage() {
                     type="button"
                     onClick={() => setPendingImport(null)}
                     disabled={isImporting}
-                    className="flex-1 rounded-3xl border border-white/10 px-4 py-3 text-sm font-medium text-zinc-200 transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="flex-1 rounded-panel border border-line px-4 py-3 text-sm font-medium text-content-secondary transition hover:bg-surface-raised disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     Abbrechen
                   </button>
@@ -413,13 +450,13 @@ export function SettingsPage() {
             ) : null}
 
             {importSuccess ? (
-              <div className="rounded-3xl border border-lime-300/20 bg-lime-300/10 px-4 py-4 text-sm text-lime-100">
+              <div className="rounded-panel border border-accent-border bg-accent-soft px-4 py-4 text-sm text-lime-100">
                 {importSuccess}
               </div>
             ) : null}
 
             {importError ? (
-              <div className="rounded-3xl border border-rose-300/20 bg-rose-300/10 px-4 py-4 text-sm text-rose-100">
+              <div className="rounded-panel border border-rose-300/20 bg-rose-300/10 px-4 py-4 text-sm text-rose-100">
                 {importError}
               </div>
             ) : null}
@@ -427,12 +464,58 @@ export function SettingsPage() {
         </SectionCard>
 
         <SectionCard title="Medien" subtitle="Lokale Uploads kommen auf dasselbe Persistenzmodell.">
-          <p className="text-sm text-zinc-400">
+          <p className="text-sm text-content-muted">
             Aktuell liegen {counts?.mediaAssets ?? 0} Medienobjekte in der Datenbank. Bilder bleiben lokal in
             IndexedDB und gehen mit in Export und Restore.
           </p>
         </SectionCard>
+
+        <SectionCard
+          title="Beispieldaten"
+          subtitle="Ein durchgespieltes Programm zum Ausprobieren - bewusst nicht beim ersten Start."
+        >
+          <div className="space-y-3">
+            <p className="text-sm text-content-muted">
+              Legt ein Programm mit acht Wochen, drei Uebungen, einer Vorlage und einer bereits
+              abgeschlossenen Session an. Nur moeglich, solange die Bibliothek leer ist.
+            </p>
+            <Button
+              variant="ghost"
+              fullWidth
+              onClick={handleSeedSampleData}
+              disabled={isSeeding || (counts?.exercises ?? 0) > 0}
+            >
+              {isSeeding ? 'Wird geladen...' : 'Beispieldaten laden'}
+            </Button>
+            {seedMessage ? <Alert variant="success">{seedMessage}</Alert> : null}
+          </div>
+        </SectionCard>
+
+        <SectionCard
+          title="Alle Daten loeschen"
+          subtitle="Setzt die App auf den Auslieferungszustand zurueck."
+        >
+          <div className="space-y-3">
+            <p className="text-sm text-content-muted">
+              Entfernt Programme, Vorlagen, Uebungen, Sessions, Tests und Bilder aus IndexedDB.
+              Exportiere vorher ein Backup, wenn du die Daten behalten willst.
+            </p>
+            <Button variant="danger" fullWidth onClick={() => setShowResetDialog(true)}>
+              Lokale Daten loeschen
+            </Button>
+          </div>
+        </SectionCard>
       </div>
+
+      <ConfirmDialog
+        open={showResetDialog}
+        title="Wirklich alle Daten loeschen?"
+        description="Saemtliche Programme, Vorlagen, Uebungen, Sessions, Tests und Bilder werden aus dieser Installation entfernt. Ohne Backup laesst sich das nicht rueckgaengig machen."
+        confirmLabel="Alles loeschen"
+        busy={isResetting}
+        onConfirm={handleResetAllData}
+        onCancel={() => setShowResetDialog(false)}
+      />
     </AppShell>
   );
 }
