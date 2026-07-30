@@ -120,6 +120,63 @@ export function materializeSession({
   };
 }
 
+/**
+ * Sagt, ob an einer Übung noch ein Satz offen ist.
+ *
+ * Gegenstück zu [findNextOpenExercise]: die sucht bewusst immer eine *andere*
+ * Übung, auch wenn die aktuelle noch offen ist. Ohne diese Prüfung davor würde
+ * der Fokus schon nach dem ersten Satz weiterspringen statt nach dem letzten.
+ *
+ * Eine Übung ohne Satzzeilen gilt als offen - sie wartet auf Eingabe.
+ */
+export function hasOpenSets(sessionExerciseId: string, setLogs: WorkoutSetLog[]) {
+  const ownLogs = setLogs.filter((log) => log.sessionExerciseId === sessionExerciseId);
+
+  return ownLogs.length === 0 || ownLogs.some((log) => !log.completed);
+}
+
+/**
+ * Sucht die nächste Übung, an der noch etwas offen ist.
+ *
+ * Gedacht für den Moment, in dem der letzte Satz einer Übung abgehakt wird:
+ * der Fokus soll dann weiterwandern, statt einen Tap auf "Fokus" zu verlangen -
+ * im Training zählt jeder Handgriff, den man mit verschwitzten Händen nicht
+ * machen muss.
+ *
+ * Gesucht wird ab der aktuellen Position vorwärts und danach vom Anfang, damit
+ * eine übersprungene oder nachträglich ergänzte Übung weiter oben nicht
+ * liegenbleibt. Übersprungene Übungen kommen nie in Frage, und eine Übung ohne
+ * Sätze gilt als offen - sie wartet auf Eingabe, sonst hätte sie keine Zeilen.
+ *
+ * Gibt `undefined` zurück, wenn nichts mehr offen ist; der Aufrufer lässt den
+ * Fokus dann stehen, statt ins Leere zu springen.
+ */
+export function findNextOpenExercise(
+  exercises: WorkoutSessionExercise[],
+  setLogs: WorkoutSetLog[],
+  currentSessionExerciseId?: string,
+): WorkoutSessionExercise | undefined {
+  const openBySessionExerciseId = new Set<string>();
+
+  for (const log of setLogs) {
+    if (!log.completed) {
+      openBySessionExerciseId.add(log.sessionExerciseId);
+    }
+  }
+
+  const hasLogs = new Set(setLogs.map((log) => log.sessionExerciseId));
+  const isOpen = (exercise: WorkoutSessionExercise) =>
+    !exercise.wasSkipped &&
+    (openBySessionExerciseId.has(exercise.id) || !hasLogs.has(exercise.id));
+
+  const currentIndex = exercises.findIndex((item) => item.id === currentSessionExerciseId);
+  // Bei unbekannter aktueller Übung startet die Suche schlicht vorn.
+  const startIndex = currentIndex === -1 ? 0 : currentIndex + 1;
+  const searchOrder = [...exercises.slice(startIndex), ...exercises.slice(0, startIndex)];
+
+  return searchOrder.find((exercise) => exercise.id !== currentSessionExerciseId && isOpen(exercise));
+}
+
 export function calculateAsymmetryPercent(leftValue: number, rightValue: number) {
   const largest = Math.max(leftValue, rightValue);
 

@@ -36,13 +36,17 @@ body {
   -webkit-text-size-adjust: 100%;
   /*
    * Der Verlauf sitzt auf dem Dokument, nicht auf einem Inhalts-Div: sonst
-   * wird er ueber die gesamte Seitenhoehe gestreckt und beim iOS-Overscroll
+   * wird er über die gesamte Seitenhöhe gestreckt und beim iOS-Overscroll
    * blitzt eine andere Farbe auf.
+   *
+   * Bewusst neutral: hier lagen zuvor ein grüner Radial-Verlauf oben und ein
+   * oranger unten rechts. Beide trugen exakt die Farben, mit denen die App
+   * Bedeutung transportiert - Grün heißt "aktive Übung" und "erledigter
+   * Satz", Orange heißt "Achtung". Als Dekoration auf dem Hintergrund
+   * konkurrierten sie mit genau diesen Signalen, und die hervorgehobene
+   * Übung ging darin unter.
    */
-  background:
-    radial-gradient(circle at top, rgba(132, 204, 22, 0.16), transparent 26%),
-    radial-gradient(circle at bottom right, rgba(245, 158, 11, 0.12), transparent 22%),
-    linear-gradient(180deg, #18181b 0%, #09090b 100%);
+  background: linear-gradient(180deg, #18181b 0%, #09090b 100%);
   background-attachment: fixed;
 }
 

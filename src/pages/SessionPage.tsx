@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Clock3, X } from 'lucide-react';
+import { CheckCircle2, Clock3, Plus, X } from 'lucide-react';
+import { Alert } from '@/components/Alert';
 import { AppShell } from '@/components/AppShell';
 import { ExerciseMedia } from '@/components/ExerciseMedia';
 import { ExerciseTargetFields } from '@/components/ExerciseTargetFields';
 import { MediaLightbox } from '@/components/MediaLightbox';
 import { SectionCard } from '@/components/SectionCard';
-import { CheckboxField } from '@/components/ui/Field';
+import { Button, IconButton } from '@/components/ui/Button';
+import { CheckboxField, SelectField, TextArea } from '@/components/ui/Field';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { SessionExerciseCard } from '@/components/SessionExerciseCard';
 import { db } from '@/db/appDb';
@@ -25,11 +27,17 @@ import {
 import { loadLastValuesForExercises } from '@/db/history-queries';
 import { sortSetLogs } from '@/domain/history';
 import type { MediaAsset, WorkoutSessionExercise, WorkoutSetLog } from '@/domain/models';
+import { findNextOpenExercise, hasOpenSets } from '@/domain/session';
 import { supportsReps, supportsSeconds, supportsWeight } from '@/domain/tracking';
-import { formatDateTime, formatSessionWeekContext, formatSetLogWithSide, formatTimer } from '@/lib/format';
+import {
+  formatDateTime,
+  formatSessionWeekContext,
+  formatSetLogWithSide,
+  formatTimer,
+  formatTrackingMode,
+} from '@/lib/format';
 import { optionalNumberInput } from '@/lib/number-input';
 import { moveItem } from '@/lib/reorder';
-import { cn } from '@/lib/utils';
 import { useUiStore } from '@/store/ui-store';
 
 /** Pause für Übungen, bei denen im Template nichts hinterlegt ist. */
@@ -267,6 +275,13 @@ export function SessionPage() {
   const focusedExerciseMedia = mediaAssetForExercise(focusedExercise);
 
   const focusedLastValues = focusedExercise ? lastValues?.[focusedExercise.exerciseId] : undefined;
+  const focusedLastValuesSummary = focusedLastValues
+    ? {
+        text: focusedLastValues.logs.map(formatSetLogWithSide).join(' · '),
+        completedAt: formatDateTime(focusedLastValues.completedAt),
+        templateName: focusedLastValues.templateName,
+      }
+    : undefined;
   const remainingSeconds = restTimerEndsAt ? Math.max(0, Math.ceil((restTimerEndsAt - now) / 1000)) : 0;
   const isReadOnly = session?.status !== 'active';
   const selectedExistingExercise = (availableExercises ?? []).find(
@@ -402,12 +417,47 @@ export function SessionPage() {
     }
   }
 
-  async function handleSetCompleted(restSeconds?: number) {
+  async function handleStartRest(restSeconds?: number) {
     try {
       await startRestTimer(sessionId, restSeconds ?? DEFAULT_REST_SECONDS);
     } catch (error) {
       setSessionError(error instanceof Error ? error.message : 'Pausentimer konnte nicht starten.');
     }
+  }
+
+  /**
+   * Reaktion auf einen abgehakten Satz: Pause starten und - falls die Übung
+   * damit fertig ist - den Fokus auf die nächste offene Übung ziehen.
+   *
+   * Bewusst getrennt von [handleStartRest]: den Timer startet auch die Leiste
+   * am unteren Rand, dort wurde aber kein Satz abgehakt und der Fokus darf
+   * sich nicht bewegen.
+   */
+  async function handleSetCompleted(
+    sessionExerciseId: string,
+    completedSetLogId: string,
+    restSeconds?: number,
+  ) {
+    /*
+     * Die Live-Query hinkt dem gerade geschriebenen Haken hinterher: dieser
+     * Aufruf erfolgt direkt nach `toggleSetCompletion`, `setLogs` trägt den
+     * neuen Stand aber erst nach dem nächsten Emit. Ohne diesen Patch bliebe
+     * der Fokus ausgerechnet beim letzten Satz stehen - dem einzigen Moment,
+     * für den die Automatik gebaut ist.
+     */
+    const effectiveLogs = (setLogs ?? []).map((log) =>
+      log.id === completedSetLogId ? { ...log, completed: true } : log,
+    );
+
+    if (!hasOpenSets(sessionExerciseId, effectiveLogs)) {
+      const next = findNextOpenExercise(orderedSessionExercises, effectiveLogs, sessionExerciseId);
+
+      if (next) {
+        setActiveSessionExerciseId(next.id);
+      }
+    }
+
+    await handleStartRest(restSeconds);
   }
 
   async function handleCloseSession(mode: 'complete' | 'abort') {
@@ -426,7 +476,7 @@ export function SessionPage() {
 
   if (!session) {
     return (
-      <AppShell title="Session" eyebrow="Execution">
+      <AppShell title="Session">
         <SectionCard title="Session nicht gefunden">
           <p className="text-sm text-content-muted">
             Entweder wurde sie noch nicht angelegt oder bereits gelöscht.
@@ -439,7 +489,9 @@ export function SessionPage() {
   const sessionWeekContext = formatSessionWeekContext(session);
 
   return (
-    <AppShell title={session.templateNameSnapshot} eyebrow="Session">
+    // Der Eyebrow trägt jetzt die Woche statt des Wortes "Session" - dass hier
+    // ein Training läuft, ist ohnehin offensichtlich.
+    <AppShell title={session.templateNameSnapshot} eyebrow={sessionWeekContext}>
       <div className="space-y-4">
         {/*
           Der Streifen klebt beim Scrollen oben fest: welche Übung gerade
@@ -459,7 +511,7 @@ export function SessionPage() {
                   : undefined
               }
               disabled={!focusedExerciseMedia}
-              className="flex w-full items-center gap-3 rounded-card border border-line bg-zinc-950/90 p-2 text-left shadow-soft backdrop-blur-xl disabled:cursor-default"
+              className="flex w-full items-center gap-3 rounded-card border border-line bg-surface-overlay p-2 text-left shadow-soft backdrop-blur-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default"
             >
               {focusedExerciseMedia ? (
                 <ExerciseMedia
@@ -481,218 +533,20 @@ export function SessionPage() {
           </div>
         ) : null}
 
-        <SectionCard
-            title={focusedExercise?.exerciseNameSnapshot ?? 'Session Übersicht'}
-          subtitle={`Gestartet ${formatDateTime(session.startedAt)} · ${sessionWeekContext}`}
-        >
-          {sessionError ? (
-            <p role="alert" className="mb-4 rounded-panel border border-rose-300/20 bg-rose-300/10 px-4 py-4 text-sm text-rose-100">
-              {sessionError}
-            </p>
-          ) : null}
+        {sessionError ? <Alert>{sessionError}</Alert> : null}
 
-            <div className="space-y-4">
-              {focusedExercise ? (
-              <div className="rounded-panel bg-surface p-4">
-                <ExerciseMedia
-                  mediaAsset={focusedExerciseMedia}
-                  alt={focusedExercise.exerciseNameSnapshot}
-                  className="mb-4 h-40 w-full"
-                  imageClassName="h-full w-full"
-                />
-                <p className="text-xs uppercase tracking-[0.18em] text-content-muted">Letzte Werte</p>
-                {focusedLastValues ? (
-                  <>
-                    <p className="mt-2 text-sm text-content-secondary">
-                      {focusedLastValues.logs.map(formatSetLogWithSide).join(' · ')}
-                    </p>
-                    <p className="mt-1 text-xs text-content-muted">
-                      {formatDateTime(focusedLastValues.completedAt)}
-                      {focusedLastValues.templateName ? ` · ${focusedLastValues.templateName}` : ''}
-                    </p>
-                  </>
-                ) : (
-                  <p className="mt-2 text-sm text-content-secondary">Noch keine Historie vorhanden</p>
-                )}
-                <p className="mt-3 text-sm text-content-muted">
-                  Ziel: {focusedExercise.targetReps ? `${focusedExercise.targetReps} Wdh` : null}
-                  {focusedExercise.targetReps && focusedExercise.targetSeconds ? ' · ' : null}
-                  {focusedExercise.targetSeconds ? `${focusedExercise.targetSeconds}s` : null}
-                  {focusedExercise.targetWeight ? ` · ${focusedExercise.targetWeight} kg` : ''}
-                </p>
-              </div>
-              ) : (
-                <div className="rounded-panel bg-surface p-4 text-sm text-content-muted">
-                  Noch keine Übung in dieser Session. Du kannst direkt eine hinzufügen.
-                </div>
-              )}
-
-              {session.status === 'active' ? (
-                <div className="space-y-3">
-                <button
-                  type="button"
-                    onClick={() => setShowAddExerciseForm((current) => !current)}
-                    className="w-full rounded-panel bg-surface-raised px-4 py-4 text-sm font-medium text-content-secondary transition hover:bg-surface-hover"
-                >
-                    {showAddExerciseForm ? 'Hinzufügen schließen' : 'Übung hinzufügen'}
-                </button>
-
-                  {showAddExerciseForm ? (
-                    <div className="space-y-4 rounded-panel border border-line bg-surface p-4">
-                      {(availableExercises?.length ?? 0) > 0 ? (
-                        <div className="space-y-3">
-                          <select
-                            value={exerciseForm.exerciseId}
-                            onChange={(event) =>
-                              setExerciseForm((current) => ({
-                                ...current,
-                                exerciseId: event.target.value,
-                              }))
-                            }
-                            className="select-control w-full rounded-panel border border-line bg-surface px-4 py-4 text-base text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
-                          >
-                            {(availableExercises ?? []).map((exercise) => (
-                              <option key={exercise.id} value={exercise.id}>
-                                {exercise.name}
-                              </option>
-                            ))}
-                          </select>
-
-                          <p className="text-sm text-content-muted">
-                            Modus: {effectiveTrackingMode} ·{' '}
-                            {effectiveUnilateral ? 'links/rechts getrennt' : 'beidseitig'}
-                          </p>
-                          <ExerciseMedia
-                            mediaAsset={selectedExerciseMedia}
-                            alt={selectedExistingExercise?.name ?? 'Übung'}
-                            className="h-32 w-full"
-                            imageClassName="h-full w-full"
-                          />
-                        </div>
-                      ) : (
-                        <div className="rounded-panel bg-surface-raised px-4 py-4 text-sm text-content-muted">
-                          Noch keine Übung in der Bibliothek.{' '}
-                          <Link to="/exercises" className="text-accent underline underline-offset-2">
-                            Jetzt anlegen
-                          </Link>
-                          .
-                        </div>
-                      )}
-
-                      <div className="grid grid-cols-2 gap-3">
-                        <ExerciseTargetFields
-                          trackingMode={effectiveTrackingMode}
-                          values={exerciseForm}
-                          onChange={(field, value) =>
-                            setExerciseForm((current) => ({ ...current, [field]: value }))
-                          }
-                          layout="grid"
-                        />
-                      </div>
-
-                      <CheckboxField
-                        label="Warmup-Satz anlegen"
-                        checked={exerciseForm.includeWarmup}
-                        onChange={(event) =>
-                          setExerciseForm((current) => ({
-                            ...current,
-                            includeWarmup: event.target.checked,
-                          }))
-                        }
-                      />
-
-                      <textarea
-                        value={exerciseForm.notes}
-                        onChange={(event) =>
-                          setExerciseForm((current) => ({
-                            ...current,
-                            notes: event.target.value,
-                          }))
-                        }
-                        rows={3}
-                        aria-label="Notizen für diese Session-Übung, optional" placeholder="Notizen für diese Session-Übung, optional"
-                        className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-base text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
-                      />
-
-                      <div className="grid grid-cols-2 gap-3">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setShowAddExerciseForm(false);
-                            setExerciseForm({
-                              ...defaultSessionExerciseFormState,
-                              exerciseId: availableExercises?.[0]?.id ?? '',
-                            });
-                          }}
-                          className="rounded-panel bg-surface-raised px-4 py-4 text-sm font-medium text-content-secondary transition hover:bg-surface-hover"
-                        >
-                          Abbrechen
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleAddExercise}
-                          disabled={isSavingExercise || !exerciseForm.exerciseId}
-                          className="rounded-panel bg-accent px-4 py-4 text-sm font-semibold text-accent-contrast transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          {isSavingExercise ? 'Speichert...' : 'Zur Session hinzufügen'}
-                        </button>
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
-
-              {session.status === 'active' ? (
-                <div className="space-y-3">
-                  {focusedExercise ? (
-                    <button
-                      type="button"
-                      onClick={() => void handleToggleSkip(focusedExercise.id)}
-                      className={cn(
-                        'w-full rounded-panel px-4 py-4 text-sm font-medium transition',
-                        focusedExercise.wasSkipped
-                          ? 'bg-rose-400/15 text-rose-200'
-                          : 'bg-surface-raised text-content-secondary hover:bg-surface-hover',
-                      )}
-                    >
-                      {focusedExercise.wasSkipped ? 'Übung wieder aktivieren' : 'Übung überspringen'}
-                    </button>
-                  ) : (
-                    <div className="rounded-panel bg-surface-raised px-4 py-4 text-sm text-content-muted">
-                      Noch keine aktive Übung im Fokus.
-                    </div>
-                  )}
-                  <div className="grid grid-cols-2 gap-3">
-                    <button
-                      type="button"
-                      onClick={() => void handleCloseSession('abort')}
-                      disabled={isClosingSession}
-                      className="rounded-panel border border-rose-400/20 px-4 py-4 text-sm font-medium text-rose-200 transition hover:bg-rose-400/10 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      Session abbrechen
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void handleCloseSession('complete')}
-                      disabled={isClosingSession}
-                      className="rounded-panel bg-accent px-4 py-4 text-sm font-semibold text-accent-contrast transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {isClosingSession ? 'Wird beendet...' : 'Session abschließen'}
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="rounded-panel bg-surface-raised px-4 py-4 text-sm text-content-muted">
-                  Session ist abgeschlossen und schreibgeschützt.
-                </div>
-              )}
-            </div>
-        </SectionCard>
-
+        {/*
+          Die Übungen stehen direkt unter dem Streifen. Zuvor lag hier eine
+          Karte, deren Titel der Name der aktiven Übung und deren Untertitel
+          Session-Daten waren - sie beantwortete damit zwei Fragen gleichzeitig
+          und wiederholte Name und Bild der Übung, die zwei Karten tiefer
+          ohnehin schon standen.
+        */}
         {orderedSessionExercises.length > 0 ? (
           <div className="space-y-4">
             {orderedSessionExercises.map((exercise, index) => {
               const exerciseLogs = sortSetLogs(groupedLogs[exercise.id] ?? []);
+              const isFocused = activeSessionExerciseId === exercise.id;
 
               return (
                 <SessionExerciseCard
@@ -701,7 +555,8 @@ export function SessionPage() {
                   exerciseLogs={exerciseLogs}
                   mediaAsset={mediaAssetForExercise(exercise)}
                   lastSetValues={lastValues?.[exercise.exerciseId]?.setValues}
-                  isFocused={activeSessionExerciseId === exercise.id}
+                  lastValuesSummary={isFocused ? focusedLastValuesSummary : undefined}
+                  isFocused={isFocused}
                   isBusy={isReorderingExercises}
                   isReadOnly={isReadOnly}
                   isFirst={index === 0}
@@ -716,7 +571,176 @@ export function SessionPage() {
               );
             })}
           </div>
-        ) : null}
+        ) : (
+          <SectionCard title="Noch keine Übung">
+            <p className="text-sm text-content-muted">
+              In dieser Session steht noch keine Übung. Du kannst unten direkt eine hinzufügen.
+            </p>
+          </SectionCard>
+        )}
+
+        {/*
+          Die Steuerung der Session gehört ans Ende: sie wird einmal am
+          Schluss gebraucht, nicht zwischen den Sätzen.
+        */}
+        {session.status === 'active' ? (
+          <SectionCard
+            title="Session"
+            subtitle={`Gestartet ${formatDateTime(session.startedAt)} · ${sessionWeekContext}`}
+          >
+            <div className="space-y-3">
+              <Button
+                variant="secondary"
+                fullWidth
+                onClick={() => setShowAddExerciseForm((current) => !current)}
+              >
+                {showAddExerciseForm ? (
+                  <>
+                    <X size={16} />
+                    Hinzufügen schließen
+                  </>
+                ) : (
+                  <>
+                    <Plus size={16} />
+                    Übung hinzufügen
+                  </>
+                )}
+              </Button>
+
+              {showAddExerciseForm ? (
+                <div className="space-y-4 rounded-panel border border-line bg-surface p-4">
+                  {(availableExercises?.length ?? 0) > 0 ? (
+                    <div className="space-y-3">
+                      <SelectField
+                        label="Übung"
+                        value={exerciseForm.exerciseId}
+                        onChange={(event) =>
+                          setExerciseForm((current) => ({
+                            ...current,
+                            exerciseId: event.target.value,
+                          }))
+                        }
+                      >
+                        {(availableExercises ?? []).map((exercise) => (
+                          <option key={exercise.id} value={exercise.id}>
+                            {exercise.name}
+                          </option>
+                        ))}
+                      </SelectField>
+
+                      <p className="text-sm text-content-muted">
+                        {formatTrackingMode(effectiveTrackingMode)} ·{' '}
+                        {effectiveUnilateral ? 'links/rechts getrennt' : 'beidseitig'}
+                      </p>
+                      <ExerciseMedia
+                        mediaAsset={selectedExerciseMedia}
+                        alt={selectedExistingExercise?.name ?? 'Übung'}
+                        className="h-32 w-full"
+                        imageClassName="h-full w-full"
+                      />
+                    </div>
+                  ) : (
+                    <div className="rounded-panel bg-surface-raised px-4 py-4 text-sm text-content-muted">
+                      Noch keine Übung in der Bibliothek.{' '}
+                      <Link to="/exercises" className="text-accent underline underline-offset-2">
+                        Jetzt anlegen
+                      </Link>
+                      .
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <ExerciseTargetFields
+                      trackingMode={effectiveTrackingMode}
+                      values={exerciseForm}
+                      onChange={(field, value) =>
+                        setExerciseForm((current) => ({ ...current, [field]: value }))
+                      }
+                      layout="grid"
+                    />
+                  </div>
+
+                  <CheckboxField
+                    label="Warmup-Satz anlegen"
+                    checked={exerciseForm.includeWarmup}
+                    onChange={(event) =>
+                      setExerciseForm((current) => ({
+                        ...current,
+                        includeWarmup: event.target.checked,
+                      }))
+                    }
+                  />
+
+                  <TextArea
+                    label="Notizen für diese Session-Übung, optional"
+                    value={exerciseForm.notes}
+                    onChange={(event) =>
+                      setExerciseForm((current) => ({
+                        ...current,
+                        notes: event.target.value,
+                      }))
+                    }
+                    rows={3}
+                  />
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <Button
+                      variant="secondary"
+                      onClick={() => {
+                        setShowAddExerciseForm(false);
+                        setExerciseForm({
+                          ...defaultSessionExerciseFormState,
+                          exerciseId: availableExercises?.[0]?.id ?? '',
+                        });
+                      }}
+                    >
+                      Abbrechen
+                    </Button>
+                    <Button
+                      variant="primary"
+                      onClick={handleAddExercise}
+                      disabled={isSavingExercise || !exerciseForm.exerciseId}
+                    >
+                      {isSavingExercise ? 'Speichert...' : 'Zur Session hinzufügen'}
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+
+              {/*
+                Abschließen ist unumkehrbar - abgeschlossene Sessions sind
+                schreibgeschützt. Deshalb steht es allein und in voller Breite,
+                statt als gleich großer Zwilling neben dem Abbrechen zu sitzen,
+                wo der Daumen leicht danebengreift.
+              */}
+              <Button
+                variant="primary"
+                fullWidth
+                onClick={() => void handleCloseSession('complete')}
+                disabled={isClosingSession}
+              >
+                <CheckCircle2 size={18} />
+                {isClosingSession ? 'Wird beendet...' : 'Session abschließen'}
+              </Button>
+              <Button
+                variant="danger"
+                size="md"
+                fullWidth
+                onClick={() => void handleCloseSession('abort')}
+                disabled={isClosingSession}
+              >
+                <X size={16} />
+                Session abbrechen
+              </Button>
+            </div>
+          </SectionCard>
+        ) : (
+          <SectionCard title="Session abgeschlossen">
+            <p className="text-sm text-content-muted">
+              Diese Session ist abgeschlossen und lässt sich nicht mehr ändern.
+            </p>
+          </SectionCard>
+        )}
       </div>
 
       {/*
@@ -726,42 +750,42 @@ export function SessionPage() {
       */}
       {session.status === 'active' ? (
         <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex justify-center px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-          <div className="pointer-events-auto flex w-full max-w-md items-center gap-2 rounded-card border border-line bg-zinc-950/90 p-2 shadow-soft backdrop-blur-xl">
+          <div className="pointer-events-auto flex w-full max-w-md items-center gap-2 rounded-card border border-line bg-surface-overlay p-2 shadow-soft backdrop-blur-xl">
             {remainingSeconds > 0 ? (
               <>
+                {/*
+                  Die verbleibende Zeit ist die einzige Zahl, die während der
+                  Pause zählt - sie trägt deshalb die Größe, nicht die
+                  Bedienelemente daneben.
+                */}
                 <div
                   role="timer"
                   aria-live="off"
-                  className="flex flex-1 items-center justify-center gap-2 rounded-control bg-amber-300/15 px-3 py-3 text-base font-semibold tabular-nums text-amber-200"
+                  className="flex min-h-touch flex-1 items-center justify-center gap-2 rounded-control bg-warning-soft px-3 text-2xl font-semibold tabular-nums text-warning"
                 >
-                  <Clock3 size={16} />
+                  <Clock3 size={18} />
                   {formatTimer(remainingSeconds)}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => void extendRestTimer(sessionId, 30)}
-                  className="h-11 min-w-11 rounded-control border border-line px-3 text-sm font-medium text-content-secondary transition hover:bg-surface-raised focus-visible:ring-2 focus-visible:ring-lime-300/70"
-                >
+                <Button variant="ghost" size="md" onClick={() => void extendRestTimer(sessionId, 30)}>
                   +30s
-                </button>
-                <button
-                  type="button"
+                </Button>
+                <IconButton
+                  label="Pausentimer abbrechen"
                   onClick={() => void clearRestTimer(sessionId)}
-                  aria-label="Pausentimer abbrechen"
-                  className="flex h-11 w-11 items-center justify-center rounded-control border border-line text-content-secondary transition hover:bg-surface-raised focus-visible:ring-2 focus-visible:ring-lime-300/70"
                 >
                   <X size={16} />
-                </button>
+                </IconButton>
               </>
             ) : (
-              <button
-                type="button"
-                onClick={() => void handleSetCompleted(focusedExercise?.restSeconds)}
-                className="flex h-11 w-full items-center justify-center gap-2 rounded-control bg-surface-raised px-3 text-sm font-medium text-content-secondary transition hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-lime-300/70"
+              <Button
+                variant="secondary"
+                size="md"
+                fullWidth
+                onClick={() => void handleStartRest(focusedExercise?.restSeconds)}
               >
                 <Clock3 size={16} />
                 Pause starten ({focusedExercise?.restSeconds ?? DEFAULT_REST_SECONDS}s)
-              </button>
+              </Button>
             )}
           </div>
         </div>

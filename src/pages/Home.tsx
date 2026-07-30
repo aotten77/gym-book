@@ -132,10 +132,10 @@ export default function Home() {
   }
 
   return (
-    <AppShell title="Gym Book" eyebrow="Offline-First Training">
+    <AppShell title="Gym Book">
       <div className="space-y-4">
         {/*
-          Die Historie liegt ausschließlich auf diesem Gerät. Löscht man die
+          Der Trainingsverlauf liegt ausschließlich auf diesem Gerät. Löscht man die
           Web-App vom Homescreen, nimmt iOS den kompletten Speicher-Container
           mit - ohne Vorwarnung und ohne Wiederherstellung. Deshalb die
           Erinnerung genau dann, wenn ungesicherte Trainings existieren.
@@ -174,7 +174,7 @@ export default function Home() {
         {/*
           Bei zwei gleich breiten Spalten reicht der Platz nicht für Label
           plus drei 44px-Buttons - sie liefen über den Kartenrand und lagen
-          dann unter der Vorlagen-Karte, außerhalb der Klickfläche.
+          dann unter der Workout-Karte, außerhalb der Klickfläche.
         */}
         <section className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <WeekStepper
@@ -196,9 +196,9 @@ export default function Home() {
             resetDisabled={!settings?.weekOverride || isUpdatingWeek}
           />
           <StatCard
-            label="Vorlagen"
+            label="Workouts"
             value={templateCountLabel}
-            hint="Materialisiert beim Start in eine Session"
+            hint="Vorbereitete Trainingseinheiten"
           />
         </section>
 
@@ -226,18 +226,18 @@ export default function Home() {
                   <RotateCcw size={18} />
                 </button>
                 {/*
-                  Solange eine Session läuft, führt jeder Vorlagen-Tap dorthin
+                  Solange eine Session läuft, führt jeder Workout-Tap dorthin
                   zurück. Das muss sichtbar sein, sonst wirkt die App defekt.
                 */}
                 <p className="px-1 text-sm text-content-muted">
-                  Ein Training läuft bereits. Schließe es ab oder brich es ab, um eine andere
-                  Vorlage zu starten.
+                  Ein Training läuft bereits. Schließe es ab oder brich es ab, um ein anderes
+                  Workout zu starten.
                 </p>
               </div>
             ) : (
               <Empty
                 title="Keine aktive Session"
-                description="Starte direkt aus einer Vorlage. Der Session-Stand bleibt lokal gespeichert."
+                description="Starte direkt aus einem Workout. Der Stand bleibt lokal gespeichert."
               />
             )}
 
@@ -262,15 +262,15 @@ export default function Home() {
                 ))
               ) : (
                 <Empty
-                  title="Noch keine Vorlage"
-                  description="Lege zuerst eine Trainingsvorlage an. Danach kannst du Sessions mit einem Tap starten."
+                  title="Noch kein Workout"
+                  description="Lege zuerst ein Workout an. Danach startest du ein Training mit einem Tap."
                   action={
                     <button
                       type="button"
                       onClick={() => navigate('/templates')}
                       className="min-h-touch inline-flex items-center justify-center rounded-control border border-line px-4 py-2 text-sm text-content-secondary transition hover:bg-surface-raised"
                     >
-                      Zu den Vorlagen
+                      Zu den Workouts
                     </button>
                   }
                 />
@@ -281,10 +281,10 @@ export default function Home() {
 
         <SectionCard
           title="Letzter Abschluss"
-          subtitle="Historie bleibt stabil, auch wenn du später Templates änderst."
+          subtitle="Bleibt unverändert, auch wenn du das Workout später bearbeitest."
           action={
             <Button variant="ghost" size="md" onClick={() => navigate('/history')}>
-              Historie
+              Verlauf
             </Button>
           }
         >

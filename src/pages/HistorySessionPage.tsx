@@ -50,7 +50,7 @@ export function HistorySessionPage() {
 
   if (!session) {
     return (
-      <AppShell title="Session" eyebrow="Historie">
+      <AppShell title="Session" eyebrow="Verlauf">
         <SectionCard
           title="Session nicht gefunden"
           action={
@@ -72,7 +72,7 @@ export function HistorySessionPage() {
   const weekContext = formatSessionWeekContext(session);
 
   return (
-    <AppShell title={session.templateNameSnapshot} eyebrow="Historie">
+    <AppShell title={session.templateNameSnapshot} eyebrow="Verlauf">
       <div className="space-y-4">
         <SectionCard
           title="Session-Snapshot"

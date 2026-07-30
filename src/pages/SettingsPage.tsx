@@ -272,9 +272,9 @@ export function SettingsPage() {
   }
 
   return (
-    <AppShell title="Settings" eyebrow="System">
+    <AppShell title="Einstellungen">
       <div className="space-y-4">
-        <SectionCard title="App-Status" subtitle="Lokale Daten liegen komplett in IndexedDB.">
+        <SectionCard title="App-Status" subtitle="Alle Daten liegen ausschließlich auf diesem Gerät.">
           <div className="grid grid-cols-2 gap-3">
             <div className="rounded-panel bg-surface p-4">
               <p className="text-xs uppercase tracking-[0.18em] text-content-muted">Programmwoche</p>
@@ -304,7 +304,7 @@ export function SettingsPage() {
 
         <SectionCard
           title="Programm"
-          subtitle="Programm-Auswahl und Week-Steuerung beeinflussen die Progression, die beim Session-Start materialisiert wird."
+          subtitle="Programm und aktive Woche bestimmen die Zielwerte, mit denen ein Training startet."
           action={
             <Link
               to="/programs"
@@ -435,7 +435,7 @@ export function SettingsPage() {
           </div>
         </SectionCard>
 
-        <SectionCard title="Backup" subtitle="Export und validierter Restore laufen komplett lokal in IndexedDB.">
+        <SectionCard title="Backup" subtitle="Sichern und Wiederherstellen laufen vollständig auf diesem Gerät.">
           <div className="grid gap-3">
             <div className="rounded-panel bg-surface p-4">
               <p className="text-xs uppercase tracking-[0.18em] text-content-muted">Letzte Sicherung</p>
@@ -561,7 +561,7 @@ export function SettingsPage() {
           </div>
         </SectionCard>
 
-        <SectionCard title="Medien" subtitle="Lokale Uploads kommen auf dasselbe Persistenzmodell.">
+        <SectionCard title="Medien" subtitle="Bilder werden genauso lokal gespeichert wie alles andere.">
           <p className="text-sm text-content-muted">
             Aktuell liegen {counts?.mediaAssets ?? 0} Medienobjekte in der Datenbank. Bilder bleiben lokal in
             IndexedDB und gehen mit in Export und Restore.
@@ -574,8 +574,8 @@ export function SettingsPage() {
         >
           <div className="space-y-3">
             <p className="text-sm text-content-muted">
-              Legt ein Programm mit acht Wochen, drei Übungen, einer Vorlage und einer bereits
-              abgeschlossenen Session an. Nur möglich, solange die Bibliothek leer ist.
+              Legt ein Programm mit acht Wochen, drei Übungen, einem Workout und einem bereits
+              abgeschlossenen Training an. Nur möglich, solange die Bibliothek leer ist.
             </p>
             <Button
               variant="ghost"
@@ -595,7 +595,7 @@ export function SettingsPage() {
         >
           <div className="space-y-3">
             <p className="text-sm text-content-muted">
-              Entfernt Programme, Vorlagen, Übungen, Sessions, Tests und Bilder aus IndexedDB.
+              Entfernt Programme, Workouts, Übungen, Trainings, Tests und Bilder von diesem Gerät.
               Exportiere vorher ein Backup, wenn du die Daten behalten willst.
             </p>
             <Button variant="danger" fullWidth onClick={() => setShowResetDialog(true)}>
@@ -608,7 +608,7 @@ export function SettingsPage() {
       <ConfirmDialog
         open={showResetDialog}
         title="Wirklich alle Daten löschen?"
-        description="Sämtliche Programme, Vorlagen, Übungen, Sessions, Tests und Bilder werden aus dieser Installation entfernt. Ohne Backup lässt sich das nicht rückgängig machen."
+        description="Sämtliche Programme, Workouts, Übungen, Trainings, Tests und Bilder werden aus dieser Installation entfernt. Ohne Backup lässt sich das nicht rückgängig machen."
         confirmLabel="Alles löschen"
         busy={isResetting}
         onConfirm={handleResetAllData}

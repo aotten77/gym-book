@@ -241,7 +241,7 @@ export function ExercisesPage() {
 
         <SectionCard
           title={editingId ? 'Übung bearbeiten' : 'Neue Übung'}
-          subtitle="Stammdaten gelten für alle Vorlagen. Laufende und vergangene Sessions bleiben unverändert."
+          subtitle="Stammdaten gelten für alle Workouts. Laufende und vergangene Trainings bleiben unverändert."
           action={
             !showForm ? (
               <Button size="md" variant="primary" onClick={() => setShowForm(true)}>
@@ -331,7 +331,7 @@ export function ExercisesPage() {
         {(exercises?.length ?? 0) === 0 ? (
           <Empty
             title="Noch keine Übung"
-            description="Lege deine erste Übung an. Sie steht danach in allen Vorlagen und Sessions zur Auswahl."
+            description="Lege deine erste Übung an. Sie steht danach in allen Workouts zur Auswahl."
           />
         ) : null}
 
@@ -419,7 +419,7 @@ export function ExercisesPage() {
           canDelete
             ? `"${pendingDelete?.exercise.name}" wird aus der Bibliothek entfernt.${
                 pendingDelete && pendingDelete.sessionCount > 0
-                  ? ` Die ${pendingDelete.sessionCount} bereits protokollierten Ausführungen bleiben in der Historie erhalten.`
+                  ? ` Die ${pendingDelete.sessionCount} bereits protokollierten Ausführungen bleiben im Verlauf erhalten.`
                   : ''
               }`
             : `"${pendingDelete?.exercise.name}" wird noch in ${pendingDelete?.templateNames.join(', ')} verwendet. Entferne die Übung dort zuerst.`

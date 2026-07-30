@@ -1,6 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { calculateAsymmetryPercent, materializeSession } from '@/domain/session';
-import type { Exercise, ProgressionRule, WorkoutTemplate, WorkoutTemplateExercise } from '@/domain/models';
+import {
+  calculateAsymmetryPercent,
+  findNextOpenExercise,
+  hasOpenSets,
+  materializeSession,
+} from '@/domain/session';
+import type {
+  Exercise,
+  ProgressionRule,
+  WorkoutSessionExercise,
+  WorkoutSetLog,
+  WorkoutTemplate,
+  WorkoutTemplateExercise,
+} from '@/domain/models';
 
 describe('materializeSession', () => {
   it('creates exactly one warmup set and mirrored unilateral work sets', () => {
@@ -157,6 +169,148 @@ describe('materializeSession', () => {
       targetWeight: 85,
       notes: 'Woche 4',
     });
+  });
+});
+
+describe('findNextOpenExercise', () => {
+  function createExercise(
+    id: string,
+    orderIndex: number,
+    overrides: Partial<WorkoutSessionExercise> = {},
+  ): WorkoutSessionExercise {
+    return {
+      id,
+      sessionId: 'session-1',
+      exerciseId: `exercise-${id}`,
+      exerciseNameSnapshot: id,
+      trackingMode: 'reps_weight',
+      unilateral: false,
+      orderIndex,
+      wasSkipped: false,
+      addedInSession: false,
+      workSetCount: 1,
+      ...overrides,
+    };
+  }
+
+  function createLog(sessionExerciseId: string, setNumber: number, completed: boolean): WorkoutSetLog {
+    return {
+      id: `${sessionExerciseId}-${setNumber}`,
+      sessionExerciseId,
+      setKind: 'work',
+      side: 'both',
+      setNumber,
+      completed,
+    };
+  }
+
+  const first = createExercise('first', 1);
+  const second = createExercise('second', 2);
+  const third = createExercise('third', 3);
+
+  it('liefert die nächste Übung, sobald die aktuelle vollständig abgehakt ist', () => {
+    const setLogs = [
+      createLog('first', 1, true),
+      createLog('second', 1, false),
+      createLog('third', 1, false),
+    ];
+
+    expect(findNextOpenExercise([first, second, third], setLogs, 'first')?.id).toBe('second');
+  });
+
+  it('überspringt Übungen, die als übersprungen markiert sind', () => {
+    const skipped = createExercise('second', 2, { wasSkipped: true });
+    const setLogs = [
+      createLog('first', 1, true),
+      createLog('second', 1, false),
+      createLog('third', 1, false),
+    ];
+
+    expect(findNextOpenExercise([first, skipped, third], setLogs, 'first')?.id).toBe('third');
+  });
+
+  it('überspringt Übungen, die bereits vollständig abgehakt sind', () => {
+    const setLogs = [
+      createLog('first', 1, true),
+      createLog('second', 1, true),
+      createLog('third', 1, false),
+    ];
+
+    expect(findNextOpenExercise([first, second, third], setLogs, 'first')?.id).toBe('third');
+  });
+
+  it('läuft am Ende der Liste vorn weiter, damit eine offene Übung oben nicht liegenbleibt', () => {
+    const setLogs = [
+      createLog('first', 1, false),
+      createLog('second', 1, true),
+      createLog('third', 1, true),
+    ];
+
+    expect(findNextOpenExercise([first, second, third], setLogs, 'third')?.id).toBe('first');
+  });
+
+  it('gibt undefined zurück, wenn nur noch die aktuelle Übung offen ist', () => {
+    const setLogs = [
+      createLog('first', 1, false),
+      createLog('second', 1, true),
+      createLog('third', 1, true),
+    ];
+
+    expect(findNextOpenExercise([first, second, third], setLogs, 'first')).toBeUndefined();
+  });
+
+  it('gibt undefined zurück, wenn alles erledigt ist', () => {
+    const setLogs = [
+      createLog('first', 1, true),
+      createLog('second', 1, true),
+      createLog('third', 1, true),
+    ];
+
+    expect(findNextOpenExercise([first, second, third], setLogs, 'first')).toBeUndefined();
+  });
+
+  it('behandelt eine Übung ohne Sätze als offen', () => {
+    // Ohne Satzzeilen gibt es nichts abzuhaken - übersprungen würde sie sonst
+    // nie wieder in den Fokus kommen.
+    const setLogs = [createLog('first', 1, true), createLog('third', 1, true)];
+
+    expect(findNextOpenExercise([first, second, third], setLogs, 'first')?.id).toBe('second');
+  });
+});
+
+describe('hasOpenSets', () => {
+  function createLog(sessionExerciseId: string, setNumber: number, completed: boolean): WorkoutSetLog {
+    return {
+      id: `${sessionExerciseId}-${setNumber}`,
+      sessionExerciseId,
+      setKind: 'work',
+      side: 'both',
+      setNumber,
+      completed,
+    };
+  }
+
+  it('meldet offen, solange ein Satz nicht abgehakt ist', () => {
+    const setLogs = [createLog('first', 1, true), createLog('first', 2, false)];
+
+    expect(hasOpenSets('first', setLogs)).toBe(true);
+  });
+
+  it('meldet erledigt, wenn alle Sätze abgehakt sind', () => {
+    const setLogs = [createLog('first', 1, true), createLog('first', 2, true)];
+
+    expect(hasOpenSets('first', setLogs)).toBe(false);
+  });
+
+  it('betrachtet nur die Sätze der eigenen Übung', () => {
+    // Ein offener Satz einer anderen Übung darf den Fokus nicht festhalten.
+    const setLogs = [createLog('first', 1, true), createLog('second', 1, false)];
+
+    expect(hasOpenSets('first', setLogs)).toBe(false);
+  });
+
+  it('behandelt eine Übung ohne Sätze als offen', () => {
+    expect(hasOpenSets('first', [])).toBe(true);
   });
 });
 

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { collectPageErrors, resetDatabase, seedSampleData, startSampleSession } from './helpers';
 
 /*
@@ -253,6 +253,69 @@ test.describe('Sätze und Reihenfolge', () => {
       'Front Squat',
       'Nordic Curl Iso',
     ]);
+  });
+});
+
+test.describe('Aktive Übung', () => {
+  test.beforeEach(async ({ page }) => {
+    await resetDatabase(page);
+    await seedSampleData(page);
+  });
+
+  /** Name der Karte, die gerade das "Aktiv"-Abzeichen trägt. */
+  async function activeExerciseName(page: Page) {
+    return page.evaluate(() => {
+      const chip = [...document.querySelectorAll('span')].find(
+        (element) => element.textContent?.trim() === 'Aktiv',
+      );
+
+      return chip?.closest('section')?.querySelector('h2')?.textContent?.trim() ?? null;
+    });
+  }
+
+  test('der Fokus wandert erst weiter, wenn alle Sätze erledigt sind', async ({ page }) => {
+    await startSampleSession(page);
+
+    expect(await activeExerciseName(page)).toBe('Front Squat');
+
+    const openSets = await page
+      .locator('section', { has: page.getByRole('button', { name: 'Front Squat nach unten' }) })
+      .getByRole('button', { name: 'Satz als erledigt markieren' })
+      .count();
+
+    expect(openSets).toBeGreaterThan(1);
+
+    /*
+     * Nach dem ersten Satz darf sich nichts bewegen. Genau hier schlägt ein
+     * falsch gebauter Fokuswechsel an - und der Nutzer verliert die Übung,
+     * an der er gerade arbeitet.
+     */
+    await page.getByRole('button', { name: 'Satz als erledigt markieren' }).first().click();
+    await page.waitForTimeout(800);
+
+    expect(await activeExerciseName(page)).toBe('Front Squat');
+
+    for (let index = 1; index < openSets; index += 1) {
+      await page.getByRole('button', { name: 'Satz als erledigt markieren' }).first().click();
+      await page.waitForTimeout(700);
+    }
+
+    /*
+     * Beim letzten Satz muss der Sprung kommen. Die Live-Query hinkt dem
+     * gerade geschriebenen Haken hinterher; wer darauf statt auf den
+     * gepatchten Stand rechnet, bleibt hier stehen.
+     */
+    expect(await activeExerciseName(page)).toBe('Bulgarian Split Squat');
+  });
+
+  test('der Pausen-Start aus der Leiste bewegt den Fokus nicht', async ({ page }) => {
+    await startSampleSession(page);
+
+    await page.getByRole('button', { name: /Pause starten/ }).click();
+    await page.waitForTimeout(800);
+
+    await expect(page.getByRole('timer')).toBeVisible();
+    expect(await activeExerciseName(page)).toBe('Front Squat');
   });
 });
 

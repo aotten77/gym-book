@@ -48,6 +48,14 @@ test.describe('Wochensteuerung', () => {
     await page.goto('./');
     await page.waitForTimeout(900);
 
-    await expect(page.getByText('Programm', { exact: true })).toBeVisible();
+    /*
+     * Auf den Hauptinhalt eingegrenzt: gemeint ist der Wochen-Hinweis auf der
+     * Startseite, der nach dem Reset wieder "Programm" statt "Override" zeigt.
+     * Ohne die Eingrenzung trifft der Text seit der Umbenennung auch das
+     * gleichnamige Reiter-Label in der Navigation.
+     */
+    await expect(
+      page.locator('#main-content').getByText('Programm', { exact: true }),
+    ).toBeVisible();
   });
 });

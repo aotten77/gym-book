@@ -22,6 +22,10 @@ export default {
           DEFAULT: "rgb(9 9 11 / 0.45)",
           raised: "rgb(255 255 255 / 0.05)",
           hover: "rgb(255 255 255 / 0.09)",
+          // Leisten, die über dem Inhalt kleben (Bottom-Nav, Pausentimer,
+          // Fokus-Streifen). Deckend genug, dass Text darauf lesbar bleibt,
+          // wenn eine Karte darunter durchscrollt.
+          overlay: "rgb(9 9 11 / 0.92)",
         },
         line: {
           DEFAULT: "rgb(255 255 255 / 0.1)",

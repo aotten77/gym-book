@@ -173,7 +173,7 @@ function TemplateExerciseCard({
             type="button"
             onClick={() => onDelete(item.id, exerciseName)}
             disabled={isBusy}
-            aria-label={`${exerciseName} aus Vorlage entfernen`}
+            aria-label={`${exerciseName} aus Workout entfernen`}
             className="flex h-11 w-11 items-center justify-center rounded-control border border-danger-border text-danger transition hover:bg-danger-soft disabled:cursor-not-allowed disabled:opacity-35"
           >
             <Trash2 size={16} />
@@ -437,11 +437,11 @@ export function TemplateDetailPage() {
   }
 
   return (
-    <AppShell title={template?.name ?? 'Vorlage'} eyebrow="Detail">
+    <AppShell title={template?.name ?? 'Workout'} eyebrow="Workout">
       <div className="space-y-4">
         <SectionCard
-          title="Vorlagen-Metadaten"
-          subtitle="Name und Fokus bleiben editierbar, ohne bereits geloggte Sessions zu verbiegen."
+          title="Workout-Daten"
+          subtitle="Änderungen hier wirken auf künftige Trainings - bereits absolvierte bleiben, wie sie waren."
           action={
             <button
               type="button"
@@ -456,7 +456,7 @@ export function TemplateDetailPage() {
             <input
               value={templateName}
               onChange={(event) => setTemplateName(event.target.value)}
-              aria-label="Vorlagenname" placeholder="Vorlagenname"
+              aria-label="Workout-Name" placeholder="Workout-Name"
               className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-base text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
             />
             <textarea
@@ -472,13 +472,13 @@ export function TemplateDetailPage() {
               disabled={!templateName.trim() || isSavingTemplate}
               className="w-full rounded-panel bg-accent px-4 py-4 text-sm font-semibold text-accent-contrast transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Vorlage speichern
+              Workout speichern
             </button>
           </div>
         </SectionCard>
 
         <SectionCard
-          title="Template-Übungen"
+          title="Übungen im Workout"
           subtitle="Reihenfolge über die Pfeile - so verrutscht beim Scrollen nichts."
           action={
             <button
@@ -515,7 +515,7 @@ export function TemplateDetailPage() {
               </div>
             ) : (
               <div className="rounded-panel border border-dashed border-line bg-surface px-4 py-5 text-sm text-content-muted">
-                Noch keine Template-Übungen vorhanden.
+                Noch keine Übungen in diesem Workout.
               </div>
             )}
           </div>
@@ -533,7 +533,7 @@ export function TemplateDetailPage() {
 
         <div ref={editExerciseSectionRef}>
           <SectionCard
-            title={editingTemplateExerciseId ? 'Template-Übung bearbeiten' : 'Template-Übung hinzufügen'}
+            title={editingTemplateExerciseId ? 'Übung bearbeiten' : 'Übung hinzufügen'}
             subtitle="Übung aus der Bibliothek auswählen."
             action={
               <div className="flex h-10 w-10 items-center justify-center rounded-control bg-accent-soft text-accent">
@@ -665,11 +665,11 @@ export function TemplateDetailPage() {
 
       <ConfirmDialog
         open={pendingDelete !== null}
-        title={pendingDelete?.kind === 'template' ? 'Vorlage löschen?' : 'Übung entfernen?'}
+        title={pendingDelete?.kind === 'template' ? 'Workout löschen?' : 'Übung entfernen?'}
         description={
           pendingDelete?.kind === 'template'
-            ? `"${template?.name ?? ''}" wird entfernt. Bereits absolvierte Sessions bleiben in der Historie erhalten.`
-            : `"${pendingDelete?.kind === 'exercise' ? pendingDelete.name : ''}" wird aus dieser Vorlage entfernt. Die Übung selbst und ihre Historie bleiben bestehen.`
+            ? `"${template?.name ?? ''}" wird entfernt. Bereits absolvierte Trainings bleiben im Verlauf erhalten.`
+            : `"${pendingDelete?.kind === 'exercise' ? pendingDelete.name : ''}" wird aus diesem Workout entfernt. Die Übung selbst und ihr Verlauf bleiben bestehen.`
         }
         confirmLabel="Entfernen"
         onConfirm={async () => {

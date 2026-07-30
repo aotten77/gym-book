@@ -36,11 +36,11 @@ export function TemplatesPage() {
   }
 
   return (
-    <AppShell title="Vorlagen" eyebrow="Plan">
+    <AppShell title="Workouts">
       <div className="space-y-4">
         <SectionCard
-          title="Neue Vorlage"
-          subtitle="Direkt in Dexie anlegen und anschließend im Detail mit Übungen befüllen."
+          title="Neues Workout"
+          subtitle="Erst benennen, dann im Detail mit Übungen füllen."
           action={
             <div className="flex h-10 w-10 items-center justify-center rounded-control bg-accent-soft text-accent">
               <Plus size={18} />
@@ -67,7 +67,7 @@ export function TemplatesPage() {
               disabled={!name.trim() || isSaving}
               className="w-full rounded-panel bg-accent px-4 py-4 text-sm font-semibold text-accent-contrast transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Vorlage anlegen
+              Workout anlegen
             </button>
           </div>
         </SectionCard>
@@ -81,7 +81,7 @@ export function TemplatesPage() {
             <SectionCard
               key={template.id}
               title={template.name}
-              subtitle={`${items.length} Übungen · Session wird beim Start materialisiert`}
+              subtitle={`${items.length} Übungen`}
               action={
                 <Link
                   to={`/templates/${template.id}`}

@@ -235,7 +235,7 @@ export function TemplateProgressionSection({
   return (
     <SectionCard
       title="Wochenprogression"
-      subtitle="Pro Programmwoche kannst du Zielwerte für diese Vorlage überschreiben. Beim Session-Start wird genau diese Stufe als Snapshot übernommen."
+      subtitle="Pro Programmwoche kannst du Zielwerte für dieses Workout überschreiben. Beim Start des Trainings gilt genau die Stufe der aktiven Woche."
       action={
         <Link
           to="/programs"

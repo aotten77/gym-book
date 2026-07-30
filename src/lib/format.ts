@@ -1,4 +1,20 @@
-import type { WorkoutSession, WorkoutSetLog } from '@/domain/models';
+import type { TrackingMode, WorkoutSession, WorkoutSetLog } from '@/domain/models';
+
+const TRACKING_MODE_LABELS: Record<TrackingMode, string> = {
+  reps_weight: 'Wiederholungen + Gewicht',
+  time: 'Zeit',
+  time_weight: 'Zeit + Gewicht',
+};
+
+/**
+ * Übersetzt den Tracking-Modus in etwas Lesbares.
+ *
+ * Der rohe Enum stand zuvor so im UI ("Modus: reps_weight") - für jemanden,
+ * der die Datenstruktur nicht kennt, ist das keine Information.
+ */
+export function formatTrackingMode(trackingMode?: TrackingMode) {
+  return trackingMode ? TRACKING_MODE_LABELS[trackingMode] : 'Unbekannt';
+}
 
 /**
  * Beschreibt, aus welcher Programmwoche eine Session materialisiert wurde.

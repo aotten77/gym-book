@@ -158,7 +158,7 @@ export function ProgramsPage() {
   }
 
   return (
-    <AppShell title="Programme" eyebrow="Progression">
+    <AppShell title="Programm">
       <div className="space-y-4">
         <SectionCard
           title="Neues Programm"
@@ -335,7 +335,7 @@ export function ProgramsPage() {
         title={pendingDelete?.kind === 'program' ? 'Programm löschen?' : 'Woche löschen?'}
         description={
           pendingDelete?.kind === 'program'
-            ? `"${pendingDelete.name}" wird mit allen Wochen und Progressionsregeln entfernt. Bereits absolvierte Sessions bleiben in der Historie erhalten.`
+            ? `"${pendingDelete.name}" wird mit allen Wochen und Progressionsregeln entfernt. Bereits absolvierte Trainings bleiben im Verlauf erhalten.`
             : `"${pendingDelete?.name}" wird entfernt, die folgenden Wochen rücken auf. Progressionsregeln dieser Woche gehen verloren.`
         }
         busy={isSaving}

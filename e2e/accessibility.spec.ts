@@ -3,8 +3,8 @@ import { resetDatabase, seedSampleData } from './helpers';
 
 const ROUTES = [
   ['Heute', './'],
-  ['Plan', './#/programs'],
-  ['Vorlagen', './#/templates'],
+  ['Programm', './#/programs'],
+  ['Workouts', './#/templates'],
   ['Übungen', './#/exercises'],
   ['Verlauf', './#/history'],
   ['Tests', './#/tests'],

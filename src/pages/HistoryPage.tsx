@@ -95,7 +95,7 @@ export function HistoryPage() {
   }, [completedSessionExercises, completedSessions, completedSetLogs]);
 
   return (
-    <AppShell title="Historie" eyebrow="Rückblick">
+    <AppShell title="Verlauf">
       <div className="space-y-4">
         {Object.keys(historyByExercise).length > 0 ? (
           Object.entries(historyByExercise).map(([exerciseId, entries]) => (
@@ -136,14 +136,14 @@ export function HistoryPage() {
           ))
         ) : (
           <Empty
-            title="Noch keine Historie"
+            title="Noch kein Verlauf"
             description="Schließe deine erste Session ab, damit hier stabile Verlaufsdaten pro Übung auftauchen."
           />
         )}
 
         <SectionCard
           title="Was schon steht"
-          subtitle="Historie liest bereits aus den persistierten Session-Snapshots."
+          subtitle="Jede abgeschlossene Einheit bleibt so erhalten, wie du sie trainiert hast."
         >
           <p className="text-sm text-content-muted">
             Als nächstes können wir hier sparklines oder echte Verlaufsdiagramme pro Übung andocken, ohne die

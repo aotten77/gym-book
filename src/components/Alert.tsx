@@ -3,11 +3,17 @@ import { cn } from '@/lib/utils';
 
 type AlertVariant = 'error' | 'success' | 'warning' | 'info';
 
+/*
+ * Die Rollen kommen aus der Token-Skala, nicht aus Tailwinds Rohpalette:
+ * vorher trug jede Variante ihren eigenen Farbton (rose/lime/amber/sky), der
+ * mit `danger`/`accent`/`warning` nirgends deckungsgleich war. "info" bleibt
+ * bewusst neutral - eine fünfte Akzentfarbe trägt keine eigene Bedeutung.
+ */
 const VARIANT_CLASSES: Record<AlertVariant, string> = {
-  error: 'border-rose-300/20 bg-rose-300/10 text-rose-100',
-  success: 'border-lime-300/20 bg-lime-300/10 text-lime-100',
-  warning: 'border-amber-300/20 bg-amber-300/10 text-amber-100',
-  info: 'border-sky-300/20 bg-sky-300/10 text-sky-100',
+  error: 'border-danger-border bg-danger-soft text-danger',
+  success: 'border-accent-border bg-accent-soft text-accent',
+  warning: 'border-warning/20 bg-warning-soft text-warning',
+  info: 'border-line bg-surface text-content-secondary',
 };
 
 interface AlertProps {
@@ -22,7 +28,7 @@ export function Alert({ variant = 'error', children, className }: AlertProps) {
       // Fehler und Erfolge müssen auch angesagt werden, nicht nur sichtbar sein.
       role={variant === 'error' ? 'alert' : 'status'}
       className={cn(
-        'rounded-3xl border px-4 py-4 text-sm',
+        'rounded-panel border px-4 py-4 text-sm',
         VARIANT_CLASSES[variant],
         className,
       )}

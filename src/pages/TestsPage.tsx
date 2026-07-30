@@ -96,7 +96,7 @@ export function TestsPage() {
   }
 
   return (
-    <AppShell title="Tests" eyebrow="Assessment">
+    <AppShell title="Tests" eyebrow="Kraft und Asymmetrie">
       <div className="space-y-4">
         {error ? <Alert>{error}</Alert> : null}
 

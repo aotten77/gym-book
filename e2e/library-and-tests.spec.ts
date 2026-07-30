@@ -62,12 +62,12 @@ test.describe('Übungsbibliothek', () => {
     expect(errors).toEqual([]);
   });
 
-  test('eine in einer Vorlage verwendete Übung wird nicht gelöscht', async ({ page }) => {
+  test('eine in einem Workout verwendete Übung wird nicht gelöscht', async ({ page }) => {
     await seedSampleData(page);
     await page.goto('./#/exercises');
     await page.waitForTimeout(1000);
 
-    // Sonst würde materializeSession werfen und die Vorlage wäre für immer
+    // Sonst würde materializeSession werfen und das Workout wäre für immer
     // unbrauchbar - auffallen würde das erst Wochen später im Gym.
     await page.getByRole('button', { name: /Front Squat löschen/ }).first().click();
     await page.waitForTimeout(700);
@@ -160,8 +160,8 @@ test.describe('Test-Erfassung', () => {
   });
 });
 
-test.describe('Vorlagen', () => {
-  test('Übung zur Vorlage nur über Auswahl aus der Bibliothek hinzufügen', async ({ page }) => {
+test.describe('Workouts', () => {
+  test('Übung zum Workout nur über Auswahl aus der Bibliothek hinzufügen', async ({ page }) => {
     await resetDatabase(page);
     await seedSampleData(page);
 
@@ -173,7 +173,7 @@ test.describe('Vorlagen', () => {
     // Der "Bestehend"/"Neu"-Toggle samt Neuanlage-Formular ist mit der
     // Bibliothek überflüssig geworden - nur noch Auswahl.
     const addExerciseSection = page.locator('section', {
-      has: page.getByRole('heading', { name: 'Template-Übung hinzufügen' }),
+      has: page.getByRole('heading', { name: 'Übung hinzufügen' }),
     });
     await expect(page.getByRole('button', { name: 'Neue Übung' })).toHaveCount(0);
     await expect(addExerciseSection.locator('select')).toHaveCount(1);
@@ -201,7 +201,7 @@ test.describe('Destruktive Aktionen', () => {
 
     const dialog = page.getByRole('alertdialog');
     await expect(dialog).toBeVisible();
-    await expect(dialog).toContainText('Sessions bleiben');
+    await expect(dialog).toContainText('bleiben im Verlauf erhalten');
 
     await page.getByRole('button', { name: 'Abbrechen' }).click();
     await expect(dialog).toBeHidden();

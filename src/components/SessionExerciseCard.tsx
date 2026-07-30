@@ -3,12 +3,12 @@ import { Link } from 'react-router-dom';
 import { Check, ChevronDown, ChevronUp, ImageOff, SkipForward, X } from 'lucide-react';
 import { ExerciseMedia } from '@/components/ExerciseMedia';
 import { SectionCard } from '@/components/SectionCard';
-import { IconButton } from '@/components/ui/Button';
+import { Button, IconButton } from '@/components/ui/Button';
 import { toggleSetCompletion, updateSetLogValues, type SetLogValuesInput } from '@/db/session-actions';
 import type { LastSetValues, SetValues } from '@/domain/history';
 import type { MediaAsset, TrackingMode, WorkoutSessionExercise, WorkoutSetLog } from '@/domain/models';
 import { supportsReps, supportsSeconds, supportsWeight } from '@/domain/tracking';
-import { formatLoadLabel, formatSideLabel } from '@/lib/format';
+import { formatSideLabel } from '@/lib/format';
 import { parseNumberInput, toInputValue } from '@/lib/number-input';
 import { cn } from '@/lib/utils';
 
@@ -228,21 +228,25 @@ function SetLogEditor({
   const fieldCount = Number(supportsReps(trackingMode)) + Number(supportsSeconds(trackingMode)) + Number(supportsWeight(trackingMode));
 
   return (
-    <div
-      className={cn(
-        'rounded-panel border px-4 py-4 transition',
-        log.completed ? 'border-accent-border bg-accent-soft' : 'border-line bg-surface',
-        disabled && 'opacity-80',
-      )}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-sm font-semibold text-content">
-            {log.setKind === 'warmup' ? 'Warmup' : `Satz ${log.setNumber}`}
-            {log.side !== 'both' ? ` · ${formatSideLabel(log.side)}` : ''}
-          </p>
-          <p className="mt-1 text-sm text-content-muted">{formatLoadLabel(log)}</p>
-        </div>
+    /*
+     * Zeile statt Karte: die Sätze lagen zuvor als eigene Boxen in der
+     * Übungskarte, deren Eingabefelder wiederum eigene Rahmen trugen - drei
+     * Rahmenebenen übereinander. Die Trennung übernimmt jetzt die Linie des
+     * Containers, der erledigte Zustand die Fläche.
+     */
+    <div className={cn('px-4 py-4 transition', log.completed && 'bg-accent-soft', disabled && 'opacity-80')}>
+      <div className="flex items-center justify-between gap-3">
+        {/*
+          Nur die Satzbezeichnung, ohne Wiederholung der Werte: hier stand
+          zuvor "4 Wdh · 82,5 kg" - exakt das, was eine Zeile tiefer schon in
+          den Feldern steht. Kein `truncate`: "Satz 1 · rechts" passt auf
+          320px nicht neben beide Buttons, und "SATZ 1 · RECH..." benennt den
+          Satz nicht mehr eindeutig.
+        */}
+        <p className="min-w-0 text-[11px] font-semibold uppercase tracking-[0.1em] text-content-muted">
+          {log.setKind === 'warmup' ? 'Warmup' : `Satz ${log.setNumber}`}
+          {log.side !== 'both' ? ` · ${formatSideLabel(log.side)}` : ''}
+        </p>
         <div className="flex items-center gap-2">
           {!disabled ? (
             <IconButton
@@ -253,25 +257,32 @@ function SetLogEditor({
               <X size={16} />
             </IconButton>
           ) : null}
+          {/*
+            Häkchen in beiden Zuständen, quadratisch: der Wechsel von "Fertig"
+            zum Icon änderte vorher die Buttonbreite und ließ die Zeile beim
+            Abhaken springen. Der gewonnene Platz geht an das Satzlabel, das
+            auf 320px sonst abschnitt. Den Namen trägt das `aria-label`.
+          */}
           <button
             type="button"
             onClick={handleToggleCompletion}
             disabled={disabled || hasInvalidInput}
             aria-label={log.completed ? 'Satz als offen markieren' : 'Satz als erledigt markieren'}
             className={cn(
-              'flex h-11 min-w-11 items-center justify-center rounded-control px-3 text-sm font-medium transition',
+              'flex h-11 w-11 shrink-0 items-center justify-center rounded-control border transition',
               log.completed
-                ? 'bg-accent text-accent-contrast'
-                : 'bg-surface-raised text-content-secondary hover:bg-surface-hover',
+                ? 'border-accent bg-accent text-accent-contrast'
+                : 'border-line-strong text-content-muted hover:bg-surface-hover hover:text-content',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
               'disabled:cursor-not-allowed disabled:opacity-50',
             )}
           >
-            {log.completed ? <Check size={16} /> : 'Fertig'}
+            <Check size={22} strokeWidth={log.completed ? 3 : 2} />
           </button>
         </div>
       </div>
 
-      <div className={cn('mt-4 grid gap-3', fieldCount === 1 ? 'grid-cols-1' : 'grid-cols-2')}>
+      <div className={cn('mt-3 grid gap-2', fieldCount === 1 ? 'grid-cols-1' : 'grid-cols-2')}>
         {SET_LOG_FIELDS.filter(({ supported }) => supported(trackingMode)).map(({ key }) => {
           const isInvalid = invalidFields.includes(key);
           const fieldId = `${log.id}-${key}`;
@@ -280,9 +291,19 @@ function SetLogEditor({
 
           return (
             <div key={key}>
-              <label htmlFor={fieldId} className="mb-1 block text-xs text-content-muted">
+              <label
+                htmlFor={fieldId}
+                className="mb-1 block text-[11px] font-medium uppercase tracking-[0.12em] text-content-muted"
+              >
                 {SET_LOG_FIELD_LABELS[key]}
               </label>
+              {/*
+                Der eingetragene Wert ist das, was im Training aus einem Meter
+                Entfernung lesbar sein muss - deshalb trägt er das Gewicht der
+                Zeile, nicht seine Beschriftung. Der Rahmen entfällt; die
+                versenkte Fläche grenzt das Feld ab. `ring-inset` markiert
+                Fehler ohne Sprung im Layout.
+              */}
               <input
                 id={fieldId}
                 value={draft[key]}
@@ -297,8 +318,11 @@ function SetLogEditor({
                 aria-invalid={isInvalid}
                 disabled={disabled}
                 className={cn(
-                  'w-full rounded-panel border bg-surface px-4 py-4 text-base text-content outline-none transition focus-visible:ring-2 focus-visible:ring-lime-300/70 disabled:cursor-not-allowed disabled:opacity-60',
-                  isInvalid ? 'border-rose-400/60' : 'border-line focus:border-lime-300/40',
+                  'w-full rounded-panel bg-surface-sunken px-4 py-2.5 text-2xl font-semibold tabular-nums text-content',
+                  'outline-none transition placeholder:font-normal placeholder:text-content-muted',
+                  'focus-visible:ring-2 focus-visible:ring-accent',
+                  'disabled:cursor-not-allowed disabled:opacity-60',
+                  isInvalid && 'ring-2 ring-inset ring-danger-border',
                 )}
               />
             </div>
@@ -307,13 +331,13 @@ function SetLogEditor({
       </div>
 
       {hasInvalidInput ? (
-        <p role="alert" className="mt-3 text-sm text-rose-200">
+        <p role="alert" className="mt-3 text-sm text-danger">
           Bitte eine Zahl eintragen (Komma erlaubt, z. B. 52,5). Bisherige Werte bleiben gespeichert.
         </p>
       ) : null}
 
       {saveError ? (
-        <p role="alert" className="mt-3 text-sm text-rose-200">
+        <p role="alert" className="mt-3 text-sm text-danger">
           {saveError}
         </p>
       ) : null}
@@ -335,29 +359,24 @@ function formatSessionExerciseSubtitle(exercise: WorkoutSessionExercise) {
   return 'Teil der laufenden Session';
 }
 
-export function SessionExerciseMeta({
-  exercise,
-  showOrder = true,
-}: {
-  exercise: WorkoutSessionExercise;
-  showOrder?: boolean;
-}) {
+/** Ziel-Vorgabe der Übung als eine Zeile: "Ziel: 5 Wdh · 82,5 kg · Pause 90s". */
+function ExerciseTargetLine({ exercise }: { exercise: WorkoutSessionExercise }) {
   return (
-    <div className="min-w-0">
-      <p className="text-sm font-semibold text-content">
-        {showOrder ? `${exercise.orderIndex}. ` : ''}
-        {exercise.exerciseNameSnapshot}
-      </p>
-      <p className="mt-1 text-sm text-content-muted">{formatSessionExerciseSubtitle(exercise)}</p>
-      <p className="mt-2 text-sm text-content-muted">
-        Ziel: {exercise.targetReps ? `${exercise.targetReps} Wdh` : null}
-        {exercise.targetReps && exercise.targetSeconds ? ' · ' : null}
-        {exercise.targetSeconds ? `${exercise.targetSeconds}s` : null}
-        {exercise.targetWeight ? ` · ${exercise.targetWeight} kg` : ''}
-        {exercise.restSeconds ? ` · Pause ${exercise.restSeconds}s` : ''}
-      </p>
-    </div>
+    <p className="text-sm text-content-secondary">
+      Ziel: {exercise.targetReps ? `${exercise.targetReps} Wdh` : null}
+      {exercise.targetReps && exercise.targetSeconds ? ' · ' : null}
+      {exercise.targetSeconds ? `${exercise.targetSeconds}s` : null}
+      {exercise.targetWeight ? ` · ${exercise.targetWeight} kg` : ''}
+      {exercise.restSeconds ? ` · Pause ${exercise.restSeconds}s` : ''}
+    </p>
   );
+}
+
+/** Werte derselben Übung aus der letzten abgeschlossenen Ausführung. */
+export interface LastValuesSummary {
+  text: string;
+  completedAt: string;
+  templateName?: string;
 }
 
 interface SessionExerciseCardProps {
@@ -365,6 +384,8 @@ interface SessionExerciseCardProps {
   exerciseLogs: WorkoutSetLog[];
   mediaAsset?: MediaAsset;
   lastSetValues?: LastSetValues;
+  /** Nur für die fokussierte Karte gefüllt - sonst steht der Block auf jeder Karte. */
+  lastValuesSummary?: LastValuesSummary;
   isFocused: boolean;
   isBusy: boolean;
   isReadOnly: boolean;
@@ -373,7 +394,7 @@ interface SessionExerciseCardProps {
   onMove: (sessionExerciseId: string, direction: -1 | 1) => void;
   onFocus: (sessionExerciseId: string) => void;
   onToggleSkip: (sessionExerciseId: string) => void;
-  onSetCompleted: (restSeconds?: number) => void;
+  onSetCompleted: (sessionExerciseId: string, completedSetLogId: string, restSeconds?: number) => void;
   onRequestDeleteSetLog: (log: WorkoutSetLog, exerciseName: string) => void;
   onOpenMedia: (mediaAsset: MediaAsset, alt: string) => void;
 }
@@ -383,6 +404,7 @@ export function SessionExerciseCard({
   exerciseLogs,
   mediaAsset,
   lastSetValues,
+  lastValuesSummary,
   isFocused,
   isBusy,
   isReadOnly,
@@ -400,8 +422,21 @@ export function SessionExerciseCard({
       title={exercise.exerciseNameSnapshot}
       subtitle={formatSessionExerciseSubtitle(exercise)}
       className={cn(
-        isFocused && 'border-lime-300/40 bg-accent/[0.06]',
-        'transition hover:border-accent-border hover:bg-surface-raised',
+        'transition',
+        /*
+         * Genau eine Karte steht im Vordergrund - der Contract verlangt, dass
+         * die laufende Übung sichtbar dominiert. Der Balken links trägt das
+         * am deutlichsten, weil er auch dann noch zu sehen ist, wenn nur die
+         * Kartenkante ins Bild ragt.
+         *
+         * Die inaktiven Karten werden über die Fläche zurückgenommen, nicht
+         * über `opacity`: eine gedämpfte Deckkraft senkt den tatsächlichen
+         * Textkontrast, ohne dass `getComputedStyle().color` sich ändert -
+         * der Kontrast-Check in den e2e-Tests würde den Verstoß nicht sehen.
+         */
+        isFocused
+          ? 'border-l-4 border-l-accent border-accent-border bg-accent-soft'
+          : 'bg-surface hover:border-accent-border hover:bg-surface-raised',
       )}
       action={
         <div className="flex items-center gap-2">
@@ -423,26 +458,30 @@ export function SessionExerciseCard({
           >
             <ChevronDown size={16} />
           </IconButton>
-          <button
-            type="button"
-            onClick={() => onFocus(exercise.id)}
-            className="min-h-touch inline-flex items-center justify-center rounded-control border border-line px-3 py-2 text-sm text-content-secondary transition hover:bg-surface-raised"
-          >
-            Fokus
-          </button>
+          {/* Auf der aktiven Karte wäre "Fokus" ein Button ohne Wirkung. */}
+          {isFocused ? (
+            <span className="inline-flex min-h-touch items-center rounded-control bg-accent px-3 text-xs font-semibold uppercase tracking-[0.1em] text-accent-contrast">
+              Aktiv
+            </span>
+          ) : (
+            <Button variant="ghost" size="md" onClick={() => onFocus(exercise.id)}>
+              Fokus
+            </Button>
+          )}
         </div>
       }
     >
       {/*
-        Das Bild gehört genau hierhin: der Ablauf muss beim Eintragen sichtbar
-        sein, nicht nur ganz oben in der Übersicht.
+        Bild, letzte Werte und Ziel nur auf der aktiven Karte: auf jeder Karte
+        standen sie zuvor drei Bildschirmhöhen lang untereinander, ohne dass
+        eine davon hervorstach.
       */}
-      {mediaAsset ? (
+      {!isFocused ? null : mediaAsset ? (
         <button
           type="button"
           onClick={() => onOpenMedia(mediaAsset, exercise.exerciseNameSnapshot)}
           aria-label={`Bild von ${exercise.exerciseNameSnapshot} vergrößern`}
-          className="mb-4 block w-full rounded-3xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          className="mb-4 block w-full rounded-panel focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         >
           <ExerciseMedia
             mediaAsset={mediaAsset}
@@ -452,40 +491,67 @@ export function SessionExerciseCard({
           />
         </button>
       ) : (
-        <div className="mb-4 flex items-center gap-3 rounded-panel border border-dashed border-line bg-surface px-4 py-3 text-sm text-content-muted">
-          <ImageOff size={16} className="shrink-0" />
-          <span>
-            Kein Bild hinterlegt.{' '}
-            <Link to="/exercises" className="text-accent underline underline-offset-2">
-              In der Bibliothek ergänzen
-            </Link>
-            .
-          </span>
+        <div className="mb-4 rounded-panel border border-dashed border-line bg-surface px-4 py-2">
+          <div className="flex items-center gap-3 text-sm text-content-muted">
+            <ImageOff size={16} className="shrink-0" />
+            <span>Kein Bild hinterlegt.</span>
+          </div>
+          {/*
+            Eigene Zeile statt Link mitten im Satz: als Inline-Link maß die
+            Trefferfläche 36px und lag damit unter den 44px, die überall sonst
+            gelten.
+          */}
+          <Link
+            to="/exercises"
+            className="inline-flex min-h-touch items-center text-sm text-accent underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
+            In der Bibliothek ergänzen
+          </Link>
         </div>
       )}
 
-      <div className="mb-4 flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => onToggleSkip(exercise.id)}
-          disabled={isReadOnly}
-          className="min-h-touch inline-flex items-center justify-center rounded-control border border-line px-3 py-2 text-sm text-content-secondary transition hover:bg-surface-raised disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <div className="flex items-center gap-2">
-            <SkipForward size={14} />
-            {exercise.wasSkipped ? 'Zurückholen' : 'Skip'}
+      {isFocused ? (
+        <div className="mb-4 rounded-panel bg-surface-sunken p-4">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-content-muted">
+            Letzte Werte
+          </p>
+          {lastValuesSummary ? (
+            <>
+              <p className="mt-2 text-sm text-content-secondary">{lastValuesSummary.text}</p>
+              <p className="mt-1 text-xs text-content-muted">
+                {lastValuesSummary.completedAt}
+                {lastValuesSummary.templateName ? ` · ${lastValuesSummary.templateName}` : ''}
+              </p>
+            </>
+          ) : (
+            <p className="mt-2 text-sm text-content-secondary">Noch kein Verlauf vorhanden</p>
+          )}
+          <div className="mt-3">
+            <ExerciseTargetLine exercise={exercise} />
           </div>
-        </button>
+        </div>
+      ) : null}
+
+      <div className="mb-4 flex items-center gap-2">
+        <Button variant="ghost" size="md" onClick={() => onToggleSkip(exercise.id)} disabled={isReadOnly}>
+          <SkipForward size={14} />
+          {exercise.wasSkipped ? 'Zurückholen' : 'Skip'}
+        </Button>
       </div>
 
-      <div className="space-y-3">
+      {/*
+        `divide-y` trägt die Trennung zwischen den Sätzen - zusammen mit dem
+        negativen Margin in SetLogEditor läuft die Linie über die volle
+        Kartenbreite, ohne dass jede Zeile einen eigenen Rahmen braucht.
+      */}
+      <div className="-mx-4 -mb-4 divide-y divide-line border-t border-line">
         {exerciseLogs.map((log) => (
           <SetLogEditor
             key={log.id}
             log={log}
             trackingMode={exercise.trackingMode}
             lastValues={lastSetValues?.resolve(log)}
-            onCompleted={() => onSetCompleted(exercise.restSeconds)}
+            onCompleted={() => onSetCompleted(exercise.id, log.id, exercise.restSeconds)}
             onRequestDelete={(item) => onRequestDeleteSetLog(item, exercise.exerciseNameSnapshot)}
             disabled={isReadOnly}
           />
