@@ -62,6 +62,14 @@ export interface WorkoutTemplateExercise {
    * Schalters angelegt wurden, behalten damit ihr Warmup ohne Migration.
    */
   includeWarmup?: boolean;
+  /**
+   * Gemeinsame Kennung aller Übungen eines Supersatzes.
+   *
+   * Mitglieder einer Gruppe liegen immer zusammenhängend im `orderIndex` -
+   * geprüft von `areGroupsContiguous` in [superset.ts]. Ohne diese Zusage
+   * ließe sich eine Gruppe weder als Block darstellen noch am Stück bewegen.
+   */
+  supersetGroupId?: string;
   targetReps?: number;
   targetSeconds?: number;
   targetWeight?: number;
@@ -87,6 +95,25 @@ export interface SetTimerState {
   durationSeconds: number;
 }
 
+/**
+ * Eine laufende Pause - für genau eine Übung und eine Seite.
+ *
+ * Mehrere davon laufen gleichzeitig, und das ist der ganze Zweck: im Supersatz
+ * läuft die Pause der ersten Übung weiter, während die zweite ausgeführt wird,
+ * und bei einer einseitigen Übung pausiert rechts, während links trainiert.
+ * Der frühere `restTimerEndsAt` konnte beides nicht, weil ein einzelner
+ * Zeitstempel pro Session keinen Besitzer hatte und jeder abgehakte Satz ihn
+ * überschrieb.
+ */
+export interface RestTimerTrack {
+  sessionExerciseId: string;
+  side: Side;
+  /** Ablaufzeitpunkt als Epoch-Millisekunden. */
+  endsAt: number;
+  /** Gestartete Dauer in Sekunden - Grundlage der Fortschrittsanzeige. */
+  durationSeconds: number;
+}
+
 export interface WorkoutSession {
   id: string;
   templateId: string;
@@ -99,17 +126,17 @@ export interface WorkoutSession {
   completedAt?: string;
   status: SessionStatus;
   /**
-   * Ablaufzeitpunkt des Pausentimers als Epoch-Millisekunden.
+   * Alle laufenden Pausen.
    *
-   * Liegt bewusst in IndexedDB und nicht im UI-Store: der Timer muss einen
+   * Liegt bewusst in IndexedDB und nicht im UI-Store: die Timer müssen einen
    * Reload und ein Service-Worker-Update mitten im Training überleben.
    */
-  restTimerEndsAt?: number;
+  restTimers?: RestTimerTrack[];
   /**
    * Timer für einen Satz auf Zeit.
    *
-   * Liegt aus demselben Grund wie [restTimerEndsAt] in IndexedDB: ein Plank
-   * über zwei Minuten überdauert Bildschirmsperre, Reload und
+   * Liegt aus demselben Grund wie [restTimers] in IndexedDB: ein Plank über
+   * zwei Minuten überdauert Bildschirmsperre, Reload und
    * Service-Worker-Update.
    */
   setTimer?: SetTimerState;
@@ -125,6 +152,14 @@ export interface WorkoutSessionExercise {
   unilateral: boolean;
   sourceTemplateExerciseId?: string;
   orderIndex: number;
+  /**
+   * Supersatz-Kennung als Snapshot - siehe [WorkoutTemplateExercise].
+   *
+   * Wird beim Start aus dem Template kopiert und danach unabhängig gepflegt:
+   * eine Verbindung in der laufenden Session zu lösen, darf den Plan nicht
+   * anfassen.
+   */
+  supersetGroupId?: string;
   wasSkipped: boolean;
   addedInSession: boolean;
   workSetCount: number;

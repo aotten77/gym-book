@@ -55,9 +55,10 @@ class GymBookDatabase extends Dexie {
     // nicht als Keys, solche Datensätze landen gar nicht erst im Index -
     // sie kosteten nur Pflegeaufwand bei jedem Write.
     //
-    // Neue Felder auf bestehenden Objekten (`restTimerEndsAt` auf
-    // WorkoutSession) brauchen keine Migration: Dexie speichert das ganze
-    // Objekt, unabhängig von den deklarierten Indizes.
+    // Neue Felder auf bestehenden Objekten (`restTimers` auf WorkoutSession,
+    // `supersetGroupId` auf Template- und Session-Übung) brauchen keine
+    // Migration: Dexie speichert das ganze Objekt, unabhängig von den
+    // deklarierten Indizes.
     this.version(2).stores({
       exercises: 'id, name, updatedAt, mediaAssetId',
       workoutSessionExercises: 'id, sessionId, exerciseId, orderIndex',
@@ -69,7 +70,7 @@ class GymBookDatabase extends Dexie {
 
     // v3 bringt den Band-Katalog. Eine neue Tabelle muss deklariert werden,
     // die neuen Felder auf Übung, Session-Übung und Satz dagegen nicht - aus
-    // demselben Grund wie oben bei `restTimerEndsAt`. Ein `upgrade()` gibt es
+    // demselben Grund wie oben bei `restTimers`. Ein `upgrade()` gibt es
     // deshalb nicht: es ist nichts umzuformen, Bestandsübungen bleiben ohne
     // `loadKind` schlicht Kilo-Übungen.
     this.version(3).stores({

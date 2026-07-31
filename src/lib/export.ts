@@ -69,6 +69,8 @@ const workoutTemplateExerciseSchema = z.object({
    * das z.literal jedes bestehende Nutzer-Backup abweisen.
    */
   includeWarmup: z.boolean().optional(),
+  /* Additiv wie includeWarmup - siehe der Kommentar darüber. */
+  supersetGroupId: z.string().optional(),
   targetReps: z.number().nonnegative().optional(),
   targetSeconds: z.number().nonnegative().optional(),
   targetWeight: z.number().nonnegative().optional(),
@@ -101,6 +103,8 @@ const workoutSessionExerciseSchema = z.object({
   unilateral: z.boolean(),
   sourceTemplateExerciseId: z.string().optional(),
   orderIndex: z.number().int().positive(),
+  /* Additiv wie includeWarmup oben - kein Bump der Schemaversion. */
+  supersetGroupId: z.string().optional(),
   wasSkipped: z.boolean(),
   addedInSession: z.boolean(),
   workSetCount: z.number().int().positive(),

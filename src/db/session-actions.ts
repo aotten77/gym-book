@@ -1,7 +1,29 @@
 import { db } from '@/db/appDb';
-import type { LoadKind, TrackingMode, WorkoutSetLog } from '@/domain/models';
+import type {
+  LoadKind,
+  Side,
+  TrackingMode,
+  WorkoutSession,
+  WorkoutSessionExercise,
+  WorkoutSetLog,
+} from '@/domain/models';
+import {
+  clampRestSeconds,
+  DEFAULT_REST_SECONDS,
+  findRestTrack,
+  pruneRestTracks,
+  removeRestTrack,
+  removeRestTracksForExercise,
+  upsertRestTrack,
+} from '@/domain/rest-timer';
 import { materializeSession } from '@/domain/session';
 import { clampSetTimerSeconds } from '@/domain/set-timer';
+import {
+  areGroupsContiguous,
+  planGroupWithPrevious,
+  planUngroup,
+  type SupersetAssignment,
+} from '@/domain/superset';
 import { createId } from '@/lib/id';
 
 export interface SetLogValuesInput {
@@ -296,14 +318,39 @@ export async function deleteSetLog(setLogId: string) {
 
       await db.workoutSetLogs.delete(setLogId);
 
+      if (!setLog || !sessionExercise) {
+        return;
+      }
+
+      const session = await db.workoutSessions.get(sessionExercise.sessionId);
+
+      if (!session) {
+        return;
+      }
+
+      const changes: Partial<WorkoutSession> = {};
+
       // Ein Timer ohne Satzzeile hätte kein Ziel mehr für sein Ergebnis und
       // liefe in der Leiste bis zum Ablauf weiter.
-      if (sessionExercise) {
-        const session = await db.workoutSessions.get(sessionExercise.sessionId);
+      if (session.setTimer?.setLogId === setLogId) {
+        changes.setTimer = undefined;
+      }
 
-        if (session?.setTimer?.setLogId === setLogId) {
-          await db.workoutSessions.update(session.id, { setTimer: undefined });
-        }
+      // Dieselbe Überlegung für die Pause: sie gehört zu einer Übung *und*
+      // einer Seite. Erst wenn die letzte Zeile dieser Seite weg ist, gibt es
+      // nichts mehr, worauf sich das Warten bezöge.
+      const remainingOnSide = await db.workoutSetLogs
+        .where('sessionExerciseId')
+        .equals(sessionExercise.id)
+        .filter((log) => log.side === setLog.side)
+        .count();
+
+      if (remainingOnSide === 0 && findRestTrack(session.restTimers, sessionExercise.id, setLog.side)) {
+        changes.restTimers = removeRestTrack(session.restTimers, sessionExercise.id, setLog.side);
+      }
+
+      if (Object.keys(changes).length > 0) {
+        await db.workoutSessions.update(session.id, changes);
       }
     },
   );
@@ -401,11 +448,30 @@ export async function toggleSkipSessionExercise(sessionExerciseId: string) {
       return;
     }
 
+    let becameSkipped = false;
+
     // `modify` liest und schreibt in einem Zug, damit ein Doppeltipp den
     // Zustand nicht zweimal auf denselben Wert setzt.
     await db.workoutSessionExercises.where('id').equals(sessionExerciseId).modify((item) => {
       item.wasSkipped = !item.wasSkipped;
+      becameSkipped = item.wasSkipped;
     });
+
+    if (!becameSkipped) {
+      return;
+    }
+
+    const sessionExercise = await db.workoutSessionExercises.get(sessionExerciseId);
+    const session = sessionExercise
+      ? await db.workoutSessions.get(sessionExercise.sessionId)
+      : undefined;
+
+    // Eine Pause für eine übersprungene Übung zählt auf nichts mehr hin.
+    if (session?.restTimers?.length) {
+      await db.workoutSessions.update(session.id, {
+        restTimers: removeRestTracksForExercise(session.restTimers, sessionExerciseId),
+      });
+    }
   });
 }
 
@@ -431,6 +497,17 @@ export async function reorderSessionExercises(sessionId: string, orderedSessionE
     return;
   }
 
+  // Eine Reihenfolge, die einen Supersatz zerreißt, entstünde stumm und ließe
+  // sich danach weder darstellen noch am Stück bewegen.
+  const exerciseById = new Map(currentExercises.map((item) => [item.id, item]));
+  const nextOrder = orderedSessionExerciseIds
+    .map((id) => exerciseById.get(id))
+    .filter((item): item is WorkoutSessionExercise => Boolean(item));
+
+  if (!areGroupsContiguous(nextOrder)) {
+    return;
+  }
+
   await db.transaction('rw', db.workoutSessionExercises, async () => {
     await Promise.all(
       orderedSessionExerciseIds.map((id, index) =>
@@ -442,21 +519,101 @@ export async function reorderSessionExercises(sessionId: string, orderedSessionE
   });
 }
 
-export async function startRestTimer(sessionId: string, seconds: number) {
-  await db.transaction('rw', db.workoutSessions, async () => {
-    const session = await db.workoutSessions.get(sessionId);
+/**
+ * Startet die Pause für die Übung und Seite einer Satzzeile.
+ *
+ * Der Bezug auf beides ist der Kern des Pausenmanagements: im Supersatz läuft
+ * die Pause der ersten Übung weiter, während die zweite dran ist, und bei
+ * einer einseitigen Übung pausiert rechts, während links trainiert wird. Ein
+ * zweiter Satz derselben Seite löst die eigene Pause ab, keine fremde.
+ */
+export async function startRestTimerForSetLog(setLogId: string, seconds?: number) {
+  await db.transaction(
+    'rw',
+    db.workoutSessions,
+    db.workoutSessionExercises,
+    db.workoutSetLogs,
+    async () => {
+      if (!(await isSetLogEditable(setLogId))) {
+        return;
+      }
 
-    if (session?.status !== 'active') {
+      const setLog = await db.workoutSetLogs.get(setLogId);
+      const sessionExercise = setLog
+        ? await db.workoutSessionExercises.get(setLog.sessionExerciseId)
+        : undefined;
+
+      if (!setLog || !sessionExercise) {
+        return;
+      }
+
+      const session = await db.workoutSessions.get(sessionExercise.sessionId);
+
+      if (session?.status !== 'active') {
+        return;
+      }
+
+      await writeRestTrack(
+        session,
+        sessionExercise.id,
+        setLog.side,
+        seconds ?? sessionExercise.restSeconds ?? DEFAULT_REST_SECONDS,
+      );
+    },
+  );
+}
+
+/** Manueller Start über die Leiste - ohne dass ein Satz abgehakt wurde. */
+export async function startRestTimerForExercise(
+  sessionId: string,
+  sessionExerciseId: string,
+  side: Side,
+  seconds?: number,
+) {
+  await db.transaction('rw', db.workoutSessions, db.workoutSessionExercises, async () => {
+    const session = await db.workoutSessions.get(sessionId);
+    const sessionExercise = await db.workoutSessionExercises.get(sessionExerciseId);
+
+    if (session?.status !== 'active' || sessionExercise?.sessionId !== sessionId) {
       return;
     }
 
-    await db.workoutSessions.update(sessionId, {
-      restTimerEndsAt: Date.now() + Math.max(1, Math.round(seconds)) * 1000,
-    });
+    await writeRestTrack(
+      session,
+      sessionExerciseId,
+      side,
+      seconds ?? sessionExercise.restSeconds ?? DEFAULT_REST_SECONDS,
+    );
   });
 }
 
-export async function extendRestTimer(sessionId: string, seconds: number) {
+async function writeRestTrack(
+  session: WorkoutSession,
+  sessionExerciseId: string,
+  side: Side,
+  seconds: number,
+) {
+  const durationSeconds = clampRestSeconds(seconds);
+  const now = Date.now();
+
+  await db.workoutSessions.update(session.id, {
+    // Beim Start gleich aufräumen: lange abgelaufene Spuren würden sonst nur
+    // die Leiste zustellen.
+    restTimers: upsertRestTrack(pruneRestTracks(session.restTimers, now), {
+      sessionExerciseId,
+      side,
+      durationSeconds,
+      endsAt: now + durationSeconds * 1000,
+    }),
+  });
+}
+
+export async function extendRestTimer(
+  sessionId: string,
+  sessionExerciseId: string,
+  side: Side,
+  seconds: number,
+) {
   await db.transaction('rw', db.workoutSessions, async () => {
     const session = await db.workoutSessions.get(sessionId);
 
@@ -464,18 +621,121 @@ export async function extendRestTimer(sessionId: string, seconds: number) {
       return;
     }
 
+    const now = Date.now();
+    const current = findRestTrack(session.restTimers, sessionExerciseId, side);
+    const added = Math.round(seconds);
     // Von der Restlaufzeit aus verlängern, nicht vom ursprünglichen Ende:
-    // ein abgelaufener Timer startet damit sauber neu.
-    const base = Math.max(session.restTimerEndsAt ?? 0, Date.now());
+    // eine abgelaufene Pause startet damit sauber neu.
+    const base = Math.max(current?.endsAt ?? 0, now);
 
     await db.workoutSessions.update(sessionId, {
-      restTimerEndsAt: base + Math.round(seconds) * 1000,
+      restTimers: upsertRestTrack(session.restTimers, {
+        sessionExerciseId,
+        side,
+        endsAt: base + added * 1000,
+        durationSeconds: (current?.durationSeconds ?? 0) + added,
+      }),
     });
   });
 }
 
-export async function clearRestTimer(sessionId: string) {
-  await db.workoutSessions.update(sessionId, { restTimerEndsAt: undefined });
+/**
+ * Bricht Pausen ab: eine bestimmte Spur, alle einer Übung oder alle der
+ * Session. Der Guard fehlte hier früher als einziger Timer-Aktion.
+ */
+export async function clearRestTimer(sessionId: string, sessionExerciseId?: string, side?: Side) {
+  await db.transaction('rw', db.workoutSessions, async () => {
+    const session = await db.workoutSessions.get(sessionId);
+
+    if (session?.status !== 'active') {
+      return;
+    }
+
+    if (!sessionExerciseId) {
+      await db.workoutSessions.update(sessionId, { restTimers: [] });
+      return;
+    }
+
+    await db.workoutSessions.update(sessionId, {
+      restTimers: side
+        ? removeRestTrack(session.restTimers, sessionExerciseId, side)
+        : removeRestTracksForExercise(session.restTimers, sessionExerciseId),
+    });
+  });
+}
+
+/** Räumt Spuren weg, deren Karenzzeit abgelaufen ist. */
+export async function pruneRestTimers(sessionId: string, now = Date.now()) {
+  await db.transaction('rw', db.workoutSessions, async () => {
+    const session = await db.workoutSessions.get(sessionId);
+
+    if (session?.status !== 'active' || !session.restTimers?.length) {
+      return;
+    }
+
+    const next = pruneRestTracks(session.restTimers, now);
+
+    // Ohne diesen Vergleich schriebe jeder Sekundentakt denselben Stand und
+    // ließe über useLiveQuery die ganze Session neu rendern.
+    if (next.length === session.restTimers.length) {
+      return;
+    }
+
+    await db.workoutSessions.update(sessionId, { restTimers: next });
+  });
+}
+
+/**
+ * Verbindet eine Session-Übung mit ihrer Vorgängerin zu einem Supersatz bzw.
+ * löst sie wieder heraus.
+ *
+ * Arbeitet ausschließlich auf der Session-Kopie: ein Supersatz, der beim
+ * Training entsteht oder gelöst wird, darf den Plan nicht anfassen.
+ */
+async function applySessionSupersetPlan(
+  sessionExerciseId: string,
+  plan: (
+    items: WorkoutSessionExercise[],
+    id: string,
+  ) => SupersetAssignment[] | null,
+) {
+  await db.transaction('rw', db.workoutSessions, db.workoutSessionExercises, async () => {
+    if (!(await isSessionExerciseEditable(sessionExerciseId))) {
+      return;
+    }
+
+    const current = await db.workoutSessionExercises.get(sessionExerciseId);
+
+    if (!current) {
+      return;
+    }
+
+    const items = await db.workoutSessionExercises
+      .where('sessionId')
+      .equals(current.sessionId)
+      .sortBy('orderIndex');
+    const assignments = plan(items, sessionExerciseId);
+
+    if (!assignments) {
+      return;
+    }
+
+    await Promise.all(
+      assignments.map((entry) =>
+        // `undefined` löscht die Property über Dexies Update-Semantik - beim
+        // Lösen ist genau das gemeint.
+        db.workoutSessionExercises.update(entry.id, { supersetGroupId: entry.supersetGroupId }),
+      ),
+    );
+  });
+}
+
+export async function groupSessionExerciseWithPrevious(sessionExerciseId: string) {
+  await applySessionSupersetPlan(sessionExerciseId, planGroupWithPrevious);
+}
+
+export async function ungroupSessionExercise(sessionExerciseId: string) {
+  await applySessionSupersetPlan(sessionExerciseId, planUngroup);
 }
 
 /**
@@ -565,7 +825,7 @@ async function closeSession(sessionId: string, status: 'completed' | 'aborted') 
     await db.workoutSessions.update(sessionId, {
       status,
       completedAt: new Date().toISOString(),
-      restTimerEndsAt: undefined,
+      restTimers: undefined,
       setTimer: undefined,
     });
   });

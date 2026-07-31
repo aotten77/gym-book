@@ -4,6 +4,7 @@ import {
   findNextOpenExercise,
   hasOpenSets,
   materializeSession,
+  resolveNextFocus,
 } from '@/domain/session';
 import type {
   Exercise,
@@ -345,6 +346,197 @@ describe('findNextOpenExercise', () => {
     const setLogs = [createLog('first', 1, true), createLog('third', 1, true)];
 
     expect(findNextOpenExercise([first, second, third], setLogs, 'first')?.id).toBe('second');
+  });
+});
+
+describe('resolveNextFocus', () => {
+  function createExercise(
+    id: string,
+    orderIndex: number,
+    overrides: Partial<WorkoutSessionExercise> = {},
+  ): WorkoutSessionExercise {
+    return {
+      id,
+      sessionId: 'session-1',
+      exerciseId: `exercise-${id}`,
+      exerciseNameSnapshot: id,
+      trackingMode: 'reps_weight',
+      unilateral: false,
+      orderIndex,
+      wasSkipped: false,
+      addedInSession: false,
+      workSetCount: 2,
+      ...overrides,
+    };
+  }
+
+  function createLog(
+    sessionExerciseId: string,
+    setNumber: number,
+    completed: boolean,
+    side: WorkoutSetLog['side'] = 'both',
+  ): WorkoutSetLog {
+    return {
+      id: `${sessionExerciseId}-${setNumber}-${side}`,
+      sessionExerciseId,
+      setKind: 'work',
+      side,
+      setNumber,
+      completed,
+    };
+  }
+
+  it('wechselt im Supersatz schon nach dem ersten Satz zur Partnerübung', () => {
+    const exercises = [
+      createExercise('a', 1, { supersetGroupId: 'g1' }),
+      createExercise('b', 2, { supersetGroupId: 'g1' }),
+    ];
+    const setLogs = [
+      createLog('a', 1, true),
+      createLog('a', 2, false),
+      createLog('b', 1, false),
+      createLog('b', 2, false),
+    ];
+
+    expect(
+      resolveNextFocus({
+        exercises,
+        setLogs,
+        currentSessionExerciseId: 'a',
+        completedSetNumber: 1,
+      })?.id,
+    ).toBe('b');
+  });
+
+  it('kehrt nach dem letzten Mitglied zum ersten zurück', () => {
+    const exercises = [
+      createExercise('a', 1, { supersetGroupId: 'g1' }),
+      createExercise('b', 2, { supersetGroupId: 'g1' }),
+    ];
+    const setLogs = [
+      createLog('a', 1, true),
+      createLog('a', 2, false),
+      createLog('b', 1, true),
+      createLog('b', 2, false),
+    ];
+
+    expect(
+      resolveNextFocus({
+        exercises,
+        setLogs,
+        currentSessionExerciseId: 'b',
+        completedSetNumber: 1,
+      })?.id,
+    ).toBe('a');
+  });
+
+  it('wechselt bei einer einseitigen Übung erst, wenn beide Seiten stehen', () => {
+    const exercises = [
+      createExercise('a', 1, { supersetGroupId: 'g1', unilateral: true }),
+      createExercise('b', 2, { supersetGroupId: 'g1' }),
+    ];
+    const afterRight = [
+      createLog('a', 1, true, 'right'),
+      createLog('a', 1, false, 'left'),
+      createLog('b', 1, false),
+    ];
+
+    expect(
+      resolveNextFocus({
+        exercises,
+        setLogs: afterRight,
+        currentSessionExerciseId: 'a',
+        completedSetNumber: 1,
+      }),
+    ).toBeUndefined();
+
+    const afterBothSides = [
+      createLog('a', 1, true, 'right'),
+      createLog('a', 1, true, 'left'),
+      createLog('b', 1, false),
+    ];
+
+    expect(
+      resolveNextFocus({
+        exercises,
+        setLogs: afterBothSides,
+        currentSessionExerciseId: 'a',
+        completedSetNumber: 1,
+      })?.id,
+    ).toBe('b');
+  });
+
+  it('überspringt ein fertiges oder übersprungenes Mitglied', () => {
+    const exercises = [
+      createExercise('a', 1, { supersetGroupId: 'g1' }),
+      createExercise('b', 2, { supersetGroupId: 'g1', wasSkipped: true }),
+      createExercise('c', 3, { supersetGroupId: 'g1' }),
+    ];
+    const setLogs = [
+      createLog('a', 1, true),
+      createLog('a', 2, false),
+      createLog('b', 1, false),
+      createLog('c', 1, false),
+    ];
+
+    expect(
+      resolveNextFocus({
+        exercises,
+        setLogs,
+        currentSessionExerciseId: 'a',
+        completedSetNumber: 1,
+      })?.id,
+    ).toBe('c');
+  });
+
+  it('verlässt die Gruppe erst, wenn alle Mitglieder fertig sind', () => {
+    const exercises = [
+      createExercise('a', 1, { supersetGroupId: 'g1' }),
+      createExercise('b', 2, { supersetGroupId: 'g1' }),
+      createExercise('c', 3),
+    ];
+    const setLogs = [
+      createLog('a', 1, true),
+      createLog('b', 1, true),
+      createLog('c', 1, false),
+    ];
+
+    expect(
+      resolveNextFocus({
+        exercises,
+        setLogs,
+        currentSessionExerciseId: 'a',
+        completedSetNumber: 1,
+      })?.id,
+    ).toBe('c');
+  });
+
+  it('bleibt ohne Supersatz stehen, solange die Übung noch offen ist', () => {
+    const exercises = [createExercise('a', 1), createExercise('b', 2)];
+    const setLogs = [createLog('a', 1, true), createLog('a', 2, false), createLog('b', 1, false)];
+
+    expect(
+      resolveNextFocus({
+        exercises,
+        setLogs,
+        currentSessionExerciseId: 'a',
+        completedSetNumber: 1,
+      }),
+    ).toBeUndefined();
+  });
+
+  it('geht ohne Supersatz weiter, sobald die Übung fertig ist', () => {
+    const exercises = [createExercise('a', 1), createExercise('b', 2)];
+    const setLogs = [createLog('a', 1, true), createLog('b', 1, false)];
+
+    expect(
+      resolveNextFocus({
+        exercises,
+        setLogs,
+        currentSessionExerciseId: 'a',
+        completedSetNumber: 1,
+      })?.id,
+    ).toBe('b');
   });
 });
 

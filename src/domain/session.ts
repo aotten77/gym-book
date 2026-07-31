@@ -80,6 +80,9 @@ export function materializeSession({
       unilateral: exercise.unilateral,
       sourceTemplateExerciseId: templateExercise.id,
       orderIndex: templateExercise.orderIndex,
+      // Der Supersatz wird mitgenommen, aber ab hier unabhängig gepflegt:
+      // ihn in der Session zu lösen, darf das Template nicht anfassen.
+      supersetGroupId: templateExercise.supersetGroupId,
       wasSkipped: false,
       addedInSession: false,
       workSetCount: templateExercise.workSetCount,
@@ -183,6 +186,70 @@ export function findNextOpenExercise(
   const searchOrder = [...exercises.slice(startIndex), ...exercises.slice(0, startIndex)];
 
   return searchOrder.find((exercise) => exercise.id !== currentSessionExerciseId && isOpen(exercise));
+}
+
+interface ResolveNextFocusInput {
+  exercises: WorkoutSessionExercise[];
+  setLogs: WorkoutSetLog[];
+  currentSessionExerciseId: string;
+  /** Satznummer der eben abgehakten Zeile - 0 ist der Warmup-Satz. */
+  completedSetNumber: number;
+}
+
+/**
+ * Wohin der Fokus nach einem abgehakten Satz wandert.
+ *
+ * Im Supersatz wird nach *jedem* vollständigen Satz gewechselt, nicht erst nach
+ * der ganzen Übung: genau dieses Hin und Her ist ein Supersatz. "Vollständig"
+ * heißt bei einer einseitigen Übung links *und* rechts - sonst spränge der
+ * Fokus zwischen den Seiten weg und man müsste ihn von Hand zurückholen.
+ *
+ * Ohne Supersatz bleibt es beim alten Verhalten: erst wenn die Übung fertig
+ * ist, geht es weiter. `undefined` heißt "Fokus bleibt stehen".
+ */
+export function resolveNextFocus({
+  exercises,
+  setLogs,
+  currentSessionExerciseId,
+  completedSetNumber,
+}: ResolveNextFocusInput): WorkoutSessionExercise | undefined {
+  const current = exercises.find((item) => item.id === currentSessionExerciseId);
+
+  if (!current) {
+    return undefined;
+  }
+
+  if (current.supersetGroupId) {
+    const roundLogs = setLogs.filter(
+      (log) =>
+        log.sessionExerciseId === current.id && log.setNumber === completedSetNumber,
+    );
+
+    if (roundLogs.length > 0 && roundLogs.every((log) => log.completed)) {
+      const members = exercises.filter(
+        (item) => item.supersetGroupId === current.supersetGroupId,
+      );
+      const currentIndex = members.findIndex((item) => item.id === current.id);
+      // Zyklisch, damit nach dem letzten Mitglied wieder das erste drankommt.
+      const searchOrder = [
+        ...members.slice(currentIndex + 1),
+        ...members.slice(0, currentIndex),
+      ];
+      const partner = searchOrder.find(
+        (item) => !item.wasSkipped && hasOpenSets(item.id, setLogs),
+      );
+
+      if (partner) {
+        return partner;
+      }
+    }
+  }
+
+  if (!hasOpenSets(current.id, setLogs)) {
+    return findNextOpenExercise(exercises, setLogs, current.id);
+  }
+
+  return undefined;
 }
 
 export function calculateAsymmetryPercent(leftValue: number, rightValue: number) {

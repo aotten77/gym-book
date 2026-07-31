@@ -6,6 +6,7 @@ import { AppShell } from '@/components/AppShell';
 import { SectionCard } from '@/components/SectionCard';
 import { db } from '@/db/appDb';
 import { createTemplate } from '@/db/template-actions';
+import { buildSupersetBlocks, supersetPositionLabel } from '@/domain/superset';
 
 export function TemplatesPage() {
   const navigate = useNavigate();
@@ -78,6 +79,17 @@ export function TemplatesPage() {
           const items = (templateExercises ?? [])
             .filter((item) => item.templateId === template.id)
             .sort((left, right) => left.orderIndex - right.orderIndex);
+          // Nur die Kennzeichnung, keine Rahmen: die Übersicht listet, sie
+          // bearbeitet nicht.
+          const supersetPositionById = new Map<string, string>();
+
+          for (const block of buildSupersetBlocks(items)) {
+            if (block.kind === 'group') {
+              block.exercises.forEach((entry, index) => {
+                supersetPositionById.set(entry.id, supersetPositionLabel(index));
+              });
+            }
+          }
 
           return (
             <SectionCard
@@ -103,7 +115,11 @@ export function TemplatesPage() {
                     >
                       <div>
                         <p className="text-sm font-semibold text-content">
-                          {item.orderIndex}. {exerciseNameById[item.exerciseId] ?? 'Unbekannte Übung'}
+                          {item.orderIndex}.{' '}
+                          {supersetPositionById.has(item.id)
+                            ? `${supersetPositionById.get(item.id)} · `
+                            : ''}
+                          {exerciseNameById[item.exerciseId] ?? 'Unbekannte Übung'}
                         </p>
                         <p className="mt-1 text-sm text-content-muted">
                           {item.targetReps ? `${item.workSetCount} x ${item.targetReps} Wdh` : null}
@@ -111,6 +127,7 @@ export function TemplatesPage() {
                           {item.targetSeconds ? `${item.workSetCount} x ${item.targetSeconds}s` : null}
                           {item.targetWeight ? ` · ${item.targetWeight} kg` : ''}
                           {item.targetBandId ? ` · ${bandNameById[item.targetBandId] ?? 'Band'}` : ''}
+                          {supersetPositionById.has(item.id) ? ' · Supersatz' : ''}
                         </p>
                       </div>
                       <ChevronRight size={18} className="text-content-muted" />

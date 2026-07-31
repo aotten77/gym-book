@@ -3,14 +3,22 @@ import { db } from '@/db/appDb';
 import {
   abortSession,
   addSessionExercise,
+  clearRestTimer,
   clearSetTimer,
   completeSession,
   deleteSetLog,
+  extendRestTimer,
   finishSetTimer,
+  groupSessionExerciseWithPrevious,
+  pruneRestTimers,
   reorderSessionExercises,
+  startRestTimerForExercise,
+  startRestTimerForSetLog,
   startSessionFromTemplate,
   startSetTimer,
   toggleSetCompletion,
+  toggleSkipSessionExercise,
+  ungroupSessionExercise,
   updateSetLogValues,
 } from '@/db/session-actions';
 import {
@@ -24,7 +32,15 @@ import {
 } from '@/db/program-actions';
 import { clearExerciseMedia, replaceExerciseMedia } from '@/db/media-actions';
 import { clearWeekOverride, setActiveProgram, setWeekOverride } from '@/db/settings-actions';
-import { clearProgressionRule, reorderTemplateExercises, saveProgressionRule } from '@/db/template-actions';
+import {
+  clearProgressionRule,
+  deleteTemplateExercise,
+  groupTemplateExerciseWithPrevious,
+  reorderTemplateExercises,
+  saveProgressionRule,
+  ungroupTemplateExercise,
+} from '@/db/template-actions';
+import { REST_TRACK_GRACE_SECONDS } from '@/domain/rest-timer';
 
 describe('addSessionExercise', () => {
   it('appends an existing unilateral exercise and creates warmup plus mirrored work sets', async () => {
@@ -902,7 +918,14 @@ describe('closing a session', () => {
       resolvedProgramWeek: 1,
       startedAt: '2026-01-10T09:00:00.000Z',
       status: 'active',
-      restTimerEndsAt: Date.now() + 60_000,
+      restTimers: [
+        {
+          sessionExerciseId: 'session-exercise-close',
+          side: 'both',
+          endsAt: Date.now() + 60_000,
+          durationSeconds: 90,
+        },
+      ],
     });
   }
 
@@ -914,7 +937,7 @@ describe('closing a session', () => {
     const session = await db.workoutSessions.get('session-abort');
     expect(session?.status).toBe('aborted');
     expect(session?.completedAt).toBeTruthy();
-    expect(session?.restTimerEndsAt).toBeUndefined();
+    expect(session?.restTimers).toBeUndefined();
   });
 
   it('does not overwrite an already closed session', async () => {
@@ -1143,5 +1166,403 @@ describe('Satz-Timer', () => {
     await completeSession('session-timer-active');
 
     expect((await db.workoutSessions.get('session-timer-active'))?.setTimer).toBeUndefined();
+  });
+});
+
+/**
+ * Ein Supersatz aus einer beidseitigen und einer einseitigen Übung - damit
+ * beide Fälle des mehrspurigen Pausenmanagements an einer Session hängen.
+ */
+async function seedRestSession(status: 'active' | 'completed' = 'active') {
+  await db.workoutSessions.add({
+    id: 'session-rest',
+    templateId: 'template-rest',
+    templateNameSnapshot: 'Einheit Pause',
+    resolvedProgramWeek: 1,
+    startedAt: '2026-01-08T09:00:00.000Z',
+    status,
+  });
+
+  await db.workoutSessionExercises.bulkAdd([
+    {
+      id: 'exercise-a',
+      sessionId: 'session-rest',
+      exerciseId: 'squat',
+      exerciseNameSnapshot: 'Front Squat',
+      trackingMode: 'reps_weight',
+      unilateral: false,
+      orderIndex: 1,
+      wasSkipped: false,
+      addedInSession: false,
+      workSetCount: 2,
+      restSeconds: 120,
+    },
+    {
+      id: 'exercise-b',
+      sessionId: 'session-rest',
+      exerciseId: 'split-squat',
+      exerciseNameSnapshot: 'Split Squat',
+      trackingMode: 'reps_weight',
+      unilateral: true,
+      orderIndex: 2,
+      wasSkipped: false,
+      addedInSession: false,
+      workSetCount: 2,
+    },
+    {
+      id: 'exercise-c',
+      sessionId: 'session-rest',
+      exerciseId: 'curl',
+      exerciseNameSnapshot: 'Curl',
+      trackingMode: 'reps_weight',
+      unilateral: false,
+      orderIndex: 3,
+      wasSkipped: false,
+      addedInSession: false,
+      workSetCount: 1,
+    },
+  ]);
+
+  await db.workoutSetLogs.bulkAdd([
+    { id: 'a-1', sessionExerciseId: 'exercise-a', setKind: 'work', side: 'both', setNumber: 1, completed: false },
+    { id: 'a-2', sessionExerciseId: 'exercise-a', setKind: 'work', side: 'both', setNumber: 2, completed: false },
+    { id: 'b-1-left', sessionExerciseId: 'exercise-b', setKind: 'work', side: 'left', setNumber: 1, completed: false },
+    { id: 'b-1-right', sessionExerciseId: 'exercise-b', setKind: 'work', side: 'right', setNumber: 1, completed: false },
+    { id: 'b-2-left', sessionExerciseId: 'exercise-b', setKind: 'work', side: 'left', setNumber: 2, completed: false },
+    { id: 'b-2-right', sessionExerciseId: 'exercise-b', setKind: 'work', side: 'right', setNumber: 2, completed: false },
+    { id: 'c-1', sessionExerciseId: 'exercise-c', setKind: 'work', side: 'both', setNumber: 1, completed: false },
+  ]);
+}
+
+async function restTimers(sessionId = 'session-rest') {
+  return (await db.workoutSessions.get(sessionId))?.restTimers ?? [];
+}
+
+describe('Pausentimer', () => {
+  it('nimmt die Pausenzeit der Übung, wenn keine angegeben ist', async () => {
+    await seedRestSession();
+
+    await startRestTimerForSetLog('a-1');
+
+    const tracks = await restTimers();
+    expect(tracks).toHaveLength(1);
+    expect(tracks[0]).toMatchObject({
+      sessionExerciseId: 'exercise-a',
+      side: 'both',
+      durationSeconds: 120,
+    });
+    expect(tracks[0].endsAt).toBeGreaterThan(Date.now());
+  });
+
+  it('lässt zwei Übungen eines Supersatzes gleichzeitig pausieren', async () => {
+    await seedRestSession();
+
+    await startRestTimerForSetLog('a-1');
+    await startRestTimerForSetLog('c-1', 60);
+
+    expect((await restTimers()).map((track) => track.sessionExerciseId).sort()).toEqual([
+      'exercise-a',
+      'exercise-c',
+    ]);
+  });
+
+  it('führt links und rechts derselben Übung getrennt', async () => {
+    await seedRestSession();
+
+    await startRestTimerForSetLog('b-1-right', 90);
+    await startRestTimerForSetLog('b-1-left', 30);
+
+    const tracks = await restTimers();
+    expect(tracks).toHaveLength(2);
+    expect(tracks.find((track) => track.side === 'right')?.durationSeconds).toBe(90);
+    expect(tracks.find((track) => track.side === 'left')?.durationSeconds).toBe(30);
+  });
+
+  it('ersetzt die eigene Spur beim nächsten Satz derselben Seite', async () => {
+    await seedRestSession();
+
+    await startRestTimerForSetLog('b-1-right', 30);
+    await startRestTimerForSetLog('b-2-right', 90);
+
+    const tracks = await restTimers();
+    expect(tracks).toHaveLength(1);
+    expect(tracks[0].durationSeconds).toBe(90);
+  });
+
+  it('startet keine Pause in einer abgeschlossenen Session', async () => {
+    await seedRestSession('completed');
+
+    await startRestTimerForSetLog('a-1');
+    await startRestTimerForExercise('session-rest', 'exercise-a', 'both', 60);
+
+    expect(await restTimers()).toHaveLength(0);
+  });
+
+  it('verlängert genau eine Spur', async () => {
+    await seedRestSession();
+    await startRestTimerForSetLog('a-1', 60);
+    await startRestTimerForSetLog('c-1', 60);
+
+    await extendRestTimer('session-rest', 'exercise-a', 'both', 30);
+
+    const tracks = await restTimers();
+    expect(tracks.find((track) => track.sessionExerciseId === 'exercise-a')?.durationSeconds).toBe(90);
+    expect(tracks.find((track) => track.sessionExerciseId === 'exercise-c')?.durationSeconds).toBe(60);
+  });
+
+  it('bricht wahlweise eine Spur, eine Übung oder alles ab', async () => {
+    await seedRestSession();
+    await startRestTimerForSetLog('b-1-left', 60);
+    await startRestTimerForSetLog('b-1-right', 60);
+    await startRestTimerForSetLog('a-1', 60);
+
+    await clearRestTimer('session-rest', 'exercise-b', 'left');
+    expect(await restTimers()).toHaveLength(2);
+
+    await clearRestTimer('session-rest', 'exercise-b');
+    expect((await restTimers()).map((track) => track.sessionExerciseId)).toEqual(['exercise-a']);
+
+    await clearRestTimer('session-rest');
+    expect(await restTimers()).toHaveLength(0);
+  });
+
+  it('rührt eine abgeschlossene Session beim Abbrechen nicht an', async () => {
+    await seedRestSession();
+    await startRestTimerForSetLog('a-1', 60);
+    await completeSession('session-rest');
+    await db.workoutSessions.update('session-rest', {
+      restTimers: [
+        { sessionExerciseId: 'exercise-a', side: 'both', endsAt: Date.now() + 60_000, durationSeconds: 60 },
+      ],
+    });
+
+    await clearRestTimer('session-rest');
+
+    expect(await restTimers()).toHaveLength(1);
+  });
+
+  it('räumt lange abgelaufene Spuren weg und lässt frische stehen', async () => {
+    await seedRestSession();
+    const now = Date.now();
+    await db.workoutSessions.update('session-rest', {
+      restTimers: [
+        { sessionExerciseId: 'exercise-a', side: 'both', endsAt: now - 5_000, durationSeconds: 60 },
+        {
+          sessionExerciseId: 'exercise-c',
+          side: 'both',
+          endsAt: now - (REST_TRACK_GRACE_SECONDS + 60) * 1000,
+          durationSeconds: 60,
+        },
+      ],
+    });
+
+    await pruneRestTimers('session-rest', now);
+
+    expect((await restTimers()).map((track) => track.sessionExerciseId)).toEqual(['exercise-a']);
+  });
+
+  it('entfernt die Spur, wenn die letzte Satzzeile dieser Seite verschwindet', async () => {
+    await seedRestSession();
+    await startRestTimerForSetLog('b-1-right', 60);
+    await startRestTimerForSetLog('b-1-left', 60);
+
+    await deleteSetLog('b-1-right');
+    // Rechts hat noch Satz 2 - die Pause bleibt gültig.
+    expect(await restTimers()).toHaveLength(2);
+
+    await deleteSetLog('b-2-right');
+    expect((await restTimers()).map((track) => track.side)).toEqual(['left']);
+  });
+
+  it('räumt die Spuren einer übersprungenen Übung ab', async () => {
+    await seedRestSession();
+    await startRestTimerForSetLog('b-1-left', 60);
+    await startRestTimerForSetLog('a-1', 60);
+
+    await toggleSkipSessionExercise('exercise-b');
+
+    expect((await restTimers()).map((track) => track.sessionExerciseId)).toEqual(['exercise-a']);
+  });
+
+  it('räumt alle Spuren beim Abschließen der Session ab', async () => {
+    await seedRestSession();
+    await startRestTimerForSetLog('a-1', 60);
+    await startRestTimerForSetLog('c-1', 60);
+
+    await completeSession('session-rest');
+
+    expect((await db.workoutSessions.get('session-rest'))?.restTimers).toBeUndefined();
+  });
+});
+
+describe('Supersätze in der Session', () => {
+  it('verbindet eine Übung mit ihrer Vorgängerin', async () => {
+    await seedRestSession();
+
+    await groupSessionExerciseWithPrevious('exercise-b');
+
+    const exercises = await db.workoutSessionExercises
+      .where('sessionId')
+      .equals('session-rest')
+      .sortBy('orderIndex');
+    expect(exercises[0].supersetGroupId).toBeTruthy();
+    expect(exercises[1].supersetGroupId).toBe(exercises[0].supersetGroupId);
+    expect(exercises[2].supersetGroupId).toBeUndefined();
+  });
+
+  it('löst eine Verbindung wieder', async () => {
+    await seedRestSession();
+    await groupSessionExerciseWithPrevious('exercise-b');
+
+    await ungroupSessionExercise('exercise-b');
+
+    const exercises = await db.workoutSessionExercises
+      .where('sessionId')
+      .equals('session-rest')
+      .sortBy('orderIndex');
+    expect(exercises.every((item) => item.supersetGroupId === undefined)).toBe(true);
+  });
+
+  it('rührt eine abgeschlossene Session nicht an', async () => {
+    await seedRestSession('completed');
+
+    await groupSessionExerciseWithPrevious('exercise-b');
+
+    expect((await db.workoutSessionExercises.get('exercise-b'))?.supersetGroupId).toBeUndefined();
+  });
+
+  it('verweigert eine Reihenfolge, die den Supersatz zerreißt', async () => {
+    await seedRestSession();
+    await groupSessionExerciseWithPrevious('exercise-b');
+
+    await reorderSessionExercises('session-rest', ['exercise-a', 'exercise-c', 'exercise-b']);
+
+    const exercises = await db.workoutSessionExercises
+      .where('sessionId')
+      .equals('session-rest')
+      .sortBy('orderIndex');
+    expect(exercises.map((item) => item.id)).toEqual(['exercise-a', 'exercise-b', 'exercise-c']);
+  });
+
+  it('erlaubt das Verschieben der Gruppe am Stück', async () => {
+    await seedRestSession();
+    await groupSessionExerciseWithPrevious('exercise-b');
+
+    await reorderSessionExercises('session-rest', ['exercise-c', 'exercise-a', 'exercise-b']);
+
+    const exercises = await db.workoutSessionExercises
+      .where('sessionId')
+      .equals('session-rest')
+      .sortBy('orderIndex');
+    expect(exercises.map((item) => item.id)).toEqual(['exercise-c', 'exercise-a', 'exercise-b']);
+  });
+});
+
+describe('Supersätze im Template', () => {
+  async function seedTemplateExercises() {
+    await db.workoutTemplates.add({
+      id: 'template-superset',
+      name: 'Einheit Supersatz',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+
+    await db.exercises.bulkAdd(
+      ['ex-1', 'ex-2', 'ex-3'].map((id) => ({
+        id,
+        name: id,
+        trackingMode: 'reps_weight' as const,
+        unilateral: false,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      })),
+    );
+
+    await db.workoutTemplateExercises.bulkAdd(
+      ['ex-1', 'ex-2', 'ex-3'].map((exerciseId, index) => ({
+        id: `template-exercise-${index + 1}`,
+        templateId: 'template-superset',
+        exerciseId,
+        orderIndex: index + 1,
+        workSetCount: 3,
+      })),
+    );
+  }
+
+  async function templateGroupIds() {
+    const items = await db.workoutTemplateExercises
+      .where('templateId')
+      .equals('template-superset')
+      .sortBy('orderIndex');
+
+    return items.map((item) => item.supersetGroupId);
+  }
+
+  it('verbindet und löst geplante Übungen', async () => {
+    await seedTemplateExercises();
+
+    await groupTemplateExerciseWithPrevious('template-exercise-2');
+    const [first, second, third] = await templateGroupIds();
+    expect(first).toBeTruthy();
+    expect(second).toBe(first);
+    expect(third).toBeUndefined();
+
+    await ungroupTemplateExercise('template-exercise-2');
+    expect(await templateGroupIds()).toEqual([undefined, undefined, undefined]);
+  });
+
+  it('nimmt eine dritte Übung in die bestehende Gruppe auf', async () => {
+    await seedTemplateExercises();
+    await groupTemplateExerciseWithPrevious('template-exercise-2');
+
+    await groupTemplateExerciseWithPrevious('template-exercise-3');
+
+    const groupIds = await templateGroupIds();
+    expect(new Set(groupIds).size).toBe(1);
+  });
+
+  it('löst eine Restgruppe auf, wenn ein Partner gelöscht wird', async () => {
+    await seedTemplateExercises();
+    await groupTemplateExerciseWithPrevious('template-exercise-2');
+
+    await deleteTemplateExercise('template-exercise-1');
+
+    expect(await templateGroupIds()).toEqual([undefined, undefined]);
+  });
+
+  it('verweigert eine Reihenfolge, die den Supersatz zerreißt', async () => {
+    await seedTemplateExercises();
+    await groupTemplateExerciseWithPrevious('template-exercise-2');
+
+    await reorderTemplateExercises('template-superset', [
+      'template-exercise-1',
+      'template-exercise-3',
+      'template-exercise-2',
+    ]);
+
+    const items = await db.workoutTemplateExercises
+      .where('templateId')
+      .equals('template-superset')
+      .sortBy('orderIndex');
+    expect(items.map((item) => item.id)).toEqual([
+      'template-exercise-1',
+      'template-exercise-2',
+      'template-exercise-3',
+    ]);
+  });
+
+  it('überträgt die Gruppe beim Start in die Session', async () => {
+    await seedTemplateExercises();
+    await groupTemplateExerciseWithPrevious('template-exercise-2');
+
+    const sessionId = await startSessionFromTemplate('template-superset');
+    const sessionExercises = await db.workoutSessionExercises
+      .where('sessionId')
+      .equals(sessionId)
+      .sortBy('orderIndex');
+
+    expect(sessionExercises[0].supersetGroupId).toBeTruthy();
+    expect(sessionExercises[1].supersetGroupId).toBe(sessionExercises[0].supersetGroupId);
+    expect(sessionExercises[2].supersetGroupId).toBeUndefined();
   });
 });

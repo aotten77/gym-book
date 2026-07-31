@@ -1,7 +1,17 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { ArrowDown, CheckCircle2, Clock3, ImageOff, Plus, Timer, X } from 'lucide-react';
+import {
+  ArrowDown,
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  Clock3,
+  ImageOff,
+  Plus,
+  Timer,
+  X,
+} from 'lucide-react';
 import { Alert } from '@/components/Alert';
 import { AppShell } from '@/components/AppShell';
 import { ExerciseMedia } from '@/components/ExerciseMedia';
@@ -12,6 +22,7 @@ import { Button, IconButton } from '@/components/ui/Button';
 import { CheckboxField, SelectField, TextArea } from '@/components/ui/Field';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { SessionExerciseCard } from '@/components/SessionExerciseCard';
+import { SupersetBlock } from '@/components/SupersetBlock';
 import { db } from '@/db/appDb';
 import {
   abortSession,
@@ -22,30 +33,52 @@ import {
   deleteSetLog,
   extendRestTimer,
   finishSetTimer,
+  groupSessionExerciseWithPrevious,
+  pruneRestTimers,
   reorderSessionExercises,
-  startRestTimer,
+  startRestTimerForExercise,
+  startRestTimerForSetLog,
   startSetTimer,
   toggleSkipSessionExercise,
+  ungroupSessionExercise,
 } from '@/db/session-actions';
 import { loadLastValuesForExercises } from '@/db/history-queries';
 import { sortSetLogs } from '@/domain/history';
-import type { MediaAsset, WorkoutSessionExercise, WorkoutSetLog } from '@/domain/models';
-import { findNextOpenExercise, hasOpenSets } from '@/domain/session';
+import type {
+  MediaAsset,
+  RestTimerTrack,
+  WorkoutSessionExercise,
+  WorkoutSetLog,
+} from '@/domain/models';
+import {
+  DEFAULT_REST_SECONDS,
+  isRestTrackReady,
+  REST_TIMER_STEP_SECONDS,
+  remainingRestSeconds,
+  resolveManualRestTarget,
+  restTrackKey,
+  selectPrimaryRestTrack,
+} from '@/domain/rest-timer';
+import { resolveNextFocus } from '@/domain/session';
 import { elapsedSetTimerSeconds, remainingSetTimerSeconds } from '@/domain/set-timer';
+import {
+  buildSupersetBlocks,
+  moveSupersetBlock,
+  moveWithinGroup,
+  supersetPositionLabel,
+} from '@/domain/superset';
 import { supportsBand, supportsReps, supportsSeconds, supportsWeight } from '@/domain/tracking';
 import {
   formatDateTime,
   formatSessionWeekContext,
   formatSetLogWithSide,
+  formatSideLabel,
   formatTimer,
   formatTrackingMode,
 } from '@/lib/format';
 import { optionalNumberInput } from '@/lib/number-input';
-import { moveItem } from '@/lib/reorder';
+import { cn } from '@/lib/utils';
 import { useUiStore } from '@/store/ui-store';
-
-/** Pause für Übungen, bei denen im Template nichts hinterlegt ist. */
-const DEFAULT_REST_SECONDS = 90;
 
 interface SessionExerciseFormState {
   exerciseId: string;
@@ -70,6 +103,19 @@ const defaultSessionExerciseFormState: SessionExerciseFormState = {
   restSeconds: '',
   notes: '',
 };
+
+/** Stabile Identität für "keine Pause läuft" - siehe die Effekt-Deps unten. */
+const EMPTY_REST_TIMERS: RestTimerTrack[] = [];
+
+/**
+ * Sortierung aller Pausenanzeigen: was zuerst wieder frei ist, steht vorn.
+ *
+ * Die Einfügereihenfolge wäre die des Abhakens - für den Blick auf die Leiste
+ * ohne Bedeutung.
+ */
+function byRestTrackEnd(left: RestTimerTrack, right: RestTimerTrack) {
+  return left.endsAt - right.endsAt;
+}
 
 /** Sprungziel des Streifens oben - siehe [handleJumpToFocusedExercise]. */
 function sessionExerciseAnchorId(sessionExerciseId: string) {
@@ -115,9 +161,12 @@ export function SessionPage() {
   const [exerciseForm, setExerciseForm] = useState<SessionExerciseFormState>(
     defaultSessionExerciseFormState,
   );
+  /** Spuren, deren Ablauf schon gemeldet wurde - siehe den Effekt unten. */
+  const notifiedRestKeysRef = useRef<Set<string>>(new Set());
 
   const session = useLiveQuery(() => db.workoutSessions.get(sessionId), [sessionId]);
-  const restTimerEndsAt = session?.restTimerEndsAt ?? null;
+  const restTimers = session?.restTimers ?? EMPTY_REST_TIMERS;
+  const hasRestTimers = restTimers.length > 0;
   const setTimer = session?.setTimer;
   // Primitiven statt des Objekts: useLiveQuery liefert bei jedem Emit eine neue
   // Identität, an der die Effekte unten sonst dauernd neu anspringen würden.
@@ -191,9 +240,9 @@ export function SessionPage() {
   }, [sessionExercises]);
 
   useEffect(() => {
-    // Ein Takt für beide Uhren: Pause und Satz-Timer laufen nie gleichzeitig
-    // ins Gewicht, brauchen aber dieselbe Sekundenauflösung.
-    if (!restTimerEndsAt && !setTimerEndsAt) {
+    // Ein Takt für alle Uhren: es können mehrere Pausen und ein Satz-Timer
+    // gleichzeitig laufen, sie brauchen aber dieselbe Sekundenauflösung.
+    if (!hasRestTimers && !setTimerEndsAt) {
       return undefined;
     }
 
@@ -215,11 +264,39 @@ export function SessionPage() {
       window.clearInterval(timer);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [restTimerEndsAt, setTimerEndsAt]);
+  }, [hasRestTimers, setTimerEndsAt]);
+
+  /*
+   * Schlüssel der gerade abgelaufenen Pausen, als String stabil vergleichbar.
+   * Die Spuren selbst taugen nicht als Effekt-Abhängigkeit: useLiveQuery
+   * liefert bei jedem Emit ein neues Array.
+   */
+  const expiredRestTrackKeys = restTimers
+    .filter((track) => isRestTrackReady(track, now))
+    .map((track) => restTrackKey(track.sessionExerciseId, track.side))
+    .join('|');
 
   useEffect(() => {
-    if (!restTimerEndsAt || restTimerEndsAt > now) {
+    const expiredKeys = expiredRestTrackKeys ? expiredRestTrackKeys.split('|') : [];
+
+    /*
+     * Die Erinnerung gilt nur für aktuell abgelaufene Spuren: startet dieselbe
+     * Seite eine neue Pause, soll ihr Ablauf wieder vibrieren. Ein Reload
+     * verliert höchstens eine Vibration - der Zustand gehört nicht in die
+     * Datenbank.
+     */
+    notifiedRestKeysRef.current = new Set(
+      [...notifiedRestKeysRef.current].filter((key) => expiredKeys.includes(key)),
+    );
+
+    const freshKeys = expiredKeys.filter((key) => !notifiedRestKeysRef.current.has(key));
+
+    if (freshKeys.length === 0) {
       return;
+    }
+
+    for (const key of freshKeys) {
+      notifiedRestKeysRef.current.add(key);
     }
 
     // Beim Ablauf spürbar melden - im Gym liegt das Telefon in der Tasche.
@@ -227,8 +304,13 @@ export function SessionPage() {
       navigator.vibrate([180, 90, 180]);
     }
 
-    void clearRestTimer(sessionId);
-  }, [now, restTimerEndsAt, sessionId]);
+    /*
+     * Abgelaufene Spuren bleiben zunächst stehen und melden "bereit" - genau
+     * das sucht man beim Zurückwechseln. Weggeräumt werden sie erst nach der
+     * Karenzzeit in [pruneRestTimers].
+     */
+    void pruneRestTimers(sessionId);
+  }, [expiredRestTrackKeys, sessionId]);
 
   useEffect(() => {
     if (!setTimerEndsAt || !setTimerDurationSeconds || setTimerEndsAt > now) {
@@ -327,7 +409,44 @@ export function SessionPage() {
         templateName: focusedLastValues.templateName,
       }
     : undefined;
-  const remainingSeconds = restTimerEndsAt ? Math.max(0, Math.ceil((restTimerEndsAt - now) / 1000)) : 0;
+  /*
+   * Die große Zahl gehört der Pause, auf die gerade gewartet wird: der
+   * fokussierten Übung und dort der Seite, die als Nächstes drankommt. Alle
+   * anderen laufenden Pausen stehen als Chips daneben.
+   */
+  const nextOpenFocusedSide = sortSetLogs(focusedLogs).find((log) => !log.completed)?.side;
+  const primaryRestTrack = selectPrimaryRestTrack(
+    restTimers,
+    focusedExercise?.id,
+    nextOpenFocusedSide,
+    now,
+  );
+  const remainingSeconds = remainingRestSeconds(primaryRestTrack, now);
+  const secondaryRestTracks = restTimers
+    .filter((track) => track !== primaryRestTrack)
+    .sort(byRestTrackEnd);
+  const restTracksByExerciseId = useMemo(
+    () =>
+      [...restTimers]
+        .sort(byRestTrackEnd)
+        .reduce<Record<string, RestTimerTrack[]>>((groups, track) => {
+          groups[track.sessionExerciseId] = [...(groups[track.sessionExerciseId] ?? []), track];
+          return groups;
+        }, {}),
+    [restTimers],
+  );
+  const sessionBlocks = useMemo(
+    () => buildSupersetBlocks(orderedSessionExercises),
+    [orderedSessionExercises],
+  );
+
+  function describeRestTrack(track: RestTimerTrack) {
+    const exercise = orderedSessionExercises.find((item) => item.id === track.sessionExerciseId);
+    const name = exercise?.exerciseNameSnapshot ?? 'Übung';
+
+    return track.side === 'both' ? name : `${name} · ${formatSideLabel(track.side)}`;
+  }
+
   const setTimerRemainingSeconds = remainingSetTimerSeconds(setTimer, now);
   const isReadOnly = session?.status !== 'active';
   const selectedExistingExercise = (availableExercises ?? []).find(
@@ -344,12 +463,8 @@ export function SessionPage() {
   const effectiveLoadKind = selectedExistingExercise?.loadKind;
   const effectiveUnilateral = selectedExistingExercise?.unilateral ?? false;
 
-  function handleJumpToFocusedExercise() {
-    if (!focusedExercise) {
-      return;
-    }
-
-    const target = document.getElementById(sessionExerciseAnchorId(focusedExercise.id));
+  function scrollToSessionExercise(sessionExerciseId: string) {
+    const target = document.getElementById(sessionExerciseAnchorId(sessionExerciseId));
 
     /*
      * `scrollIntoView` kennt die Systemeinstellung nicht - anders als die
@@ -358,6 +473,20 @@ export function SessionPage() {
     const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     target?.scrollIntoView({ behavior: prefersReducedMotion ? 'auto' : 'smooth', block: 'start' });
+  }
+
+  function handleJumpToFocusedExercise() {
+    if (!focusedExercise) {
+      return;
+    }
+
+    scrollToSessionExercise(focusedExercise.id);
+  }
+
+  /** Fokus über einen Chip der Pausenleiste - dorthin will man auch sehen. */
+  function handleFocusRestTrack(track: RestTimerTrack) {
+    setActiveSessionExerciseId(track.sessionExerciseId);
+    scrollToSessionExercise(track.sessionExerciseId);
   }
 
   async function handleAddExercise() {
@@ -407,15 +536,31 @@ export function SessionPage() {
     }
   }
 
+  /**
+   * Sortiert eine Übung um.
+   *
+   * Innerhalb eines Supersatzes bewegt sie sich nur in der Gruppe - der Block
+   * als Ganzes wandert über die Pfeile in seiner Kopfzeile. Sonst zerrisse
+   * jeder zweite Tap den Supersatz.
+   */
   async function handleMoveSessionExercise(sessionExerciseId: string, direction: -1 | 1) {
-    if (isReadOnly || !session) {
-      return;
-    }
+    const exercise = orderedSessionExercises.find((item) => item.id === sessionExerciseId);
 
-    const currentIndex = sessionExerciseOrder.indexOf(sessionExerciseId);
-    const nextOrder = moveItem(sessionExerciseOrder, currentIndex, currentIndex + direction);
+    await applySessionExerciseOrder(
+      exercise?.supersetGroupId
+        ? moveWithinGroup(orderedSessionExercises, sessionExerciseId, direction)
+        : moveSupersetBlock(orderedSessionExercises, sessionExerciseId, direction),
+    );
+  }
 
-    if (nextOrder === sessionExerciseOrder) {
+  async function handleMoveSupersetBlock(sessionExerciseId: string, direction: -1 | 1) {
+    await applySessionExerciseOrder(
+      moveSupersetBlock(orderedSessionExercises, sessionExerciseId, direction),
+    );
+  }
+
+  async function applySessionExerciseOrder(nextOrder: string[] | null) {
+    if (isReadOnly || !session || !nextOrder) {
       return;
     }
 
@@ -474,6 +619,28 @@ export function SessionPage() {
     }
   }
 
+  async function handleGroupWithPrevious(sessionExerciseId: string) {
+    try {
+      await groupSessionExerciseWithPrevious(sessionExerciseId);
+      setSessionError(null);
+    } catch (error) {
+      setSessionError(
+        error instanceof Error ? error.message : 'Supersatz konnte nicht angelegt werden.',
+      );
+    }
+  }
+
+  async function handleUngroup(sessionExerciseId: string) {
+    try {
+      await ungroupSessionExercise(sessionExerciseId);
+      setSessionError(null);
+    } catch (error) {
+      setSessionError(
+        error instanceof Error ? error.message : 'Verbindung konnte nicht gelöst werden.',
+      );
+    }
+  }
+
   async function handleToggleSkip(sessionExerciseId: string) {
     try {
       await toggleSkipSessionExercise(sessionExerciseId);
@@ -522,27 +689,32 @@ export function SessionPage() {
     }
   }
 
-  async function handleStartRest(restSeconds?: number) {
+  /** Manueller Start über die Leiste - für die Seite, die als Nächstes kommt. */
+  async function handleStartRest() {
+    if (!focusedExercise) {
+      return;
+    }
+
     try {
-      await startRestTimer(sessionId, restSeconds ?? DEFAULT_REST_SECONDS);
+      await startRestTimerForExercise(
+        sessionId,
+        focusedExercise.id,
+        resolveManualRestTarget(focusedExercise.id, focusedLogs),
+      );
     } catch (error) {
       setSessionError(error instanceof Error ? error.message : 'Pausentimer konnte nicht starten.');
     }
   }
 
   /**
-   * Reaktion auf einen abgehakten Satz: Pause starten und - falls die Übung
-   * damit fertig ist - den Fokus auf die nächste offene Übung ziehen.
+   * Reaktion auf einen abgehakten Satz: Pause für genau diese Übung und Seite
+   * starten und den Fokus weiterziehen, wo es sinnvoll ist.
    *
    * Bewusst getrennt von [handleStartRest]: den Timer startet auch die Leiste
    * am unteren Rand, dort wurde aber kein Satz abgehakt und der Fokus darf
    * sich nicht bewegen.
    */
-  async function handleSetCompleted(
-    sessionExerciseId: string,
-    completedSetLogId: string,
-    restSeconds?: number,
-  ) {
+  async function handleSetCompleted(sessionExerciseId: string, completedSetLog: WorkoutSetLog) {
     /*
      * Die Live-Query hinkt dem gerade geschriebenen Haken hinterher: dieser
      * Aufruf erfolgt direkt nach `toggleSetCompletion`, `setLogs` trägt den
@@ -551,18 +723,35 @@ export function SessionPage() {
      * für den die Automatik gebaut ist.
      */
     const effectiveLogs = (setLogs ?? []).map((log) =>
-      log.id === completedSetLogId ? { ...log, completed: true } : log,
+      log.id === completedSetLog.id ? { ...log, completed: true } : log,
     );
+    const current = orderedSessionExercises.find((item) => item.id === sessionExerciseId);
+    const next = resolveNextFocus({
+      exercises: orderedSessionExercises,
+      setLogs: effectiveLogs,
+      currentSessionExerciseId: sessionExerciseId,
+      completedSetNumber: completedSetLog.setNumber,
+    });
 
-    if (!hasOpenSets(sessionExerciseId, effectiveLogs)) {
-      const next = findNextOpenExercise(orderedSessionExercises, effectiveLogs, sessionExerciseId);
+    if (next) {
+      setActiveSessionExerciseId(next.id);
 
-      if (next) {
-        setActiveSessionExerciseId(next.id);
+      /*
+       * Nur beim Wechsel innerhalb eines Supersatzes mitscrollen: dort steht
+       * die Partnerübung direkt daneben und man will sofort weitermachen.
+       * Beim Sprung nach einer fertigen Übung bleibt es beim Streifen oben,
+       * über den man selbst springt.
+       */
+      if (current?.supersetGroupId && next.supersetGroupId === current.supersetGroupId) {
+        scrollToSessionExercise(next.id);
       }
     }
 
-    await handleStartRest(restSeconds);
+    try {
+      await startRestTimerForSetLog(completedSetLog.id);
+    } catch (error) {
+      setSessionError(error instanceof Error ? error.message : 'Pausentimer konnte nicht starten.');
+    }
   }
 
   async function handleCloseSession(mode: 'complete' | 'abort') {
@@ -577,6 +766,59 @@ export function SessionPage() {
       );
       setIsClosingSession(false);
     }
+  }
+
+  /**
+   * Eine Übungskarte samt Sprungziel.
+   *
+   * Als Funktion und nicht inline, weil dieselbe Karte an zwei Stellen der
+   * Liste steht: allein und als Mitglied eines Supersatz-Blocks.
+   */
+  function renderSessionExerciseCard(
+    exercise: WorkoutSessionExercise,
+    position: { isFirst: boolean; isLast: boolean; supersetPosition?: string },
+  ) {
+    const isFocused = activeSessionExerciseId === exercise.id;
+
+    return (
+      // Sprungziel des Streifens. Der Abstand oben hält die Karte
+      // frei vom Streifen, der sonst genau darüber liegt.
+      <div
+        key={exercise.id}
+        id={sessionExerciseAnchorId(exercise.id)}
+        className="scroll-mt-[calc(6rem+env(safe-area-inset-top))]"
+      >
+        <SessionExerciseCard
+          exercise={exercise}
+          exerciseLogs={sortSetLogs(groupedLogs[exercise.id] ?? [])}
+          mediaAsset={mediaAssetForExercise(exercise)}
+          bandLevels={bandLevels}
+          lastSetValues={lastValues?.[exercise.exerciseId]?.setValues}
+          lastValuesSummary={isFocused ? focusedLastValuesSummary : undefined}
+          isFocused={isFocused}
+          isBusy={isReorderingExercises}
+          isReadOnly={isReadOnly}
+          isFirst={position.isFirst}
+          isLast={position.isLast}
+          supersetPosition={position.supersetPosition}
+          canGroupWithPrevious={orderedSessionExercises[0]?.id !== exercise.id}
+          restTracks={restTracksByExerciseId[exercise.id]}
+          now={now}
+          onMove={handleMoveSessionExercise}
+          onFocus={setActiveSessionExerciseId}
+          onGroupWithPrevious={(id) => void handleGroupWithPrevious(id)}
+          onUngroup={(id) => void handleUngroup(id)}
+          runningTimerSetLogId={setTimer?.setLogId}
+          timerRemainingSeconds={setTimerRemainingSeconds}
+          onToggleSkip={handleToggleSkip}
+          onSetCompleted={handleSetCompleted}
+          onStartSetTimer={handleStartSetTimer}
+          onStopSetTimer={handleStopSetTimer}
+          onRequestDeleteSetLog={handleRequestDeleteSetLog}
+          onOpenMedia={(mediaAsset, alt) => setMediaPreview({ mediaAsset, alt })}
+        />
+      </div>
+    );
   }
 
   if (!session) {
@@ -669,42 +911,52 @@ export function SessionPage() {
         */}
         {orderedSessionExercises.length > 0 ? (
           <div className="space-y-4">
-            {orderedSessionExercises.map((exercise, index) => {
-              const exerciseLogs = sortSetLogs(groupedLogs[exercise.id] ?? []);
-              const isFocused = activeSessionExerciseId === exercise.id;
+            {sessionBlocks.map((block, blockIndex) => {
+              const isFirstBlock = blockIndex === 0;
+              const isLastBlock = blockIndex === sessionBlocks.length - 1;
+
+              if (block.kind === 'single') {
+                return (
+                  <div key={block.exercise.id}>
+                    {renderSessionExerciseCard(block.exercise, {
+                      isFirst: isFirstBlock,
+                      isLast: isLastBlock,
+                    })}
+                  </div>
+                );
+              }
 
               return (
-                // Sprungziel des Streifens. Der Abstand oben hält die Karte
-                // frei vom Streifen, der sonst genau darüber liegt.
-                <div
-                  key={exercise.id}
-                  id={sessionExerciseAnchorId(exercise.id)}
-                  className="scroll-mt-[calc(6rem+env(safe-area-inset-top))]"
+                <SupersetBlock
+                  key={block.groupId}
+                  positions={block.exercises.map((_, index) => supersetPositionLabel(index))}
+                  action={
+                    <div className="flex shrink-0 items-center gap-2">
+                      <IconButton
+                        label="Supersatz nach oben"
+                        disabled={isReorderingExercises || isReadOnly || isFirstBlock}
+                        onClick={() => void handleMoveSupersetBlock(block.exercises[0].id, -1)}
+                      >
+                        <ChevronUp size={16} />
+                      </IconButton>
+                      <IconButton
+                        label="Supersatz nach unten"
+                        disabled={isReorderingExercises || isReadOnly || isLastBlock}
+                        onClick={() => void handleMoveSupersetBlock(block.exercises[0].id, 1)}
+                      >
+                        <ChevronDown size={16} />
+                      </IconButton>
+                    </div>
+                  }
                 >
-                  <SessionExerciseCard
-                    exercise={exercise}
-                    exerciseLogs={exerciseLogs}
-                    mediaAsset={mediaAssetForExercise(exercise)}
-                    bandLevels={bandLevels}
-                    lastSetValues={lastValues?.[exercise.exerciseId]?.setValues}
-                    lastValuesSummary={isFocused ? focusedLastValuesSummary : undefined}
-                    isFocused={isFocused}
-                    isBusy={isReorderingExercises}
-                    isReadOnly={isReadOnly}
-                    isFirst={index === 0}
-                    isLast={index === orderedSessionExercises.length - 1}
-                    onMove={handleMoveSessionExercise}
-                    onFocus={setActiveSessionExerciseId}
-                    runningTimerSetLogId={setTimer?.setLogId}
-                    timerRemainingSeconds={setTimerRemainingSeconds}
-                    onToggleSkip={handleToggleSkip}
-                    onSetCompleted={handleSetCompleted}
-                    onStartSetTimer={handleStartSetTimer}
-                    onStopSetTimer={handleStopSetTimer}
-                    onRequestDeleteSetLog={handleRequestDeleteSetLog}
-                    onOpenMedia={(mediaAsset, alt) => setMediaPreview({ mediaAsset, alt })}
-                  />
-                </div>
+                  {block.exercises.map((exercise, memberIndex) =>
+                    renderSessionExerciseCard(exercise, {
+                      isFirst: memberIndex === 0,
+                      isLast: memberIndex === block.exercises.length - 1,
+                      supersetPosition: supersetPositionLabel(memberIndex),
+                    }),
+                  )}
+                </SupersetBlock>
               );
             })}
           </div>
@@ -889,74 +1141,136 @@ export function SessionPage() {
       */}
       {session.status === 'active' ? (
         <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30 mx-auto w-full max-w-md">
-          <div className="pointer-events-auto flex items-center gap-2 rounded-t-card border border-b-0 border-line bg-surface-glass p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] shadow-soft backdrop-blur-xl">
-            {setTimerRemainingSeconds > 0 ? (
-              /*
-                Der Satz-Timer verdrängt die Pause: er läuft *während* der
-                Übung, und wer im Plank liegt, sieht nur diese eine Zahl. Die
-                Bedienung liegt hier statt in der Satzzeile - beim Halten
-                scrollt niemand zur Karte zurück.
-              */
-              <>
-                <div
-                  role="timer"
-                  aria-live="off"
-                  className="flex min-h-touch flex-1 items-center justify-center gap-2 rounded-control bg-accent-soft px-3 text-2xl font-semibold tabular-nums text-accent"
-                >
-                  <Timer size={18} />
-                  {formatTimer(setTimerRemainingSeconds)}
-                </div>
-                <Button
-                  variant="ghost"
-                  size="md"
-                  aria-label="Zeit stoppen und in den Satz übernehmen"
-                  onClick={() => void handleStopSetTimer()}
-                >
-                  Stopp
+          <div className="pointer-events-auto rounded-t-card border border-b-0 border-line bg-surface-glass p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] shadow-soft backdrop-blur-xl">
+            {/*
+              Der Name über der Zahl: sobald mehrere Pausen laufen, ist "1:12"
+              allein zweideutig - im Supersatz wie bei links und rechts.
+            */}
+            {setTimerRemainingSeconds === 0 && primaryRestTrack ? (
+              <p className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-content-muted">
+                Pause · {describeRestTrack(primaryRestTrack)}
+              </p>
+            ) : null}
+            <div className="flex items-center gap-2">
+              {setTimerRemainingSeconds > 0 ? (
+                /*
+                  Der Satz-Timer verdrängt die Pause: er läuft *während* der
+                  Übung, und wer im Plank liegt, sieht nur diese eine Zahl. Die
+                  Bedienung liegt hier statt in der Satzzeile - beim Halten
+                  scrollt niemand zur Karte zurück.
+                */
+                <>
+                  <div
+                    role="timer"
+                    aria-live="off"
+                    className="flex min-h-touch flex-1 items-center justify-center gap-2 rounded-control bg-accent-soft px-3 text-2xl font-semibold tabular-nums text-accent"
+                  >
+                    <Timer size={18} />
+                    {formatTimer(setTimerRemainingSeconds)}
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="md"
+                    aria-label="Zeit stoppen und in den Satz übernehmen"
+                    onClick={() => void handleStopSetTimer()}
+                  >
+                    Stopp
+                  </Button>
+                  <IconButton
+                    label="Satz-Timer verwerfen, ohne die Zeit zu übernehmen"
+                    onClick={() => void clearSetTimer(sessionId)}
+                  >
+                    <X size={16} />
+                  </IconButton>
+                </>
+              ) : primaryRestTrack && remainingSeconds > 0 ? (
+                <>
+                  {/*
+                    Die verbleibende Zeit ist die einzige Zahl, die während der
+                    Pause zählt - sie trägt deshalb die Größe, nicht die
+                    Bedienelemente daneben.
+                  */}
+                  <div
+                    role="timer"
+                    aria-live="off"
+                    className="flex min-h-touch flex-1 items-center justify-center gap-2 rounded-control bg-warning-soft px-3 text-2xl font-semibold tabular-nums text-warning"
+                  >
+                    <Clock3 size={18} />
+                    {formatTimer(remainingSeconds)}
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="md"
+                    onClick={() =>
+                      void extendRestTimer(
+                        sessionId,
+                        primaryRestTrack.sessionExerciseId,
+                        primaryRestTrack.side,
+                        REST_TIMER_STEP_SECONDS,
+                      )
+                    }
+                  >
+                    +{REST_TIMER_STEP_SECONDS}s
+                  </Button>
+                  <IconButton
+                    label="Pausentimer abbrechen"
+                    onClick={() =>
+                      void clearRestTimer(
+                        sessionId,
+                        primaryRestTrack.sessionExerciseId,
+                        primaryRestTrack.side,
+                      )
+                    }
+                  >
+                    <X size={16} />
+                  </IconButton>
+                </>
+              ) : (
+                <Button variant="secondary" size="md" fullWidth onClick={() => void handleStartRest()}>
+                  <Clock3 size={16} />
+                  Pause starten ({focusedExercise?.restSeconds ?? DEFAULT_REST_SECONDS}s)
                 </Button>
-                <IconButton
-                  label="Satz-Timer verwerfen, ohne die Zeit zu übernehmen"
-                  onClick={() => void clearSetTimer(sessionId)}
-                >
-                  <X size={16} />
-                </IconButton>
-              </>
-            ) : remainingSeconds > 0 ? (
-              <>
-                {/*
-                  Die verbleibende Zeit ist die einzige Zahl, die während der
-                  Pause zählt - sie trägt deshalb die Größe, nicht die
-                  Bedienelemente daneben.
-                */}
-                <div
-                  role="timer"
-                  aria-live="off"
-                  className="flex min-h-touch flex-1 items-center justify-center gap-2 rounded-control bg-warning-soft px-3 text-2xl font-semibold tabular-nums text-warning"
-                >
-                  <Clock3 size={18} />
-                  {formatTimer(remainingSeconds)}
-                </div>
-                <Button variant="ghost" size="md" onClick={() => void extendRestTimer(sessionId, 30)}>
-                  +30s
-                </Button>
-                <IconButton
-                  label="Pausentimer abbrechen"
-                  onClick={() => void clearRestTimer(sessionId)}
-                >
-                  <X size={16} />
-                </IconButton>
-              </>
-            ) : (
-              <Button
-                variant="secondary"
-                size="md"
-                fullWidth
-                onClick={() => void handleStartRest(focusedExercise?.restSeconds)}
-              >
-                <Clock3 size={16} />
-                Pause starten ({focusedExercise?.restSeconds ?? DEFAULT_REST_SECONDS}s)
-              </Button>
-            )}
+              )}
+            </div>
+
+            {/*
+              Die übrigen Pausen als Chips: sie beantworten im Vorbeigehen, ob
+              der Partner im Supersatz oder die andere Seite schon wieder frei
+              ist. Bewusst ohne `role="timer"` - mehrere Live-Regionen, die im
+              Sekundentakt sprechen, machen den Screenreader unbenutzbar.
+            */}
+            {secondaryRestTracks.length > 0 ? (
+              <div className="mt-2 flex gap-2 overflow-x-auto px-1 pb-1">
+                {secondaryRestTracks.map((track) => {
+                  const isReady = isRestTrackReady(track, now);
+                  const description = describeRestTrack(track);
+
+                  return (
+                    <button
+                      key={restTrackKey(track.sessionExerciseId, track.side)}
+                      type="button"
+                      onClick={() => handleFocusRestTrack(track)}
+                      aria-label={`Zu ${description} wechseln - ${
+                        isReady ? 'Pause vorbei' : `noch ${formatTimer(remainingRestSeconds(track, now))}`
+                      }`}
+                      className={cn(
+                        'flex min-h-touch shrink-0 items-center gap-2 rounded-control border px-3 text-xs font-semibold',
+                        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+                        isReady
+                          ? 'border-accent-border bg-accent-soft text-accent'
+                          : 'border-line bg-surface-raised text-content-secondary',
+                      )}
+                    >
+                      <Clock3 size={14} aria-hidden="true" />
+                      <span className="max-w-[9rem] truncate">{description}</span>
+                      <span className="tabular-nums">
+                        {isReady ? 'bereit' : formatTimer(remainingRestSeconds(track, now))}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
           </div>
         </div>
       ) : null}

@@ -1,5 +1,12 @@
 import { db } from '@/db/appDb';
-import type { LoadKind, TrackingMode } from '@/domain/models';
+import type { LoadKind, TrackingMode, WorkoutTemplateExercise } from '@/domain/models';
+import {
+  areGroupsContiguous,
+  planGroupWithPrevious,
+  planNormalizeGroups,
+  planUngroup,
+  type SupersetAssignment,
+} from '@/domain/superset';
 import { createId } from '@/lib/id';
 
 interface TemplateInput {
@@ -63,6 +70,14 @@ async function normalizeTemplateExerciseOrder(templateId: string) {
       db.workoutTemplateExercises.update(item.id, {
         orderIndex: index + 1,
       }),
+    ),
+  );
+
+  // Nach einer Löschung kann ein Supersatz auf ein einziges Mitglied
+  // zusammenschrumpfen - das ist keiner mehr.
+  await Promise.all(
+    planNormalizeGroups(items).map((entry) =>
+      db.workoutTemplateExercises.update(entry.id, { supersetGroupId: entry.supersetGroupId }),
     ),
   );
 }
@@ -203,6 +218,17 @@ export async function reorderTemplateExercises(templateId: string, orderedTempla
     return;
   }
 
+  // Eine Reihenfolge, die einen Supersatz zerreißt, entstünde stumm und ließe
+  // sich danach weder darstellen noch am Stück bewegen.
+  const exerciseById = new Map(currentExercises.map((item) => [item.id, item]));
+  const nextOrder = orderedTemplateExerciseIds
+    .map((id) => exerciseById.get(id))
+    .filter((item): item is WorkoutTemplateExercise => Boolean(item));
+
+  if (!areGroupsContiguous(nextOrder)) {
+    return;
+  }
+
   await db.transaction('rw', db.workoutTemplateExercises, async () => {
     await Promise.all(
       orderedTemplateExerciseIds.map((id, index) =>
@@ -212,6 +238,54 @@ export async function reorderTemplateExercises(templateId: string, orderedTempla
       ),
     );
   });
+}
+
+/**
+ * Verbindet zwei geplante Übungen zu einem Supersatz bzw. löst sie wieder.
+ *
+ * Spiegelbild zu den gleichnamigen Aktionen auf der Session-Seite: dieselben
+ * reinen Regeln, nur eine andere Tabelle.
+ */
+async function applyTemplateSupersetPlan(
+  templateExerciseId: string,
+  plan: (
+    items: WorkoutTemplateExercise[],
+    id: string,
+  ) => SupersetAssignment[] | null,
+) {
+  const current = await db.workoutTemplateExercises.get(templateExerciseId);
+
+  if (!current) {
+    return;
+  }
+
+  await db.transaction('rw', db.workoutTemplateExercises, async () => {
+    const items = await db.workoutTemplateExercises
+      .where('templateId')
+      .equals(current.templateId)
+      .sortBy('orderIndex');
+    const assignments = plan(items, templateExerciseId);
+
+    if (!assignments) {
+      return;
+    }
+
+    await Promise.all(
+      assignments.map((entry) =>
+        // `undefined` löscht die Property über Dexies Update-Semantik - beim
+        // Lösen ist genau das gemeint.
+        db.workoutTemplateExercises.update(entry.id, { supersetGroupId: entry.supersetGroupId }),
+      ),
+    );
+  });
+}
+
+export async function groupTemplateExerciseWithPrevious(templateExerciseId: string) {
+  await applyTemplateSupersetPlan(templateExerciseId, planGroupWithPrevious);
+}
+
+export async function ungroupTemplateExercise(templateExerciseId: string) {
+  await applyTemplateSupersetPlan(templateExerciseId, planUngroup);
 }
 
 export async function saveProgressionRule(input: SaveProgressionRuleInput) {

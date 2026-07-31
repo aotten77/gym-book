@@ -5,8 +5,11 @@ import { ArrowLeft } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
 import { ExerciseMedia } from '@/components/ExerciseMedia';
 import { SectionCard } from '@/components/SectionCard';
+import { SupersetBlock } from '@/components/SupersetBlock';
 import { db } from '@/db/appDb';
-import type { WorkoutSetLog } from '@/domain/models';
+import { sortSetLogs } from '@/domain/history';
+import type { WorkoutSessionExercise, WorkoutSetLog } from '@/domain/models';
+import { buildSupersetBlocks, supersetPositionLabel } from '@/domain/superset';
 import { formatDateTime, formatLoadLabel, formatSessionWeekContext } from '@/lib/format';
 
 function formatSetLabel(setLog: WorkoutSetLog) {
@@ -101,80 +104,91 @@ export function HistorySessionPage() {
           </div>
         </SectionCard>
 
-        {(sessionExercises ?? []).map((exercise) => {
-          const exerciseRecord = exerciseById[exercise.exerciseId];
-          const mediaAsset =
-            exerciseRecord?.mediaAssetId ? mediaAssetById[exerciseRecord.mediaAssetId] : undefined;
-          const logs = [...(logsBySessionExerciseId[exercise.id] ?? [])].sort((left, right) => {
-            if (left.setKind !== right.setKind) {
-              return left.setKind === 'warmup' ? -1 : 1;
-            }
-
-            if (left.setNumber !== right.setNumber) {
-              return left.setNumber - right.setNumber;
-            }
-
-            const sideOrder = { both: 0, left: 1, right: 2 } as const;
-            return sideOrder[left.side] - sideOrder[right.side];
-          });
-
-          const targetParts = [
-            typeof exercise.targetReps === 'number' ? `${exercise.targetReps} Wdh` : null,
-            typeof exercise.targetSeconds === 'number' ? `${exercise.targetSeconds}s` : null,
-            typeof exercise.targetWeight === 'number' ? `${exercise.targetWeight} kg` : null,
-            exercise.targetBandNameSnapshot ?? null,
-          ].filter(Boolean);
-
-          return (
-            <SectionCard
-              key={exercise.id}
-              title={`${exercise.orderIndex}. ${exercise.exerciseNameSnapshot}`}
-              subtitle={[
-                exercise.wasSkipped ? 'Skipped' : null,
-                exercise.addedInSession ? 'In Session hinzugefügt' : null,
-                targetParts.length > 0 ? `Ziel: ${targetParts.join(' · ')}` : null,
-              ]
-                .filter(Boolean)
-                .join(' · ')}
+        {/*
+          Die Gruppierung kommt aus dem Snapshot der Session, nicht aus dem
+          Template: ein Training soll später so aussehen, wie es ausgeführt
+          wurde - auch wenn der Plan sich seither geändert hat.
+        */}
+        {buildSupersetBlocks(sessionExercises ?? []).map((block) =>
+          block.kind === 'single' ? (
+            renderExercise(block.exercise)
+          ) : (
+            <SupersetBlock
+              key={block.groupId}
+              positions={block.exercises.map((_, index) => supersetPositionLabel(index))}
             >
-              <div className="space-y-3">
-                <ExerciseMedia
-                  mediaAsset={mediaAsset}
-                  alt={exercise.exerciseNameSnapshot}
-                  className="h-40 w-full"
-                  imageClassName="h-full w-full"
-                />
-                {logs.length > 0 ? (
-                  logs.map((log) => (
-                    <div
-                      key={log.id}
-                      className="rounded-panel border border-line bg-surface p-4"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-semibold text-content">{formatSetLabel(log)}</p>
-                          <p className="mt-1 text-sm text-content-muted">{formatLoadLabel(log)}</p>
-                        </div>
-                        <span
-                          className={`rounded-control px-3 py-2 text-xs font-medium ${
-                            log.completed ? 'bg-accent-soft text-accent' : 'bg-surface-raised text-content-secondary'
-                          }`}
-                        >
-                          {log.completed ? 'Fertig' : 'Offen'}
-                        </span>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="rounded-panel border border-dashed border-line bg-surface px-4 py-5 text-sm text-content-muted">
-                    Keine Set-Logs vorhanden.
-                  </div>
-                )}
-              </div>
-            </SectionCard>
-          );
-        })}
+              {block.exercises.map((exercise, memberIndex) =>
+                renderExercise(exercise, supersetPositionLabel(memberIndex)),
+              )}
+            </SupersetBlock>
+          ),
+        )}
       </div>
     </AppShell>
   );
+
+  function renderExercise(exercise: WorkoutSessionExercise, supersetPosition?: string) {
+    const exerciseRecord = exerciseById[exercise.exerciseId];
+    const mediaAsset = exerciseRecord?.mediaAssetId
+      ? mediaAssetById[exerciseRecord.mediaAssetId]
+      : undefined;
+    const logs = sortSetLogs(logsBySessionExerciseId[exercise.id] ?? []);
+
+    const targetParts = [
+      typeof exercise.targetReps === 'number' ? `${exercise.targetReps} Wdh` : null,
+      typeof exercise.targetSeconds === 'number' ? `${exercise.targetSeconds}s` : null,
+      typeof exercise.targetWeight === 'number' ? `${exercise.targetWeight} kg` : null,
+      exercise.targetBandNameSnapshot ?? null,
+    ].filter(Boolean);
+
+    return (
+      <SectionCard
+        key={exercise.id}
+        title={`${exercise.orderIndex}. ${supersetPosition ? `${supersetPosition} · ` : ''}${
+          exercise.exerciseNameSnapshot
+        }`}
+        subtitle={[
+          exercise.wasSkipped ? 'Skipped' : null,
+          exercise.addedInSession ? 'In Session hinzugefügt' : null,
+          targetParts.length > 0 ? `Ziel: ${targetParts.join(' · ')}` : null,
+        ]
+          .filter(Boolean)
+          .join(' · ')}
+      >
+        <div className="space-y-3">
+          <ExerciseMedia
+            mediaAsset={mediaAsset}
+            alt={exercise.exerciseNameSnapshot}
+            className="h-40 w-full"
+            imageClassName="h-full w-full"
+          />
+          {logs.length > 0 ? (
+            logs.map((log) => (
+              <div key={log.id} className="rounded-panel border border-line bg-surface p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-content">{formatSetLabel(log)}</p>
+                    <p className="mt-1 text-sm text-content-muted">{formatLoadLabel(log)}</p>
+                  </div>
+                  <span
+                    className={`rounded-control px-3 py-2 text-xs font-medium ${
+                      log.completed
+                        ? 'bg-accent-soft text-accent'
+                        : 'bg-surface-raised text-content-secondary'
+                    }`}
+                  >
+                    {log.completed ? 'Fertig' : 'Offen'}
+                  </span>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="rounded-panel border border-dashed border-line bg-surface px-4 py-5 text-sm text-content-muted">
+              Keine Set-Logs vorhanden.
+            </div>
+          )}
+        </div>
+      </SectionCard>
+    );
+  }
 }

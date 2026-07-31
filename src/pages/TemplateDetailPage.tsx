@@ -1,26 +1,34 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { ChevronDown, ChevronUp, Pencil, Plus, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, Link2, Pencil, Plus, Trash2, Unlink } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
-import { IconButton } from '@/components/ui/Button';
+import { Button, IconButton } from '@/components/ui/Button';
 import { CheckboxField } from '@/components/ui/Field';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { ExerciseMedia } from '@/components/ExerciseMedia';
 import { ExerciseTargetFields } from '@/components/ExerciseTargetFields';
 import { SectionCard } from '@/components/SectionCard';
+import { SupersetBlock } from '@/components/SupersetBlock';
 import { TemplateProgressionSection } from '@/components/TemplateProgressionSection';
 import { db } from '@/db/appDb';
 import { clearExerciseMedia, replaceExerciseMedia } from '@/db/media-actions';
 import {
   deleteTemplate,
   deleteTemplateExercise,
+  groupTemplateExerciseWithPrevious,
   reorderTemplateExercises,
   saveTemplateExercise,
+  ungroupTemplateExercise,
   updateTemplate,
 } from '@/db/template-actions';
 import type { MediaAsset, WorkoutTemplateExercise } from '@/domain/models';
-import { moveItem } from '@/lib/reorder';
+import {
+  buildSupersetBlocks,
+  moveSupersetBlock,
+  moveWithinGroup,
+  supersetPositionLabel,
+} from '@/domain/superset';
 
 interface TemplateExerciseFormState {
   exerciseId: string;
@@ -83,12 +91,15 @@ function TemplateExerciseMeta({
   exerciseName,
   bandName,
   mediaAsset,
+  supersetPosition,
 }: {
   item: WorkoutTemplateExercise;
   exerciseName: string;
   /** Name des Ziel-Bands, aufgelöst aus dem Katalog. */
   bandName?: string;
   mediaAsset?: MediaAsset;
+  /** Kennzeichnung im Supersatz ("A", "B") - leer bei einzelnen Übungen. */
+  supersetPosition?: string;
 }) {
   return (
     <div className="flex min-w-0 gap-3">
@@ -100,7 +111,8 @@ function TemplateExerciseMeta({
       />
       <div className="min-w-0">
         <p className="text-sm font-semibold text-content">
-          {item.orderIndex}. {exerciseName}
+          {item.orderIndex}. {supersetPosition ? `${supersetPosition} · ` : ''}
+          {exerciseName}
         </p>
         <p className="mt-1 text-sm text-content-muted">
           {item.targetReps ? `${item.workSetCount} x ${item.targetReps} Wdh` : null}
@@ -124,9 +136,14 @@ interface TemplateExerciseCardProps {
   isBusy: boolean;
   isFirst: boolean;
   isLast: boolean;
+  supersetPosition?: string;
+  /** Ob es eine Vorgängerin gibt, mit der sich verbinden lässt. */
+  canGroupWithPrevious: boolean;
   onMove: (templateExerciseId: string, direction: -1 | 1) => void;
   onEdit: (templateExerciseId: string) => void;
   onDelete: (templateExerciseId: string, exerciseName: string) => void;
+  onGroupWithPrevious: (templateExerciseId: string) => void;
+  onUngroup: (templateExerciseId: string) => void;
 }
 
 /*
@@ -142,24 +159,35 @@ function TemplateExerciseCard({
   isBusy,
   isFirst,
   isLast,
+  supersetPosition,
+  canGroupWithPrevious,
   onMove,
   onEdit,
   onDelete,
+  onGroupWithPrevious,
+  onUngroup,
 }: TemplateExerciseCardProps) {
+  /*
+   * Innerhalb eines Supersatzes sortieren diese Pfeile nur die Gruppe - den
+   * Block als Ganzes bewegen die Pfeile in seiner Kopfzeile. Ohne den Zusatz
+   * hießen zwei Pfeilpaare auf demselben Bildschirm gleich.
+   */
+  const moveScopeLabel = supersetPosition ? ' im Supersatz' : '';
+
   return (
     <div className="rounded-panel border border-line bg-surface p-4 transition hover:border-accent-border hover:bg-surface-sunken">
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 flex-1 gap-3">
           <div className="flex shrink-0 flex-col gap-1">
             <IconButton
-              label={`${exerciseName} nach oben`}
+              label={`${exerciseName}${moveScopeLabel} nach oben`}
               onClick={() => onMove(item.id, -1)}
               disabled={isBusy || isFirst}
             >
               <ChevronUp size={16} />
             </IconButton>
             <IconButton
-              label={`${exerciseName} nach unten`}
+              label={`${exerciseName}${moveScopeLabel} nach unten`}
               onClick={() => onMove(item.id, 1)}
               disabled={isBusy || isLast}
             >
@@ -171,6 +199,7 @@ function TemplateExerciseCard({
             exerciseName={exerciseName}
             bandName={bandName}
             mediaAsset={mediaAsset}
+            supersetPosition={supersetPosition}
           />
         </div>
         <div className="flex gap-2">
@@ -193,6 +222,41 @@ function TemplateExerciseCard({
             <Trash2 size={16} />
           </button>
         </div>
+      </div>
+
+      {/*
+        Verbinden steht bei den Zweitaktionen, nicht oben neben Bearbeiten und
+        Löschen: dort liegen auf 320px schon zwei Trefferflächen von 44px.
+      */}
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        {/*
+          Der zugängliche Name trägt den Übungsnamen, die Beschriftung nicht:
+          "Mit voriger verbinden" steht auf jeder Zeile und wäre in einer
+          Vorlesereihe nicht auseinanderzuhalten.
+        */}
+        {supersetPosition ? (
+          <Button
+            variant="ghost"
+            size="md"
+            aria-label={`${exerciseName} aus dem Supersatz lösen`}
+            onClick={() => onUngroup(item.id)}
+            disabled={isBusy}
+          >
+            <Unlink size={14} />
+            Verbindung lösen
+          </Button>
+        ) : (
+          <Button
+            variant="ghost"
+            size="md"
+            aria-label={`${exerciseName} mit voriger Übung verbinden`}
+            onClick={() => onGroupWithPrevious(item.id)}
+            disabled={isBusy || !canGroupWithPrevious}
+          >
+            <Link2 size={14} />
+            Mit voriger verbinden
+          </Button>
+        )}
       </div>
     </div>
   );
@@ -255,6 +319,10 @@ export function TemplateDetailPage() {
 
     return orderedItems.length === templateExercises.length ? orderedItems : templateExercises;
   }, [templateExerciseOrder, templateExercises]);
+  const templateBlocks = useMemo(
+    () => buildSupersetBlocks(orderedTemplateExercises),
+    [orderedTemplateExercises],
+  );
   const selectedExistingExercise = sortedExercises.find((item) => item.id === form.exerciseId);
   const selectedExistingExerciseMedia =
     selectedExistingExercise?.mediaAssetId ? mediaAssetById[selectedExistingExercise.mediaAssetId] : undefined;
@@ -419,15 +487,84 @@ export function TemplateDetailPage() {
     }
   }
 
+  /**
+   * Sortiert eine geplante Übung um.
+   *
+   * Innerhalb eines Supersatzes bewegt sie sich nur in der Gruppe - der Block
+   * als Ganzes wandert über die Pfeile in seiner Kopfzeile. Sonst zerrisse
+   * jeder zweite Tap den Supersatz.
+   */
   async function handleMoveTemplateExercise(templateExerciseId: string, direction: -1 | 1) {
-    if (!template) {
-      return;
+    const item = orderedTemplateExercises.find((entry) => entry.id === templateExerciseId);
+
+    await applyTemplateExerciseOrder(
+      item?.supersetGroupId
+        ? moveWithinGroup(orderedTemplateExercises, templateExerciseId, direction)
+        : moveSupersetBlock(orderedTemplateExercises, templateExerciseId, direction),
+    );
+  }
+
+  async function handleMoveSupersetBlock(templateExerciseId: string, direction: -1 | 1) {
+    await applyTemplateExerciseOrder(
+      moveSupersetBlock(orderedTemplateExercises, templateExerciseId, direction),
+    );
+  }
+
+  async function handleGroupWithPrevious(templateExerciseId: string) {
+    setIsReorderingExercises(true);
+
+    try {
+      await groupTemplateExerciseWithPrevious(templateExerciseId);
+    } finally {
+      setIsReorderingExercises(false);
     }
+  }
 
-    const currentIndex = templateExerciseOrder.indexOf(templateExerciseId);
-    const nextOrder = moveItem(templateExerciseOrder, currentIndex, currentIndex + direction);
+  async function handleUngroupTemplateExercise(templateExerciseId: string) {
+    setIsReorderingExercises(true);
 
-    if (nextOrder === templateExerciseOrder) {
+    try {
+      await ungroupTemplateExercise(templateExerciseId);
+    } finally {
+      setIsReorderingExercises(false);
+    }
+  }
+
+  /**
+   * Eine Übungszeile der Planung.
+   *
+   * Als Funktion und nicht inline, weil dieselbe Karte an zwei Stellen der
+   * Liste steht: allein und als Mitglied eines Supersatz-Blocks.
+   */
+  function renderTemplateExerciseCard(
+    item: WorkoutTemplateExercise,
+    position: { isFirst: boolean; isLast: boolean; supersetPosition?: string },
+  ) {
+    const mediaAssetId = exerciseById[item.exerciseId]?.mediaAssetId;
+
+    return (
+      <TemplateExerciseCard
+        key={item.id}
+        item={item}
+        exerciseName={nameById[item.exerciseId] ?? 'Unbekannte Übung'}
+        bandName={item.targetBandId ? bandNameById[item.targetBandId] : undefined}
+        mediaAsset={mediaAssetId ? mediaAssetById[mediaAssetId] : undefined}
+        isBusy={isReorderingExercises}
+        isFirst={position.isFirst}
+        isLast={position.isLast}
+        supersetPosition={position.supersetPosition}
+        canGroupWithPrevious={orderedTemplateExercises[0]?.id !== item.id}
+        onMove={handleMoveTemplateExercise}
+        onEdit={handleEditTemplateExercise}
+        onDelete={(id, name) => setPendingDelete({ kind: 'exercise', id, name })}
+        onGroupWithPrevious={(id) => void handleGroupWithPrevious(id)}
+        onUngroup={(id) => void handleUngroupTemplateExercise(id)}
+      />
+    );
+  }
+
+  async function applyTemplateExerciseOrder(nextOrder: string[] | null) {
+    if (!template || !nextOrder) {
       return;
     }
 
@@ -512,25 +649,50 @@ export function TemplateDetailPage() {
           <div className="space-y-3">
             {orderedTemplateExercises.length > 0 ? (
               <div className="space-y-3">
-                {orderedTemplateExercises.map((item, index) => (
-                  <TemplateExerciseCard
-                    key={item.id}
-                    item={item}
-                    exerciseName={nameById[item.exerciseId] ?? 'Unbekannte Übung'}
-                    bandName={item.targetBandId ? bandNameById[item.targetBandId] : undefined}
-                    mediaAsset={
-                      exerciseById[item.exerciseId]?.mediaAssetId
-                        ? mediaAssetById[exerciseById[item.exerciseId].mediaAssetId]
-                        : undefined
-                    }
-                    isBusy={isReorderingExercises}
-                    isFirst={index === 0}
-                    isLast={index === orderedTemplateExercises.length - 1}
-                    onMove={handleMoveTemplateExercise}
-                    onEdit={handleEditTemplateExercise}
-                    onDelete={(id, name) => setPendingDelete({ kind: 'exercise', id, name })}
-                  />
-                ))}
+                {templateBlocks.map((block, blockIndex) => {
+                  const isFirstBlock = blockIndex === 0;
+                  const isLastBlock = blockIndex === templateBlocks.length - 1;
+
+                  if (block.kind === 'single') {
+                    return renderTemplateExerciseCard(block.exercise, {
+                      isFirst: isFirstBlock,
+                      isLast: isLastBlock,
+                    });
+                  }
+
+                  return (
+                    <SupersetBlock
+                      key={block.groupId}
+                      positions={block.exercises.map((_, index) => supersetPositionLabel(index))}
+                      action={
+                        <div className="flex shrink-0 items-center gap-2">
+                          <IconButton
+                            label="Supersatz nach oben"
+                            disabled={isReorderingExercises || isFirstBlock}
+                            onClick={() => void handleMoveSupersetBlock(block.exercises[0].id, -1)}
+                          >
+                            <ChevronUp size={16} />
+                          </IconButton>
+                          <IconButton
+                            label="Supersatz nach unten"
+                            disabled={isReorderingExercises || isLastBlock}
+                            onClick={() => void handleMoveSupersetBlock(block.exercises[0].id, 1)}
+                          >
+                            <ChevronDown size={16} />
+                          </IconButton>
+                        </div>
+                      }
+                    >
+                      {block.exercises.map((item, memberIndex) =>
+                        renderTemplateExerciseCard(item, {
+                          isFirst: memberIndex === 0,
+                          isLast: memberIndex === block.exercises.length - 1,
+                          supersetPosition: supersetPositionLabel(memberIndex),
+                        }),
+                      )}
+                    </SupersetBlock>
+                  );
+                })}
               </div>
             ) : (
               <div className="rounded-panel border border-dashed border-line bg-surface px-4 py-5 text-sm text-content-muted">

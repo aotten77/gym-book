@@ -1,6 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Check, ChevronDown, ChevronUp, ImageOff, Minus, Play, Plus, SkipForward, Timer, X } from 'lucide-react';
+import {
+  Check,
+  ChevronDown,
+  ChevronUp,
+  Clock3,
+  ImageOff,
+  Link2,
+  Minus,
+  Play,
+  Plus,
+  SkipForward,
+  Timer,
+  Unlink,
+  X,
+} from 'lucide-react';
 import { ExerciseMedia } from '@/components/ExerciseMedia';
 import { SectionCard } from '@/components/SectionCard';
 import { Button, IconButton } from '@/components/ui/Button';
@@ -10,10 +24,17 @@ import type {
   BandLevel,
   LoadKind,
   MediaAsset,
+  RestTimerTrack,
   TrackingMode,
   WorkoutSessionExercise,
   WorkoutSetLog,
 } from '@/domain/models';
+import {
+  buildRestBadges,
+  isRestTrackReady,
+  remainingRestSeconds,
+  type RestBadge,
+} from '@/domain/rest-timer';
 import {
   SET_TIMER_STEP_SECONDS,
   clampSetTimerSeconds,
@@ -169,6 +190,8 @@ interface SetLogEditorProps {
   targetSeconds?: number;
   /** Gesetzt, solange der Satz-Timer genau zu dieser Zeile läuft. */
   timerRemainingSeconds?: number;
+  /** Laufende Pause für diese Übung und Seite - siehe [buildRestBadges]. */
+  restBadge?: RestBadge;
   onStartTimer: (setLogId: string, seconds: number) => void;
   /** Stoppt den laufenden Timer und liefert die gehaltene Zeit zurück. */
   onStopTimer: () => Promise<number | undefined>;
@@ -185,6 +208,7 @@ function SetLogEditor({
   lastValues,
   targetSeconds,
   timerRemainingSeconds,
+  restBadge,
   onStartTimer,
   onStopTimer,
   onCompleted,
@@ -348,11 +372,29 @@ function SetLogEditor({
           320px nicht neben beide Buttons, und "SATZ 1 · RECH..." benennt den
           Satz nicht mehr eindeutig.
         */}
-        <p className="min-w-0 text-[11px] font-semibold uppercase tracking-[0.1em] text-content-muted">
-          {log.setKind === 'warmup' ? 'Warmup' : `Satz ${log.setNumber}`}
-          {log.side !== 'both' ? ` · ${formatSideLabel(log.side)}` : ''}
-        </p>
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <p className="min-w-0 text-[11px] font-semibold uppercase tracking-[0.1em] text-content-muted">
+            {log.setKind === 'warmup' ? 'Warmup' : `Satz ${log.setNumber}`}
+            {log.side !== 'both' ? ` · ${formatSideLabel(log.side)}` : ''}
+          </p>
+          {/*
+            Die Pause steht an der Zeile, die auf sie wartet. Genau hier
+            entsteht die Frage "kann ich rechts schon wieder?" - und im
+            Supersatz wie bei zwei Seiten gibt es darauf mehr als eine Antwort.
+          */}
+          {restBadge ? (
+            <span
+              className={cn(
+                'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums',
+                restBadge.isReady ? 'bg-accent-soft text-accent' : 'bg-warning-soft text-warning',
+              )}
+            >
+              <Clock3 size={12} aria-hidden="true" />
+              {restBadge.isReady ? 'bereit' : `Pause ${formatTimer(restBadge.remainingSeconds)}`}
+            </span>
+          ) : null}
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
           {!disabled ? (
             <IconButton
               label={`${setLabel} entfernen`}
@@ -617,10 +659,20 @@ interface SessionExerciseCardProps {
   runningTimerSetLogId?: string;
   /** Restzeit des laufenden Satz-Timers, im Sekundentakt aktualisiert. */
   timerRemainingSeconds: number;
+  /** Kennzeichnung im Supersatz ("A", "B") - leer, wenn die Übung allein steht. */
+  supersetPosition?: string;
+  /** Ob es eine Vorgängerin gibt, mit der sich verbinden lässt. */
+  canGroupWithPrevious: boolean;
+  /** Laufende Pausen dieser Übung - eine je Seite. */
+  restTracks?: RestTimerTrack[];
+  /** Gemeinsamer Sekundentakt der Seite. */
+  now: number;
   onMove: (sessionExerciseId: string, direction: -1 | 1) => void;
   onFocus: (sessionExerciseId: string) => void;
+  onGroupWithPrevious: (sessionExerciseId: string) => void;
+  onUngroup: (sessionExerciseId: string) => void;
   onToggleSkip: (sessionExerciseId: string) => void;
-  onSetCompleted: (sessionExerciseId: string, completedSetLogId: string, restSeconds?: number) => void;
+  onSetCompleted: (sessionExerciseId: string, completedSetLog: WorkoutSetLog) => void;
   onStartSetTimer: (setLogId: string, seconds: number) => void;
   onStopSetTimer: () => Promise<number | undefined>;
   onRequestDeleteSetLog: (log: WorkoutSetLog, exerciseName: string) => void;
@@ -641,8 +693,14 @@ export function SessionExerciseCard({
   isLast,
   runningTimerSetLogId,
   timerRemainingSeconds,
+  supersetPosition,
+  canGroupWithPrevious,
+  restTracks,
+  now,
   onMove,
   onFocus,
+  onGroupWithPrevious,
+  onUngroup,
   onToggleSkip,
   onSetCompleted,
   onStartSetTimer,
@@ -650,9 +708,22 @@ export function SessionExerciseCard({
   onRequestDeleteSetLog,
   onOpenMedia,
 }: SessionExerciseCardProps) {
+  const restBadges = buildRestBadges(exerciseLogs, restTracks, now);
+  /*
+   * Innerhalb einer Gruppe sortieren die Pfeile nur die Gruppe um - der Block
+   * als Ganzes wandert über die Pfeile in seiner Kopfzeile. Die Beschriftung
+   * muss das sagen, sonst führen zwei Pfeilpaare auf demselben Bildschirm
+   * dieselbe Handlung im Namen.
+   */
+  const moveScopeLabel = supersetPosition ? ' im Supersatz' : '';
+
   return (
     <SectionCard
-      title={exercise.exerciseNameSnapshot}
+      title={
+        supersetPosition
+          ? `${supersetPosition} · ${exercise.exerciseNameSnapshot}`
+          : exercise.exerciseNameSnapshot
+      }
       subtitle={formatSessionExerciseSubtitle(exercise)}
       className={cn(
         'transition',
@@ -678,14 +749,14 @@ export function SessionExerciseCard({
             und sortierte beim Scrollen versehentlich um.
           */}
           <IconButton
-            label={`${exercise.exerciseNameSnapshot} nach oben`}
+            label={`${exercise.exerciseNameSnapshot}${moveScopeLabel} nach oben`}
             disabled={isBusy || isReadOnly || isFirst}
             onClick={() => onMove(exercise.id, -1)}
           >
             <ChevronUp size={16} />
           </IconButton>
           <IconButton
-            label={`${exercise.exerciseNameSnapshot} nach unten`}
+            label={`${exercise.exerciseNameSnapshot}${moveScopeLabel} nach unten`}
             disabled={isBusy || isReadOnly || isLast}
             onClick={() => onMove(exercise.id, 1)}
           >
@@ -704,6 +775,34 @@ export function SessionExerciseCard({
         </div>
       }
     >
+      {/*
+        Auf der aktiven Karte steht die Pause schon in der Leiste unten und an
+        der Satzzeile. Hier zählt der andere Fall: eine Übung, die gerade nicht
+        im Fokus ist, muss beim Vorbeiscrollen sagen können, ob sie wieder frei
+        ist.
+      */}
+      {!isFocused && restTracks?.length ? (
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          {restTracks.map((track) => {
+            const isReady = isRestTrackReady(track, now);
+
+            return (
+              <span
+                key={`${track.sessionExerciseId}:${track.side}`}
+                className={cn(
+                  'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold tabular-nums',
+                  isReady ? 'bg-accent-soft text-accent' : 'bg-warning-soft text-warning',
+                )}
+              >
+                <Clock3 size={13} aria-hidden="true" />
+                {track.side !== 'both' ? `${formatSideLabel(track.side)}: ` : ''}
+                {isReady ? 'Pause vorbei' : formatTimer(remainingRestSeconds(track, now))}
+              </span>
+            );
+          })}
+        </div>
+      ) : null}
+
       {/*
         Bild, letzte Werte und Ziel nur auf der aktiven Karte: auf jeder Karte
         standen sie zuvor drei Bildschirmhöhen lang untereinander, ohne dass
@@ -765,11 +864,43 @@ export function SessionExerciseCard({
         </div>
       ) : null}
 
-      <div className="mb-4 flex items-center gap-2">
+      <div className="mb-4 flex flex-wrap items-center gap-2">
         <Button variant="ghost" size="md" onClick={() => onToggleSkip(exercise.id)} disabled={isReadOnly}>
           <SkipForward size={14} />
           {exercise.wasSkipped ? 'Zurückholen' : 'Skip'}
         </Button>
+        {/*
+          Verbinden und Lösen stehen bei den Zweitaktionen, nicht oben bei den
+          Pfeilen: auf 320px liegen dort schon zwei Pfeile und der Fokus-Knopf.
+        */}
+        {/*
+          Der zugängliche Name trägt den Übungsnamen, die Beschriftung nicht:
+          "Mit voriger verbinden" steht auf jeder Karte und wäre in einer
+          Vorlesereihe nicht auseinanderzuhalten.
+        */}
+        {supersetPosition ? (
+          <Button
+            variant="ghost"
+            size="md"
+            aria-label={`${exercise.exerciseNameSnapshot} aus dem Supersatz lösen`}
+            onClick={() => onUngroup(exercise.id)}
+            disabled={isReadOnly}
+          >
+            <Unlink size={14} />
+            Verbindung lösen
+          </Button>
+        ) : (
+          <Button
+            variant="ghost"
+            size="md"
+            aria-label={`${exercise.exerciseNameSnapshot} mit voriger Übung verbinden`}
+            onClick={() => onGroupWithPrevious(exercise.id)}
+            disabled={isReadOnly || !canGroupWithPrevious}
+          >
+            <Link2 size={14} />
+            Mit voriger verbinden
+          </Button>
+        )}
       </div>
 
       {/*
@@ -790,9 +921,10 @@ export function SessionExerciseCard({
             timerRemainingSeconds={
               runningTimerSetLogId === log.id ? timerRemainingSeconds : undefined
             }
+            restBadge={restBadges[log.id]}
             onStartTimer={onStartSetTimer}
             onStopTimer={onStopSetTimer}
-            onCompleted={() => onSetCompleted(exercise.id, log.id, exercise.restSeconds)}
+            onCompleted={() => onSetCompleted(exercise.id, log)}
             onRequestDelete={(item) => onRequestDeleteSetLog(item, exercise.exerciseNameSnapshot)}
             disabled={isReadOnly}
           />
