@@ -69,7 +69,7 @@ Do not use it for generic framework tutorials or unrelated repositories.
 
 ## PWA and GitHub Pages
 
-- `base: '/gym-book/'`, `HashRouter`, manifest and service worker scoped to the subpath.
+- `base: '/'`, `HashRouter`, manifest and service worker scoped to the root — the app is served from the custom domain `gym.andreasotten.de` (pinned by `public/CNAME`), not from the `/gym-book/` project path.
 - Cache the app shell for offline startup. No runtime server features, API routes, or SSR assumptions.
 
 ## UX guardrails

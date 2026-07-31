@@ -136,9 +136,9 @@ Recommended set log shape:
 
 ## PWA and GitHub Pages Rules
 
-- Configure Vite with `base: '/gym-book/'`.
+- Configure Vite with `base: '/'` — the app is served from the custom domain `gym.andreasotten.de` (pinned by `public/CNAME`), not from the `/gym-book/` project path.
 - Use `HashRouter` to avoid deep-link issues on GitHub Pages.
-- Configure manifest and service worker paths for the repository subpath.
+- Configure manifest and service worker paths for the root path.
 - Cache the app shell for offline startup after first load.
 - Do not rely on runtime server features, API routes, or SSR assumptions.
 

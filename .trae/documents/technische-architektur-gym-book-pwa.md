@@ -17,7 +17,7 @@ Die App ist eine rein statische Client-Anwendung auf GitHub Pages. Persistente F
 - Routing: `HashRouter` für robuste GitHub-Pages-Kompatibilität
 - Styling: CSS-Variablen + modulare Styles oder co-located Styles; Fokus auf mobile-first Layout
 - Persistenz: Dexie auf IndexedDB als Source of Truth
-- PWA: `vite-plugin-pwa` mit App-Shell-Caching, Manifest, `start_url` und `scope` für `/gym-book/`
+- PWA: `vite-plugin-pwa` mit App-Shell-Caching, Manifest, `start_url` und `scope` für `/` (eigene Domain `gym.andreasotten.de`, festgehalten in `public/CNAME`)
 - Diagramme/Visualisierung: leichte, clientseitige Chart-Lösung für einfache Verlaufsgraphen
 - Validierung: `zod` für Import/Export-Validierung und Laufzeitgrenzen an Systemschnittstellen
 - Backend: keines in v1
