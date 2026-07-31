@@ -64,6 +64,12 @@ export function formatLoadLabel(setLog: WorkoutSetLog) {
     parts.push(`${setLog.weight} kg`);
   }
 
+  // Band statt Kilo: die Übung trägt entweder das eine oder das andere, und
+  // der Name steht am Satz, damit er einen Umbenennung im Katalog übersteht.
+  if (setLog.bandNameSnapshot) {
+    parts.push(setLog.bandNameSnapshot);
+  }
+
   return parts.length > 0 ? parts.join(' · ') : 'Noch nicht protokolliert';
 }
 

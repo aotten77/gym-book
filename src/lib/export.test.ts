@@ -23,6 +23,7 @@ function createSnapshot(overrides: Partial<DatabaseSnapshot> = {}): DatabaseSnap
     programWeeks: [],
     progressionRules: [],
     mediaAssets: [],
+    bandLevels: [],
     appSettings: [
       {
         id: 'app-settings',
@@ -138,6 +139,97 @@ describe('parseDatabaseSnapshot', () => {
       tests: 1,
       mediaAssets: 1,
     });
+  });
+
+  it('keeps band data and accepts backups written before bands existed', () => {
+    const withBands = parseDatabaseSnapshot(
+      JSON.stringify(
+        createSnapshot({
+          bandLevels: [
+            {
+              id: 'band-gelb',
+              name: 'gelb',
+              orderIndex: 1,
+              createdAt: '2026-07-01T08:00:00.000Z',
+              updatedAt: '2026-07-01T08:00:00.000Z',
+            },
+          ],
+          exercises: [
+            {
+              id: 'exercise-band',
+              name: 'Band Pull-Apart',
+              trackingMode: 'reps_weight',
+              loadKind: 'band',
+              unilateral: false,
+              createdAt: '2026-07-01T08:00:00.000Z',
+              updatedAt: '2026-07-01T08:00:00.000Z',
+            },
+          ],
+        }),
+      ),
+    );
+
+    expect(withBands.bandLevels).toHaveLength(1);
+    expect(withBands.exercises[0].loadKind).toBe('band');
+
+    // Alte Sicherungen kennen den Schlüssel nicht - sie bleiben gültig und
+    // kommen mit leerem Katalog zurück. Ein Versionssprung hätte sie abgewiesen.
+    const legacy = createSnapshot();
+    delete (legacy as Partial<DatabaseSnapshot>).bandLevels;
+
+    expect(parseDatabaseSnapshot(JSON.stringify(legacy)).bandLevels).toEqual([]);
+  });
+
+  it('accepts a set log whose band was deleted from the catalogue', () => {
+    // Kein Integritätsfehler: sonst scheiterte der Nutzer am Import seines
+    // eigenen Backups, nur weil er ein Band aufgeräumt hat.
+    const snapshot = parseDatabaseSnapshot(
+      JSON.stringify(
+        createSnapshot({
+          workoutSessions: [
+            {
+              id: 'session-band',
+              templateId: 'template-band',
+              templateNameSnapshot: 'Band-Einheit',
+              resolvedProgramWeek: 1,
+              startedAt: '2026-07-03T09:00:00.000Z',
+              status: 'completed',
+            },
+          ],
+          workoutSessionExercises: [
+            {
+              id: 'session-exercise-band',
+              sessionId: 'session-band',
+              exerciseId: 'exercise-band',
+              exerciseNameSnapshot: 'Band Pull-Apart',
+              trackingMode: 'reps_weight',
+              loadKind: 'band',
+              unilateral: false,
+              orderIndex: 1,
+              wasSkipped: false,
+              addedInSession: false,
+              workSetCount: 3,
+            },
+          ],
+          workoutSetLogs: [
+            {
+              id: 'set-log-band',
+              sessionExerciseId: 'session-exercise-band',
+              setKind: 'work',
+              side: 'both',
+              setNumber: 1,
+              reps: 15,
+              bandId: 'band-geloescht',
+              bandNameSnapshot: 'gelb',
+              completed: true,
+              completedAt: '2026-07-03T09:10:00.000Z',
+            },
+          ],
+        }),
+      ),
+    );
+
+    expect(snapshot.workoutSetLogs[0].bandNameSnapshot).toBe('gelb');
   });
 
   it('rejects unsupported schema versions with a readable message', () => {
@@ -316,6 +408,15 @@ describe('restoreDatabaseSnapshot', () => {
           blob: new Blob(['test'], { type: 'image/png' }),
         },
       ],
+      bandLevels: [
+        {
+          id: 'band-new',
+          name: 'grün',
+          orderIndex: 1,
+          createdAt: '2026-07-03T10:00:00.000Z',
+          updatedAt: '2026-07-03T10:00:00.000Z',
+        },
+      ],
     });
 
     await restoreDatabaseSnapshot(snapshot);
@@ -343,6 +444,10 @@ describe('restoreDatabaseSnapshot', () => {
     expect(await db.mediaAssets.get('asset-new')).toMatchObject({
       fileName: 'bench.png',
       mimeType: 'image/png',
+    });
+    expect(await db.bandLevels.get('band-new')).toMatchObject({
+      name: 'grün',
+      orderIndex: 1,
     });
   });
 });

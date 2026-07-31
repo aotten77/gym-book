@@ -1,14 +1,26 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Check, ChevronDown, ChevronUp, ImageOff, SkipForward, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronUp, ImageOff, Minus, Play, Plus, SkipForward, Timer, X } from 'lucide-react';
 import { ExerciseMedia } from '@/components/ExerciseMedia';
 import { SectionCard } from '@/components/SectionCard';
 import { Button, IconButton } from '@/components/ui/Button';
 import { toggleSetCompletion, updateSetLogValues, type SetLogValuesInput } from '@/db/session-actions';
 import type { LastSetValues, SetValues } from '@/domain/history';
-import type { MediaAsset, TrackingMode, WorkoutSessionExercise, WorkoutSetLog } from '@/domain/models';
-import { supportsReps, supportsSeconds, supportsWeight } from '@/domain/tracking';
-import { formatSideLabel } from '@/lib/format';
+import type {
+  BandLevel,
+  LoadKind,
+  MediaAsset,
+  TrackingMode,
+  WorkoutSessionExercise,
+  WorkoutSetLog,
+} from '@/domain/models';
+import {
+  SET_TIMER_STEP_SECONDS,
+  clampSetTimerSeconds,
+  resolveSetTimerSeconds,
+} from '@/domain/set-timer';
+import { supportsBand, supportsReps, supportsSeconds, supportsWeight } from '@/domain/tracking';
+import { formatSideLabel, formatTimer } from '@/lib/format';
 import { parseNumberInput, toInputValue } from '@/lib/number-input';
 import { cn } from '@/lib/utils';
 
@@ -19,6 +31,8 @@ interface SetLogDraft {
   reps: string;
   seconds: string;
   weight: string;
+  /** Leerstring heißt "kein Band gewählt" - `undefined` gibt es im Draft nicht. */
+  bandId: string;
 }
 
 function createSetLogDraft(log: WorkoutSetLog): SetLogDraft {
@@ -26,14 +40,24 @@ function createSetLogDraft(log: WorkoutSetLog): SetLogDraft {
     reps: toInputValue(log.reps),
     seconds: toInputValue(log.seconds),
     weight: toInputValue(log.weight),
+    bandId: log.bandId ?? '',
   };
 }
 
-const SET_LOG_FIELDS = [
-  { key: 'reps', supported: supportsReps },
-  { key: 'seconds', supported: supportsSeconds },
+/**
+ * Die Zahlenfelder eines Satzes.
+ *
+ * Das Band steht bewusst nicht in dieser Liste: es ist eine Auswahl, kann
+ * daher nicht "ungültig" sein und braucht weder Parser noch Autosave-Pause.
+ */
+const SET_LOG_FIELDS: ReadonlyArray<{
+  key: 'reps' | 'seconds' | 'weight';
+  supported: (trackingMode: TrackingMode, loadKind?: LoadKind) => boolean;
+}> = [
+  { key: 'reps', supported: (trackingMode) => supportsReps(trackingMode) },
+  { key: 'seconds', supported: (trackingMode) => supportsSeconds(trackingMode) },
   { key: 'weight', supported: supportsWeight },
-] as const;
+];
 
 const SET_LOG_FIELD_LABELS = {
   reps: 'Wdh',
@@ -48,12 +72,17 @@ const SET_LOG_FIELD_LABELS = {
  * sonst würde eine Fehleingabe den gespeicherten Wert löschen. Ein bewusst
  * geleertes Feld wird dagegen als `undefined` übernommen.
  */
-function collectSetLogChanges(draft: SetLogDraft, log: WorkoutSetLog, trackingMode: TrackingMode) {
+function collectSetLogChanges(
+  draft: SetLogDraft,
+  log: WorkoutSetLog,
+  trackingMode: TrackingMode,
+  loadKind?: LoadKind,
+) {
   const changes: SetLogValuesInput = {};
   let hasChange = false;
 
   for (const { key, supported } of SET_LOG_FIELDS) {
-    if (!supported(trackingMode)) {
+    if (!supported(trackingMode, loadKind)) {
       continue;
     }
 
@@ -71,12 +100,22 @@ function collectSetLogChanges(draft: SetLogDraft, log: WorkoutSetLog, trackingMo
     }
   }
 
+  if (supportsBand(trackingMode, loadKind)) {
+    const nextBandId = draft.bandId.trim() || undefined;
+
+    if (nextBandId !== log.bandId) {
+      changes.bandId = nextBandId;
+      hasChange = true;
+    }
+  }
+
   return hasChange ? changes : null;
 }
 
-function findInvalidSetLogFields(draft: SetLogDraft, trackingMode: TrackingMode) {
+function findInvalidSetLogFields(draft: SetLogDraft, trackingMode: TrackingMode, loadKind?: LoadKind) {
   return SET_LOG_FIELDS.filter(
-    ({ key, supported }) => supported(trackingMode) && parseNumberInput(draft[key]).status === 'invalid',
+    ({ key, supported }) =>
+      supported(trackingMode, loadKind) && parseNumberInput(draft[key]).status === 'invalid',
   ).map(({ key }) => key);
 }
 
@@ -87,11 +126,16 @@ function findInvalidSetLogFields(draft: SetLogDraft, trackingMode: TrackingMode)
  * Tap auf Fertig genügen, ohne dieselben Zahlen erneut zu tippen - der
  * Platzhalter wird damit zum echten, gespeicherten Wert.
  */
-function adoptPlaceholders(draft: SetLogDraft, lastValues: SetValues, trackingMode: TrackingMode) {
+function adoptPlaceholders(
+  draft: SetLogDraft,
+  lastValues: SetValues,
+  trackingMode: TrackingMode,
+  loadKind?: LoadKind,
+) {
   let next = draft;
 
   for (const { key, supported } of SET_LOG_FIELDS) {
-    if (!supported(trackingMode) || draft[key].trim()) {
+    if (!supported(trackingMode, loadKind) || draft[key].trim()) {
       continue;
     }
 
@@ -104,14 +148,30 @@ function adoptPlaceholders(draft: SetLogDraft, lastValues: SetValues, trackingMo
     next = { ...next, [key]: placeholder };
   }
 
+  // Auch das Band der letzten Woche zählt als Vorgabe: sonst wäre es das
+  // einzige Feld, das man bei "genau wie letztes Mal" doch antippen müsste.
+  if (supportsBand(trackingMode, loadKind) && !draft.bandId.trim() && lastValues.bandId) {
+    next = { ...next, bandId: lastValues.bandId };
+  }
+
   return next;
 }
 
 interface SetLogEditorProps {
   log: WorkoutSetLog;
   trackingMode: TrackingMode;
+  loadKind?: LoadKind;
+  /** Band-Katalog, leicht nach schwer - leer, solange keiner angelegt ist. */
+  bandLevels?: BandLevel[];
   /** Werte derselben Satzzeile aus der letzten abgeschlossenen Ausführung. */
   lastValues?: SetValues;
+  /** Zeitvorgabe der Übung - Startwert des Timers, solange nichts im Satz steht. */
+  targetSeconds?: number;
+  /** Gesetzt, solange der Satz-Timer genau zu dieser Zeile läuft. */
+  timerRemainingSeconds?: number;
+  onStartTimer: (setLogId: string, seconds: number) => void;
+  /** Stoppt den laufenden Timer und liefert die gehaltene Zeit zurück. */
+  onStopTimer: () => Promise<number | undefined>;
   onCompleted: () => void;
   onRequestDelete: (log: WorkoutSetLog) => void;
   disabled?: boolean;
@@ -120,7 +180,13 @@ interface SetLogEditorProps {
 function SetLogEditor({
   log,
   trackingMode,
+  loadKind,
+  bandLevels,
   lastValues,
+  targetSeconds,
+  timerRemainingSeconds,
+  onStartTimer,
+  onStopTimer,
   onCompleted,
   onRequestDelete,
   disabled,
@@ -147,6 +213,7 @@ function SetLogEditor({
       reps: current.reps === syncedRef.current.reps ? incoming.reps : current.reps,
       seconds: current.seconds === syncedRef.current.seconds ? incoming.seconds : current.seconds,
       weight: current.weight === syncedRef.current.weight ? incoming.weight : current.weight,
+      bandId: current.bandId === syncedRef.current.bandId ? incoming.bandId : current.bandId,
     }));
 
     syncedRef.current = incoming;
@@ -154,16 +221,16 @@ function SetLogEditor({
     // jedem Emit eine neue Objektidentität, der Effekt würde sonst ständig
     // laufen und den Draft ausbremsen.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [log.completed, log.id, log.reps, log.seconds, log.weight]);
+  }, [log.completed, log.id, log.reps, log.seconds, log.weight, log.bandId]);
 
-  const invalidFields = findInvalidSetLogFields(draft, trackingMode);
+  const invalidFields = findInvalidSetLogFields(draft, trackingMode, loadKind);
   const hasInvalidInput = invalidFields.length > 0;
-  const pendingChanges = disabled ? null : collectSetLogChanges(draft, log, trackingMode);
+  const pendingChanges = disabled ? null : collectSetLogChanges(draft, log, trackingMode, loadKind);
   const dirty = pendingChanges !== null;
 
   const persist = useCallback(
     async (nextDraft?: SetLogDraft) => {
-      const changes = collectSetLogChanges(nextDraft ?? draft, log, trackingMode);
+      const changes = collectSetLogChanges(nextDraft ?? draft, log, trackingMode, loadKind);
 
       if (!changes || disabled) {
         return;
@@ -180,7 +247,7 @@ function SetLogEditor({
         setIsSaving(false);
       }
     },
-    [disabled, draft, log, trackingMode],
+    [disabled, draft, loadKind, log, trackingMode],
   );
 
   // Autosave: getippte Werte müssen einen Reload mitten im Training überleben.
@@ -196,6 +263,21 @@ function SetLogEditor({
     return () => window.clearTimeout(handle);
   }, [dirty, hasInvalidInput, disabled, persist]);
 
+  const isTimerRunning = typeof timerRemainingSeconds === 'number';
+  const parsedSeconds = parseNumberInput(draft.seconds);
+  const timerSeconds = resolveSetTimerSeconds(
+    parsedSeconds.status === 'valid' ? parsedSeconds.value : undefined,
+    targetSeconds,
+  );
+
+  /** Verschiebt die Zielzeit in Schritten, damit dafür keine Tastatur aufgeht. */
+  function adjustTimerSeconds(delta: number) {
+    setDraft((current) => ({
+      ...current,
+      seconds: String(clampSetTimerSeconds(timerSeconds + delta)),
+    }));
+  }
+
   async function handleToggleCompletion() {
     if (disabled || hasInvalidInput) {
       return;
@@ -207,8 +289,23 @@ function SetLogEditor({
      * hat wie letzte Woche, tippt nichts und tappt nur auf Fertig. Beim
      * Zurücknehmen bleibt der Draft unangetastet.
      */
-    const effectiveDraft =
-      willComplete && lastValues ? adoptPlaceholders(draft, lastValues, trackingMode) : draft;
+    let effectiveDraft =
+      willComplete && lastValues
+        ? adoptPlaceholders(draft, lastValues, trackingMode, loadKind)
+        : draft;
+
+    /*
+     * Ein noch laufender Timer wird durch das Abhaken beendet - der Satz ist
+     * ja vorbei. Seine gehaltene Zeit sticht Platzhalter und Zielzeit: sie ist
+     * gemessen, nicht geschätzt.
+     */
+    if (willComplete && isTimerRunning) {
+      const achievedSeconds = await onStopTimer();
+
+      if (typeof achievedSeconds === 'number') {
+        effectiveDraft = { ...effectiveDraft, seconds: toInputValue(achievedSeconds) };
+      }
+    }
 
     if (effectiveDraft !== draft) {
       setDraft(effectiveDraft);
@@ -225,7 +322,15 @@ function SetLogEditor({
   const setLabel = `${log.setKind === 'warmup' ? 'Warmup' : `Satz ${log.setNumber}`}${
     log.side !== 'both' ? ` ${formatSideLabel(log.side)}` : ''
   }`;
-  const fieldCount = Number(supportsReps(trackingMode)) + Number(supportsSeconds(trackingMode)) + Number(supportsWeight(trackingMode));
+  const showBandField = supportsBand(trackingMode, loadKind);
+  const fieldCount =
+    Number(supportsReps(trackingMode)) +
+    Number(supportsSeconds(trackingMode)) +
+    Number(supportsWeight(trackingMode, loadKind)) +
+    Number(showBandField);
+  // Das Band der letzten Woche steht in der leeren Option, analog zum
+  // Platzhalter der Zahlenfelder.
+  const lastBandName = lastValues?.bandNameSnapshot;
 
   return (
     /*
@@ -283,7 +388,7 @@ function SetLogEditor({
       </div>
 
       <div className={cn('mt-3 grid gap-2', fieldCount === 1 ? 'grid-cols-1' : 'grid-cols-2')}>
-        {SET_LOG_FIELDS.filter(({ supported }) => supported(trackingMode)).map(({ key }) => {
+        {SET_LOG_FIELDS.filter(({ supported }) => supported(trackingMode, loadKind)).map(({ key }) => {
           const isInvalid = invalidFields.includes(key);
           const fieldId = `${log.id}-${key}`;
           // Zeigt, was beim letzten Mal in genau diesem Satz stand.
@@ -316,7 +421,12 @@ function SetLogEditor({
                 inputMode={key === 'reps' ? 'numeric' : 'decimal'}
                 placeholder={placeholder}
                 aria-invalid={isInvalid}
-                disabled={disabled}
+                /*
+                 * Solange der Timer läuft, misst er dieses Feld - eine
+                 * gleichzeitige Eingabe würde beim Stoppen ohnehin
+                 * überschrieben.
+                 */
+                disabled={disabled || (key === 'seconds' && isTimerRunning)}
                 className={cn(
                   'w-full rounded-panel bg-surface-sunken px-4 py-2.5 text-2xl font-semibold tabular-nums text-content',
                   'outline-none transition placeholder:font-normal placeholder:text-content-muted',
@@ -328,7 +438,116 @@ function SetLogEditor({
             </div>
           );
         })}
+
+        {/*
+          Bandauswahl statt Kilo-Feld. Sie schreibt sofort statt über den
+          Autosave-Timer: eine Auswahl ist mit einem Tap fertig, da gibt es
+          nichts abzuwarten wie bei einer halb getippten Zahl.
+        */}
+        {showBandField ? (
+          <div>
+            <label
+              htmlFor={`${log.id}-bandId`}
+              className="mb-1 block text-[11px] font-medium uppercase tracking-[0.12em] text-content-muted"
+            >
+              Band
+            </label>
+            <select
+              id={`${log.id}-bandId`}
+              value={draft.bandId}
+              onChange={(event) => {
+                const nextDraft = { ...draft, bandId: event.target.value };
+                setDraft(nextDraft);
+                void persist(nextDraft);
+              }}
+              disabled={disabled}
+              className={cn(
+                'w-full rounded-panel bg-surface-sunken px-4 py-2.5 text-2xl font-semibold text-content',
+                'select-control outline-none transition',
+                'focus-visible:ring-2 focus-visible:ring-accent',
+                'disabled:cursor-not-allowed disabled:opacity-60',
+              )}
+            >
+              <option value="">
+                {lastBandName
+                  ? `– (zuletzt: ${lastBandName})`
+                  : bandLevels?.length
+                    ? '–'
+                    : 'Keine Bänder angelegt'}
+              </option>
+              {bandLevels?.map((band) => (
+                <option key={band.id} value={band.id}>
+                  {band.name}
+                </option>
+              ))}
+              {/*
+                Das gewählte Band kann inzwischen aus dem Katalog gelöscht
+                sein. Ohne diese Option zeigte das Feld dann einen leeren
+                Wert - und der nächste Tap woanders hätte den Satz stillschweigend
+                umgeschrieben.
+              */}
+              {draft.bandId && !bandLevels?.some((band) => band.id === draft.bandId) ? (
+                <option value={draft.bandId}>
+                  {log.bandNameSnapshot ?? 'Gelöschtes Band'} (nicht mehr im Katalog)
+                </option>
+              ) : null}
+            </select>
+          </div>
+        ) : null}
       </div>
+
+      {/*
+        Timer für Sätze auf Zeit: ein Plank über zwei Minuten soll nicht die
+        Uhr einer anderen App brauchen. Die Zeit lässt sich vorher in Schritten
+        verschieben, ohne dass die Tastatur aufgeht - im Sekundenfeld steht
+        anschließend, was der Timer gemessen hat.
+      */}
+      {supportsSeconds(trackingMode) && !disabled ? (
+        <div className="mt-3 flex items-center gap-2">
+          {/*
+            Die laufende Zeit hier ohne `role="timer"`: die Leiste am unteren
+            Rand trägt dieselbe Zahl und ist immer im Bild. Zwei Timer-Rollen
+            für eine Uhr würden Screenreader doppelt bedienen.
+          */}
+          {isTimerRunning ? (
+            <div className="flex min-h-touch flex-1 items-center justify-center gap-2 rounded-control bg-accent-soft px-3 text-lg font-semibold tabular-nums text-content">
+              <Timer size={18} />
+              {formatTimer(timerRemainingSeconds ?? 0)}
+              <span className="text-xs font-medium uppercase tracking-[0.1em] text-content-muted">
+                läuft
+              </span>
+            </div>
+          ) : (
+            <>
+              <IconButton
+                label={`Zeit ${SET_TIMER_STEP_SECONDS} Sekunden kürzer`}
+                onClick={() => adjustTimerSeconds(-SET_TIMER_STEP_SECONDS)}
+                disabled={hasInvalidInput}
+              >
+                <Minus size={16} />
+              </IconButton>
+              <Button
+                variant="secondary"
+                size="md"
+                className="flex-1"
+                onClick={() => onStartTimer(log.id, timerSeconds)}
+                disabled={hasInvalidInput}
+              >
+                <Play size={16} />
+                <span className="tabular-nums">{formatTimer(timerSeconds)}</span>
+                starten
+              </Button>
+              <IconButton
+                label={`Zeit ${SET_TIMER_STEP_SECONDS} Sekunden länger`}
+                onClick={() => adjustTimerSeconds(SET_TIMER_STEP_SECONDS)}
+                disabled={hasInvalidInput}
+              >
+                <Plus size={16} />
+              </IconButton>
+            </>
+          )}
+        </div>
+      ) : null}
 
       {hasInvalidInput ? (
         <p role="alert" className="mt-3 text-sm text-danger">
@@ -367,6 +586,7 @@ function ExerciseTargetLine({ exercise }: { exercise: WorkoutSessionExercise }) 
       {exercise.targetReps && exercise.targetSeconds ? ' · ' : null}
       {exercise.targetSeconds ? `${exercise.targetSeconds}s` : null}
       {exercise.targetWeight ? ` · ${exercise.targetWeight} kg` : ''}
+      {exercise.targetBandNameSnapshot ? ` · ${exercise.targetBandNameSnapshot}` : ''}
       {exercise.restSeconds ? ` · Pause ${exercise.restSeconds}s` : ''}
     </p>
   );
@@ -383,6 +603,8 @@ interface SessionExerciseCardProps {
   exercise: WorkoutSessionExercise;
   exerciseLogs: WorkoutSetLog[];
   mediaAsset?: MediaAsset;
+  /** Band-Katalog für die Satzauswahl - nur bei Band-Übungen im Einsatz. */
+  bandLevels?: BandLevel[];
   lastSetValues?: LastSetValues;
   /** Nur für die fokussierte Karte gefüllt - sonst steht der Block auf jeder Karte. */
   lastValuesSummary?: LastValuesSummary;
@@ -391,10 +613,16 @@ interface SessionExerciseCardProps {
   isReadOnly: boolean;
   isFirst: boolean;
   isLast: boolean;
+  /** Satzzeile, auf der gerade der Satz-Timer läuft - höchstens eine je Session. */
+  runningTimerSetLogId?: string;
+  /** Restzeit des laufenden Satz-Timers, im Sekundentakt aktualisiert. */
+  timerRemainingSeconds: number;
   onMove: (sessionExerciseId: string, direction: -1 | 1) => void;
   onFocus: (sessionExerciseId: string) => void;
   onToggleSkip: (sessionExerciseId: string) => void;
   onSetCompleted: (sessionExerciseId: string, completedSetLogId: string, restSeconds?: number) => void;
+  onStartSetTimer: (setLogId: string, seconds: number) => void;
+  onStopSetTimer: () => Promise<number | undefined>;
   onRequestDeleteSetLog: (log: WorkoutSetLog, exerciseName: string) => void;
   onOpenMedia: (mediaAsset: MediaAsset, alt: string) => void;
 }
@@ -403,6 +631,7 @@ export function SessionExerciseCard({
   exercise,
   exerciseLogs,
   mediaAsset,
+  bandLevels,
   lastSetValues,
   lastValuesSummary,
   isFocused,
@@ -410,10 +639,14 @@ export function SessionExerciseCard({
   isReadOnly,
   isFirst,
   isLast,
+  runningTimerSetLogId,
+  timerRemainingSeconds,
   onMove,
   onFocus,
   onToggleSkip,
   onSetCompleted,
+  onStartSetTimer,
+  onStopSetTimer,
   onRequestDeleteSetLog,
   onOpenMedia,
 }: SessionExerciseCardProps) {
@@ -550,7 +783,15 @@ export function SessionExerciseCard({
             key={log.id}
             log={log}
             trackingMode={exercise.trackingMode}
+            loadKind={exercise.loadKind}
+            bandLevels={bandLevels}
             lastValues={lastSetValues?.resolve(log)}
+            targetSeconds={exercise.targetSeconds}
+            timerRemainingSeconds={
+              runningTimerSetLogId === log.id ? timerRemainingSeconds : undefined
+            }
+            onStartTimer={onStartSetTimer}
+            onStopTimer={onStopSetTimer}
             onCompleted={() => onSetCompleted(exercise.id, log.id, exercise.restSeconds)}
             onRequestDelete={(item) => onRequestDeleteSetLog(item, exercise.exerciseNameSnapshot)}
             disabled={isReadOnly}

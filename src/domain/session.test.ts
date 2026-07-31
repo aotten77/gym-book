@@ -170,6 +170,76 @@ describe('materializeSession', () => {
       notes: 'Woche 4',
     });
   });
+
+  it('freezes the target band with its name and carries the load kind', () => {
+    const template: WorkoutTemplate = {
+      id: 'template-1',
+      name: 'Einheit A',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+
+    const exercises: Record<string, Exercise> = {
+      pullapart: {
+        id: 'pullapart',
+        name: 'Band Pull-Apart',
+        trackingMode: 'reps_weight',
+        loadKind: 'band',
+        unilateral: false,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      },
+    };
+
+    const bundle = materializeSession({
+      template,
+      templateExercises: [
+        {
+          id: 'template-exercise-1',
+          templateId: template.id,
+          exerciseId: 'pullapart',
+          orderIndex: 1,
+          workSetCount: 3,
+          targetReps: 15,
+          targetBandId: 'band-gelb',
+        },
+      ],
+      exercisesById: exercises,
+      // Die Regel der Woche sticht das Ziel der Vorlage - wie beim Gewicht.
+      progressionRulesByTemplateExerciseId: {
+        'template-exercise-1': {
+          id: 'rule-1',
+          templateExerciseId: 'template-exercise-1',
+          programWeekId: 'week-2',
+          targetBandId: 'band-rot',
+        },
+      },
+      bandLevelsById: {
+        'band-gelb': {
+          id: 'band-gelb',
+          name: 'gelb',
+          orderIndex: 1,
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+        'band-rot': {
+          id: 'band-rot',
+          name: 'rot',
+          orderIndex: 2,
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+      },
+      resolvedProgramWeek: 2,
+      startedAt: '2026-01-08T09:00:00.000Z',
+    });
+
+    expect(bundle.sessionExercises[0]).toMatchObject({
+      loadKind: 'band',
+      targetBandId: 'band-rot',
+      targetBandNameSnapshot: 'rot',
+    });
+  });
 });
 
 describe('findNextOpenExercise', () => {

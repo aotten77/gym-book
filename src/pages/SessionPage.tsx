@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { CheckCircle2, Clock3, Plus, X } from 'lucide-react';
+import { ArrowDown, CheckCircle2, Clock3, ImageOff, Plus, Timer, X } from 'lucide-react';
 import { Alert } from '@/components/Alert';
 import { AppShell } from '@/components/AppShell';
 import { ExerciseMedia } from '@/components/ExerciseMedia';
@@ -17,18 +17,22 @@ import {
   abortSession,
   addSessionExercise,
   clearRestTimer,
+  clearSetTimer,
   completeSession,
   deleteSetLog,
   extendRestTimer,
+  finishSetTimer,
   reorderSessionExercises,
   startRestTimer,
+  startSetTimer,
   toggleSkipSessionExercise,
 } from '@/db/session-actions';
 import { loadLastValuesForExercises } from '@/db/history-queries';
 import { sortSetLogs } from '@/domain/history';
 import type { MediaAsset, WorkoutSessionExercise, WorkoutSetLog } from '@/domain/models';
 import { findNextOpenExercise, hasOpenSets } from '@/domain/session';
-import { supportsReps, supportsSeconds, supportsWeight } from '@/domain/tracking';
+import { elapsedSetTimerSeconds, remainingSetTimerSeconds } from '@/domain/set-timer';
+import { supportsBand, supportsReps, supportsSeconds, supportsWeight } from '@/domain/tracking';
 import {
   formatDateTime,
   formatSessionWeekContext,
@@ -50,6 +54,7 @@ interface SessionExerciseFormState {
   targetReps: string;
   targetSeconds: string;
   targetWeight: string;
+  targetBandId: string;
   restSeconds: string;
   notes: string;
 }
@@ -61,9 +66,15 @@ const defaultSessionExerciseFormState: SessionExerciseFormState = {
   targetReps: '',
   targetSeconds: '',
   targetWeight: '',
+  targetBandId: '',
   restSeconds: '',
   notes: '',
 };
+
+/** Sprungziel des Streifens oben - siehe [handleJumpToFocusedExercise]. */
+function sessionExerciseAnchorId(sessionExerciseId: string) {
+  return `session-exercise-${sessionExerciseId}`;
+}
 
 interface PendingSetLogDelete {
   log: WorkoutSetLog;
@@ -107,7 +118,13 @@ export function SessionPage() {
 
   const session = useLiveQuery(() => db.workoutSessions.get(sessionId), [sessionId]);
   const restTimerEndsAt = session?.restTimerEndsAt ?? null;
+  const setTimer = session?.setTimer;
+  // Primitiven statt des Objekts: useLiveQuery liefert bei jedem Emit eine neue
+  // Identität, an der die Effekte unten sonst dauernd neu anspringen würden.
+  const setTimerEndsAt = setTimer?.endsAt ?? null;
+  const setTimerDurationSeconds = setTimer?.durationSeconds ?? null;
   const availableExercises = useLiveQuery(() => db.exercises.orderBy('name').toArray(), []);
+  const bandLevels = useLiveQuery(() => db.bandLevels.orderBy('orderIndex').toArray(), []);
   const sessionExercises = useLiveQuery(
     () => db.workoutSessionExercises.where('sessionId').equals(sessionId).sortBy('orderIndex'),
     [sessionId],
@@ -174,7 +191,9 @@ export function SessionPage() {
   }, [sessionExercises]);
 
   useEffect(() => {
-    if (!restTimerEndsAt) {
+    // Ein Takt für beide Uhren: Pause und Satz-Timer laufen nie gleichzeitig
+    // ins Gewicht, brauchen aber dieselbe Sekundenauflösung.
+    if (!restTimerEndsAt && !setTimerEndsAt) {
       return undefined;
     }
 
@@ -196,7 +215,7 @@ export function SessionPage() {
       window.clearInterval(timer);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [restTimerEndsAt]);
+  }, [restTimerEndsAt, setTimerEndsAt]);
 
   useEffect(() => {
     if (!restTimerEndsAt || restTimerEndsAt > now) {
@@ -210,6 +229,21 @@ export function SessionPage() {
 
     void clearRestTimer(sessionId);
   }, [now, restTimerEndsAt, sessionId]);
+
+  useEffect(() => {
+    if (!setTimerEndsAt || !setTimerDurationSeconds || setTimerEndsAt > now) {
+      return;
+    }
+
+    // Dasselbe Signal wie am Ende der Pause: beim Plank liegt das Telefon
+    // neben der Matte und wird nicht angesehen.
+    if (typeof navigator.vibrate === 'function') {
+      navigator.vibrate([180, 90, 180]);
+    }
+
+    // Durchgehalten heißt: die volle gestartete Zeit landet im Satz.
+    void finishSetTimer(sessionId, setTimerDurationSeconds);
+  }, [now, sessionId, setTimerDurationSeconds, setTimerEndsAt]);
 
   useEffect(() => {
     if (!availableExercises?.length) {
@@ -274,6 +308,17 @@ export function SessionPage() {
 
   const focusedExerciseMedia = mediaAssetForExercise(focusedExercise);
 
+  /*
+   * Der Streifen oben zeigt jetzt den Fortschritt der aktiven Übung statt des
+   * Hinweises auf die Bildansicht: beim Tippen springt er zur Übung, das Bild
+   * hängt eine Karte tiefer an derselben Stelle wie zuvor.
+   */
+  const focusedLogs = focusedExercise ? groupedLogs[focusedExercise.id] ?? [] : [];
+  const focusedCompletedCount = focusedLogs.filter((log) => log.completed).length;
+  const focusedProgressPercent = focusedLogs.length
+    ? Math.round((focusedCompletedCount / focusedLogs.length) * 100)
+    : 0;
+
   const focusedLastValues = focusedExercise ? lastValues?.[focusedExercise.exerciseId] : undefined;
   const focusedLastValuesSummary = focusedLastValues
     ? {
@@ -283,6 +328,7 @@ export function SessionPage() {
       }
     : undefined;
   const remainingSeconds = restTimerEndsAt ? Math.max(0, Math.ceil((restTimerEndsAt - now) / 1000)) : 0;
+  const setTimerRemainingSeconds = remainingSetTimerSeconds(setTimer, now);
   const isReadOnly = session?.status !== 'active';
   const selectedExistingExercise = (availableExercises ?? []).find(
     (exercise) => exercise.id === exerciseForm.exerciseId,
@@ -295,7 +341,24 @@ export function SessionPage() {
     [selectedExistingExercise?.mediaAssetId],
   );
   const effectiveTrackingMode = selectedExistingExercise?.trackingMode ?? 'reps_weight';
+  const effectiveLoadKind = selectedExistingExercise?.loadKind;
   const effectiveUnilateral = selectedExistingExercise?.unilateral ?? false;
+
+  function handleJumpToFocusedExercise() {
+    if (!focusedExercise) {
+      return;
+    }
+
+    const target = document.getElementById(sessionExerciseAnchorId(focusedExercise.id));
+
+    /*
+     * `scrollIntoView` kennt die Systemeinstellung nicht - anders als die
+     * CSS-Regel in index.css muss sie hier von Hand abgefragt werden.
+     */
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    target?.scrollIntoView({ behavior: prefersReducedMotion ? 'auto' : 'smooth', block: 'start' });
+  }
 
   async function handleAddExercise() {
     if (!session || session.status !== 'active') {
@@ -319,13 +382,17 @@ export function SessionPage() {
         targetSeconds: supportsSeconds(effectiveTrackingMode)
           ? optionalNumberInput(exerciseForm.targetSeconds)
           : undefined,
-        targetWeight: supportsWeight(effectiveTrackingMode)
+        targetWeight: supportsWeight(effectiveTrackingMode, effectiveLoadKind)
           ? optionalNumberInput(exerciseForm.targetWeight)
+          : undefined,
+        targetBandId: supportsBand(effectiveTrackingMode, effectiveLoadKind)
+          ? exerciseForm.targetBandId
           : undefined,
         restSeconds: optionalNumberInput(exerciseForm.restSeconds),
         notes: exerciseForm.notes,
         exerciseId: exerciseForm.exerciseId,
         trackingMode: effectiveTrackingMode,
+        loadKind: effectiveLoadKind,
         unilateral: effectiveUnilateral,
       });
 
@@ -381,7 +448,8 @@ export function SessionPage() {
       log.completed ||
       typeof log.reps === 'number' ||
       typeof log.seconds === 'number' ||
-      typeof log.weight === 'number';
+      typeof log.weight === 'number' ||
+      Boolean(log.bandId);
 
     if (!carriesData) {
       void handleDeleteSetLog(log.id);
@@ -414,6 +482,43 @@ export function SessionPage() {
       setSessionError(
         error instanceof Error ? error.message : 'Übung konnte nicht übersprungen werden.',
       );
+    }
+  }
+
+  async function handleStartSetTimer(setLogId: string, seconds: number) {
+    try {
+      await startSetTimer(sessionId, setLogId, seconds);
+      setSessionError(null);
+    } catch (error) {
+      setSessionError(error instanceof Error ? error.message : 'Timer konnte nicht starten.');
+    }
+  }
+
+  /**
+   * Beendet den Satz-Timer und übernimmt die gehaltene Zeit in den Satz.
+   *
+   * Gibt den geschriebenen Wert zurück, weil die Satzzeile ihn für ihren
+   * Eingabe-Draft braucht - sonst überschriebe ihr Autosave den gemessenen
+   * Wert kurz darauf wieder mit dem alten Feldinhalt.
+   */
+  async function handleStopSetTimer() {
+    const runningTimer = session?.setTimer;
+
+    if (!runningTimer) {
+      return undefined;
+    }
+
+    const achievedSeconds = elapsedSetTimerSeconds(runningTimer, Date.now());
+
+    try {
+      await finishSetTimer(sessionId, achievedSeconds);
+      setSessionError(null);
+      return achievedSeconds;
+    } catch (error) {
+      setSessionError(
+        error instanceof Error ? error.message : 'Zeit konnte nicht übernommen werden.',
+      );
+      return undefined;
     }
   }
 
@@ -495,41 +600,61 @@ export function SessionPage() {
       <div className="space-y-4">
         {/*
           Der Streifen klebt beim Scrollen oben fest: welche Übung gerade
-          dran ist und wie sie aussieht, muss auch beim letzten Satz noch
+          dran ist und wie weit sie ist, muss auch beim letzten Satz noch
           sichtbar sein.
+
+          Er läuft bis an den Geräterand und legt sich beim Scrollen unter die
+          Statusleiste - deshalb das Safe-Area-Padding oben, damit der Inhalt
+          nicht unter den Notch rutscht. Die durchscheinende Fläche mit
+          `backdrop-blur` trennt ihn vom Inhalt, ohne ihn abzuschneiden.
         */}
         {focusedExercise ? (
-          <div className="sticky top-[max(0.5rem,env(safe-area-inset-top))] z-20 -mx-1 px-1">
+          <div className="sticky top-0 z-30 -mx-4 border-b border-line bg-surface-glass px-4 pb-3 pt-[max(0.5rem,env(safe-area-inset-top))] backdrop-blur-xl">
             <button
               type="button"
-              onClick={() =>
-                focusedExerciseMedia
-                  ? setMediaPreview({
-                      mediaAsset: focusedExerciseMedia,
-                      alt: focusedExercise.exerciseNameSnapshot,
-                    })
-                  : undefined
-              }
-              disabled={!focusedExerciseMedia}
-              className="flex w-full items-center gap-3 rounded-card border border-line bg-surface-overlay p-2 text-left shadow-soft backdrop-blur-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default"
+              onClick={handleJumpToFocusedExercise}
+              aria-label={`Zur aktiven Übung springen: ${focusedExercise.exerciseNameSnapshot}`}
+              className="flex w-full items-center gap-3 rounded-control text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             >
               {focusedExerciseMedia ? (
                 <ExerciseMedia
                   mediaAsset={focusedExerciseMedia}
                   alt={focusedExercise.exerciseNameSnapshot}
-                  className="h-12 w-12 shrink-0 rounded-control"
+                  className="h-11 w-11 shrink-0 rounded-control"
                   imageClassName="h-full w-full"
                 />
-              ) : null}
-              <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-content">
+              ) : (
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-control bg-surface-raised text-content-muted">
+                  <ImageOff size={18} />
+                </span>
+              )}
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-semibold text-content">
                   {focusedExercise.exerciseNameSnapshot}
-                </p>
-                <p className="truncate text-xs text-content-muted">
-                  {focusedExerciseMedia ? 'Tippen für die große Ansicht' : 'Kein Bild hinterlegt'}
-                </p>
-              </div>
+                </span>
+                <span className="block truncate text-xs text-content-muted">
+                  {focusedLogs.length
+                    ? `${focusedCompletedCount} von ${focusedLogs.length} Sätzen erledigt`
+                    : 'Noch kein Satz angelegt'}
+                </span>
+              </span>
+              <span
+                aria-hidden="true"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-line text-content-secondary"
+              >
+                <ArrowDown size={16} />
+              </span>
             </button>
+            {/*
+              Der Fortschritt als Linie statt als weitere Zahl: er liest sich
+              im Vorbeigehen und braucht keine Breite neben dem Namen.
+            */}
+            <div className="mt-2 h-1 overflow-hidden rounded-full bg-surface-raised">
+              <div
+                className="h-full rounded-full bg-accent transition-[width]"
+                style={{ width: `${focusedProgressPercent}%` }}
+              />
+            </div>
           </div>
         ) : null}
 
@@ -549,25 +674,37 @@ export function SessionPage() {
               const isFocused = activeSessionExerciseId === exercise.id;
 
               return (
-                <SessionExerciseCard
+                // Sprungziel des Streifens. Der Abstand oben hält die Karte
+                // frei vom Streifen, der sonst genau darüber liegt.
+                <div
                   key={exercise.id}
-                  exercise={exercise}
-                  exerciseLogs={exerciseLogs}
-                  mediaAsset={mediaAssetForExercise(exercise)}
-                  lastSetValues={lastValues?.[exercise.exerciseId]?.setValues}
-                  lastValuesSummary={isFocused ? focusedLastValuesSummary : undefined}
-                  isFocused={isFocused}
-                  isBusy={isReorderingExercises}
-                  isReadOnly={isReadOnly}
-                  isFirst={index === 0}
-                  isLast={index === orderedSessionExercises.length - 1}
-                  onMove={handleMoveSessionExercise}
-                  onFocus={setActiveSessionExerciseId}
-                  onToggleSkip={handleToggleSkip}
-                  onSetCompleted={handleSetCompleted}
-                  onRequestDeleteSetLog={handleRequestDeleteSetLog}
-                  onOpenMedia={(mediaAsset, alt) => setMediaPreview({ mediaAsset, alt })}
-                />
+                  id={sessionExerciseAnchorId(exercise.id)}
+                  className="scroll-mt-[calc(6rem+env(safe-area-inset-top))]"
+                >
+                  <SessionExerciseCard
+                    exercise={exercise}
+                    exerciseLogs={exerciseLogs}
+                    mediaAsset={mediaAssetForExercise(exercise)}
+                    bandLevels={bandLevels}
+                    lastSetValues={lastValues?.[exercise.exerciseId]?.setValues}
+                    lastValuesSummary={isFocused ? focusedLastValuesSummary : undefined}
+                    isFocused={isFocused}
+                    isBusy={isReorderingExercises}
+                    isReadOnly={isReadOnly}
+                    isFirst={index === 0}
+                    isLast={index === orderedSessionExercises.length - 1}
+                    onMove={handleMoveSessionExercise}
+                    onFocus={setActiveSessionExerciseId}
+                    runningTimerSetLogId={setTimer?.setLogId}
+                    timerRemainingSeconds={setTimerRemainingSeconds}
+                    onToggleSkip={handleToggleSkip}
+                    onSetCompleted={handleSetCompleted}
+                    onStartSetTimer={handleStartSetTimer}
+                    onStopSetTimer={handleStopSetTimer}
+                    onRequestDeleteSetLog={handleRequestDeleteSetLog}
+                    onOpenMedia={(mediaAsset, alt) => setMediaPreview({ mediaAsset, alt })}
+                  />
+                </div>
               );
             })}
           </div>
@@ -652,6 +789,8 @@ export function SessionPage() {
                   <div className="grid grid-cols-2 gap-3">
                     <ExerciseTargetFields
                       trackingMode={effectiveTrackingMode}
+                      loadKind={effectiveLoadKind}
+                      bandLevels={bandLevels}
                       values={exerciseForm}
                       onChange={(field, value) =>
                         setExerciseForm((current) => ({ ...current, [field]: value }))
@@ -749,9 +888,40 @@ export function SessionPage() {
         aus dem Bild.
       */}
       {session.status === 'active' ? (
-        <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex justify-center px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-          <div className="pointer-events-auto flex w-full max-w-md items-center gap-2 rounded-card border border-line bg-surface-overlay p-2 shadow-soft backdrop-blur-xl">
-            {remainingSeconds > 0 ? (
+        <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30 mx-auto w-full max-w-md">
+          <div className="pointer-events-auto flex items-center gap-2 rounded-t-card border border-b-0 border-line bg-surface-glass p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] shadow-soft backdrop-blur-xl">
+            {setTimerRemainingSeconds > 0 ? (
+              /*
+                Der Satz-Timer verdrängt die Pause: er läuft *während* der
+                Übung, und wer im Plank liegt, sieht nur diese eine Zahl. Die
+                Bedienung liegt hier statt in der Satzzeile - beim Halten
+                scrollt niemand zur Karte zurück.
+              */
+              <>
+                <div
+                  role="timer"
+                  aria-live="off"
+                  className="flex min-h-touch flex-1 items-center justify-center gap-2 rounded-control bg-accent-soft px-3 text-2xl font-semibold tabular-nums text-accent"
+                >
+                  <Timer size={18} />
+                  {formatTimer(setTimerRemainingSeconds)}
+                </div>
+                <Button
+                  variant="ghost"
+                  size="md"
+                  aria-label="Zeit stoppen und in den Satz übernehmen"
+                  onClick={() => void handleStopSetTimer()}
+                >
+                  Stopp
+                </Button>
+                <IconButton
+                  label="Satz-Timer verwerfen, ohne die Zeit zu übernehmen"
+                  onClick={() => void clearSetTimer(sessionId)}
+                >
+                  <X size={16} />
+                </IconButton>
+              </>
+            ) : remainingSeconds > 0 ? (
               <>
                 {/*
                   Die verbleibende Zeit ist die einzige Zahl, die während der

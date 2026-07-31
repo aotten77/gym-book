@@ -4,6 +4,7 @@ import { markBackupCreated } from '@/db/settings-actions';
 import { blobToDataUrl, dataUrlToBlob, isSupportedMediaType } from '@/lib/media';
 import type {
   AppSettings,
+  BandLevel,
   Exercise,
   ExerciseTest,
   MediaAsset,
@@ -20,6 +21,7 @@ import type {
 export const SNAPSHOT_SCHEMA_VERSION = 1;
 
 const trackingModeSchema = z.enum(['reps_weight', 'time', 'time_weight']);
+const loadKindSchema = z.enum(['weight', 'band']);
 const setKindSchema = z.enum(['warmup', 'work']);
 const sideSchema = z.enum(['both', 'left', 'right']);
 const sessionStatusSchema = z.enum(['active', 'completed', 'aborted']);
@@ -30,8 +32,18 @@ const exerciseSchema = z.object({
   instructions: z.string().optional(),
   tempo: z.string().optional(),
   trackingMode: trackingModeSchema,
+  // Additiv wie includeWarmup: fehlt der Schlüssel, ist es eine Kilo-Übung.
+  loadKind: loadKindSchema.optional(),
   unilateral: z.boolean(),
   mediaAssetId: z.string().optional(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+const bandLevelSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  orderIndex: z.number().int().positive(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -60,6 +72,7 @@ const workoutTemplateExerciseSchema = z.object({
   targetReps: z.number().nonnegative().optional(),
   targetSeconds: z.number().nonnegative().optional(),
   targetWeight: z.number().nonnegative().optional(),
+  targetBandId: z.string().optional(),
   restSeconds: z.number().nonnegative().optional(),
   progressionRuleId: z.string().optional(),
   notes: z.string().optional(),
@@ -84,6 +97,7 @@ const workoutSessionExerciseSchema = z.object({
   exerciseId: z.string().min(1),
   exerciseNameSnapshot: z.string().min(1),
   trackingMode: trackingModeSchema,
+  loadKind: loadKindSchema.optional(),
   unilateral: z.boolean(),
   sourceTemplateExerciseId: z.string().optional(),
   orderIndex: z.number().int().positive(),
@@ -93,6 +107,8 @@ const workoutSessionExerciseSchema = z.object({
   targetReps: z.number().nonnegative().optional(),
   targetSeconds: z.number().nonnegative().optional(),
   targetWeight: z.number().nonnegative().optional(),
+  targetBandId: z.string().optional(),
+  targetBandNameSnapshot: z.string().optional(),
   restSeconds: z.number().nonnegative().optional(),
   notes: z.string().optional(),
 });
@@ -106,6 +122,8 @@ const workoutSetLogSchema = z.object({
   reps: z.number().nonnegative().optional(),
   seconds: z.number().nonnegative().optional(),
   weight: z.number().nonnegative().optional(),
+  bandId: z.string().optional(),
+  bandNameSnapshot: z.string().optional(),
   completed: z.boolean(),
   completedAt: z.string().optional(),
 });
@@ -143,6 +161,7 @@ const progressionRuleSchema = z.object({
   targetReps: z.number().nonnegative().optional(),
   targetSeconds: z.number().nonnegative().optional(),
   targetWeight: z.number().nonnegative().optional(),
+  targetBandId: z.string().optional(),
   notes: z.string().optional(),
 });
 
@@ -190,6 +209,9 @@ const databaseSnapshotSchema = z.object({
   progressionRules: z.array(progressionRuleSchema),
   mediaAssets: z.array(mediaAssetSchema),
   appSettings: z.array(appSettingsSchema),
+  // Ältere Backups kennen die Tabelle nicht - ohne Default käme der Import
+  // mit einem Schemafehler zurück statt mit einem leeren Katalog.
+  bandLevels: z.array(bandLevelSchema).optional().default([]),
 });
 
 export interface DatabaseSnapshot {
@@ -207,6 +229,7 @@ export interface DatabaseSnapshot {
   progressionRules: ProgressionRule[];
   mediaAssets: MediaAsset[];
   appSettings: AppSettings[];
+  bandLevels: BandLevel[];
 }
 
 export interface DatabaseSnapshotSummary {
@@ -234,6 +257,7 @@ async function createDatabaseSnapshot(): Promise<DatabaseSnapshot> {
     progressionRules: await db.progressionRules.toArray(),
     mediaAssets: await db.mediaAssets.toArray(),
     appSettings: await db.appSettings.toArray(),
+    bandLevels: await db.bandLevels.toArray(),
   };
 }
 
@@ -305,6 +329,11 @@ function assertReferentialIntegrity(snapshot: DatabaseSnapshot) {
       `Übung ${item.name} verweist auf ein fehlendes Bild`,
     );
   }
+
+  // Bewusst ohne Prüfung auf `bandId`/`targetBandId`: ein aus dem Katalog
+  // gelöschtes Band ist ein zulässiger Zustand, und ein Fehler hier würde
+  // dem Nutzer den Import seines eigenen Backups verweigern. Dafür trägt
+  // jeder Satz mit `bandNameSnapshot` seinen Bandnamen selbst.
 
   for (const item of snapshot.appSettings) {
     check(
@@ -392,6 +421,7 @@ export async function restoreDatabaseSnapshot(snapshot: DatabaseSnapshot) {
       db.progressionRules,
       db.mediaAssets,
       db.appSettings,
+      db.bandLevels,
     ],
     async () => {
       await db.workoutSetLogs.clear();
@@ -406,6 +436,7 @@ export async function restoreDatabaseSnapshot(snapshot: DatabaseSnapshot) {
       await db.programs.clear();
       await db.mediaAssets.clear();
       await db.appSettings.clear();
+      await db.bandLevels.clear();
 
       if (snapshot.exercises.length) {
         await db.exercises.bulkAdd(snapshot.exercises);
@@ -453,6 +484,10 @@ export async function restoreDatabaseSnapshot(snapshot: DatabaseSnapshot) {
 
       if (snapshot.appSettings.length) {
         await db.appSettings.bulkAdd(snapshot.appSettings);
+      }
+
+      if (snapshot.bandLevels?.length) {
+        await db.bandLevels.bulkAdd(snapshot.bandLevels);
       }
     },
   );

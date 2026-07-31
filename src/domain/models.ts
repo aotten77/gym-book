@@ -3,12 +3,38 @@ export type SetKind = 'warmup' | 'work';
 export type Side = 'both' | 'left' | 'right';
 export type SessionStatus = 'active' | 'completed' | 'aborted';
 
+/**
+ * Womit eine Übung belastet wird.
+ *
+ * `undefined` zählt wie `'weight'`: alles, was vor der Einführung der Bänder
+ * angelegt wurde, bleibt eine Kilo-Übung, ohne dass ein Datensatz angefasst
+ * werden muss.
+ */
+export type LoadKind = 'weight' | 'band';
+
+/**
+ * Eine Stufe des Band-Katalogs.
+ *
+ * `orderIndex` ist die Reihenfolge von leicht nach schwer und damit die
+ * einzige Quelle für "stärker als" - ein Band hat keine Zahl, an der sich
+ * Fortschritt sonst ablesen ließe.
+ */
+export interface BandLevel {
+  id: string;
+  name: string;
+  orderIndex: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Exercise {
   id: string;
   name: string;
   instructions?: string;
   tempo?: string;
   trackingMode: TrackingMode;
+  /** Siehe [LoadKind]: `undefined` bedeutet Gewicht in Kilo. */
+  loadKind?: LoadKind;
   unilateral: boolean;
   mediaAssetId?: string;
   createdAt: string;
@@ -39,9 +65,26 @@ export interface WorkoutTemplateExercise {
   targetReps?: number;
   targetSeconds?: number;
   targetWeight?: number;
+  /** Ziel-Band bei Band-Übungen - die Entsprechung zu `targetWeight`. */
+  targetBandId?: string;
   restSeconds?: number;
   progressionRuleId?: string;
   notes?: string;
+}
+
+/**
+ * Laufender Satz-Timer, z. B. für einen Plank über zwei Minuten.
+ *
+ * Genau einer pro Session: mehr als eine Zeitübung gleichzeitig gibt es nicht,
+ * und ein einzelner Datensatz macht das Beenden eindeutig.
+ */
+export interface SetTimerState {
+  /** Satzzeile, deren Zeit gemessen wird - dorthin fließt das Ergebnis. */
+  setLogId: string;
+  /** Ablaufzeitpunkt als Epoch-Millisekunden. */
+  endsAt: number;
+  /** Gestartete Dauer in Sekunden, Grundlage der abgelaufenen Zeit. */
+  durationSeconds: number;
 }
 
 export interface WorkoutSession {
@@ -62,6 +105,14 @@ export interface WorkoutSession {
    * Reload und ein Service-Worker-Update mitten im Training überleben.
    */
   restTimerEndsAt?: number;
+  /**
+   * Timer für einen Satz auf Zeit.
+   *
+   * Liegt aus demselben Grund wie [restTimerEndsAt] in IndexedDB: ein Plank
+   * über zwei Minuten überdauert Bildschirmsperre, Reload und
+   * Service-Worker-Update.
+   */
+  setTimer?: SetTimerState;
 }
 
 export interface WorkoutSessionExercise {
@@ -70,6 +121,7 @@ export interface WorkoutSessionExercise {
   exerciseId: string;
   exerciseNameSnapshot: string;
   trackingMode: TrackingMode;
+  loadKind?: LoadKind;
   unilateral: boolean;
   sourceTemplateExerciseId?: string;
   orderIndex: number;
@@ -79,6 +131,9 @@ export interface WorkoutSessionExercise {
   targetReps?: number;
   targetSeconds?: number;
   targetWeight?: number;
+  targetBandId?: string;
+  /** Name des Ziel-Bands zum Zeitpunkt des Starts - siehe [WorkoutSetLog]. */
+  targetBandNameSnapshot?: string;
   restSeconds?: number;
   notes?: string;
 }
@@ -92,6 +147,16 @@ export interface WorkoutSetLog {
   reps?: number;
   seconds?: number;
   weight?: number;
+  /** Gewähltes Band aus dem Katalog - trägt die Reihenfolge fürs Diagramm. */
+  bandId?: string;
+  /**
+   * Name des Bands zum Zeitpunkt der Ausführung.
+   *
+   * Steht neben der Id, damit die Historie lesbar bleibt, wenn das Band später
+   * umbenannt oder aus dem Katalog gelöscht wird: eine verwaiste Id kostet dann
+   * nur den Punkt im Diagramm, nicht den Eintrag.
+   */
+  bandNameSnapshot?: string;
   completed: boolean;
   completedAt?: string;
 }
@@ -129,6 +194,7 @@ export interface ProgressionRule {
   targetReps?: number;
   targetSeconds?: number;
   targetWeight?: number;
+  targetBandId?: string;
   notes?: string;
 }
 

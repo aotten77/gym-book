@@ -26,6 +26,11 @@ export default {
           // Fokus-Streifen). Deckend genug, dass Text darauf lesbar bleibt,
           // wenn eine Karte darunter durchscrollt.
           overlay: "rgb(9 9 11 / 0.92)",
+          // Dieselben Leisten, wenn sie bis an den Geräterand laufen und der
+          // Inhalt sichtbar darunter durchscrollen soll: die Deckkraft gibt
+          // dem `backdrop-blur` überhaupt erst etwas zu tun, ohne dass Text
+          // darauf an Kontrast verliert.
+          glass: "rgb(9 9 11 / 0.75)",
         },
         line: {
           DEFAULT: "rgb(255 255 255 / 0.1)",

@@ -31,6 +31,8 @@ export interface SetValues {
   reps?: number;
   seconds?: number;
   weight?: number;
+  bandId?: string;
+  bandNameSnapshot?: string;
 }
 
 /** Identifiziert eine Satzzeile innerhalb einer Ausführung. */
@@ -57,6 +59,8 @@ export function buildLastSetValues(logs: WorkoutSetLog[]) {
       reps: log.reps,
       seconds: log.seconds,
       weight: log.weight,
+      bandId: log.bandId,
+      bandNameSnapshot: log.bandNameSnapshot,
     };
 
     byKey[setLogKey(log)] = values;

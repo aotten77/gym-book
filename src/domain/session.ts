@@ -1,4 +1,5 @@
 import type {
+  BandLevel,
   Exercise,
   ProgressionRule,
   SessionBundle,
@@ -14,6 +15,8 @@ interface MaterializeSessionInput {
   templateExercises: WorkoutTemplateExercise[];
   exercisesById: Record<string, Exercise>;
   progressionRulesByTemplateExerciseId?: Record<string, ProgressionRule | undefined>;
+  /** Band-Katalog, um das Ziel-Band mit seinem Namen einzufrieren. */
+  bandLevelsById?: Record<string, BandLevel | undefined>;
   programNameSnapshot?: string;
   programWeekLabelSnapshot?: string;
   usedWeekOverride?: boolean;
@@ -30,6 +33,7 @@ export function materializeSession({
   templateExercises,
   exercisesById,
   progressionRulesByTemplateExerciseId,
+  bandLevelsById,
   programNameSnapshot,
   programWeekLabelSnapshot,
   usedWeekOverride,
@@ -64,6 +68,7 @@ export function materializeSession({
     }
 
     const sessionExerciseId = createId();
+    const targetBandId = progressionRule?.targetBandId ?? templateExercise.targetBandId;
 
     sessionExercises.push({
       id: sessionExerciseId,
@@ -71,6 +76,7 @@ export function materializeSession({
       exerciseId: exercise.id,
       exerciseNameSnapshot: exercise.name,
       trackingMode: exercise.trackingMode,
+      loadKind: exercise.loadKind,
       unilateral: exercise.unilateral,
       sourceTemplateExerciseId: templateExercise.id,
       orderIndex: templateExercise.orderIndex,
@@ -80,6 +86,8 @@ export function materializeSession({
       targetReps: progressionRule?.targetReps ?? templateExercise.targetReps,
       targetSeconds: progressionRule?.targetSeconds ?? templateExercise.targetSeconds,
       targetWeight: progressionRule?.targetWeight ?? templateExercise.targetWeight,
+      targetBandId,
+      targetBandNameSnapshot: targetBandId ? bandLevelsById?.[targetBandId]?.name : undefined,
       restSeconds: templateExercise.restSeconds,
       notes: progressionRule?.notes ?? templateExercise.notes,
     });

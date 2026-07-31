@@ -34,7 +34,7 @@ Layering is strict and worth preserving:
 - [src/domain/](src/domain/) — pure types + pure business rules. No Dexie, no React. [session.ts](src/domain/session.ts) holds `materializeSession` and `calculateAsymmetryPercent`.
 - [src/db/](src/db/) — the only place that touches Dexie. [appDb.ts](src/db/appDb.ts) declares the schema; `*-actions.ts` files are the write API (session, template, program, exercise, test, media, settings) and `history-queries.ts` holds the read-side aggregations. UI never writes to `db` directly.
 - [src/pages/](src/pages/) — routed screens. They read via `useLiveQuery` from `dexie-react-hooks` (reactive, re-renders on IndexedDB writes) and mutate by calling `*-actions` functions.
-- [src/store/ui-store.ts](src/store/ui-store.ts) — Zustand, **ephemeral UI state only**: focused exercise, online/offline, SW update available, install prompt. Never domain records, and nothing that must survive a reload — the rest-timer deadline lives on `WorkoutSession` in IndexedDB for exactly that reason.
+- [src/store/ui-store.ts](src/store/ui-store.ts) — Zustand, **ephemeral UI state only**: focused exercise, online/offline, SW update available, install prompt. Never domain records, and nothing that must survive a reload — the rest-timer deadline and the set timer (`restTimerEndsAt` / `setTimer`) live on `WorkoutSession` in IndexedDB for exactly that reason.
 
 ### The plan/execution split (the core invariant)
 
@@ -51,6 +51,20 @@ Calendar-week based, never session-count based. `startSessionFromTemplate` resol
 Completed sessions are immutable — `toggleSetCompletion` / `updateSetLogValues` bail out via `isSetLogEditable`, and `reorderSessionExercises` no-ops on non-active sessions. Keep new mutations behind the same guard.
 
 `updateSetLogValues` only writes keys that are present in its input. This matters: Dexie's `Table.update` deletes any property whose value is `undefined`, so passing a failed parse straight through would silently destroy stored values. Parse user input with `parseNumberInput` from [number-input.ts](src/lib/number-input.ts), which distinguishes empty from invalid.
+
+### Load: kilos or bands
+
+An exercise carries **either** a weight in kg **or** a resistance band, never both — `Exercise.loadKind` (`'weight' | 'band'`, `undefined` counts as `'weight'`, same additive trick as `includeWarmup`). `supportsLoad` in [tracking.ts](src/domain/tracking.ts) says whether the exercise has a load at all; `supportsWeight(trackingMode, loadKind)` and `supportsBand(trackingMode, loadKind)` decide which field the UI shows. Call sites that have a `loadKind` **must** pass it — the one-argument form silently keeps showing kg.
+
+Band levels live in their own table (`bandLevels`, Dexie `version(3)`), edited in Settings via [BandLevelsSection.tsx](src/components/BandLevelsSection.tsx) and [band-actions.ts](src/db/band-actions.ts). `orderIndex` is the content, not cosmetics: it is the *only* thing that makes "gelb" lighter than "rot", and it drives the progress chart's y-axis. Reorder rewrites it as a dense 1-based sequence, like `reorderTemplateExercises`.
+
+Set logs carry **two** flat fields, `bandId` plus `bandNameSnapshot`: the id resolves the rank for the chart, the name keeps history readable after a rename or deletion — a dangling id costs a chart point, never an entry. `updateSetLogValues` resolves the name itself from `bandLevels` and writes both together (or clears both); an unknown id is ignored rather than stored. `deleteBandLevel` therefore leaves set logs alone and only clears `targetBandId` on template exercises and progression rules. For the same reason `assertReferentialIntegrity` in `export.ts` deliberately does **not** check band references — it would reject a user's own backup.
+
+`progressMetricFor(trackingMode, loadKind)` returns the `'band'` metric, and `buildProgressSeries` takes a `bandRank` resolver; `ProgressChart` gets `formatValue` so the axis reads "grün" instead of "3" and drops the numeric delta.
+
+### Timers
+
+Two, both on the running `WorkoutSession` so they survive a reload: `restTimerEndsAt` (pause between sets) and `setTimer` (a set *on* time, e.g. a 2-minute plank). At most one `setTimer` per session — starting another replaces it. Its duration comes from `resolveSetTimerSeconds` ([set-timer.ts](src/domain/set-timer.ts)): the seconds entered in the set beat the exercise's `targetSeconds`, which beats the default. `finishSetTimer` writes the achieved time into the set log and clears the timer — full duration when it runs out, `elapsedSetTimerSeconds` when stopped early; `clearSetTimer` drops it without writing. Anything that invalidates the target (deleting the set log, closing the session) must clear it too, otherwise the bar keeps counting toward a row that no longer exists.
 
 ### Media
 

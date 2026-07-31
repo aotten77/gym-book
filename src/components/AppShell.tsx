@@ -208,9 +208,14 @@ export function AppShell({ title, eyebrow, children }: AppShellProps) {
         {!inSession ? (
           <nav
             aria-label="Hauptnavigation"
-            className="fixed inset-x-0 bottom-0 z-20 mx-auto w-full max-w-md px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
+            className="fixed inset-x-0 bottom-0 z-20 mx-auto w-full max-w-md"
           >
-            <ul className="grid grid-cols-6 gap-1 rounded-card border border-line bg-zinc-950/90 p-2 shadow-soft backdrop-blur-xl">
+            {/*
+              Die Leiste läuft bis an den Geräterand statt als schwebende
+              Kachel darüber: der Home-Indicator sitzt ohnehin am Rand, und
+              die freie Randbreite ging zuvor den sechs Beschriftungen ab.
+            */}
+            <ul className="grid grid-cols-6 gap-1 rounded-t-card border border-b-0 border-line bg-surface-glass px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 shadow-soft backdrop-blur-xl">
               {navigationItems.map(({ to, label, icon: Icon }) => (
                 <li key={to}>
                   <NavLink

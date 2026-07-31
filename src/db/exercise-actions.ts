@@ -1,5 +1,6 @@
 import { db } from '@/db/appDb';
-import type { Exercise, TrackingMode } from '@/domain/models';
+import type { Exercise, LoadKind, TrackingMode } from '@/domain/models';
+import { supportsBand } from '@/domain/tracking';
 import { createId } from '@/lib/id';
 
 /*
@@ -13,6 +14,7 @@ export interface ExerciseInput {
   instructions?: string;
   tempo?: string;
   trackingMode: TrackingMode;
+  loadKind?: LoadKind;
   unilateral: boolean;
 }
 
@@ -26,6 +28,19 @@ export interface ExerciseUsage {
 function normalizeOptionalText(value?: string) {
   const trimmed = value?.trim();
   return trimmed ? trimmed : undefined;
+}
+
+/**
+ * Speichert die Belastungsart nur, wenn sie etwas aussagt.
+ *
+ * `undefined` bedeutet Kilo - eine reine Zeitübung ohne Last trägt also gar
+ * keinen Wert, und ein "Band" an einer Übung ohne Last wäre eine Lüge.
+ */
+function normalizeLoadKind(
+  loadKind: LoadKind | undefined,
+  trackingMode: TrackingMode,
+): LoadKind | undefined {
+  return supportsBand(trackingMode, loadKind) ? 'band' : undefined;
 }
 
 function assertName(name: string) {
@@ -49,6 +64,7 @@ export async function createExercise(input: ExerciseInput) {
     instructions: normalizeOptionalText(input.instructions),
     tempo: normalizeOptionalText(input.tempo),
     trackingMode: input.trackingMode,
+    loadKind: normalizeLoadKind(input.loadKind, input.trackingMode),
     unilateral: input.unilateral,
     createdAt: now,
     updatedAt: now,
@@ -78,6 +94,7 @@ export async function updateExercise(exerciseId: string, input: ExerciseInput) {
       instructions: normalizeOptionalText(input.instructions),
       tempo: normalizeOptionalText(input.tempo),
       trackingMode: input.trackingMode,
+      loadKind: normalizeLoadKind(input.loadKind, input.trackingMode),
       unilateral: input.unilateral,
       updatedAt: new Date().toISOString(),
     });

@@ -1,5 +1,5 @@
 import { db } from '@/db/appDb';
-import type { TrackingMode } from '@/domain/models';
+import type { LoadKind, TrackingMode } from '@/domain/models';
 import { createId } from '@/lib/id';
 
 interface TemplateInput {
@@ -16,6 +16,7 @@ interface SaveTemplateExerciseInput {
   targetReps?: number;
   targetSeconds?: number;
   targetWeight?: number;
+  targetBandId?: string;
   restSeconds?: number;
   notes?: string;
   exerciseId?: string;
@@ -24,6 +25,7 @@ interface SaveTemplateExerciseInput {
   tempo?: string;
   mediaAssetId?: string;
   trackingMode: TrackingMode;
+  loadKind?: LoadKind;
   unilateral: boolean;
 }
 
@@ -33,6 +35,7 @@ interface SaveProgressionRuleInput {
   targetReps?: number;
   targetSeconds?: number;
   targetWeight?: number;
+  targetBandId?: string;
   notes?: string;
 }
 
@@ -124,6 +127,7 @@ export async function saveTemplateExercise(input: SaveTemplateExerciseInput) {
           instructions: normalizeOptionalText(input.instructions),
           tempo: normalizeOptionalText(input.tempo),
           trackingMode: input.trackingMode,
+          loadKind: input.loadKind,
           unilateral: input.unilateral,
           mediaAssetId: input.mediaAssetId,
           createdAt: now,
@@ -142,6 +146,7 @@ export async function saveTemplateExercise(input: SaveTemplateExerciseInput) {
         targetReps: normalizeOptionalNumber(input.targetReps),
         targetSeconds: normalizeOptionalNumber(input.targetSeconds),
         targetWeight: normalizeOptionalNumber(input.targetWeight),
+        targetBandId: normalizeOptionalText(input.targetBandId),
         restSeconds: normalizeOptionalNumber(input.restSeconds),
         notes: normalizeOptionalText(input.notes),
       };
@@ -213,6 +218,7 @@ export async function saveProgressionRule(input: SaveProgressionRuleInput) {
   const targetReps = normalizeOptionalNumber(input.targetReps);
   const targetSeconds = normalizeOptionalNumber(input.targetSeconds);
   const targetWeight = normalizeOptionalNumber(input.targetWeight);
+  const targetBandId = normalizeOptionalText(input.targetBandId);
   const notes = normalizeOptionalText(input.notes);
 
   const existingRule = await db.progressionRules
@@ -221,10 +227,14 @@ export async function saveProgressionRule(input: SaveProgressionRuleInput) {
     .filter((rule) => rule.programWeekId === input.programWeekId)
     .first();
 
+  // Eine Regel ohne jede Vorgabe ist keine Regel - dann verschwindet sie
+  // wieder. Das Ziel-Band zählt dabei mit, sonst überlebte eine reine
+  // Band-Progression das Speichern nicht.
   if (
     targetReps === undefined &&
     targetSeconds === undefined &&
     targetWeight === undefined &&
+    targetBandId === undefined &&
     notes === undefined
   ) {
     if (existingRule) {
@@ -239,6 +249,7 @@ export async function saveProgressionRule(input: SaveProgressionRuleInput) {
     targetReps,
     targetSeconds,
     targetWeight,
+    targetBandId,
     notes,
   };
 

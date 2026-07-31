@@ -117,9 +117,15 @@ export function HistoryPage() {
                     <p className="mt-1 text-sm text-content-muted">{entry.weekContext}</p>
                     <div className="mt-3 flex flex-wrap gap-2">
                       {entry.preview.length > 0 ? (
-                        entry.preview.map((value) => (
+                        entry.preview.map((value, index) => (
                           <span
-                            key={`${exerciseId}-${entry.completedAt}-${value}`}
+                            /*
+                             * Die Position gehört in den Schlüssel: zwei
+                             * gleiche Sätze ("4 Wdh · 82,5 kg") ergeben
+                             * denselben Text, und React verwarf dann eines
+                             * der beiden Etiketten.
+                             */
+                            key={`${exerciseId}-${entry.completedAt}-${index}-${value}`}
                             className="rounded-full bg-surface-raised px-3 py-1 text-xs text-content-secondary"
                           >
                             {value}

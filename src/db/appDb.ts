@@ -1,6 +1,7 @@
 import Dexie, { type Table } from 'dexie';
 import type {
   AppSettings,
+  BandLevel,
   Exercise,
   ExerciseTest,
   MediaAsset,
@@ -27,6 +28,7 @@ class GymBookDatabase extends Dexie {
   progressionRules!: Table<ProgressionRule, string>;
   mediaAssets!: Table<MediaAsset, string>;
   appSettings!: Table<AppSettings, string>;
+  bandLevels!: Table<BandLevel, string>;
 
   constructor() {
     super('gym-book-db');
@@ -63,6 +65,15 @@ class GymBookDatabase extends Dexie {
       programWeeks: 'id, programId, weekNumber, [programId+weekNumber]',
       progressionRules: 'id, templateExerciseId, programWeekId, [templateExerciseId+programWeekId]',
       programs: 'id, activeWeek, updatedAt, name, createdAt',
+    });
+
+    // v3 bringt den Band-Katalog. Eine neue Tabelle muss deklariert werden,
+    // die neuen Felder auf Übung, Session-Übung und Satz dagegen nicht - aus
+    // demselben Grund wie oben bei `restTimerEndsAt`. Ein `upgrade()` gibt es
+    // deshalb nicht: es ist nichts umzuformen, Bestandsübungen bleiben ohne
+    // `loadKind` schlicht Kilo-Übungen.
+    this.version(3).stores({
+      bandLevels: 'id, orderIndex, name',
     });
   }
 }

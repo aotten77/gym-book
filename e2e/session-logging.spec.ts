@@ -61,6 +61,66 @@ test.describe('Satz-Protokollierung', () => {
   });
 });
 
+test.describe('Satz-Timer', () => {
+  test.beforeEach(async ({ page }) => {
+    await resetDatabase(page);
+    await seedSampleData(page);
+  });
+
+  /** Die Start-Taste des ersten Satzes der Zeitübung im Beispielprogramm. */
+  function startButton(page: Page) {
+    return page.getByRole('button', { name: /starten$/ }).first();
+  }
+
+  test('läuft nach einem Reload weiter und übernimmt die gehaltene Zeit', async ({ page }) => {
+    await startSampleSession(page);
+
+    // Zeit anpassen, bevor es losgeht: 90s reichen sicher über den Reload
+    // hinaus, ohne dass der Test auf das Ablaufen wartet.
+    const target = page.locator('input[id$="-seconds"]').first();
+    await target.fill('90');
+    await page.waitForTimeout(1200);
+
+    await startButton(page).click();
+    await expect(page.getByRole('timer')).toBeVisible();
+
+    // Derselbe Vertrag wie beim Pausentimer: ein Plank überdauert
+    // Bildschirmsperre und Reload, also liegt der Timer in IndexedDB.
+    await page.reload();
+    await page.waitForTimeout(1200);
+    await expect(page.getByRole('timer')).toBeVisible();
+
+    await page.getByRole('button', { name: /Zeit stoppen/ }).click();
+    await page.waitForTimeout(800);
+
+    await expect(page.getByRole('timer')).toBeHidden();
+    // Genau dafür ist der Timer da: die gemessene Zeit steht im Satz, ohne
+    // dass jemand sie eintippt - und zwar die gehaltene, nicht die geplante.
+    await expect(target).toBeEnabled();
+    await expect(target).not.toHaveValue('');
+    await expect(target).not.toHaveValue('90');
+  });
+
+  test('verwerfen lässt den bereits eingetragenen Wert stehen', async ({ page }) => {
+    await startSampleSession(page);
+
+    const seconds = page.locator('input[id$="-seconds"]').first();
+    await seconds.fill('30');
+    await page.waitForTimeout(1200);
+
+    await startButton(page).click();
+    await expect(page.getByRole('timer')).toBeVisible();
+    // Während der Messung gehört das Feld dem Timer.
+    await expect(seconds).toBeDisabled();
+
+    await page.getByRole('button', { name: /Satz-Timer verwerfen/ }).click();
+    await page.waitForTimeout(600);
+
+    await expect(page.getByRole('timer')).toBeHidden();
+    await expect(seconds).toHaveValue('30');
+  });
+});
+
 test.describe('Pausentimer', () => {
   test.beforeEach(async ({ page }) => {
     await resetDatabase(page);
@@ -319,7 +379,7 @@ test.describe('Aktive Übung', () => {
   });
 });
 
-test.describe('Übungsbild', () => {
+test.describe('Streifen der aktiven Übung', () => {
   test.beforeEach(async ({ page }) => {
     await resetDatabase(page);
     await seedSampleData(page);
@@ -328,7 +388,7 @@ test.describe('Übungsbild', () => {
   test('der Streifen bleibt beim Scrollen zum letzten Satz sichtbar', async ({ page }) => {
     await startSampleSession(page);
 
-    const strip = page.getByText('Kein Bild hinterlegt').first();
+    const strip = page.getByRole('button', { name: /Zur aktiven Übung springen/ });
     await expect(strip).toBeVisible();
 
     // mouse.wheel gibt es im mobilen WebKit nicht - hier zählt ohnehin, was
@@ -339,5 +399,35 @@ test.describe('Übungsbild', () => {
     // Sticky: welche Übung dran ist, muss auch beim letzten Satz noch
     // sichtbar sein.
     await expect(strip).toBeInViewport();
+  });
+
+  test('ein Tipp auf den Streifen scrollt zur aktiven Übung', async ({ page }) => {
+    await startSampleSession(page);
+
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await page.waitForTimeout(600);
+
+    // Die aktive Übung steht ganz oben in der Liste - nach dem Sprung an den
+    // Seitenfuß ist sie sicher aus dem Bild.
+    const activeCard = page.locator('[id^="session-exercise-"]').first();
+    await expect(activeCard).not.toBeInViewport();
+
+    await page.getByRole('button', { name: /Zur aktiven Übung springen/ }).click();
+    await page.waitForTimeout(900);
+
+    await expect(activeCard).toBeInViewport();
+    // Der Streifen darf die Karte dabei nicht überdecken: die Sprungmarke
+    // trägt dafür ein scroll-margin.
+    const overlap = await page.evaluate(() => {
+      const card = document.querySelector('[id^="session-exercise-"]');
+      const bar = document.querySelector('[aria-label^="Zur aktiven Übung springen"]');
+
+      if (!card || !bar) return null;
+
+      return card.getBoundingClientRect().top - bar.getBoundingClientRect().bottom;
+    });
+
+    expect(overlap).not.toBeNull();
+    expect(overlap).toBeGreaterThanOrEqual(0);
   });
 });

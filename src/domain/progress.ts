@@ -1,4 +1,4 @@
-import type { TrackingMode, WorkoutSetLog } from '@/domain/models';
+import type { LoadKind, TrackingMode, WorkoutSetLog } from '@/domain/models';
 
 export interface ProgressPoint {
   completedAt: string;
@@ -9,20 +9,46 @@ export interface ProgressPoint {
   setCount: number;
 }
 
+export type ProgressMetricKey = 'weight' | 'seconds' | 'band';
+
+/**
+ * Position eines Bands im Katalog, 1-basiert.
+ *
+ * Bänder haben keinen Zahlenwert - erst die Reihenfolge macht sie
+ * vergleichbar. Gibt `undefined` zurück, wenn das Band nicht mehr im Katalog
+ * steht; solche Sätze fallen aus der Zeitreihe, behalten in der Historie aber
+ * ihren Namen.
+ */
+export type BandRank = (bandId: string) => number | undefined;
+
 /**
  * Welche Kennzahl den Fortschritt einer Übung trägt, hängt vom Tracking ab:
- * bei Wiederholungen das Gewicht, bei reinen Zeitübungen die Sekunden.
+ * bei Wiederholungen das Gewicht, bei reinen Zeitübungen die Sekunden - und
+ * bei Bändern die Stufe im Katalog.
  */
-export function progressMetricFor(trackingMode: TrackingMode) {
+export function progressMetricFor(trackingMode: TrackingMode, loadKind?: LoadKind) {
   if (trackingMode === 'time') {
     return { key: 'seconds' as const, label: 'Sekunden', unit: 's' };
+  }
+
+  if (loadKind === 'band') {
+    return { key: 'band' as const, label: 'Band', unit: '' };
   }
 
   return { key: 'weight' as const, label: 'Gewicht', unit: 'kg' };
 }
 
-function valueOf(log: WorkoutSetLog, metric: 'weight' | 'seconds') {
+function valueOf(log: WorkoutSetLog, metric: ProgressMetricKey, bandRank?: BandRank) {
+  if (metric === 'band') {
+    return log.bandId ? bandRank?.(log.bandId) : undefined;
+  }
+
   return metric === 'weight' ? log.weight : log.seconds;
+}
+
+interface ProgressSeriesOptions {
+  loadKind?: LoadKind;
+  bandRank?: BandRank;
 }
 
 /**
@@ -35,24 +61,29 @@ function valueOf(log: WorkoutSetLog, metric: 'weight' | 'seconds') {
 export function buildProgressSeries(
   executions: Array<{ completedAt: string; workLogs: WorkoutSetLog[] }>,
   trackingMode: TrackingMode,
+  { loadKind, bandRank }: ProgressSeriesOptions = {},
 ): ProgressPoint[] {
-  const metric = progressMetricFor(trackingMode).key;
+  const metric = progressMetricFor(trackingMode, loadKind).key;
 
   return executions
     .map((execution) => {
       const values = execution.workLogs
-        .map((log) => valueOf(log, metric))
+        .map((log) => valueOf(log, metric, bandRank))
         .filter((value): value is number => typeof value === 'number');
 
       if (values.length === 0) {
         return null;
       }
 
-      const volume = execution.workLogs.reduce((sum, log) => {
-        const load = log.weight ?? 0;
-        const reps = log.reps ?? log.seconds ?? 0;
-        return sum + load * reps;
-      }, 0);
+      // Bänder tragen keine Last in Kilo, ein Volumen ergäbe dort keine Zahl.
+      const volume =
+        metric === 'band'
+          ? 0
+          : execution.workLogs.reduce((sum, log) => {
+              const load = log.weight ?? 0;
+              const reps = log.reps ?? log.seconds ?? 0;
+              return sum + load * reps;
+            }, 0);
 
       return {
         completedAt: execution.completedAt,

@@ -6,6 +6,14 @@ interface ProgressChartProps {
   points: ProgressPoint[];
   unit: string;
   label: string;
+  /**
+   * Übersetzt den Y-Wert in seine Beschriftung.
+   *
+   * Gedacht für Bänder: dort ist der Wert die Stufe im Katalog, und "3" sagt
+   * niemandem etwas, "grün" schon. Ist die Funktion gesetzt, entfällt auch die
+   * Differenz-Angabe - zwei Stufen Unterschied sind keine zwei Kilo.
+   */
+  formatValue?: (value: number) => string;
 }
 
 const WIDTH = 320;
@@ -19,7 +27,7 @@ const PADDING = { top: 12, right: 8, bottom: 20, left: 8 };
  * Abhängigkeit im Bundle - und ohne Netz muss ohnehin alles mit ausgeliefert
  * werden.
  */
-export function ProgressChart({ points, unit, label }: ProgressChartProps) {
+export function ProgressChart({ points, unit, label, formatValue }: ProgressChartProps) {
   const gradientId = useId();
 
   if (points.length === 0) {
@@ -48,9 +56,12 @@ export function ProgressChart({ points, unit, label }: ProgressChartProps) {
   const formatDate = (iso: string) =>
     new Intl.DateTimeFormat('de-DE', { day: '2-digit', month: '2-digit' }).format(new Date(iso));
 
+  const format = (value: number) => (formatValue ? formatValue(value) : `${value} ${unit}`);
   const summary = trend
-    ? `${label} von ${trend.first} auf ${trend.last} ${unit}, ${trend.delta >= 0 ? 'plus' : 'minus'} ${Math.abs(trend.delta)} ${unit}`
-    : `${label}: ${points[0].topValue} ${unit} bei einer Ausführung`;
+    ? formatValue
+      ? `${label} von ${format(trend.first)} auf ${format(trend.last)}`
+      : `${label} von ${trend.first} auf ${trend.last} ${unit}, ${trend.delta >= 0 ? 'plus' : 'minus'} ${Math.abs(trend.delta)} ${unit}`
+    : `${label}: ${format(points[0].topValue)} bei einer Ausführung`;
 
   return (
     <figure className="m-0">
@@ -96,8 +107,8 @@ export function ProgressChart({ points, unit, label }: ProgressChartProps) {
       <figcaption className="mt-2 flex items-baseline justify-between gap-2 text-xs text-content-muted">
         <span>{formatDate(points[0].completedAt)}</span>
         <span className="text-content-secondary">
-          {min === max ? `${max} ${unit}` : `${min}–${max} ${unit}`}
-          {trend ? (
+          {min === max ? format(max) : formatValue ? `${format(min)}–${format(max)}` : `${min}–${max} ${unit}`}
+          {trend && !formatValue ? (
             <span className={trend.delta >= 0 ? ' text-accent' : ' text-danger'}>
               {' '}
               {trend.delta >= 0 ? '+' : ''}

@@ -4,6 +4,7 @@ import { Download, HardDrive, Upload } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { AppShell } from '@/components/AppShell';
 import { Alert } from '@/components/Alert';
+import { BandLevelsSection } from '@/components/BandLevelsSection';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { SectionCard } from '@/components/SectionCard';
@@ -434,6 +435,8 @@ export function SettingsPage() {
             </p>
           </div>
         </SectionCard>
+
+        <BandLevelsSection />
 
         <SectionCard title="Backup" subtitle="Sichern und Wiederherstellen laufen vollständig auf diesem Gerät.">
           <div className="grid gap-3">

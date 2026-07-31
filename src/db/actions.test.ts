@@ -3,10 +3,13 @@ import { db } from '@/db/appDb';
 import {
   abortSession,
   addSessionExercise,
+  clearSetTimer,
   completeSession,
   deleteSetLog,
+  finishSetTimer,
   reorderSessionExercises,
   startSessionFromTemplate,
+  startSetTimer,
   toggleSetCompletion,
   updateSetLogValues,
 } from '@/db/session-actions';
@@ -1046,5 +1049,99 @@ describe('deleteSetLog', () => {
     await deleteSetLog('warmup-completed');
 
     expect(await db.workoutSetLogs.get('warmup-completed')).toBeDefined();
+  });
+});
+
+describe('Satz-Timer', () => {
+  async function seedTimerSession(status: 'active' | 'completed') {
+    await db.workoutSessions.add({
+      id: `session-timer-${status}`,
+      templateId: 'template-timer',
+      templateNameSnapshot: 'Einheit Zeit',
+      resolvedProgramWeek: 1,
+      startedAt: '2026-01-08T09:00:00.000Z',
+      status,
+    });
+
+    await db.workoutSessionExercises.add({
+      id: `session-exercise-timer-${status}`,
+      sessionId: `session-timer-${status}`,
+      exerciseId: 'exercise-plank',
+      exerciseNameSnapshot: 'Plank',
+      trackingMode: 'time',
+      unilateral: false,
+      orderIndex: 1,
+      wasSkipped: false,
+      addedInSession: false,
+      workSetCount: 1,
+      targetSeconds: 120,
+    });
+
+    await db.workoutSetLogs.add({
+      id: `plank-${status}`,
+      sessionExerciseId: `session-exercise-timer-${status}`,
+      setKind: 'work',
+      side: 'both',
+      setNumber: 1,
+      completed: false,
+    });
+  }
+
+  it('startet den Timer auf der laufenden Session', async () => {
+    await seedTimerSession('active');
+
+    await startSetTimer('session-timer-active', 'plank-active', 120);
+
+    const session = await db.workoutSessions.get('session-timer-active');
+    expect(session?.setTimer?.setLogId).toBe('plank-active');
+    expect(session?.setTimer?.durationSeconds).toBe(120);
+    expect(session?.setTimer?.endsAt).toBeGreaterThan(Date.now());
+  });
+
+  it('startet keinen Timer in einer abgeschlossenen Session', async () => {
+    await seedTimerSession('completed');
+
+    await startSetTimer('session-timer-completed', 'plank-completed', 120);
+
+    expect((await db.workoutSessions.get('session-timer-completed'))?.setTimer).toBeUndefined();
+  });
+
+  it('schreibt die gehaltene Zeit in den Satz und beendet den Timer', async () => {
+    await seedTimerSession('active');
+    await startSetTimer('session-timer-active', 'plank-active', 120);
+
+    await finishSetTimer('session-timer-active', 107);
+
+    expect((await db.workoutSetLogs.get('plank-active'))?.seconds).toBe(107);
+    expect((await db.workoutSessions.get('session-timer-active'))?.setTimer).toBeUndefined();
+  });
+
+  it('verwirft den Timer ohne einen Wert zu schreiben', async () => {
+    await seedTimerSession('active');
+    await updateSetLogValues('plank-active', { seconds: 90 });
+    await startSetTimer('session-timer-active', 'plank-active', 120);
+
+    await clearSetTimer('session-timer-active');
+
+    expect((await db.workoutSessions.get('session-timer-active'))?.setTimer).toBeUndefined();
+    expect((await db.workoutSetLogs.get('plank-active'))?.seconds).toBe(90);
+  });
+
+  it('beendet den Timer, wenn seine Satzzeile entfernt wird', async () => {
+    await seedTimerSession('active');
+    await startSetTimer('session-timer-active', 'plank-active', 120);
+
+    await deleteSetLog('plank-active');
+
+    expect((await db.workoutSessions.get('session-timer-active'))?.setTimer).toBeUndefined();
+  });
+
+  it('räumt den Timer beim Abschließen der Session ab', async () => {
+    await seedTimerSession('active');
+    await startSetTimer('session-timer-active', 'plank-active', 120);
+
+    await completeSession('session-timer-active');
+
+    expect((await db.workoutSessions.get('session-timer-active'))?.setTimer).toBeUndefined();
   });
 });

@@ -29,6 +29,7 @@ interface TemplateExerciseFormState {
   targetReps: string;
   targetSeconds: string;
   targetWeight: string;
+  targetBandId: string;
   restSeconds: string;
   notes: string;
 }
@@ -40,6 +41,7 @@ const defaultFormState: TemplateExerciseFormState = {
   targetReps: '',
   targetSeconds: '',
   targetWeight: '',
+  targetBandId: '',
   restSeconds: '',
   notes: '',
 };
@@ -70,6 +72,7 @@ function buildFormState(item?: WorkoutTemplateExercise): TemplateExerciseFormSta
     targetReps: numberToInputValue(item.targetReps),
     targetSeconds: numberToInputValue(item.targetSeconds),
     targetWeight: numberToInputValue(item.targetWeight),
+    targetBandId: item.targetBandId ?? '',
     restSeconds: numberToInputValue(item.restSeconds),
     notes: item.notes ?? '',
   };
@@ -78,10 +81,13 @@ function buildFormState(item?: WorkoutTemplateExercise): TemplateExerciseFormSta
 function TemplateExerciseMeta({
   item,
   exerciseName,
+  bandName,
   mediaAsset,
 }: {
   item: WorkoutTemplateExercise;
   exerciseName: string;
+  /** Name des Ziel-Bands, aufgelöst aus dem Katalog. */
+  bandName?: string;
   mediaAsset?: MediaAsset;
 }) {
   return (
@@ -101,6 +107,7 @@ function TemplateExerciseMeta({
           {item.targetReps && item.targetSeconds ? ' · ' : null}
           {item.targetSeconds ? `${item.workSetCount} x ${item.targetSeconds}s` : null}
           {item.targetWeight ? ` · ${item.targetWeight} kg` : ''}
+          {bandName ? ` · ${bandName}` : ''}
           {item.restSeconds ? ` · Pause ${item.restSeconds}s` : ''}
         </p>
         {item.notes ? <p className="mt-3 text-sm text-content-muted">{item.notes}</p> : null}
@@ -112,6 +119,7 @@ function TemplateExerciseMeta({
 interface TemplateExerciseCardProps {
   item: WorkoutTemplateExercise;
   exerciseName: string;
+  bandName?: string;
   mediaAsset?: MediaAsset;
   isBusy: boolean;
   isFirst: boolean;
@@ -129,6 +137,7 @@ interface TemplateExerciseCardProps {
 function TemplateExerciseCard({
   item,
   exerciseName,
+  bandName,
   mediaAsset,
   isBusy,
   isFirst,
@@ -157,7 +166,12 @@ function TemplateExerciseCard({
               <ChevronDown size={16} />
             </IconButton>
           </div>
-          <TemplateExerciseMeta item={item} exerciseName={exerciseName} mediaAsset={mediaAsset} />
+          <TemplateExerciseMeta
+            item={item}
+            exerciseName={exerciseName}
+            bandName={bandName}
+            mediaAsset={mediaAsset}
+          />
         </div>
         <div className="flex gap-2">
           <button
@@ -219,7 +233,9 @@ export function TemplateDetailPage() {
   const settings = useLiveQuery(() => db.appSettings.get('app-settings'), []);
   const programWeeks = useLiveQuery(() => db.programWeeks.toArray(), []);
   const progressionRules = useLiveQuery(() => db.progressionRules.toArray(), []);
+  const bandLevels = useLiveQuery(() => db.bandLevels.orderBy('orderIndex').toArray(), []);
 
+  const bandNameById = Object.fromEntries((bandLevels ?? []).map((band) => [band.id, band.name]));
   const nameById = Object.fromEntries((exercises ?? []).map((item) => [item.id, item.name]));
   const exerciseById = Object.fromEntries((exercises ?? []).map((item) => [item.id, item]));
   const mediaAssetById = Object.fromEntries((mediaAssets ?? []).map((item) => [item.id, item]));
@@ -340,10 +356,12 @@ export function TemplateDetailPage() {
         targetReps: parseOptionalNumber(form.targetReps),
         targetSeconds: parseOptionalNumber(form.targetSeconds),
         targetWeight: parseOptionalNumber(form.targetWeight),
+        targetBandId: form.targetBandId,
         restSeconds: parseOptionalNumber(form.restSeconds),
         notes: form.notes,
         exerciseId: form.exerciseId,
         trackingMode: selectedExistingExercise?.trackingMode ?? 'reps_weight',
+        loadKind: selectedExistingExercise?.loadKind,
         unilateral: selectedExistingExercise?.unilateral ?? false,
       });
 
@@ -499,6 +517,7 @@ export function TemplateDetailPage() {
                     key={item.id}
                     item={item}
                     exerciseName={nameById[item.exerciseId] ?? 'Unbekannte Übung'}
+                    bandName={item.targetBandId ? bandNameById[item.targetBandId] : undefined}
                     mediaAsset={
                       exerciseById[item.exerciseId]?.mediaAssetId
                         ? mediaAssetById[exerciseById[item.exerciseId].mediaAssetId]
@@ -528,6 +547,7 @@ export function TemplateDetailPage() {
           orderedTemplateExercises={orderedTemplateExercises}
           exerciseById={exerciseById}
           nameById={nameById}
+          bandLevels={bandLevels}
           activeProgramId={settings?.activeProgramId}
         />
 
@@ -612,6 +632,8 @@ export function TemplateDetailPage() {
 
             <ExerciseTargetFields
               trackingMode={selectedExistingExercise?.trackingMode}
+              loadKind={selectedExistingExercise?.loadKind}
+              bandLevels={bandLevels}
               values={form}
               onChange={(field, value) => setForm((current) => ({ ...current, [field]: value }))}
               workSetCountHint="Die Reihenfolge änderst du oben mit den Pfeilen."

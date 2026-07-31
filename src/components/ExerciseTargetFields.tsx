@@ -1,12 +1,14 @@
 import type { ReactNode } from 'react';
-import type { TrackingMode } from '@/domain/models';
-import { supportsReps, supportsSeconds, supportsWeight } from '@/domain/tracking';
+import type { BandLevel, LoadKind, TrackingMode } from '@/domain/models';
+import { supportsBand, supportsReps, supportsSeconds, supportsWeight } from '@/domain/tracking';
+import { cn } from '@/lib/utils';
 
 export interface ExerciseTargetFieldsValues {
   workSetCount: string;
   targetReps: string;
   targetSeconds: string;
   targetWeight: string;
+  targetBandId: string;
   restSeconds: string;
 }
 
@@ -17,6 +19,10 @@ const GRID_FIELD_CLASSES =
 
 interface ExerciseTargetFieldsProps {
   trackingMode?: TrackingMode;
+  /** Entscheidet, ob das Ziel in Kilo oder als Band abgefragt wird. */
+  loadKind?: LoadKind;
+  /** Band-Katalog, sortiert von leicht nach schwer. */
+  bandLevels?: BandLevel[];
   values: ExerciseTargetFieldsValues;
   onChange: (field: keyof ExerciseTargetFieldsValues, value: string) => void;
   /**
@@ -36,6 +42,8 @@ interface ExerciseTargetFieldsProps {
  */
 export function ExerciseTargetFields({
   trackingMode,
+  loadKind,
+  bandLevels,
   values,
   onChange,
   layout = 'stacked',
@@ -99,7 +107,7 @@ export function ExerciseTargetFields({
         />
       ) : null}
 
-      {supportsWeight(trackingMode) ? (
+      {supportsWeight(trackingMode, loadKind) ? (
         <input
           value={values.targetWeight}
           onChange={(event) => onChange('targetWeight', event.target.value)}
@@ -108,6 +116,22 @@ export function ExerciseTargetFields({
           placeholder={weightLabel}
           className={fieldClassName}
         />
+      ) : null}
+
+      {supportsBand(trackingMode, loadKind) ? (
+        <select
+          value={values.targetBandId}
+          onChange={(event) => onChange('targetBandId', event.target.value)}
+          aria-label="Ziel-Band"
+          className={cn(fieldClassName, 'select-control')}
+        >
+          <option value="">{bandLevels?.length ? 'Ziel-Band' : 'Noch keine Bänder angelegt'}</option>
+          {bandLevels?.map((band) => (
+            <option key={band.id} value={band.id}>
+              {band.name}
+            </option>
+          ))}
+        </select>
       ) : null}
 
       {layout === 'stacked' ? (

@@ -15,8 +15,10 @@ export function TemplatesPage() {
   const templates = useLiveQuery(() => db.workoutTemplates.toArray(), []);
   const templateExercises = useLiveQuery(() => db.workoutTemplateExercises.toArray(), []);
   const exercises = useLiveQuery(() => db.exercises.toArray(), []);
+  const bandLevels = useLiveQuery(() => db.bandLevels.toArray(), []);
 
   const exerciseNameById = Object.fromEntries((exercises ?? []).map((item) => [item.id, item.name]));
+  const bandNameById = Object.fromEntries((bandLevels ?? []).map((band) => [band.id, band.name]));
 
   async function handleCreateTemplate() {
     if (!name.trim()) {
@@ -108,6 +110,7 @@ export function TemplatesPage() {
                           {item.targetReps && item.targetSeconds ? ' · ' : null}
                           {item.targetSeconds ? `${item.workSetCount} x ${item.targetSeconds}s` : null}
                           {item.targetWeight ? ` · ${item.targetWeight} kg` : ''}
+                          {item.targetBandId ? ` · ${bandNameById[item.targetBandId] ?? 'Band'}` : ''}
                         </p>
                       </div>
                       <ChevronRight size={18} className="text-content-muted" />

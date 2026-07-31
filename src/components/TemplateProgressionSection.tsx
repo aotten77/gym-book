@@ -4,18 +4,20 @@ import { SectionCard } from '@/components/SectionCard';
 import { clearProgressionRule, saveProgressionRule } from '@/db/template-actions';
 import type {
   AppSettings,
+  BandLevel,
   Exercise,
   Program,
   ProgramWeek,
   ProgressionRule,
   WorkoutTemplateExercise,
 } from '@/domain/models';
-import { supportsReps, supportsSeconds, supportsWeight } from '@/domain/tracking';
+import { supportsBand, supportsReps, supportsSeconds, supportsWeight } from '@/domain/tracking';
 
 interface ProgressionRuleFormState {
   targetReps: string;
   targetSeconds: string;
   targetWeight: string;
+  targetBandId: string;
   notes: string;
 }
 
@@ -23,6 +25,7 @@ const defaultProgressionRuleFormState: ProgressionRuleFormState = {
   targetReps: '',
   targetSeconds: '',
   targetWeight: '',
+  targetBandId: '',
   notes: '',
 };
 
@@ -43,27 +46,34 @@ function buildProgressionRuleFormState(rule?: {
   targetReps?: number;
   targetSeconds?: number;
   targetWeight?: number;
+  targetBandId?: string;
   notes?: string;
 }): ProgressionRuleFormState {
   return {
     targetReps: numberToInputValue(rule?.targetReps),
     targetSeconds: numberToInputValue(rule?.targetSeconds),
     targetWeight: numberToInputValue(rule?.targetWeight),
+    targetBandId: rule?.targetBandId ?? '',
     notes: rule?.notes ?? '',
   };
 }
 
-function formatPrescriptionLine(input: {
-  workSetCount: number;
-  targetReps?: number;
-  targetSeconds?: number;
-  targetWeight?: number;
-  restSeconds?: number;
-}) {
+function formatPrescriptionLine(
+  input: {
+    workSetCount: number;
+    targetReps?: number;
+    targetSeconds?: number;
+    targetWeight?: number;
+    targetBandId?: string;
+    restSeconds?: number;
+  },
+  bandNameById: Record<string, string> = {},
+) {
   const parts = [
     input.targetReps ? `${input.workSetCount} x ${input.targetReps} Wdh` : null,
     input.targetSeconds ? `${input.workSetCount} x ${input.targetSeconds}s` : null,
     typeof input.targetWeight === 'number' ? `${input.targetWeight} kg` : null,
+    input.targetBandId ? (bandNameById[input.targetBandId] ?? 'Band') : null,
     typeof input.restSeconds === 'number' ? `Pause ${input.restSeconds}s` : null,
   ].filter(Boolean);
 
@@ -77,6 +87,8 @@ interface TemplateProgressionSectionProps {
   orderedTemplateExercises: WorkoutTemplateExercise[];
   exerciseById: Record<string, Exercise>;
   nameById: Record<string, string>;
+  /** Band-Katalog, leicht nach schwer - Auswahl für Band-Übungen. */
+  bandLevels: BandLevel[] | undefined;
   activeProgramId: AppSettings['activeProgramId'];
 }
 
@@ -92,8 +104,13 @@ export function TemplateProgressionSection({
   orderedTemplateExercises,
   exerciseById,
   nameById,
+  bandLevels,
   activeProgramId,
 }: TemplateProgressionSectionProps) {
+  const bandNameById = useMemo(
+    () => Object.fromEntries((bandLevels ?? []).map((band) => [band.id, band.name])),
+    [bandLevels],
+  );
   const [selectedProgramId, setSelectedProgramId] = useState('');
   const [selectedProgressionTemplateExerciseId, setSelectedProgressionTemplateExerciseId] =
     useState<string>('');
@@ -204,8 +221,17 @@ export function TemplateProgressionSection({
         targetSeconds: supportsSeconds(selectedProgressionExercise?.trackingMode)
           ? parseOptionalNumber(draft.targetSeconds)
           : undefined,
-        targetWeight: supportsWeight(selectedProgressionExercise?.trackingMode)
+        targetWeight: supportsWeight(
+          selectedProgressionExercise?.trackingMode,
+          selectedProgressionExercise?.loadKind,
+        )
           ? parseOptionalNumber(draft.targetWeight)
+          : undefined,
+        targetBandId: supportsBand(
+          selectedProgressionExercise?.trackingMode,
+          selectedProgressionExercise?.loadKind,
+        )
+          ? draft.targetBandId
           : undefined,
         notes: draft.notes,
       });
@@ -285,7 +311,9 @@ export function TemplateProgressionSection({
               <p className="font-semibold text-content">
                 {nameById[selectedProgressionTemplateExercise.exerciseId] ?? 'Unbekannte Übung'}
               </p>
-              <p className="mt-2">Basis: {formatPrescriptionLine(selectedProgressionTemplateExercise)}</p>
+              <p className="mt-2">
+                Basis: {formatPrescriptionLine(selectedProgressionTemplateExercise, bandNameById)}
+              </p>
               <p className="mt-1">
                 Tracking: {selectedProgressionExercise?.trackingMode ?? 'reps_weight'} ·{' '}
                 {selectedProgressionExercise?.unilateral ? 'unilateral' : 'beidseitig'}
@@ -357,7 +385,10 @@ export function TemplateProgressionSection({
                         />
                       ) : null}
 
-                      {supportsWeight(selectedProgressionExercise?.trackingMode) ? (
+                      {supportsWeight(
+                        selectedProgressionExercise?.trackingMode,
+                        selectedProgressionExercise?.loadKind,
+                      ) ? (
                         <input
                           value={draft.targetWeight}
                           onChange={(event) =>
@@ -374,6 +405,35 @@ export function TemplateProgressionSection({
                           placeholder="Ziel-Gewicht in kg"
                           className="w-full rounded-panel border border-line bg-surface-sunken px-4 py-4 text-base text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
                         />
+                      ) : null}
+
+                      {supportsBand(
+                        selectedProgressionExercise?.trackingMode,
+                        selectedProgressionExercise?.loadKind,
+                      ) ? (
+                        <select
+                          value={draft.targetBandId}
+                          onChange={(event) =>
+                            setProgressionFormsByWeekId((current) => ({
+                              ...current,
+                              [week.id]: {
+                                ...(current[week.id] ?? defaultProgressionRuleFormState),
+                                targetBandId: event.target.value,
+                              },
+                            }))
+                          }
+                          aria-label="Ziel-Band"
+                          className="select-control w-full rounded-panel border border-line bg-surface-sunken px-4 py-4 text-base text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
+                        >
+                          <option value="">
+                            {bandLevels?.length ? 'Ziel-Band' : 'Noch keine Bänder angelegt'}
+                          </option>
+                          {bandLevels?.map((band) => (
+                            <option key={band.id} value={band.id}>
+                              {band.name}
+                            </option>
+                          ))}
+                        </select>
                       ) : null}
 
                       <textarea

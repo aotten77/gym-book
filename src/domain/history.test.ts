@@ -97,6 +97,17 @@ describe('buildLastSetValues', () => {
     expect(lastValues.resolve({ setKind: 'work', side: 'both', setNumber: 2 })?.weight).toBe(85);
   });
 
+  it('reicht auch das Band der letzten Ausführung durch', () => {
+    const lastValues = buildLastSetValues([
+      workLog({ setNumber: 1, reps: 15, bandId: 'band-rot', bandNameSnapshot: 'rot' }),
+    ]);
+
+    expect(lastValues.resolve({ setKind: 'work', side: 'both', setNumber: 1 })).toMatchObject({
+      bandId: 'band-rot',
+      bandNameSnapshot: 'rot',
+    });
+  });
+
   it('fällt auf den letzten Arbeitssatz derselben Seite zurück', () => {
     const lastValues = buildLastSetValues([
       workLog({ setNumber: 1, side: 'left', reps: 8 }),

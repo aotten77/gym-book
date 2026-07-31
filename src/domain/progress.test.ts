@@ -20,6 +20,13 @@ describe('progressMetricFor', () => {
     expect(progressMetricFor('time_weight').key).toBe('weight');
     expect(progressMetricFor('reps_weight').key).toBe('weight');
   });
+
+  it('tracks the band level when the exercise is loaded with bands', () => {
+    expect(progressMetricFor('reps_weight', 'band').key).toBe('band');
+    expect(progressMetricFor('reps_weight', 'weight').key).toBe('weight');
+    // Zeit ohne Last bleibt Zeit, auch wenn irrtümlich ein Band gesetzt ist.
+    expect(progressMetricFor('time', 'band').key).toBe('seconds');
+  });
 });
 
 describe('buildProgressSeries', () => {
@@ -71,6 +78,49 @@ describe('buildProgressSeries', () => {
 
     expect(series).toHaveLength(1);
     expect(series[0].topValue).toBe(60);
+  });
+
+  it('turns bands into their rank in the catalogue', () => {
+    const bandRank = (bandId: string) => ({ 'band-gelb': 1, 'band-rot': 2, 'band-gruen': 3 })[bandId];
+
+    const series = buildProgressSeries(
+      [
+        {
+          completedAt: '2026-01-01T10:00:00.000Z',
+          workLogs: [log({ bandId: 'band-gelb', reps: 12 }), log({ bandId: 'band-rot', reps: 8 })],
+        },
+        {
+          completedAt: '2026-01-08T10:00:00.000Z',
+          workLogs: [log({ bandId: 'band-gruen', reps: 8 })],
+        },
+      ],
+      'reps_weight',
+      { loadKind: 'band', bandRank },
+    );
+
+    expect(series.map((point) => point.topValue)).toEqual([2, 3]);
+    // Ohne Kilo gibt es kein Volumen, das man ausrechnen könnte.
+    expect(series[0].volume).toBe(0);
+  });
+
+  it('drops sets whose band is no longer in the catalogue', () => {
+    const series = buildProgressSeries(
+      [
+        {
+          completedAt: '2026-01-01T10:00:00.000Z',
+          workLogs: [log({ bandId: 'band-geloescht', reps: 10 })],
+        },
+        {
+          completedAt: '2026-01-08T10:00:00.000Z',
+          workLogs: [log({ bandId: 'band-gelb', reps: 10 })],
+        },
+      ],
+      'reps_weight',
+      { loadKind: 'band', bandRank: (bandId) => (bandId === 'band-gelb' ? 1 : undefined) },
+    );
+
+    expect(series).toHaveLength(1);
+    expect(series[0].completedAt).toBe('2026-01-08T10:00:00.000Z');
   });
 });
 

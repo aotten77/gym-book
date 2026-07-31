@@ -71,6 +71,50 @@ select {
 }
 
 /*
+ * Hochformat erzwingen.
+ *
+ * `orientation: portrait` im Manifest greift nur dort, wo der Browser die
+ * Orientierung sperren darf - iOS ignoriert es, und `screen.orientation.lock`
+ * wirft dort schlicht. Bleibt der Weg über die Darstellung: im Querformat
+ * wird die gesamte App um 90 Grad zurückgedreht und behält damit ihr
+ * Hochformat-Layout.
+ *
+ * Der Filter ist bewusst eng: nur Touch-Geräte (`pointer: coarse`) mit
+ * Telefonhöhe. Ein schmal gezogenes Desktop-Fenster oder ein Tablet soll
+ * nicht rotieren.
+ *
+ * Gedreht wird `#root`, nicht dessen Inhalt: die Transformation macht `#root`
+ * zum Bezugsrahmen jedes `position: fixed` (Pausentimer, Bottom-Nav). Damit
+ * die trotzdem am unteren Rand kleben bleiben, scrollt nicht `#root` selbst,
+ * sondern sein Kind - fixierte Elemente hängen dann am nicht scrollenden
+ * Rahmen. Die Safe-Area-Insets zeigen in diesem Modus auf die physischen
+ * Ränder, also nach dem Drehen auf die falsche Seite; das kostet etwas
+ * Abstand am Notch, bricht aber nichts.
+ */
+@media (orientation: landscape) and (max-height: 520px) and (pointer: coarse) {
+  body {
+    overflow: hidden;
+  }
+
+  #root {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    width: 100dvh;
+    height: 100dvw;
+    overflow: hidden;
+    transform: translate(-50%, -50%) rotate(90deg);
+    transform-origin: center center;
+  }
+
+  #root > * {
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+}
+
+/*
  * WebKit ignoriert min-height auf einem <select> mit nativem Erscheinungsbild -
  * das Feld schrumpft dort auf 22px, weit unter jede Touch-Empfehlung.
  * `appearance: none` macht daraus eine normale CSS-Box; der Pfeil kommt als

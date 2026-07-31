@@ -1,12 +1,15 @@
 import { db } from '@/db/appDb';
-import type { TrackingMode, WorkoutSetLog } from '@/domain/models';
+import type { LoadKind, TrackingMode, WorkoutSetLog } from '@/domain/models';
 import { materializeSession } from '@/domain/session';
+import { clampSetTimerSeconds } from '@/domain/set-timer';
 import { createId } from '@/lib/id';
 
 export interface SetLogValuesInput {
   reps?: number;
   seconds?: number;
   weight?: number;
+  /** Id aus dem Band-Katalog; den Namen friert die Aktion selbst ein. */
+  bandId?: string;
 }
 
 interface AddSessionExerciseInput {
@@ -16,6 +19,7 @@ interface AddSessionExerciseInput {
   targetReps?: number;
   targetSeconds?: number;
   targetWeight?: number;
+  targetBandId?: string;
   restSeconds?: number;
   notes?: string;
   exerciseId?: string;
@@ -23,6 +27,7 @@ interface AddSessionExerciseInput {
   instructions?: string;
   tempo?: string;
   trackingMode: TrackingMode;
+  loadKind?: LoadKind;
   unilateral: boolean;
 }
 
@@ -139,6 +144,7 @@ export async function startSessionFromTemplate(templateId: string) {
   const progressionRulesByTemplateExerciseId = Object.fromEntries(
     progressionRules.map((rule) => [rule.templateExerciseId, rule]),
   );
+  const bandLevels = await db.bandLevels.toArray();
 
   const bundle = materializeSession({
     template,
@@ -147,6 +153,7 @@ export async function startSessionFromTemplate(templateId: string) {
       exercises.filter(Boolean).map((exercise) => [exercise.id, exercise]),
     ),
     progressionRulesByTemplateExerciseId,
+    bandLevelsById: Object.fromEntries(bandLevels.map((band) => [band.id, band])),
     programNameSnapshot: program?.name,
     programWeekLabelSnapshot: programWeek?.label,
     usedWeekOverride,
@@ -224,7 +231,9 @@ export async function updateSetLogValues(setLogId: string, values: SetLogValuesI
     return;
   }
 
-  const changes: Partial<Pick<WorkoutSetLog, 'reps' | 'seconds' | 'weight'>> = {};
+  const changes: Partial<
+    Pick<WorkoutSetLog, 'reps' | 'seconds' | 'weight' | 'bandId' | 'bandNameSnapshot'>
+  > = {};
 
   if ('reps' in values) {
     changes.reps = normalizeOptionalNumber(values.reps);
@@ -236,6 +245,19 @@ export async function updateSetLogValues(setLogId: string, values: SetLogValuesI
 
   if ('weight' in values) {
     changes.weight = normalizeOptionalNumber(values.weight);
+  }
+
+  if ('bandId' in values) {
+    const bandId = normalizeOptionalText(values.bandId);
+    const band = bandId ? await db.bandLevels.get(bandId) : undefined;
+
+    // Eine Id ohne passendes Band im Katalog wird ignoriert statt geschrieben:
+    // sonst stünde am Satz eine Auswahl, die niemand mehr benennen kann.
+    if (!bandId || band) {
+      changes.bandId = bandId;
+      // Id und Name gehören zusammen - beide setzen oder beide leeren.
+      changes.bandNameSnapshot = band?.name;
+    }
   }
 
   if (Object.keys(changes).length === 0) {
@@ -267,7 +289,22 @@ export async function deleteSetLog(setLogId: string) {
         return;
       }
 
+      const setLog = await db.workoutSetLogs.get(setLogId);
+      const sessionExercise = setLog
+        ? await db.workoutSessionExercises.get(setLog.sessionExerciseId)
+        : undefined;
+
       await db.workoutSetLogs.delete(setLogId);
+
+      // Ein Timer ohne Satzzeile hätte kein Ziel mehr für sein Ergebnis und
+      // liefe in der Leiste bis zum Ablauf weiter.
+      if (sessionExercise) {
+        const session = await db.workoutSessions.get(sessionExercise.sessionId);
+
+        if (session?.setTimer?.setLogId === setLogId) {
+          await db.workoutSessions.update(session.id, { setTimer: undefined });
+        }
+      }
     },
   );
 }
@@ -298,7 +335,10 @@ export async function addSessionExercise(input: AddSessionExerciseInput) {
 
   const exerciseName = existingExercise?.name ?? input.exerciseName?.trim() ?? 'Neue Übung';
   const trackingMode = existingExercise?.trackingMode ?? input.trackingMode;
+  const loadKind = existingExercise ? existingExercise.loadKind : input.loadKind;
   const unilateral = existingExercise?.unilateral ?? input.unilateral;
+  const targetBandId = normalizeOptionalText(input.targetBandId);
+  const targetBand = targetBandId ? await db.bandLevels.get(targetBandId) : undefined;
   const sessionExerciseId = createId();
   const setLogs = createSetLogs(
     sessionExerciseId,
@@ -320,6 +360,7 @@ export async function addSessionExercise(input: AddSessionExerciseInput) {
           instructions: normalizeOptionalText(input.instructions),
           tempo: normalizeOptionalText(input.tempo),
           trackingMode,
+          loadKind,
           unilateral,
           createdAt: now,
           updatedAt: now,
@@ -332,6 +373,7 @@ export async function addSessionExercise(input: AddSessionExerciseInput) {
         exerciseId,
         exerciseNameSnapshot: exerciseName,
         trackingMode,
+        loadKind,
         unilateral,
         orderIndex: nextOrderIndex,
         wasSkipped: false,
@@ -340,6 +382,8 @@ export async function addSessionExercise(input: AddSessionExerciseInput) {
         targetReps: normalizeOptionalNumber(input.targetReps),
         targetSeconds: normalizeOptionalNumber(input.targetSeconds),
         targetWeight: normalizeOptionalNumber(input.targetWeight),
+        targetBandId,
+        targetBandNameSnapshot: targetBand?.name,
         restSeconds: normalizeOptionalNumber(input.restSeconds),
         notes: normalizeOptionalText(input.notes),
       });
@@ -434,6 +478,76 @@ export async function clearRestTimer(sessionId: string) {
   await db.workoutSessions.update(sessionId, { restTimerEndsAt: undefined });
 }
 
+/**
+ * Startet den Timer für einen Satz auf Zeit.
+ *
+ * Der Timer hängt an der Session, nicht an der Satzzeile: es läuft immer
+ * höchstens einer, und ein Start auf einer anderen Zeile löst den vorigen
+ * ohne Rückstand ab.
+ */
+export async function startSetTimer(sessionId: string, setLogId: string, seconds: number) {
+  await db.transaction(
+    'rw',
+    db.workoutSessions,
+    db.workoutSessionExercises,
+    db.workoutSetLogs,
+    async () => {
+      // Derselbe Guard wie beim Werteschreiben: in einer abgeschlossenen
+      // Session gibt es nichts mehr zu messen.
+      if (!(await isSetLogEditable(setLogId))) {
+        return;
+      }
+
+      const setLog = await db.workoutSetLogs.get(setLogId);
+      const sessionExercise = setLog
+        ? await db.workoutSessionExercises.get(setLog.sessionExerciseId)
+        : undefined;
+
+      // Verhindert einen Timer, der auf eine Satzzeile einer fremden Session
+      // zeigt - sein Ergebnis landete sonst außerhalb der laufenden Session.
+      if (sessionExercise?.sessionId !== sessionId) {
+        return;
+      }
+
+      const durationSeconds = clampSetTimerSeconds(seconds);
+
+      await db.workoutSessions.update(sessionId, {
+        setTimer: {
+          setLogId,
+          durationSeconds,
+          endsAt: Date.now() + durationSeconds * 1000,
+        },
+      });
+    },
+  );
+}
+
+/**
+ * Beendet den Satz-Timer und schreibt die erreichte Zeit in den Satz.
+ *
+ * Genau dafür ist der Timer da: was gemessen wurde, muss nicht noch einmal
+ * getippt werden. `seconds` kommt vom Aufrufer, weil nur er weiß, ob der Timer
+ * abgelaufen ist (volle Dauer) oder vorzeitig gestoppt wurde (gehaltene Zeit).
+ */
+export async function finishSetTimer(sessionId: string, seconds: number) {
+  const session = await db.workoutSessions.get(sessionId);
+  const timer = session?.setTimer;
+
+  if (!session || session.status !== 'active' || !timer) {
+    return;
+  }
+
+  const value = Math.max(0, Math.round(seconds));
+
+  await updateSetLogValues(timer.setLogId, { seconds: value });
+  await db.workoutSessions.update(sessionId, { setTimer: undefined });
+}
+
+/** Bricht den Satz-Timer ab, ohne einen Wert zu schreiben. */
+export async function clearSetTimer(sessionId: string) {
+  await db.workoutSessions.update(sessionId, { setTimer: undefined });
+}
+
 async function closeSession(sessionId: string, status: 'completed' | 'aborted') {
   await db.transaction('rw', db.workoutSessions, async () => {
     const session = await db.workoutSessions.get(sessionId);
@@ -452,6 +566,7 @@ async function closeSession(sessionId: string, status: 'completed' | 'aborted') 
       status,
       completedAt: new Date().toISOString(),
       restTimerEndsAt: undefined,
+      setTimer: undefined,
     });
   });
 }

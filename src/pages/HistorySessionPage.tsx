@@ -122,6 +122,7 @@ export function HistorySessionPage() {
             typeof exercise.targetReps === 'number' ? `${exercise.targetReps} Wdh` : null,
             typeof exercise.targetSeconds === 'number' ? `${exercise.targetSeconds}s` : null,
             typeof exercise.targetWeight === 'number' ? `${exercise.targetWeight} kg` : null,
+            exercise.targetBandNameSnapshot ?? null,
           ].filter(Boolean);
 
           return (

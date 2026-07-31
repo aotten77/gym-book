@@ -21,8 +21,9 @@ import {
 import { loadExerciseExecutions } from '@/db/history-queries';
 import { clearExerciseMedia, replaceExerciseMedia } from '@/db/media-actions';
 import { loadTestsForExercise } from '@/db/test-actions';
-import type { Exercise, TrackingMode } from '@/domain/models';
+import type { Exercise, LoadKind, TrackingMode } from '@/domain/models';
 import { buildProgressSeries, progressMetricFor } from '@/domain/progress';
+import { supportsLoad } from '@/domain/tracking';
 import { formatDateTime, formatLoadLabel } from '@/lib/format';
 import { isSupportedMediaType } from '@/lib/media';
 
@@ -37,6 +38,7 @@ const emptyForm: ExerciseInput = {
   instructions: '',
   tempo: '',
   trackingMode: 'reps_weight',
+  loadKind: 'weight',
   unilateral: false,
 };
 
@@ -47,9 +49,22 @@ function ExerciseDetail({ exercise }: { exercise: Exercise }) {
     async () => (exercise.mediaAssetId ? db.mediaAssets.get(exercise.mediaAssetId) : undefined),
     [exercise.mediaAssetId],
   );
+  const bandLevels = useLiveQuery(() => db.bandLevels.orderBy('orderIndex').toArray(), []);
 
-  const points = buildProgressSeries(executions ?? [], exercise.trackingMode);
-  const metric = progressMetricFor(exercise.trackingMode);
+  /*
+   * Die Y-Achse einer Band-Übung ist die Position im Katalog. Sie kommt aus
+   * der Reihenfolge, nicht aus `orderIndex` selbst - so bleibt die Skala
+   * dicht, auch wenn im Katalog einmal eine Lücke entstanden ist.
+   */
+  const bandRankById = new Map((bandLevels ?? []).map((band, index) => [band.id, index + 1]));
+  const bandNameByRank = new Map((bandLevels ?? []).map((band, index) => [index + 1, band.name]));
+  const isBandExercise = exercise.loadKind === 'band';
+
+  const points = buildProgressSeries(executions ?? [], exercise.trackingMode, {
+    loadKind: exercise.loadKind,
+    bandRank: (bandId) => bandRankById.get(bandId),
+  });
+  const metric = progressMetricFor(exercise.trackingMode, exercise.loadKind);
   const recent = [...(executions ?? [])].reverse().slice(0, 5);
   const recentTests = [...(tests ?? [])].reverse().slice(0, 5);
 
@@ -73,7 +88,16 @@ function ExerciseDetail({ exercise }: { exercise: Exercise }) {
         </p>
         {points.length > 0 ? (
           <div className="mt-3">
-            <ProgressChart points={points} unit={metric.unit} label={metric.label} />
+            <ProgressChart
+              points={points}
+              unit={metric.unit}
+              label={metric.label}
+              formatValue={
+                isBandExercise
+                  ? (value) => bandNameByRank.get(value) ?? `Stufe ${value}`
+                  : undefined
+              }
+            />
           </div>
         ) : (
           <p className="mt-2 text-sm text-content-muted">
@@ -125,6 +149,7 @@ function ExerciseDetail({ exercise }: { exercise: Exercise }) {
 
 export function ExercisesPage() {
   const exercises = useLiveQuery(() => db.exercises.orderBy('name').toArray(), []);
+  const bandLevels = useLiveQuery(() => db.bandLevels.orderBy('orderIndex').toArray(), []);
   const [form, setForm] = useState<ExerciseInput>(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -148,6 +173,7 @@ export function ExercisesPage() {
         instructions: exercise.instructions ?? '',
         tempo: exercise.tempo ?? '',
         trackingMode: exercise.trackingMode,
+        loadKind: exercise.loadKind ?? 'weight',
         unilateral: exercise.unilateral,
       });
     }
@@ -294,6 +320,31 @@ export function ExercisesPage() {
                   ))}
                 </SelectField>
               </div>
+
+              {/*
+                Belastungsart nur, wenn die Übung überhaupt eine Last trägt:
+                bei reiner Zeit gibt es weder Kilo noch Band zu wählen.
+              */}
+              {supportsLoad(form.trackingMode) ? (
+                <SelectField
+                  label="Belastung"
+                  value={form.loadKind ?? 'weight'}
+                  hint={
+                    form.loadKind === 'band' && (bandLevels?.length ?? 0) === 0
+                      ? 'Noch keine Bänder angelegt - das machst du in den Einstellungen.'
+                      : 'Band-Übungen protokollieren statt Kilo eine Stufe aus deinem Band-Katalog.'
+                  }
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      loadKind: event.target.value as LoadKind,
+                    }))
+                  }
+                >
+                  <option value="weight">Gewicht in kg</option>
+                  <option value="band">Band</option>
+                </SelectField>
+              ) : null}
 
               <button
                 type="button"
