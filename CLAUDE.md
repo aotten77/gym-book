@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-npm run dev       # Vite dev server — app is served under the base path: http://localhost:5173/gym-book/
+npm run dev       # Vite dev server — http://localhost:5173/
 npm run check     # tsc -b --noEmit (typecheck only)
 npm test          # vitest run (jsdom + fake-indexeddb)
 npm run test:e2e  # playwright, WebKit on two iPhone sizes (starts the dev server itself)
@@ -25,7 +25,7 @@ CI ([.github/workflows/pages.yml](.github/workflows/pages.yml)) runs `check` →
 
 ## What this app is
 
-Offline-first PWA training log ("Gym Book"), deployed as a static site to GitHub Pages under `/gym-book/`. Single-user, no backend, no sync. All domain data lives in IndexedDB via Dexie. [.claude/skills/gym-book-architect/SKILL.md](.claude/skills/gym-book-architect/SKILL.md) is the binding scope/architecture contract and loads automatically (a mirror lives in `.trae/` for the Trae editor — change both together); read it before designing features; it lists what v1 must include and must exclude (no backend, no cloud sync, no multi-user, no video upload, no deload automation).
+Offline-first PWA training log ("Gym Book"), deployed as a static site to GitHub Pages, served from the custom domain `gym.andreasotten.de` at the root path (`public/CNAME` pins it; without that file every Actions deploy resets the Pages custom-domain setting). The domain sits behind Cloudflare Access, so the app is not publicly reachable — that is deliberate: it keeps a private, non-commercial app out of the Impressum (§ 5 DDG) and privacy-notice obligations that attach to a publicly available site. Single-user, no backend, no sync. All domain data lives in IndexedDB via Dexie. [.claude/skills/gym-book-architect/SKILL.md](.claude/skills/gym-book-architect/SKILL.md) is the binding scope/architecture contract and loads automatically (a mirror lives in `.trae/` for the Trae editor — change both together); read it before designing features; it lists what v1 must include and must exclude (no backend, no cloud sync, no multi-user, no video upload, no deload automation).
 
 ## Architecture
 
