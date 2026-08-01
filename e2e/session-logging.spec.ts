@@ -163,7 +163,8 @@ test.describe('Übung zur Session hinzufügen', () => {
   test('nur Auswahl aus der Bibliothek, kein Neuanlage-Formular', async ({ page }) => {
     await startSampleSession(page);
 
-    await page.getByRole('button', { name: 'Übung hinzufügen' }).click();
+    // Die Session-Steuerung steht oben und unten - hier der obere Block.
+    await page.getByRole('button', { name: 'Übung hinzufügen' }).first().click();
     await page.waitForTimeout(400);
 
     await expect(page.getByRole('button', { name: 'Neu', exact: true })).toHaveCount(0);
@@ -188,7 +189,7 @@ test.describe('Session-Lebenszyklus', () => {
 
     // Ohne abortSession blockierte eine versehentlich gestartete Session
     // jeden weiteren Trainingsstart - der Status existierte nur im Modell.
-    await page.getByRole('button', { name: 'Session abbrechen' }).click();
+    await page.getByRole('button', { name: 'Session abbrechen' }).first().click();
     await page.waitForURL(/#\/$/);
     await page.waitForTimeout(800);
 

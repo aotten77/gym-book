@@ -128,6 +128,14 @@ interface PendingSetLogDelete {
   exerciseName: string;
 }
 
+/**
+ * Die Session-Steuerung steht zweimal auf der Seite - einmal über den Übungen,
+ * einmal darunter. Bei einer langen Session ist der untere Block erst nach
+ * vielen Wischern erreichbar, bei einer kurzen liegt der obere im Weg; welcher
+ * der nähere ist, entscheidet sich erst beim Training.
+ */
+type SessionControlsPlacement = 'top' | 'bottom';
+
 function groupLogsByExercise(setLogs: WorkoutSetLog[]) {
   return setLogs.reduce<Record<string, WorkoutSetLog[]>>((groups, item) => {
     if (!groups[item.sessionExerciseId]) {
@@ -149,7 +157,13 @@ export function SessionPage() {
   const setActiveSessionExerciseId = useUiStore((state) => state.setActiveSessionExerciseId);
   const [now, setNow] = useState(Date.now());
   const [sessionError, setSessionError] = useState<string | null>(null);
-  const [showAddExerciseForm, setShowAddExerciseForm] = useState(false);
+  /*
+   * Das Formular gehört zu dem Block, über den es geöffnet wurde: sonst
+   * klappten beide Blöcke gleichzeitig auf und man tippte in ein Formular,
+   * während das zweite unbemerkt dieselben Werte zeigt.
+   */
+  const [addExerciseFormAnchor, setAddExerciseFormAnchor] =
+    useState<SessionControlsPlacement | null>(null);
   const [isSavingExercise, setIsSavingExercise] = useState(false);
   const [isReorderingExercises, setIsReorderingExercises] = useState(false);
   const [isClosingSession, setIsClosingSession] = useState(false);
@@ -567,7 +581,7 @@ export function SessionPage() {
       });
 
       setActiveSessionExerciseId(sessionExerciseId);
-      setShowAddExerciseForm(false);
+      setAddExerciseFormAnchor(null);
       setExerciseForm({
         ...defaultSessionExerciseFormState,
         exerciseId: availableExercises?.[0]?.id ?? '',
@@ -862,6 +876,175 @@ export function SessionPage() {
     );
   }
 
+  /**
+   * Die Steuerung der laufenden Session: Übung hinzufügen, abschließen,
+   * abbrechen.
+   *
+   * Als Funktion, weil derselbe Block über *und* unter der Übungsliste steht -
+   * siehe [SessionControlsPlacement]. Die Platzierung dient nur dazu,
+   * auseinanderzuhalten, welcher der beiden das Hinzufügen-Formular trägt.
+   */
+  function renderSessionControls(placement: SessionControlsPlacement) {
+    const showAddExerciseForm = addExerciseFormAnchor === placement;
+
+    return (
+      <SectionCard
+        title="Session"
+        subtitle={`Gestartet ${formatDateTime(session.startedAt)} · ${sessionWeekContext}`}
+      >
+        <div className="space-y-3">
+          <Button
+            variant="secondary"
+            fullWidth
+            onClick={() =>
+              setAddExerciseFormAnchor((current) => (current === placement ? null : placement))
+            }
+          >
+            {showAddExerciseForm ? (
+              <>
+                <X size={16} />
+                Hinzufügen schließen
+              </>
+            ) : (
+              <>
+                <Plus size={16} />
+                Übung hinzufügen
+              </>
+            )}
+          </Button>
+
+          {showAddExerciseForm ? (
+            <div className="space-y-4 rounded-panel border border-line bg-surface p-4">
+              {(availableExercises?.length ?? 0) > 0 ? (
+                <div className="space-y-3">
+                  <SelectField
+                    label="Übung"
+                    value={exerciseForm.exerciseId}
+                    onChange={(event) =>
+                      setExerciseForm((current) => ({
+                        ...current,
+                        exerciseId: event.target.value,
+                      }))
+                    }
+                  >
+                    {(availableExercises ?? []).map((exercise) => (
+                      <option key={exercise.id} value={exercise.id}>
+                        {exercise.name}
+                      </option>
+                    ))}
+                  </SelectField>
+
+                  <p className="text-sm text-content-muted">
+                    {formatTrackingMode(effectiveTrackingMode)} ·{' '}
+                    {effectiveUnilateral ? 'links/rechts getrennt' : 'beidseitig'}
+                  </p>
+                  <ExerciseMedia
+                    mediaAsset={selectedExerciseMedia}
+                    alt={selectedExistingExercise?.name ?? 'Übung'}
+                    className="h-32 w-full"
+                    imageClassName="h-full w-full"
+                  />
+                </div>
+              ) : (
+                <div className="rounded-panel bg-surface-raised px-4 py-4 text-sm text-content-muted">
+                  Noch keine Übung in der Bibliothek.{' '}
+                  <Link to="/exercises" className="text-accent underline underline-offset-2">
+                    Jetzt anlegen
+                  </Link>
+                  .
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <ExerciseTargetFields
+                  trackingMode={effectiveTrackingMode}
+                  loadKind={effectiveLoadKind}
+                  bandLevels={bandLevels}
+                  values={exerciseForm}
+                  onChange={(field, value) =>
+                    setExerciseForm((current) => ({ ...current, [field]: value }))
+                  }
+                  layout="grid"
+                />
+              </div>
+
+              <CheckboxField
+                label="Warmup-Satz anlegen"
+                checked={exerciseForm.includeWarmup}
+                onChange={(event) =>
+                  setExerciseForm((current) => ({
+                    ...current,
+                    includeWarmup: event.target.checked,
+                  }))
+                }
+              />
+
+              <TextArea
+                label="Notizen für diese Session-Übung, optional"
+                value={exerciseForm.notes}
+                onChange={(event) =>
+                  setExerciseForm((current) => ({
+                    ...current,
+                    notes: event.target.value,
+                  }))
+                }
+                rows={3}
+              />
+
+              <div className="grid grid-cols-2 gap-3">
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setAddExerciseFormAnchor(null);
+                    setExerciseForm({
+                      ...defaultSessionExerciseFormState,
+                      exerciseId: availableExercises?.[0]?.id ?? '',
+                    });
+                  }}
+                >
+                  Abbrechen
+                </Button>
+                <Button
+                  variant="primary"
+                  onClick={handleAddExercise}
+                  disabled={isSavingExercise || !exerciseForm.exerciseId}
+                >
+                  {isSavingExercise ? 'Speichert...' : 'Zur Session hinzufügen'}
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
+          {/*
+            Abschließen ist unumkehrbar - abgeschlossene Sessions sind
+            schreibgeschützt. Deshalb steht es allein und in voller Breite,
+            statt als gleich großer Zwilling neben dem Abbrechen zu sitzen,
+            wo der Daumen leicht danebengreift.
+          */}
+          <Button
+            variant="primary"
+            fullWidth
+            onClick={() => void handleCloseSession('complete')}
+            disabled={isClosingSession}
+          >
+            <CheckCircle2 size={18} />
+            {isClosingSession ? 'Wird beendet...' : 'Session abschließen'}
+          </Button>
+          <Button
+            variant="danger"
+            size="md"
+            fullWidth
+            onClick={() => void handleCloseSession('abort')}
+            disabled={isClosingSession}
+          >
+            <X size={16} />
+            Session abbrechen
+          </Button>
+        </div>
+      </SectionCard>
+    );
+  }
+
   if (!session) {
     return (
       <AppShell title="Session">
@@ -944,11 +1127,17 @@ export function SessionPage() {
         {sessionError ? <Alert>{sessionError}</Alert> : null}
 
         {/*
-          Die Übungen stehen direkt unter dem Streifen. Zuvor lag hier eine
-          Karte, deren Titel der Name der aktiven Übung und deren Untertitel
-          Session-Daten waren - sie beantwortete damit zwei Fragen gleichzeitig
-          und wiederholte Name und Bild der Übung, die zwei Karten tiefer
-          ohnehin schon standen.
+          Die Steuerung gleich unter dem Streifen: beim Start der Session ist
+          das Hinzufügen einer Übung der nächste Handgriff, und ein Abbruch
+          passiert eher am Anfang als nach dem letzten Satz.
+        */}
+        {session.status === 'active' ? renderSessionControls('top') : null}
+
+        {/*
+          Die Übungen stehen darunter. Zuvor lag hier eine Karte, deren Titel
+          der Name der aktiven Übung und deren Untertitel Session-Daten waren -
+          sie beantwortete damit zwei Fragen gleichzeitig und wiederholte Name
+          und Bild der Übung, die zwei Karten tiefer ohnehin schon standen.
         */}
         {orderedSessionExercises.length > 0 ? (
           <div className="space-y-4">
@@ -1004,168 +1193,19 @@ export function SessionPage() {
         ) : (
           <SectionCard title="Noch keine Übung">
             <p className="text-sm text-content-muted">
-              In dieser Session steht noch keine Übung. Du kannst unten direkt eine hinzufügen.
+              In dieser Session steht noch keine Übung. Du kannst sie direkt darüber oder darunter
+              hinzufügen.
             </p>
           </SectionCard>
         )}
 
         {/*
-          Die Steuerung der Session gehört ans Ende: sie wird einmal am
-          Schluss gebraucht, nicht zwischen den Sätzen.
+          Derselbe Block noch einmal unter der Liste: von hier aus wird die
+          Session abgeschlossen, wenn der letzte Satz abgehakt ist - ohne
+          zurückzuscrollen.
         */}
         {session.status === 'active' ? (
-          <SectionCard
-            title="Session"
-            subtitle={`Gestartet ${formatDateTime(session.startedAt)} · ${sessionWeekContext}`}
-          >
-            <div className="space-y-3">
-              <Button
-                variant="secondary"
-                fullWidth
-                onClick={() => setShowAddExerciseForm((current) => !current)}
-              >
-                {showAddExerciseForm ? (
-                  <>
-                    <X size={16} />
-                    Hinzufügen schließen
-                  </>
-                ) : (
-                  <>
-                    <Plus size={16} />
-                    Übung hinzufügen
-                  </>
-                )}
-              </Button>
-
-              {showAddExerciseForm ? (
-                <div className="space-y-4 rounded-panel border border-line bg-surface p-4">
-                  {(availableExercises?.length ?? 0) > 0 ? (
-                    <div className="space-y-3">
-                      <SelectField
-                        label="Übung"
-                        value={exerciseForm.exerciseId}
-                        onChange={(event) =>
-                          setExerciseForm((current) => ({
-                            ...current,
-                            exerciseId: event.target.value,
-                          }))
-                        }
-                      >
-                        {(availableExercises ?? []).map((exercise) => (
-                          <option key={exercise.id} value={exercise.id}>
-                            {exercise.name}
-                          </option>
-                        ))}
-                      </SelectField>
-
-                      <p className="text-sm text-content-muted">
-                        {formatTrackingMode(effectiveTrackingMode)} ·{' '}
-                        {effectiveUnilateral ? 'links/rechts getrennt' : 'beidseitig'}
-                      </p>
-                      <ExerciseMedia
-                        mediaAsset={selectedExerciseMedia}
-                        alt={selectedExistingExercise?.name ?? 'Übung'}
-                        className="h-32 w-full"
-                        imageClassName="h-full w-full"
-                      />
-                    </div>
-                  ) : (
-                    <div className="rounded-panel bg-surface-raised px-4 py-4 text-sm text-content-muted">
-                      Noch keine Übung in der Bibliothek.{' '}
-                      <Link to="/exercises" className="text-accent underline underline-offset-2">
-                        Jetzt anlegen
-                      </Link>
-                      .
-                    </div>
-                  )}
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <ExerciseTargetFields
-                      trackingMode={effectiveTrackingMode}
-                      loadKind={effectiveLoadKind}
-                      bandLevels={bandLevels}
-                      values={exerciseForm}
-                      onChange={(field, value) =>
-                        setExerciseForm((current) => ({ ...current, [field]: value }))
-                      }
-                      layout="grid"
-                    />
-                  </div>
-
-                  <CheckboxField
-                    label="Warmup-Satz anlegen"
-                    checked={exerciseForm.includeWarmup}
-                    onChange={(event) =>
-                      setExerciseForm((current) => ({
-                        ...current,
-                        includeWarmup: event.target.checked,
-                      }))
-                    }
-                  />
-
-                  <TextArea
-                    label="Notizen für diese Session-Übung, optional"
-                    value={exerciseForm.notes}
-                    onChange={(event) =>
-                      setExerciseForm((current) => ({
-                        ...current,
-                        notes: event.target.value,
-                      }))
-                    }
-                    rows={3}
-                  />
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <Button
-                      variant="secondary"
-                      onClick={() => {
-                        setShowAddExerciseForm(false);
-                        setExerciseForm({
-                          ...defaultSessionExerciseFormState,
-                          exerciseId: availableExercises?.[0]?.id ?? '',
-                        });
-                      }}
-                    >
-                      Abbrechen
-                    </Button>
-                    <Button
-                      variant="primary"
-                      onClick={handleAddExercise}
-                      disabled={isSavingExercise || !exerciseForm.exerciseId}
-                    >
-                      {isSavingExercise ? 'Speichert...' : 'Zur Session hinzufügen'}
-                    </Button>
-                  </div>
-                </div>
-              ) : null}
-
-              {/*
-                Abschließen ist unumkehrbar - abgeschlossene Sessions sind
-                schreibgeschützt. Deshalb steht es allein und in voller Breite,
-                statt als gleich großer Zwilling neben dem Abbrechen zu sitzen,
-                wo der Daumen leicht danebengreift.
-              */}
-              <Button
-                variant="primary"
-                fullWidth
-                onClick={() => void handleCloseSession('complete')}
-                disabled={isClosingSession}
-              >
-                <CheckCircle2 size={18} />
-                {isClosingSession ? 'Wird beendet...' : 'Session abschließen'}
-              </Button>
-              <Button
-                variant="danger"
-                size="md"
-                fullWidth
-                onClick={() => void handleCloseSession('abort')}
-                disabled={isClosingSession}
-              >
-                <X size={16} />
-                Session abbrechen
-              </Button>
-            </div>
-          </SectionCard>
+          renderSessionControls('bottom')
         ) : (
           <SectionCard title="Session abgeschlossen">
             <p className="text-sm text-content-muted">

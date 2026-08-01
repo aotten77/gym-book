@@ -38,7 +38,8 @@ test.describe('Band-Übungen', () => {
 
     const sessionUrl = await startSampleSession(page);
 
-    await page.getByRole('button', { name: 'Übung hinzufügen' }).click();
+    // Die Session-Steuerung steht oben und unten - hier der obere Block.
+    await page.getByRole('button', { name: 'Übung hinzufügen' }).first().click();
     await page.waitForTimeout(500);
     await page.getByLabel('Übung', { exact: true }).selectOption({ label: 'Band Pull-Apart' });
     await page.waitForTimeout(500);
@@ -70,7 +71,7 @@ test.describe('Band-Übungen', () => {
     await page.locator('button[aria-label="Satz als erledigt markieren"]').first().click();
     await page.waitForTimeout(1000);
 
-    await page.getByRole('button', { name: 'Session abschließen' }).click();
+    await page.getByRole('button', { name: 'Session abschließen' }).first().click();
     await page.waitForTimeout(1500);
 
     await page.goto('./#/history');
