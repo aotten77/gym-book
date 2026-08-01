@@ -38,6 +38,33 @@ describe('exercise actions', () => {
     });
   });
 
+  it('stores an exercise together with its image', async () => {
+    const id = await createExercise(
+      { name: 'Pallof Press', trackingMode: 'reps_weight', unilateral: true },
+      { file: new Blob(['bild'], { type: 'image/png' }), fileName: 'pallof.png', mimeType: 'image/png' },
+    );
+
+    const exercise = await db.exercises.get(id);
+
+    expect(exercise?.mediaAssetId).toBeDefined();
+    expect(await db.mediaAssets.get(exercise!.mediaAssetId!)).toMatchObject({
+      fileName: 'pallof.png',
+      mimeType: 'image/png',
+    });
+  });
+
+  it('creates neither exercise nor asset when the image type is unsupported', async () => {
+    await expect(
+      createExercise(
+        { name: 'Farmers Walk', trackingMode: 'time', unilateral: false },
+        { file: new Blob(['x'], { type: 'image/svg+xml' }), fileName: 'walk.svg', mimeType: 'image/svg+xml' },
+      ),
+    ).rejects.toThrow(/JPG/);
+
+    expect(await db.exercises.where('name').equals('Farmers Walk').count()).toBe(0);
+    expect(await db.mediaAssets.count()).toBe(0);
+  });
+
   it('rejects a blank name', async () => {
     await expect(
       createExercise({ name: '   ', trackingMode: 'reps_weight', unilateral: false }),

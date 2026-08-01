@@ -1,4 +1,5 @@
 import { db } from '@/db/appDb';
+import { createMediaAsset, prepareMediaAsset, type MediaAssetInput } from '@/db/media-actions';
 import type { Exercise, LoadKind, TrackingMode } from '@/domain/models';
 import { supportsBand } from '@/domain/tracking';
 import { createId } from '@/lib/id';
@@ -53,21 +54,34 @@ function assertName(name: string) {
   return trimmed;
 }
 
-export async function createExercise(input: ExerciseInput) {
+/**
+ * Legt eine Übung an - auf Wunsch samt Bild.
+ *
+ * Bild und Stammdaten entstehen in derselben Transaktion. Vorher musste man
+ * erst speichern und das Bild danach an der fertigen Karte nachreichen; ein
+ * abgebrochener Upload hinterlässt so keine halb angelegte Übung.
+ */
+export async function createExercise(input: ExerciseInput, media?: MediaAssetInput) {
   const name = assertName(input.name);
   const now = new Date().toISOString();
   const id = createId();
+  const preparedMedia = media ? await prepareMediaAsset(media) : undefined;
 
-  await db.exercises.add({
-    id,
-    name,
-    instructions: normalizeOptionalText(input.instructions),
-    tempo: normalizeOptionalText(input.tempo),
-    trackingMode: input.trackingMode,
-    loadKind: normalizeLoadKind(input.loadKind, input.trackingMode),
-    unilateral: input.unilateral,
-    createdAt: now,
-    updatedAt: now,
+  await db.transaction('rw', db.exercises, db.mediaAssets, async () => {
+    const mediaAssetId = preparedMedia ? await createMediaAsset(preparedMedia) : undefined;
+
+    await db.exercises.add({
+      id,
+      name,
+      instructions: normalizeOptionalText(input.instructions),
+      tempo: normalizeOptionalText(input.tempo),
+      trackingMode: input.trackingMode,
+      loadKind: normalizeLoadKind(input.loadKind, input.trackingMode),
+      unilateral: input.unilateral,
+      mediaAssetId,
+      createdAt: now,
+      updatedAt: now,
+    });
   });
 
   return id;

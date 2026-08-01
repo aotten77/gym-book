@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { ChevronDown, ChevronUp, Dumbbell, Pencil, Plus, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, ImagePlus, Pencil, Plus, Trash2 } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
 import { Alert } from '@/components/Alert';
 import { Empty } from '@/components/Empty';
@@ -159,8 +159,28 @@ export function ExercisesPage() {
     { exercise: Exercise; templateNames: string[]; sessionCount: number } | null
   >(null);
   const [showForm, setShowForm] = useState(false);
+  /*
+   * Das gewählte Bild liegt bis zum Speichern nur im Formular: eine Übung,
+   * die es noch nicht gibt, kann kein Bild tragen. `mediaRemoved` merkt sich
+   * für den Bearbeiten-Fall, dass das vorhandene Bild weg soll.
+   */
+  const [mediaFile, setMediaFile] = useState<File | null>(null);
+  const [mediaRemoved, setMediaRemoved] = useState(false);
+
+  const editingExercise = editingId
+    ? exercises?.find((item) => item.id === editingId)
+    : undefined;
+  const editingMedia = useLiveQuery(
+    async () =>
+      editingExercise?.mediaAssetId ? db.mediaAssets.get(editingExercise.mediaAssetId) : undefined,
+    [editingExercise?.mediaAssetId],
+  );
+  const previewBlob = mediaFile ?? (mediaRemoved ? undefined : editingMedia?.blob);
 
   useEffect(() => {
+    setMediaFile(null);
+    setMediaRemoved(false);
+
     if (!editingId) {
       return;
     }
@@ -186,6 +206,28 @@ export function ExercisesPage() {
     setForm(emptyForm);
     setEditingId(null);
     setShowForm(false);
+    setMediaFile(null);
+    setMediaRemoved(false);
+  }
+
+  function handleSelectMedia(file: File | undefined) {
+    if (!file) {
+      return;
+    }
+
+    if (!isSupportedMediaType(file.type)) {
+      setError('Nur JPG, PNG, GIF und WebP werden unterstützt.');
+      return;
+    }
+
+    setError(null);
+    setMediaFile(file);
+    setMediaRemoved(false);
+  }
+
+  function handleRemoveMedia() {
+    setMediaFile(null);
+    setMediaRemoved(true);
   }
 
   async function handleSubmit() {
@@ -194,8 +236,24 @@ export function ExercisesPage() {
     try {
       if (editingId) {
         await updateExercise(editingId, form);
+
+        if (mediaFile) {
+          await replaceExerciseMedia({
+            exerciseId: editingId,
+            file: mediaFile,
+            fileName: mediaFile.name,
+            mimeType: mediaFile.type,
+          });
+        } else if (mediaRemoved) {
+          await clearExerciseMedia(editingId);
+        }
       } else {
-        await createExercise(form);
+        await createExercise(
+          form,
+          mediaFile
+            ? { file: mediaFile, fileName: mediaFile.name, mimeType: mediaFile.type }
+            : undefined,
+        );
       }
 
       setError(null);
@@ -232,29 +290,6 @@ export function ExercisesPage() {
       setPendingDelete(null);
     } finally {
       setIsSaving(false);
-    }
-  }
-
-  async function handleMediaChange(exerciseId: string, file: File | undefined) {
-    if (!file) {
-      return;
-    }
-
-    if (!isSupportedMediaType(file.type)) {
-      setError('Nur JPG, PNG, GIF und WebP werden unterstützt.');
-      return;
-    }
-
-    try {
-      await replaceExerciseMedia({
-        exerciseId,
-        file,
-        fileName: file.name,
-        mimeType: file.type,
-      });
-      setError(null);
-    } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : 'Bild konnte nicht gespeichert werden.');
     }
   }
 
@@ -359,6 +394,46 @@ export function ExercisesPage() {
                 {form.unilateral ? 'Unilateral: links/rechts getrennt' : 'Beidseitig'}
               </button>
 
+              <div>
+                <p className="mb-1.5 text-xs font-medium text-content-muted">Bild</p>
+
+                {previewBlob ? (
+                  <ExerciseMedia
+                    blob={previewBlob}
+                    alt={form.name.trim() ? `Bild von ${form.name.trim()}` : 'Gewähltes Bild'}
+                    className="mb-2 h-40 w-full"
+                    imageClassName="h-full w-full"
+                  />
+                ) : null}
+
+                <div className="flex flex-wrap gap-2">
+                  <label className="inline-flex min-h-touch flex-1 cursor-pointer items-center justify-center gap-2 rounded-control border border-line px-4 text-sm font-medium text-content-secondary transition hover:bg-surface-raised focus-within:ring-2 focus-within:ring-accent">
+                    <ImagePlus size={16} />
+                    {previewBlob ? 'Bild ersetzen' : 'Bild wählen'}
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp,image/gif"
+                      aria-label={previewBlob ? 'Bild ersetzen' : 'Bild wählen'}
+                      className="sr-only"
+                      onChange={(event) => {
+                        handleSelectMedia(event.target.files?.[0]);
+                        event.target.value = '';
+                      }}
+                    />
+                  </label>
+
+                  {previewBlob ? (
+                    <Button size="md" variant="ghost" onClick={handleRemoveMedia}>
+                      Bild entfernen
+                    </Button>
+                  ) : null}
+                </div>
+
+                <p className="mt-1.5 text-xs text-content-muted">
+                  JPG, PNG, GIF oder WebP - wird zusammen mit der Übung gespeichert.
+                </p>
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <Button variant="ghost" onClick={resetForm} disabled={isSaving}>
                   Abbrechen
@@ -419,42 +494,20 @@ export function ExercisesPage() {
               }
             >
               <div className="space-y-3">
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    size="md"
-                    variant="ghost"
-                    onClick={() => setExpandedId(isExpanded ? null : exercise.id)}
-                    aria-expanded={isExpanded}
-                  >
-                    {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                    {isExpanded ? 'Verlauf ausblenden' : 'Verlauf anzeigen'}
-                  </Button>
-
-                  <label className="inline-flex min-h-touch cursor-pointer items-center justify-center gap-2 rounded-control border border-line px-4 text-sm font-medium text-content-secondary transition hover:bg-surface-raised focus-within:ring-2 focus-within:ring-accent">
-                    <Dumbbell size={16} />
-                    {exercise.mediaAssetId ? 'Bild ersetzen' : 'Bild wählen'}
-                    <input
-                      type="file"
-                      accept="image/jpeg,image/png,image/webp,image/gif"
-                      aria-label={`Bild für ${exercise.name} wählen`}
-                      className="sr-only"
-                      onChange={(event) => {
-                        void handleMediaChange(exercise.id, event.target.files?.[0]);
-                        event.target.value = '';
-                      }}
-                    />
-                  </label>
-
-                  {exercise.mediaAssetId ? (
-                    <Button
-                      size="md"
-                      variant="ghost"
-                      onClick={() => void clearExerciseMedia(exercise.id)}
-                    >
-                      Bild entfernen
-                    </Button>
-                  ) : null}
-                </div>
+                {/*
+                  Das Bild wird im Formular gepflegt, nicht hier: eine zweite
+                  Stelle dafür hieß, dass man es beim Anlegen erst nachreichen
+                  musste.
+                */}
+                <Button
+                  size="md"
+                  variant="ghost"
+                  onClick={() => setExpandedId(isExpanded ? null : exercise.id)}
+                  aria-expanded={isExpanded}
+                >
+                  {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                  {isExpanded ? 'Verlauf ausblenden' : 'Verlauf anzeigen'}
+                </Button>
 
                 {isExpanded ? <ExerciseDetail exercise={exercise} /> : null}
               </div>

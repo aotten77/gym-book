@@ -62,6 +62,41 @@ test.describe('Übungsbibliothek', () => {
     expect(errors).toEqual([]);
   });
 
+  test('das Bild wird im Anlegen-Formular gewählt, nicht danach', async ({ page }) => {
+    const errors = collectPageErrors(page);
+
+    /*
+     * Bewusst ohne Speichern: WebKit unter Playwright legt überhaupt keine
+     * Blobs in IndexedDB ab ("Error preparing Blob/File data to be stored in
+     * object store"), auch ohne diese App. Der Weg in die Datenbank hängt
+     * darum an den Unit-Tests; hier zählt, dass die Wahl samt Vorschau vor
+     * dem Anlegen steht - vorher gab es sie erst an der fertigen Karte.
+     */
+    await page.goto('./#/exercises');
+    await page.waitForTimeout(800);
+
+    await page.getByRole('button', { name: 'Anlegen' }).first().click();
+    await page.getByLabel('Name').fill('Pallof Press');
+
+    // Ein 1x1-PNG reicht für die Vorschau.
+    await page.getByLabel('Bild wählen').setInputFiles({
+      name: 'pallof.png',
+      mimeType: 'image/png',
+      buffer: Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+        'base64',
+      ),
+    });
+
+    await expect(page.getByAltText('Bild von Pallof Press')).toBeVisible();
+
+    await page.getByRole('button', { name: 'Bild entfernen' }).click();
+    await expect(page.getByAltText('Bild von Pallof Press')).toBeHidden();
+    await expect(page.getByLabel('Bild wählen')).toBeAttached();
+
+    expect(errors).toEqual([]);
+  });
+
   test('eine in einem Workout verwendete Übung wird nicht gelöscht', async ({ page }) => {
     await seedSampleData(page);
     await page.goto('./#/exercises');
