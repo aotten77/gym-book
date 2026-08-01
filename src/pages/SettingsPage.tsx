@@ -1,20 +1,27 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Download, HardDrive, Upload } from 'lucide-react';
+import { Download, HardDrive, Upload, Volume2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { AppShell } from '@/components/AppShell';
 import { Alert } from '@/components/Alert';
 import { BandLevelsSection } from '@/components/BandLevelsSection';
 import { Button } from '@/components/ui/Button';
+import { ToggleField } from '@/components/ui/Field';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { SectionCard } from '@/components/SectionCard';
 import { WeekStepper } from '@/components/WeekStepper';
 import { bootstrapAppData, seedSampleData } from '@/db/bootstrap';
 import { formatDateTime } from '@/lib/format';
+import { playTimerChimeFromGesture, primeTimerSound } from '@/lib/sound';
 import { formatBytes, readStorageStatus, requestPersistentStorage, type StorageStatus } from '@/lib/storage';
 import { db } from '@/db/appDb';
 import { setProgramActiveWeek } from '@/db/program-actions';
-import { clearWeekOverride, setActiveProgram, setWeekOverride } from '@/db/settings-actions';
+import {
+  clearWeekOverride,
+  setActiveProgram,
+  setTimerSoundEnabled,
+  setWeekOverride,
+} from '@/db/settings-actions';
 import { resolveWeekControl } from '@/domain/program';
 import {
   type DatabaseSnapshot,
@@ -45,6 +52,7 @@ export function SettingsPage() {
   const [isRequestingPersistence, setIsRequestingPersistence] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [exportMessage, setExportMessage] = useState<string | null>(null);
+  const [soundError, setSoundError] = useState<string | null>(null);
 
   const refreshStorageStatus = useCallback(async () => {
     setStorageStatus(await readStorageStatus());
@@ -272,6 +280,25 @@ export function SettingsPage() {
     }
   }
 
+  async function handleToggleTimerSound(enabled: boolean) {
+    /*
+     * Noch innerhalb der Geste freischalten: nach dem `await` unten wäre der
+     * Kontext für den Browser kein Ergebnis einer Berührung mehr.
+     */
+    if (enabled) {
+      primeTimerSound();
+    }
+
+    try {
+      await setTimerSoundEnabled(enabled);
+      setSoundError(null);
+    } catch (error) {
+      setSoundError(
+        error instanceof Error ? error.message : 'Einstellung konnte nicht gespeichert werden.',
+      );
+    }
+  }
+
   return (
     <AppShell title="Einstellungen">
       <div className="space-y-4">
@@ -379,6 +406,38 @@ export function SettingsPage() {
                 {programError}
               </div>
             ) : null}
+          </div>
+        </SectionCard>
+
+        <SectionCard
+          title="Signale"
+          subtitle="Womit sich Pausen- und Satz-Timer melden, wenn sie abgelaufen sind."
+        >
+          <div className="space-y-4">
+            <ToggleField
+              label="Ton beim Ablauf der Timer"
+              hint="Zusätzlich zur Vibration. Steht das iPhone auf lautlos, bleibt der Ton aus - die Vibration nicht."
+              checked={settings?.timerSoundEnabled !== false}
+              onCheckedChange={(enabled) => void handleToggleTimerSound(enabled)}
+            />
+
+            <p className="text-sm text-content-muted">
+              Gemeldet wird nur, was gerade abläuft. Lag die App länger im
+              Hintergrund, bleibt der Ton beim Zurückwechseln aus - dort wäre er
+              kein Hinweis mehr.
+            </p>
+
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => void playTimerChimeFromGesture()}
+              disabled={settings?.timerSoundEnabled === false}
+            >
+              <Volume2 size={18} />
+              Ton testen
+            </Button>
+
+            {soundError ? <Alert variant="error">{soundError}</Alert> : null}
           </div>
         </SectionCard>
 

@@ -180,6 +180,31 @@ describe('parseDatabaseSnapshot', () => {
     expect(parseDatabaseSnapshot(JSON.stringify(legacy)).bandLevels).toEqual([]);
   });
 
+  it('keeps a switched-off timer sound and accepts backups written before it existed', () => {
+    // Zod entfernt unbekannte Schlüssel: fehlte das Feld im Schema, käme das
+    // Aus des Nutzers beim Import stillschweigend als Ein zurück.
+    const withSound = parseDatabaseSnapshot(
+      JSON.stringify(
+        createSnapshot({
+          appSettings: [
+            {
+              id: 'app-settings',
+              timerSoundEnabled: false,
+              exportSchemaVersion: SNAPSHOT_SCHEMA_VERSION,
+              updatedAt: '2026-07-27T20:00:00.000Z',
+            },
+          ],
+        }),
+      ),
+    );
+
+    expect(withSound.appSettings[0].timerSoundEnabled).toBe(false);
+
+    // Ältere Sicherungen kennen den Schlüssel nicht und bleiben gültig.
+    expect(parseDatabaseSnapshot(JSON.stringify(createSnapshot())).appSettings[0].timerSoundEnabled)
+      .toBeUndefined();
+  });
+
   it('accepts a set log whose band was deleted from the catalogue', () => {
     // Kein Integritätsfehler: sonst scheiterte der Nutzer am Import seines
     // eigenen Backups, nur weil er ein Band aufgeräumt hat.

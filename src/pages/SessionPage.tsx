@@ -77,6 +77,7 @@ import {
   formatTrackingMode,
 } from '@/lib/format';
 import { optionalNumberInput } from '@/lib/number-input';
+import { isChimeFresh, playTimerChime, primeTimerSound } from '@/lib/sound';
 import { cn } from '@/lib/utils';
 import { useUiStore } from '@/store/ui-store';
 
@@ -172,6 +173,9 @@ export function SessionPage() {
   // Identität, an der die Effekte unten sonst dauernd neu anspringen würden.
   const setTimerEndsAt = setTimer?.endsAt ?? null;
   const setTimerDurationSeconds = setTimer?.durationSeconds ?? null;
+  const appSettings = useLiveQuery(() => db.appSettings.get('app-settings'), []);
+  // Additiv wie includeWarmup: nur ein ausdrückliches Aus schaltet den Ton ab.
+  const timerSoundEnabled = appSettings?.timerSoundEnabled !== false;
   const availableExercises = useLiveQuery(() => db.exercises.orderBy('name').toArray(), []);
   const bandLevels = useLiveQuery(() => db.bandLevels.orderBy('orderIndex').toArray(), []);
   const sessionExercises = useLiveQuery(
@@ -240,6 +244,20 @@ export function SessionPage() {
   }, [sessionExercises]);
 
   useEffect(() => {
+    if (!timerSoundEnabled) {
+      return;
+    }
+
+    /*
+     * Früh genug freischalten: der Ablauf eines Timers ist keine Nutzergeste,
+     * ein gesperrter AudioContext bliebe dort stumm. Der Aufruf hängt sich an
+     * die erste Berührung auf dieser Seite - die kommt spätestens beim
+     * Starten des Timers, dessen Ablauf zu melden ist.
+     */
+    primeTimerSound();
+  }, [timerSoundEnabled]);
+
+  useEffect(() => {
     // Ein Takt für alle Uhren: es können mehrere Pausen und ein Satz-Timer
     // gleichzeitig laufen, sie brauchen aber dieselbe Sekundenauflösung.
     if (!hasRestTimers && !setTimerEndsAt) {
@@ -270,10 +288,15 @@ export function SessionPage() {
    * Schlüssel der gerade abgelaufenen Pausen, als String stabil vergleichbar.
    * Die Spuren selbst taugen nicht als Effekt-Abhängigkeit: useLiveQuery
    * liefert bei jedem Emit ein neues Array.
+   *
+   * Das angehängte Ende trägt den Zeitpunkt mit in den Effekt, ohne dass er
+   * die Spuren selbst braucht - der Ton hängt davon ab, wie lange der Ablauf
+   * her ist. Verlängert [extendRestTimer] eine Spur, ist es ohnehin ein neuer
+   * Ablauf, der wieder gemeldet werden soll.
    */
   const expiredRestTrackKeys = restTimers
     .filter((track) => isRestTrackReady(track, now))
-    .map((track) => restTrackKey(track.sessionExerciseId, track.side))
+    .map((track) => `${restTrackKey(track.sessionExerciseId, track.side)}@${track.endsAt}`)
     .join('|');
 
   useEffect(() => {
@@ -305,12 +328,26 @@ export function SessionPage() {
     }
 
     /*
+     * Hörbar nur, wenn der Ablauf gerade passiert ist: kommt die App nach
+     * Minuten im Hintergrund zurück, meldet sie lauter Vergangenheit.
+     */
+    const chimeWorthy = freshKeys.some((key) => {
+      const endsAt = Number(key.slice(key.lastIndexOf('@') + 1));
+
+      return Number.isFinite(endsAt) && isChimeFresh(endsAt, Date.now());
+    });
+
+    if (timerSoundEnabled && chimeWorthy) {
+      playTimerChime();
+    }
+
+    /*
      * Abgelaufene Spuren bleiben zunächst stehen und melden "bereit" - genau
      * das sucht man beim Zurückwechseln. Weggeräumt werden sie erst nach der
      * Karenzzeit in [pruneRestTimers].
      */
     void pruneRestTimers(sessionId);
-  }, [expiredRestTrackKeys, sessionId]);
+  }, [expiredRestTrackKeys, sessionId, timerSoundEnabled]);
 
   useEffect(() => {
     if (!setTimerEndsAt || !setTimerDurationSeconds || setTimerEndsAt > now) {
@@ -323,9 +360,13 @@ export function SessionPage() {
       navigator.vibrate([180, 90, 180]);
     }
 
+    if (timerSoundEnabled && isChimeFresh(setTimerEndsAt, Date.now())) {
+      playTimerChime();
+    }
+
     // Durchgehalten heißt: die volle gestartete Zeit landet im Satz.
     void finishSetTimer(sessionId, setTimerDurationSeconds);
-  }, [now, sessionId, setTimerDurationSeconds, setTimerEndsAt]);
+  }, [now, sessionId, setTimerDurationSeconds, setTimerEndsAt, timerSoundEnabled]);
 
   useEffect(() => {
     if (!availableExercises?.length) {

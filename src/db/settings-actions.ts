@@ -57,6 +57,24 @@ export async function clearWeekOverride() {
 }
 
 /**
+ * Schaltet den Signalton beim Ablauf der Timer.
+ *
+ * Wird immer explizit geschrieben, nie gelöscht: `undefined` bedeutet "nie
+ * entschieden" und zählt als eingeschaltet - ein bewusstes Aus muss davon
+ * unterscheidbar bleiben.
+ */
+export async function setTimerSoundEnabled(enabled: boolean) {
+  const current = await ensureSettings();
+
+  await db.appSettings.put({
+    ...current,
+    id: SETTINGS_ID,
+    timerSoundEnabled: enabled,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+/**
  * Merkt sich, dass eine Sicherung geschrieben wurde.
  *
  * Die Erinnerung auf der Startseite zählt abgeschlossene Trainings, die

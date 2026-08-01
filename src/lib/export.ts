@@ -192,8 +192,9 @@ const appSettingsSchema = z.object({
   id: z.literal('app-settings'),
   activeProgramId: z.string().optional(),
   weekOverride: z.number().int().positive().optional(),
-  // Additiv wie includeWarmup: ältere Backups kennen den Schlüssel nicht.
+  // Additiv wie includeWarmup: ältere Backups kennen die Schlüssel nicht.
   lastBackupAt: z.string().optional(),
+  timerSoundEnabled: z.boolean().optional(),
   exportSchemaVersion: z.number().int().positive(),
   updatedAt: z.string(),
 });

@@ -148,6 +148,74 @@ export function CheckboxField({
   );
 }
 
+interface ToggleFieldProps {
+  label: string;
+  hint?: string;
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+  disabled?: boolean;
+  className?: string;
+}
+
+/**
+ * Schalter für eine Einstellung, die sofort wirkt.
+ *
+ * Kein [CheckboxField]: dessen Kästchen bleibt auch in der 44px-Zeile ein
+ * 20px-Ziel, und der Zugänglichkeitstest misst das Bedienelement selbst, nicht
+ * seine Umgebung. Hier ist die ganze Zeile der Knopf - `role="switch"` sagt
+ * dazu, dass die Änderung unmittelbar greift und kein Formular abgeschickt
+ * werden muss.
+ */
+export function ToggleField({
+  label,
+  hint,
+  checked,
+  onCheckedChange,
+  disabled,
+  className,
+}: ToggleFieldProps) {
+  const hintId = useId();
+
+  return (
+    <div className={cn('w-full', className)}>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-describedby={hint ? hintId : undefined}
+        disabled={disabled}
+        onClick={() => onCheckedChange(!checked)}
+        className={cn(
+          'flex min-h-touch w-full items-center justify-between gap-3 rounded-panel border border-line',
+          'bg-surface-sunken px-4 py-3 text-left transition hover:bg-surface-raised',
+          'disabled:cursor-not-allowed disabled:opacity-60',
+        )}
+      >
+        <span className="text-base text-content">{label}</span>
+        <span
+          aria-hidden
+          className={cn(
+            'relative h-7 w-12 shrink-0 rounded-full border transition',
+            checked ? 'border-accent-border bg-accent' : 'border-line bg-surface',
+          )}
+        >
+          <span
+            className={cn(
+              'absolute top-1/2 h-5 w-5 -translate-y-1/2 rounded-full bg-content transition-all',
+              checked ? 'left-[1.5rem]' : 'left-0.5',
+            )}
+          />
+        </span>
+      </button>
+      {hint ? (
+        <p id={hintId} className="mt-1.5 text-xs text-content-muted">
+          {hint}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 interface SelectFieldProps extends Omit<SelectHTMLAttributes<HTMLSelectElement>, 'id'> {
   label: string;
   hint?: string;

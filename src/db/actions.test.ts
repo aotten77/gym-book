@@ -31,7 +31,12 @@ import {
   updateProgramWeek,
 } from '@/db/program-actions';
 import { clearExerciseMedia, replaceExerciseMedia } from '@/db/media-actions';
-import { clearWeekOverride, setActiveProgram, setWeekOverride } from '@/db/settings-actions';
+import {
+  clearWeekOverride,
+  setActiveProgram,
+  setTimerSoundEnabled,
+  setWeekOverride,
+} from '@/db/settings-actions';
 import {
   clearProgressionRule,
   deleteTemplateExercise,
@@ -532,6 +537,29 @@ describe('settings and program week actions', () => {
 
     const cleared = await db.appSettings.get('app-settings');
     expect(cleared?.weekOverride).toBeUndefined();
+  });
+
+  it('stores a switched-off timer sound as false, not as a missing key', async () => {
+    // Ohne Eintrag zählt der Ton als eingeschaltet - ein Aus muss davon
+    // unterscheidbar bleiben.
+    await setTimerSoundEnabled(false);
+
+    const off = await db.appSettings.get('app-settings');
+    expect(off?.timerSoundEnabled).toBe(false);
+
+    await setTimerSoundEnabled(true);
+
+    const on = await db.appSettings.get('app-settings');
+    expect(on?.timerSoundEnabled).toBe(true);
+  });
+
+  it('keeps the other settings when toggling the timer sound', async () => {
+    await setWeekOverride(2);
+
+    await setTimerSoundEnabled(false);
+
+    const settings = await db.appSettings.get('app-settings');
+    expect(settings?.weekOverride).toBe(2);
   });
 
   it('sets the active program and clears weekOverride', async () => {

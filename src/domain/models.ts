@@ -253,6 +253,14 @@ export interface AppSettings {
    * eine vom Homescreen geloeschte iOS-Web-App nimmt ihren Speicher mit.
    */
   lastBackupAt?: string;
+  /**
+   * Signalton beim Ablauf der Timer.
+   *
+   * Additiv wie `includeWarmup`: `undefined` zählt als eingeschaltet, damit
+   * bestehende Installationen den Ton bekommen, ohne dass eine Migration
+   * jede Zeile anfassen müsste.
+   */
+  timerSoundEnabled?: boolean;
   exportSchemaVersion: number;
   updatedAt: string;
 }
