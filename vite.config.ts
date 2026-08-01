@@ -37,7 +37,9 @@ export default defineConfig({
         theme_color: '#09090b',
         background_color: '#09090b',
         display: 'standalone',
-        orientation: 'portrait',
+        // 'portrait' erlaubt beide Hochformat-Lagen; 'portrait-primary' legt
+        // sich auf eine fest - dort, wo der Browser die Sperre umsetzt.
+        orientation: 'portrait-primary',
         scope: '/',
         start_url: '/#/',
         categories: ['health', 'fitness', 'productivity'],

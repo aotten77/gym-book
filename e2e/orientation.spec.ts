@@ -51,5 +51,41 @@ test.describe('Hochformat erzwingen', () => {
     // Gescrollt wird im gedrehten Rahmen, nicht im Dokument - sonst liefe die
     // Seite quer aus dem Bild.
     expect(landscape.documentScrollable).toBe(false);
+    // matrix(0, 1, -1, 0) ist die Drehung im Uhrzeigersinn - der Standardfall
+    // ohne gemeldeten Winkel.
+    expect(landscape.transform.startsWith('matrix(0, 1, -1, 0')).toBe(true);
+  });
+
+  test('in der Gegenrichtung wird andersherum gedreht', async ({ page }) => {
+    /*
+     * Ohne diese Fallunterscheidung stand die App in einer der beiden
+     * Querformat-Lagen auf dem Kopf: eine feste 90-Grad-Drehung passt immer nur
+     * zu einer Kipprichtung. Der Winkel kommt aus `screen.orientation` und wird
+     * hier gefälscht, weil Playwright beim Tauschen der Viewport-Maße keine
+     * echte Geräteorientierung meldet (`angle` bleibt 0). Gepatcht wird der
+     * Prototyp, nicht die Instanz: WebKit hängt am neuen Viewport ein frisches
+     * ScreenOrientation-Objekt ein, ein Instanz-Getter wäre danach weg.
+     */
+    await page.addInitScript(() => {
+      Object.defineProperty(ScreenOrientation.prototype, 'angle', {
+        configurable: true,
+        get: () => 270,
+      });
+    });
+
+    await resetDatabase(page);
+
+    const viewport = page.viewportSize()!;
+    await page.setViewportSize({ width: viewport.height, height: viewport.width });
+    await page.waitForTimeout(800);
+
+    const rotated = await page.evaluate(() => ({
+      angleAttribute: document.documentElement.dataset.screenAngle,
+      transform: getComputedStyle(document.getElementById('root')!).transform,
+    }));
+
+    expect(rotated.angleAttribute).toBe('270');
+    // matrix(0, -1, 1, 0) ist die Drehung gegen den Uhrzeigersinn.
+    expect(rotated.transform.startsWith('matrix(0, -1, 1, 0')).toBe(true);
   });
 });

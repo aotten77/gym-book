@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { registerSW } from 'virtual:pwa-register';
 import App from './App';
 import './index.css';
+import { watchScreenOrientation } from '@/lib/orientation';
 import { useUiStore } from '@/store/ui-store';
 
 /** Abstand zwischen zwei aktiven Update-Prüfungen. */
@@ -56,6 +57,12 @@ const updateServiceWorker = registerSW({
     console.error('Service Worker konnte nicht registriert werden', error);
   },
 });
+
+/*
+ * Muss vor dem ersten Rendern laufen: das CSS liest den Winkel, um die App im
+ * Querformat in die richtige Richtung zurückzudrehen.
+ */
+watchScreenOrientation();
 
 useUiStore.getState().setOnlineStatus(window.navigator.onLine);
 

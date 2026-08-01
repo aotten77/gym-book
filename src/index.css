@@ -90,6 +90,18 @@ select {
  * Rahmen. Die Safe-Area-Insets zeigen in diesem Modus auf die physischen
  * Ränder, also nach dem Drehen auf die falsche Seite; das kostet etwas
  * Abstand am Notch, bricht aber nichts.
+ *
+ * Die Drehrichtung muss zur Kipprichtung passen, sonst steht die App in einer
+ * der beiden Querformat-Lagen auf dem Kopf - das ist der 180-Grad-Sprung beim
+ * Ablegen des Telefons. Die Media Query unterscheidet die beiden Lagen nicht,
+ * deshalb liefert `watchScreenOrientation` (src/lib/orientation.ts) den Winkel
+ * als `data-screen-angle` an `<html>`.
+ *
+ * Gedreht wird um genau diesen Winkel: bei 90 Grad (Gerät gegen den
+ * Uhrzeigersinn gekippt, Oberkante links) muss der Inhalt im Geräterahmen im
+ * Uhrzeigersinn zurück, bei 270 Grad andersherum. 90 Grad bleibt der
+ * Standardfall - fehlt das Attribut (kein JS, alter Browser), bleibt es beim
+ * bisherigen Verhalten.
  */
 @media (orientation: landscape) and (max-height: 520px) and (pointer: coarse) {
   body {
@@ -105,6 +117,10 @@ select {
     overflow: hidden;
     transform: translate(-50%, -50%) rotate(90deg);
     transform-origin: center center;
+  }
+
+  :root[data-screen-angle='270'] #root {
+    transform: translate(-50%, -50%) rotate(-90deg);
   }
 
   #root > * {
