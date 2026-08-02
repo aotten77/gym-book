@@ -62,13 +62,13 @@ export function ConfirmDialog({
   }
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur-sm sm:items-center">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-content/45 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur-sm sm:items-center">
       <div
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="confirm-dialog-title"
         aria-describedby="confirm-dialog-description"
-        className="w-full max-w-md rounded-card border border-line bg-zinc-950/95 p-5 shadow-soft"
+        className="w-full max-w-md rounded-card border border-line bg-surface p-5 shadow-soft"
       >
         <h2 id="confirm-dialog-title" className="text-lg font-semibold text-content">
           {title}

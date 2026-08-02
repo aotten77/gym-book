@@ -40,7 +40,7 @@ export function ExerciseMedia({
   }
 
   return (
-    <div className={cn('overflow-hidden rounded-3xl border border-white/10 bg-zinc-950/45', className)}>
+    <div className={cn('overflow-hidden rounded-3xl border border-line bg-surface-raised', className)}>
       <img src={url} alt={alt} className={cn('h-full w-full object-cover', imageClassName)} />
     </div>
   );

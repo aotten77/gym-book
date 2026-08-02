@@ -13,7 +13,14 @@ export function SectionCard({ title, subtitle, action, children, className }: Se
   return (
     <section
       className={cn(
-        'rounded-card border border-line bg-surface-raised p-4 shadow-soft backdrop-blur',
+        /*
+         * Weiß auf Papier, nicht getönt: die Karte ist die oberste Ebene und
+         * muss heller sein als das, was in ihr liegt. Auf dunklem Grund war
+         * "raised" die aufgehellte Fläche - auf hellem Grund kehrt sich das
+         * um, und eine getönte Karte mit weißen Kacheln darin liest sich
+         * verkehrt herum.
+         */
+        'rounded-card border border-line bg-surface p-4 shadow-soft',
         className,
       )}
     >

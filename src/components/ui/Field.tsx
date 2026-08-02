@@ -138,7 +138,9 @@ export function CheckboxField({
         <input
           id={id}
           type="checkbox"
-          className="h-5 w-5 shrink-0 accent-lime-300"
+          // Die native Haekchenfarbe: Tinte, nicht Limette. Das Haekchen im
+          // Kaestchen zeichnet iOS weiss - auf Limette waere es unsichtbar.
+          className="h-5 w-5 shrink-0 accent-content"
           {...rest}
         />
         <span className="text-base text-content">{label}</span>

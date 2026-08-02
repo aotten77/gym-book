@@ -51,10 +51,20 @@ export function MediaLightbox({ mediaAsset, alt, onClose }: MediaLightboxProps) 
       aria-modal="true"
       aria-label={alt}
       onClick={onClose}
-      className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/85 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur-sm"
+      /*
+        Die Lightbox bleibt bewusst dunkel, auch wenn die App hell ist: ein
+        Bild beurteilt man vor dunklem Grund, und der Rand soll nicht mit ihm
+        um Aufmerksamkeit ringen. Deshalb stehen Knopf und Bildunterschrift
+        hier auf eigenen hellen Farben statt auf den Tokens.
+      */
+      className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-content/90 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur-sm"
     >
       <div className="flex w-full max-w-md justify-end">
-        <IconButton label="Bild schließen" onClick={onClose} className="bg-zinc-950/80">
+        <IconButton
+          label="Bild schließen"
+          onClick={onClose}
+          className="border-transparent bg-app/15 text-app hover:bg-app/25"
+        >
           <X size={18} />
         </IconButton>
       </div>
@@ -70,7 +80,7 @@ export function MediaLightbox({ mediaAsset, alt, onClose }: MediaLightboxProps) 
           imageClassName="h-full w-full object-contain"
         />
       </div>
-      <p className="mt-3 max-w-md text-center text-sm text-content-muted">{alt}</p>
+      <p className="mt-3 max-w-md text-center text-sm text-app/80">{alt}</p>
     </div>,
     document.body,
   );

@@ -5,7 +5,9 @@ type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
 type ButtonSize = 'md' | 'lg';
 
 const VARIANT_CLASSES: Record<ButtonVariant, string> = {
-  primary: 'bg-accent text-accent-contrast font-semibold hover:brightness-105',
+  // `brightness-105` hellte auf dunklem Grund auf; auf der dunklen Tinte
+  // passiert dabei sichtbar nichts mehr - deshalb der Weg über die Deckkraft.
+  primary: 'bg-accent text-accent-contrast font-semibold hover:opacity-90',
   secondary: 'bg-surface-raised text-content-secondary hover:bg-surface-hover',
   ghost: 'border border-line text-content-secondary hover:bg-surface-raised',
   danger: 'border border-danger-border text-danger hover:bg-danger-soft',
@@ -35,7 +37,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       className={cn(
         'inline-flex items-center justify-center gap-2 font-medium transition',
         // Der Browser-Default-Ring ist auf dunklem Grund praktisch unsichtbar.
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-app',
         'disabled:cursor-not-allowed disabled:opacity-50',
         VARIANT_CLASSES[variant],
         SIZE_CLASSES[size],
@@ -71,7 +73,7 @@ export function IconButton({
       title={label}
       className={cn(
         'inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-control border transition',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-app',
         'disabled:cursor-not-allowed disabled:opacity-50',
         variant === 'danger'
           ? 'border-danger-border text-danger hover:bg-danger-soft'

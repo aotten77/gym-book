@@ -11,7 +11,7 @@ type AlertVariant = 'error' | 'success' | 'warning' | 'info';
  */
 const VARIANT_CLASSES: Record<AlertVariant, string> = {
   error: 'border-danger-border bg-danger-soft text-danger',
-  success: 'border-accent-border bg-accent-soft text-accent',
+  success: 'border-success-border bg-success-soft text-success',
   warning: 'border-warning/20 bg-warning-soft text-warning',
   info: 'border-line bg-surface text-content-secondary',
 };

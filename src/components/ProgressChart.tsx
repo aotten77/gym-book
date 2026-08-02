@@ -74,8 +74,8 @@ export function ProgressChart({ points, unit, label, formatValue }: ProgressChar
       >
         <defs>
           <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#bef264" stopOpacity="0.28" />
-            <stop offset="100%" stopColor="#bef264" stopOpacity="0" />
+            <stop offset="0%" stopColor="var(--chart-line)" stopOpacity="0.22" />
+            <stop offset="100%" stopColor="var(--chart-line)" stopOpacity="0" />
           </linearGradient>
         </defs>
 
@@ -83,7 +83,7 @@ export function ProgressChart({ points, unit, label, formatValue }: ProgressChar
         <path
           d={line}
           fill="none"
-          stroke="#bef264"
+          stroke="var(--chart-line)"
           strokeWidth="2"
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -96,8 +96,8 @@ export function ProgressChart({ points, unit, label, formatValue }: ProgressChar
             cx={x}
             cy={y}
             r="3"
-            fill="#09090b"
-            stroke="#bef264"
+            fill="var(--chart-dot)"
+            stroke="var(--chart-line)"
             strokeWidth="2"
             vectorEffect="non-scaling-stroke"
           />
@@ -109,7 +109,7 @@ export function ProgressChart({ points, unit, label, formatValue }: ProgressChar
         <span className="text-content-secondary">
           {min === max ? format(max) : formatValue ? `${format(min)}–${format(max)}` : `${min}–${max} ${unit}`}
           {trend && !formatValue ? (
-            <span className={trend.delta >= 0 ? ' text-accent' : ' text-danger'}>
+            <span className={trend.delta >= 0 ? ' text-success' : ' text-danger'}>
               {' '}
               {trend.delta >= 0 ? '+' : ''}
               {trend.delta} {unit}

@@ -40,11 +40,11 @@ export default function App() {
 
   if (!ready && !bootstrapError) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-app px-6 text-zinc-100">
-        <div className="w-full max-w-sm rounded-[32px] border border-white/10 bg-white/[0.05] p-6 text-center shadow-soft">
-          <p className="text-xs uppercase tracking-[0.24em] text-lime-300/80">Gym Book</p>
+      <div className="flex min-h-screen items-center justify-center bg-app px-6 text-content">
+        <div className="w-full max-w-sm rounded-card border border-line bg-surface p-6 text-center shadow-soft">
+          <p className="text-xs uppercase tracking-[0.24em] text-content-muted">Gym Book</p>
           <h1 className="mt-3 text-2xl font-semibold tracking-tight">Lokale Trainingsdaten werden vorbereitet</h1>
-          <p className="mt-3 text-sm text-zinc-400">
+          <p className="mt-3 text-sm text-content-muted">
             Dexie initialisiert die Demo-Daten und stellt die erste Offline-Basis her.
           </p>
         </div>
@@ -54,11 +54,11 @@ export default function App() {
 
   if (bootstrapError) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-app px-6 text-zinc-100">
-        <div className="w-full max-w-sm rounded-[32px] border border-rose-300/20 bg-rose-300/10 p-6 text-center shadow-soft">
-          <p className="text-xs uppercase tracking-[0.24em] text-rose-200/80">Gym Book</p>
+      <div className="flex min-h-screen items-center justify-center bg-app px-6 text-content">
+        <div className="w-full max-w-sm rounded-card border border-danger-border bg-danger-soft p-6 text-center shadow-soft">
+          <p className="text-xs uppercase tracking-[0.24em] text-danger">Gym Book</p>
           <h1 className="mt-3 text-2xl font-semibold tracking-tight">Initialisierung fehlgeschlagen</h1>
-          <p className="mt-3 text-sm text-rose-100/90">{bootstrapError}</p>
+          <p className="mt-3 text-sm text-content-secondary">{bootstrapError}</p>
         </div>
       </div>
     );

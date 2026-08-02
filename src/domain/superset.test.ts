@@ -7,7 +7,6 @@ import {
   moveWithinGroup,
   planGroupWithPrevious,
   planUngroup,
-  supersetPositionLabel,
   type GroupableExercise,
 } from '@/domain/superset';
 
@@ -189,15 +188,5 @@ describe('areGroupsContiguous', () => {
 
   it('erkennt eine zerrissene Gruppe', () => {
     expect(areGroupsContiguous(buildList('a(g1)', 'b', 'c(g1)'))).toBe(false);
-  });
-});
-
-describe('supersetPositionLabel', () => {
-  it('zählt in Buchstaben', () => {
-    expect([0, 1, 2].map(supersetPositionLabel)).toEqual(['A', 'B', 'C']);
-  });
-
-  it('weicht jenseits von Z auf die Zahl aus', () => {
-    expect(supersetPositionLabel(26)).toBe('27');
   });
 });

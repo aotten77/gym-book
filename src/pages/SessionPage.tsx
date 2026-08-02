@@ -1,17 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import {
-  ArrowDown,
-  CheckCircle2,
-  ChevronDown,
-  ChevronUp,
-  Clock3,
-  ImageOff,
-  Plus,
-  Timer,
-  X,
-} from 'lucide-react';
+import { CheckCircle2, Clock3, Plus, Timer, X } from 'lucide-react';
 import { Alert } from '@/components/Alert';
 import { AppShell } from '@/components/AppShell';
 import { ExerciseMedia } from '@/components/ExerciseMedia';
@@ -21,8 +11,12 @@ import { SectionCard } from '@/components/SectionCard';
 import { Button, IconButton } from '@/components/ui/Button';
 import { CheckboxField, SelectField, TextArea } from '@/components/ui/Field';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
-import { SessionExerciseCard } from '@/components/SessionExerciseCard';
-import { SupersetBlock } from '@/components/SupersetBlock';
+import { SessionBlockCard } from '@/components/SessionBlockCard';
+import {
+  SessionExerciseStage,
+  SessionPartnerRow,
+  type ActiveSetAction,
+} from '@/components/SessionExerciseStage';
 import { db } from '@/db/appDb';
 import {
   abortSession,
@@ -36,7 +30,6 @@ import {
   groupSessionExerciseWithPrevious,
   pruneRestTimers,
   reorderSessionExercises,
-  startRestTimerForExercise,
   startRestTimerForSetLog,
   startSetTimer,
   toggleSkipSessionExercise,
@@ -51,27 +44,25 @@ import type {
   WorkoutSetLog,
 } from '@/domain/models';
 import {
-  DEFAULT_REST_SECONDS,
   isRestTrackReady,
   REST_TIMER_STEP_SECONDS,
   remainingRestSeconds,
-  resolveManualRestTarget,
   restTrackKey,
   selectPrimaryRestTrack,
 } from '@/domain/rest-timer';
 import { resolveNextFocus } from '@/domain/session';
 import { elapsedSetTimerSeconds, remainingSetTimerSeconds } from '@/domain/set-timer';
+import { buildSupersetBlocks, moveSupersetBlock, moveWithinGroup } from '@/domain/superset';
 import {
-  buildSupersetBlocks,
-  moveSupersetBlock,
-  moveWithinGroup,
-  supersetPositionLabel,
-} from '@/domain/superset';
+  buildSessionBlockProgress,
+  buildSetRounds,
+  summarizeSessionProgress,
+  type SessionExerciseProgress,
+} from '@/domain/session-summary';
 import { supportsBand, supportsReps, supportsSeconds, supportsWeight } from '@/domain/tracking';
 import {
   formatDateTime,
   formatSessionWeekContext,
-  formatSetLogWithSide,
   formatSideLabel,
   formatTimer,
   formatTrackingMode,
@@ -79,6 +70,7 @@ import {
 import { optionalNumberInput } from '@/lib/number-input';
 import { isChimeFresh, playTimerChime, primeTimerSound } from '@/lib/sound';
 import { cn } from '@/lib/utils';
+import { Sheet } from '@/components/ui/Sheet';
 import { useUiStore } from '@/store/ui-store';
 
 interface SessionExerciseFormState {
@@ -118,11 +110,6 @@ function byRestTrackEnd(left: RestTimerTrack, right: RestTimerTrack) {
   return left.endsAt - right.endsAt;
 }
 
-/** Sprungziel des Streifens oben - siehe [handleJumpToFocusedExercise]. */
-function sessionExerciseAnchorId(sessionExerciseId: string) {
-  return `session-exercise-${sessionExerciseId}`;
-}
-
 interface PendingSetLogDelete {
   log: WorkoutSetLog;
   exerciseName: string;
@@ -147,7 +134,6 @@ function groupLogsByExercise(setLogs: WorkoutSetLog[]) {
   }, {});
 }
 
-
 export function SessionPage() {
   const { sessionId = '' } = useParams();
   const navigate = useNavigate();
@@ -155,6 +141,8 @@ export function SessionPage() {
   // Update-Statusänderung diese Seite komplett neu.
   const activeSessionExerciseId = useUiStore((state) => state.activeSessionExerciseId);
   const setActiveSessionExerciseId = useUiStore((state) => state.setActiveSessionExerciseId);
+  const openSessionBlockKey = useUiStore((state) => state.openSessionBlockKey);
+  const setOpenSessionBlockKey = useUiStore((state) => state.setOpenSessionBlockKey);
   const [now, setNow] = useState(Date.now());
   const [sessionError, setSessionError] = useState<string | null>(null);
   /*
@@ -170,9 +158,10 @@ export function SessionPage() {
   const [sessionExerciseOrder, setSessionExerciseOrder] = useState<string[]>([]);
   const [pendingSetLogDelete, setPendingSetLogDelete] = useState<PendingSetLogDelete | null>(null);
   const [isDeletingSetLog, setIsDeletingSetLog] = useState(false);
-  const [mediaPreview, setMediaPreview] = useState<{ mediaAsset: MediaAsset; alt: string } | null>(
-    null,
-  );
+  const [mediaPreview, setMediaPreview] = useState<{
+    mediaAsset: MediaAsset;
+    alt: string;
+  } | null>(null);
   const [exerciseForm, setExerciseForm] = useState<SessionExerciseFormState>(
     defaultSessionExerciseFormState,
   );
@@ -403,7 +392,9 @@ export function SessionPage() {
   }, [availableExercises]);
 
   const groupedLogs = useMemo(() => groupLogsByExercise(setLogs ?? []), [setLogs]);
-  const availableExerciseById = Object.fromEntries((availableExercises ?? []).map((exercise) => [exercise.id, exercise]));
+  const availableExerciseById = Object.fromEntries(
+    (availableExercises ?? []).map((exercise) => [exercise.id, exercise]),
+  );
   const focusedExercise =
     orderedSessionExercises.find((item) => item.id === activeSessionExerciseId) ?? orderedSessionExercises[0];
 
@@ -443,33 +434,22 @@ export function SessionPage() {
     return mediaAssetId ? mediaAssetById?.[mediaAssetId] : undefined;
   }
 
-  const focusedExerciseMedia = mediaAssetForExercise(focusedExercise);
-
   /*
-   * Der Streifen oben zeigt jetzt den Fortschritt der aktiven Übung statt des
-   * Hinweises auf die Bildansicht: beim Tippen springt er zur Übung, das Bild
-   * hängt eine Karte tiefer an derselben Stelle wie zuvor.
+   * Die Sätze der Übung, in der der Fokus steht - die Grundlage der Bühne im
+   * Sheet, der Pausenauswahl und des Streifens im Sheet-Kopf.
    */
-  const focusedLogs = focusedExercise ? groupedLogs[focusedExercise.id] ?? [] : [];
-  const focusedCompletedCount = focusedLogs.filter((log) => log.completed).length;
-  const focusedProgressPercent = focusedLogs.length
-    ? Math.round((focusedCompletedCount / focusedLogs.length) * 100)
-    : 0;
+  const focusedExerciseId = focusedExercise?.id;
+  const sortedFocusedLogs = useMemo(
+    () => sortSetLogs(focusedExerciseId ? (groupedLogs[focusedExerciseId] ?? []) : []),
+    [focusedExerciseId, groupedLogs],
+  );
 
-  const focusedLastValues = focusedExercise ? lastValues?.[focusedExercise.exerciseId] : undefined;
-  const focusedLastValuesSummary = focusedLastValues
-    ? {
-        text: focusedLastValues.logs.map(formatSetLogWithSide).join(' · '),
-        completedAt: formatDateTime(focusedLastValues.completedAt),
-        templateName: focusedLastValues.templateName,
-      }
-    : undefined;
   /*
    * Die große Zahl gehört der Pause, auf die gerade gewartet wird: der
    * fokussierten Übung und dort der Seite, die als Nächstes drankommt. Alle
    * anderen laufenden Pausen stehen als Chips daneben.
    */
-  const nextOpenFocusedSide = sortSetLogs(focusedLogs).find((log) => !log.completed)?.side;
+  const nextOpenFocusedSide = sortedFocusedLogs.find((log) => !log.completed)?.side;
   const primaryRestTrack = selectPrimaryRestTrack(
     restTimers,
     focusedExercise?.id,
@@ -494,6 +474,120 @@ export function SessionPage() {
     () => buildSupersetBlocks(orderedSessionExercises),
     [orderedSessionExercises],
   );
+  /*
+   * Der Stand je Block trägt die Liste, das Sheet und die Automatik beim
+   * Schließen. Er wird deshalb einmal berechnet und nicht dreimal abgeleitet.
+   */
+  const blockProgress = useMemo(
+    () =>
+      buildSessionBlockProgress(sessionBlocks, groupedLogs, activeSessionExerciseId ?? undefined),
+    [activeSessionExerciseId, groupedLogs, sessionBlocks],
+  );
+  const sessionProgress = useMemo(() => summarizeSessionProgress(setLogs ?? []), [setLogs]);
+  /*
+   * Wie lange die Einheit schon läuft. `now` tickt ohnehin für die Timer; bei
+   * einer abgeschlossenen Session zählt die Zeit bis zum Abschluss, nicht bis
+   * jetzt - sonst wüchse die Dauer in der Historie immer weiter.
+   */
+  const sessionElapsedSeconds = session
+    ? Math.max(
+        0,
+        Math.round(
+          ((session.completedAt ? Date.parse(session.completedAt) : now) -
+            Date.parse(session.startedAt)) /
+            1000,
+        ),
+      )
+    : 0;
+  const openBlock = blockProgress.find((block) => block.key === openSessionBlockKey);
+  /*
+   * Welcher Satz auf der Bühne groß liegt.
+   *
+   * Überwiegend abgeleitet statt gespeichert: normalerweise ist es die nächste
+   * offene Zeile, und die wandert nach jedem Haken von selbst weiter. Nur wenn
+   * jemand eine andere Zeile antippt - um einen Aufwärmsatz zu korrigieren
+   * etwa -, hält `selectedSetLogId` das fest. Der Griff geht ins Leere, sobald
+   * der Fokus die Übung wechselt: die fremde Id steht in dieser Liste nicht,
+   * die Ableitung fällt auf die nächste offene Zeile zurück. Genau deshalb
+   * muss nichts zurückgesetzt werden.
+   */
+  const [selectedSetLogId, setSelectedSetLogId] = useState<string | null>(null);
+  const activeSetLog =
+    sortedFocusedLogs.find((log) => log.id === selectedSetLogId) ??
+    sortedFocusedLogs.find((log) => log.id === setTimer?.setLogId) ??
+    sortedFocusedLogs.find((log) => !log.completed) ??
+    sortedFocusedLogs[sortedFocusedLogs.length - 1];
+  /*
+   * Der große Knopf im Fuß des Sheets gehört dem aktiven Satz, steht aber
+   * außerhalb seiner Komponente - der Fuß hängt am `visualViewport` und bleibt
+   * deshalb über der Tastatur stehen. Beschriftung und Aktion meldet der
+   * Editor hier herauf; nur er kennt den Draft.
+   */
+  const [activeSetAction, setActiveSetAction] = useState<ActiveSetAction | null>(null);
+  const handleActiveSetActionChange = useCallback(
+    (action: ActiveSetAction | null) => setActiveSetAction(action),
+    [],
+  );
+  /*
+   * Die Runden der Übung auf der Bühne: sie tragen den Streifen im Kopf des
+   * Sheets. Eine Runde ist eine Satznummer - bei einer einbeinigen Übung also
+   * beide Seiten zusammen, und genau so zählt man im Training auch.
+   */
+  const focusedRounds = useMemo(() => buildSetRounds(sortedFocusedLogs), [sortedFocusedLogs]);
+  const activeRoundIndex = focusedRounds.findIndex((round) =>
+    round.rows.some((row) => row.id === activeSetLog?.id),
+  );
+  /*
+   * "Runde 2 von 3", während groß "Satz 1" steht, wäre eine Zumutung: der
+   * Aufwärmsatz ist zwar eine Runde, trägt aber keine Nummer. Gezählt werden
+   * deshalb nur die Arbeitssätze, und im Aufwärmsatz heißt es Aufwärmen.
+   */
+  const workRounds = focusedRounds.filter((round) => round.kind === 'work');
+  const activeRound = activeRoundIndex >= 0 ? focusedRounds[activeRoundIndex] : undefined;
+  const roundLabel = !activeRound
+    ? undefined
+    : activeRound.kind === 'warmup'
+      ? 'Aufwärmen'
+      : `Runde ${workRounds.indexOf(activeRound) + 1} von ${workRounds.length}`;
+  const blockKeyByExerciseId = useMemo(
+    () =>
+      Object.fromEntries(
+        blockProgress.flatMap((block) =>
+          block.exercises.map((item) => [item.exercise.id, block.key] as const),
+        ),
+      ),
+    [blockProgress],
+  );
+
+  /*
+   * Das offene Sheet an seiner Übung festhalten, nicht an der Blockkennung.
+   *
+   * Beim Verbinden zu einem Supersatz bekommt der Block eine neue Kennung, beim
+   * Lösen zerfällt er in zwei - der Schlüssel, mit dem das Sheet geöffnet
+   * wurde, zeigt danach ins Leere und das Sheet verschwände mitten im Handgriff.
+   * Hier wird er auf den Block der fokussierten Übung nachgezogen.
+   */
+  useEffect(() => {
+    if (!openSessionBlockKey || blockProgress.length === 0) {
+      return;
+    }
+
+    if (blockProgress.some((block) => block.key === openSessionBlockKey)) {
+      return;
+    }
+
+    const nextKey = activeSessionExerciseId
+      ? blockKeyByExerciseId[activeSessionExerciseId]
+      : undefined;
+
+    setOpenSessionBlockKey(nextKey ?? null);
+  }, [
+    activeSessionExerciseId,
+    blockKeyByExerciseId,
+    blockProgress,
+    openSessionBlockKey,
+    setOpenSessionBlockKey,
+  ]);
 
   function describeRestTrack(track: RestTimerTrack) {
     const exercise = orderedSessionExercises.find((item) => item.id === track.sessionExerciseId);
@@ -503,6 +597,16 @@ export function SessionPage() {
   }
 
   const setTimerRemainingSeconds = remainingSetTimerSeconds(setTimer, now);
+  /*
+   * Die Übung, auf deren Satz gerade die Zeit läuft.
+   *
+   * Der Timer kennt nur die Satzzeile - für die Liste, in der die Sätze nicht
+   * stehen, muss daraus die Übung werden. Höchstens ein Satz-Timer je Session,
+   * also höchstens eine Übung.
+   */
+  const runningSetTimerExerciseId = setTimer
+    ? (setLogs ?? []).find((log) => log.id === setTimer.setLogId)?.sessionExerciseId
+    : undefined;
   const isReadOnly = session?.status !== 'active';
   const selectedExistingExercise = (availableExercises ?? []).find(
     (exercise) => exercise.id === exerciseForm.exerciseId,
@@ -518,30 +622,35 @@ export function SessionPage() {
   const effectiveLoadKind = selectedExistingExercise?.loadKind;
   const effectiveUnilateral = selectedExistingExercise?.unilateral ?? false;
 
-  function scrollToSessionExercise(sessionExerciseId: string) {
-    const target = document.getElementById(sessionExerciseAnchorId(sessionExerciseId));
+  /**
+   * Öffnet das Fokus-Sheet auf dem Block, zu dem die Übung gehört.
+   *
+   * Der Fokus wandert mit: im Supersatz zeigt das Sheet beide Mitglieder, und
+   * ausgeklappt ist das, was angetippt wurde.
+   */
+  function handleOpenExerciseSheet(sessionExerciseId: string) {
+    const blockKey = blockKeyByExerciseId[sessionExerciseId];
 
-    /*
-     * `scrollIntoView` kennt die Systemeinstellung nicht - anders als die
-     * CSS-Regel in index.css muss sie hier von Hand abgefragt werden.
-     */
-    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-    target?.scrollIntoView({ behavior: prefersReducedMotion ? 'auto' : 'smooth', block: 'start' });
-  }
-
-  function handleJumpToFocusedExercise() {
-    if (!focusedExercise) {
+    if (!blockKey) {
       return;
     }
 
-    scrollToSessionExercise(focusedExercise.id);
+    setActiveSessionExerciseId(sessionExerciseId);
+    setOpenSessionBlockKey(blockKey);
+    // Wer eine Übung öffnet, will bei dem Satz landen, der dran ist - nicht
+    // bei dem, den er beim letzten Besuch angetippt hat.
+    setSelectedSetLogId(null);
+  }
+
+  /** Wechsel auf das andere Mitglied des Supersatzes, ohne das Sheet zu verlassen. */
+  function handleSelectSheetMember(sessionExerciseId: string) {
+    setActiveSessionExerciseId(sessionExerciseId);
+    setSelectedSetLogId(null);
   }
 
   /** Fokus über einen Chip der Pausenleiste - dorthin will man auch sehen. */
   function handleFocusRestTrack(track: RestTimerTrack) {
-    setActiveSessionExerciseId(track.sessionExerciseId);
-    scrollToSessionExercise(track.sessionExerciseId);
+    handleOpenExerciseSheet(track.sessionExerciseId);
   }
 
   async function handleAddExercise() {
@@ -668,7 +777,9 @@ export function SessionPage() {
       setSessionError(null);
     } catch (error) {
       setPendingSetLogDelete(null);
-      setSessionError(error instanceof Error ? error.message : 'Satz konnte nicht entfernt werden.');
+      setSessionError(
+        error instanceof Error ? error.message : 'Satz konnte nicht entfernt werden.',
+      );
     } finally {
       setIsDeletingSetLog(false);
     }
@@ -744,23 +855,6 @@ export function SessionPage() {
     }
   }
 
-  /** Manueller Start über die Leiste - für die Seite, die als Nächstes kommt. */
-  async function handleStartRest() {
-    if (!focusedExercise) {
-      return;
-    }
-
-    try {
-      await startRestTimerForExercise(
-        sessionId,
-        focusedExercise.id,
-        resolveManualRestTarget(focusedExercise.id, focusedLogs),
-      );
-    } catch (error) {
-      setSessionError(error instanceof Error ? error.message : 'Pausentimer konnte nicht starten.');
-    }
-  }
-
   /**
    * Reaktion auf einen abgehakten Satz: Pause für genau diese Übung und Seite
    * starten und den Fokus weiterziehen, wo es sinnvoll ist.
@@ -780,7 +874,6 @@ export function SessionPage() {
     const effectiveLogs = (setLogs ?? []).map((log) =>
       log.id === completedSetLog.id ? { ...log, completed: true } : log,
     );
-    const current = orderedSessionExercises.find((item) => item.id === sessionExerciseId);
     const next = resolveNextFocus({
       exercises: orderedSessionExercises,
       setLogs: effectiveLogs,
@@ -790,16 +883,27 @@ export function SessionPage() {
 
     if (next) {
       setActiveSessionExerciseId(next.id);
+    }
 
-      /*
-       * Nur beim Wechsel innerhalb eines Supersatzes mitscrollen: dort steht
-       * die Partnerübung direkt daneben und man will sofort weitermachen.
-       * Beim Sprung nach einer fertigen Übung bleibt es beim Streifen oben,
-       * über den man selbst springt.
-       */
-      if (current?.supersetGroupId && next.supersetGroupId === current.supersetGroupId) {
-        scrollToSessionExercise(next.id);
-      }
+    // Ein abgehakter Satz gibt die Bühne frei: die Auswahl von Hand fällt weg,
+    // damit die nächste offene Zeile nachrückt.
+    setSelectedSetLogId(null);
+
+    /*
+     * Das Sheet schließt sich, sobald sein Block keine offene Zeile mehr hat.
+     *
+     * Bewusst kein Selbstsprung in den nächsten Block: zwischen zwei Übungen
+     * wird umgebaut, getrunken, gelaufen - dafür ist die Liste der richtige
+     * Ort. Der Wechsel *innerhalb* eines Supersatzes bleibt dagegen im Sheet,
+     * denn genau dort geht es ohne Pause weiter.
+     */
+    const openMembers = openBlock?.exercises.map((item) => item.exercise.id) ?? [];
+
+    if (
+      openMembers.includes(sessionExerciseId) &&
+      !effectiveLogs.some((log) => openMembers.includes(log.sessionExerciseId) && !log.completed)
+    ) {
+      setOpenSessionBlockKey(null);
     }
 
     try {
@@ -824,55 +928,331 @@ export function SessionPage() {
   }
 
   /**
-   * Eine Übungskarte samt Sprungziel.
+   * Die Timer-Leiste.
    *
-   * Als Funktion und nicht inline, weil dieselbe Karte an zwei Stellen der
-   * Liste steht: allein und als Mitglied eines Supersatz-Blocks.
+   * Sie steht an zwei Orten - am unteren Rand der Liste und im Fuß des
+   * Fokus-Sheets -, aber nie an beiden gleichzeitig. Deshalb eine Funktion
+   * statt zweier Kopien: die Rangfolge, welche Uhr groß wird, darf sich nicht
+   * je nach Ansicht unterscheiden.
+   *
+   * Die Rangfolge lautet: laufender Satz-Timer, dann laufende Pause, dann der
+   * Weg zurück in die Übung. Nur das Oberste bekommt die große Zahl.
    */
-  function renderSessionExerciseCard(
-    exercise: WorkoutSessionExercise,
-    position: { isFirst: boolean; isLast: boolean; supersetPosition?: string },
-  ) {
-    const isFocused = activeSessionExerciseId === exercise.id;
+  function renderSessionTimerBar() {
+    return (
+      <>
+        {/*
+            Der Name über der Zahl: sobald mehrere Pausen laufen, ist "1:12"
+            allein zweideutig - im Supersatz wie bei links und rechts.
+          */}
+        {setTimerRemainingSeconds === 0 && primaryRestTrack ? (
+          <p className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-content-muted">
+            Pause · {describeRestTrack(primaryRestTrack)}
+          </p>
+        ) : null}
+        <div className="flex items-center gap-2">
+          {setTimerRemainingSeconds > 0 ? (
+            /*
+                Der Satz-Timer verdrängt die Pause: er läuft *während* der
+                Übung, und wer im Plank liegt, sieht nur diese eine Zahl. Die
+                Bedienung liegt hier statt in der Satzzeile - beim Halten
+                scrollt niemand zur Karte zurück.
+              */
+            <>
+              <div
+                role="timer"
+                aria-live="off"
+                className="flex min-h-touch flex-1 items-center justify-center gap-2 rounded-control bg-accent-soft px-3 text-2xl font-semibold tabular-nums text-accent"
+              >
+                <Timer size={18} />
+                {formatTimer(setTimerRemainingSeconds)}
+              </div>
+              <Button
+                variant="ghost"
+                size="md"
+                aria-label="Zeit stoppen und in den Satz übernehmen"
+                onClick={() => void handleStopSetTimer()}
+              >
+                Stopp
+              </Button>
+              <IconButton
+                label="Satz-Timer verwerfen, ohne die Zeit zu übernehmen"
+                onClick={() => void clearSetTimer(sessionId)}
+              >
+                <X size={16} />
+              </IconButton>
+            </>
+          ) : primaryRestTrack && remainingSeconds > 0 ? (
+            <>
+              {/*
+                  Die verbleibende Zeit ist die einzige Zahl, die während der
+                  Pause zählt - sie trägt deshalb die Größe, nicht die
+                  Bedienelemente daneben.
+
+                  Und die Größe ist auch alles, was sie trägt: hier lag ein
+                  warmes Braun auf Beige, die Warnfarbe der App. Eine laufende
+                  Pause warnt vor nichts - sie ist derselbe neutrale Zustand,
+                  den die Chips auf der Karte zeigen. Bedeutung bekommt sie
+                  erst, wenn sie abgelaufen ist, und dann ist die Leiste
+                  ohnehin schon beim Knopf zurück in die Übung.
+                */}
+              <div
+                role="timer"
+                aria-live="off"
+                className="flex min-h-touch flex-1 items-center justify-center gap-2 rounded-control bg-accent-soft px-3 text-2xl font-semibold tabular-nums text-accent"
+              >
+                <Clock3 size={18} />
+                {formatTimer(remainingSeconds)}
+              </div>
+              <Button
+                variant="ghost"
+                size="md"
+                onClick={() =>
+                  void extendRestTimer(
+                    sessionId,
+                    primaryRestTrack.sessionExerciseId,
+                    primaryRestTrack.side,
+                    REST_TIMER_STEP_SECONDS,
+                  )
+                }
+              >
+                +{REST_TIMER_STEP_SECONDS}s
+              </Button>
+              <IconButton
+                label="Pausentimer abbrechen"
+                onClick={() =>
+                  void clearRestTimer(
+                    sessionId,
+                    primaryRestTrack.sessionExerciseId,
+                    primaryRestTrack.side,
+                  )
+                }
+              >
+                <X size={16} />
+              </IconButton>
+            </>
+          ) : (
+            /*
+                Läuft keine Uhr, ist der Weg zurück in die Übung die einzige
+                Sache in der Leiste. Hier stand daneben ein Knopf, der eine
+                Pause von Hand startete - die Pause beginnt jetzt
+                ausschließlich beim Abhaken eines Satzes.
+              */
+            <button
+              type="button"
+              onClick={() => focusedExercise && handleOpenExerciseSheet(focusedExercise.id)}
+              disabled={!focusedExercise}
+              className={cn(
+                'flex min-h-touch flex-1 items-center justify-center gap-2 rounded-control px-4',
+                'bg-accent text-[15px] font-bold text-accent-contrast transition hover:opacity-90',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-app',
+                'disabled:cursor-not-allowed disabled:opacity-50',
+              )}
+            >
+              <span className="truncate">
+                {openBlock
+                  ? 'Zurück zur Übung'
+                  : `Los mit ${focusedExercise?.exerciseNameSnapshot ?? 'der Übung'}`}
+              </span>
+            </button>
+          )}
+        </div>
+
+        {/*
+            Die übrigen Pausen als Chips: sie beantworten im Vorbeigehen, ob
+            der Partner im Supersatz oder die andere Seite schon wieder frei
+            ist. Bewusst ohne `role="timer"` - mehrere Live-Regionen, die im
+            Sekundentakt sprechen, machen den Screenreader unbenutzbar.
+          */}
+        {secondaryRestTracks.length > 0 ? (
+          <div className="mt-2 flex gap-2 overflow-x-auto px-1 pb-1">
+            {secondaryRestTracks.map((track) => {
+              const isReady = isRestTrackReady(track, now);
+              const description = describeRestTrack(track);
+
+              return (
+                <button
+                  key={restTrackKey(track.sessionExerciseId, track.side)}
+                  type="button"
+                  onClick={() => handleFocusRestTrack(track)}
+                  aria-label={`Zu ${description} wechseln - ${
+                    isReady
+                      ? 'Pause vorbei'
+                      : `noch ${formatTimer(remainingRestSeconds(track, now))}`
+                  }`}
+                  className={cn(
+                    'flex min-h-touch shrink-0 items-center gap-2 rounded-control border px-3 text-xs font-semibold',
+                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+                    isReady
+                      ? 'border-accent-border bg-accent-soft text-accent'
+                      : 'border-line bg-surface-raised text-content-secondary',
+                  )}
+                >
+                  <Clock3 size={14} aria-hidden="true" />
+                  <span className="max-w-[9rem] truncate">{description}</span>
+                  <span className="tabular-nums">
+                    {isReady ? 'bereit' : formatTimer(remainingRestSeconds(track, now))}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
+      </>
+    );
+  }
+
+  /**
+   * Der Fuß des Fokus-Sheets.
+   *
+   * Er trägt die Pausen als Chips und darunter die eine Handlung, um die es
+   * gerade geht: den Satz abhaken. Beides sitzt hier und nicht an der
+   * Satzzeile, weil der Fuß am `visualViewport` hängt - er bleibt damit auch
+   * dann sichtbar, wenn die Tastatur für ein Zahlenfeld aufgeht.
+   *
+   * Genau ein `role="timer"` steht im Dokument: läuft ein Satz-Timer, trägt
+   * ihn dessen Fläche auf der Bühne, sonst der erste Pausen-Chip hier.
+   *
+   * Die Pause von Hand zu starten geht hier bewusst nicht: im Sheet führt man
+   * die Übung aus, und die Pause beginnt beim Abhaken. Der Knopf dafür steht
+   * in der Leiste unter der Liste.
+   */
+  function renderSheetFooter() {
+    const tracks = [...restTimers].sort(byRestTrackEnd);
 
     return (
-      // Sprungziel des Streifens. Der Abstand oben hält die Karte
-      // frei vom Streifen, der sonst genau darüber liegt.
-      <div
-        key={exercise.id}
-        id={sessionExerciseAnchorId(exercise.id)}
-        className="scroll-mt-[calc(6rem+env(safe-area-inset-top))]"
-      >
-        <SessionExerciseCard
+      <div className="space-y-2">
+        <div className="flex items-center gap-2">
+          <div className="flex min-w-0 flex-1 gap-1.5 overflow-x-auto">
+            {tracks.map((track, index) => {
+              const isReady = isRestTrackReady(track, now);
+              const description = describeRestTrack(track);
+
+              return (
+                <button
+                  key={restTrackKey(track.sessionExerciseId, track.side)}
+                  type="button"
+                  onClick={() => handleFocusRestTrack(track)}
+                  aria-label={`Zu ${description} wechseln - ${
+                    isReady
+                      ? 'Pause vorbei'
+                      : `noch ${formatTimer(remainingRestSeconds(track, now))}`
+                  }`}
+                  className={cn(
+                    'flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold tabular-nums transition',
+                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+                    isReady
+                      ? 'bg-success text-success-contrast'
+                      : 'bg-surface-raised text-content-secondary',
+                  )}
+                >
+                  <Clock3 size={12} aria-hidden="true" />
+                  <span className="max-w-[8rem] truncate">{description}</span>
+                  <span
+                    {...(index === 0 && setTimerRemainingSeconds === 0
+                      ? { role: 'timer', 'aria-live': 'off' as const }
+                      : {})}
+                  >
+                    {isReady ? 'bereit' : formatTimer(remainingRestSeconds(track, now))}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {activeSetAction ? (
+          <button
+            type="button"
+            onClick={() => void activeSetAction.run()}
+            disabled={activeSetAction.disabled}
+            className={cn(
+              'flex min-h-[3.25rem] w-full items-center justify-center rounded-full px-4',
+              'bg-accent text-[15px] font-bold text-accent-contrast transition hover:opacity-90',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface',
+              'disabled:cursor-not-allowed disabled:opacity-50',
+            )}
+          >
+            <span className="truncate">{activeSetAction.label}</span>
+          </button>
+        ) : null}
+
+        {/*
+          Auslassen leise darunter: es kommt vor, aber es ist nie das, was man
+          im Sheet sucht.
+        */}
+        {focusedExercise && !isReadOnly ? (
+          <button
+            type="button"
+            onClick={() => void handleToggleSkip(focusedExercise.id)}
+            className="flex min-h-[2rem] w-full items-center justify-center text-[13px] font-semibold text-content-muted transition hover:text-content focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
+            {focusedExercise.wasSkipped ? 'Übung zurückholen' : 'Übung auslassen'}
+          </button>
+        ) : null}
+      </div>
+    );
+  }
+
+  /**
+   * Ein Mitglied des offenen Blocks.
+   *
+   * Die Übung, in der der Fokus steht, bekommt die Bühne; alle anderen
+   * schrumpfen auf eine Zeile mit Name und Uhr. Im Supersatz stehen beide
+   * gleichzeitig im Sheet - der Wechsel von Satz zu Satz braucht dann keinen
+   * Ansichtswechsel.
+   */
+  function renderSheetMember(
+    item: SessionExerciseProgress,
+    position: { isFirst: boolean; isLast: boolean; isSupersetMember: boolean },
+  ) {
+    const { exercise } = item;
+
+    if (activeSessionExerciseId !== exercise.id) {
+      return (
+        <SessionPartnerRow
+          key={exercise.id}
           exercise={exercise}
-          exerciseLogs={sortSetLogs(groupedLogs[exercise.id] ?? [])}
-          mediaAsset={mediaAssetForExercise(exercise)}
-          bandLevels={bandLevels}
-          lastSetValues={lastValues?.[exercise.exerciseId]?.setValues}
-          lastValuesSummary={isFocused ? focusedLastValuesSummary : undefined}
-          isFocused={isFocused}
-          isBusy={isReorderingExercises}
-          isReadOnly={isReadOnly}
-          isFirst={position.isFirst}
-          isLast={position.isLast}
-          supersetPosition={position.supersetPosition}
-          canGroupWithPrevious={orderedSessionExercises[0]?.id !== exercise.id}
+          completedCount={item.completedCount}
+          totalCount={item.totalCount}
           restTracks={restTracksByExerciseId[exercise.id]}
           now={now}
-          onMove={handleMoveSessionExercise}
-          onFocus={setActiveSessionExerciseId}
-          onGroupWithPrevious={(id) => void handleGroupWithPrevious(id)}
-          onUngroup={(id) => void handleUngroup(id)}
-          runningTimerSetLogId={setTimer?.setLogId}
-          timerRemainingSeconds={setTimerRemainingSeconds}
-          onToggleSkip={handleToggleSkip}
-          onSetCompleted={handleSetCompleted}
-          onStartSetTimer={handleStartSetTimer}
-          onStopSetTimer={handleStopSetTimer}
-          onRequestDeleteSetLog={handleRequestDeleteSetLog}
-          onOpenMedia={(mediaAsset, alt) => setMediaPreview({ mediaAsset, alt })}
+          onSelect={handleSelectSheetMember}
         />
-      </div>
+      );
+    }
+
+    return (
+      <SessionExerciseStage
+        key={exercise.id}
+        exercise={exercise}
+        exerciseLogs={sortedFocusedLogs}
+        mediaAsset={mediaAssetForExercise(exercise)}
+        bandLevels={bandLevels}
+        lastSetValues={lastValues?.[exercise.exerciseId]?.setValues}
+        activeSetLog={activeSetLog}
+        onSelectSetLog={setSelectedSetLogId}
+        isBusy={isReorderingExercises}
+        isReadOnly={isReadOnly}
+        isFirst={position.isFirst}
+        isLast={position.isLast}
+        isSupersetMember={position.isSupersetMember}
+        canGroupWithPrevious={orderedSessionExercises[0]?.id !== exercise.id}
+        setTimer={setTimer}
+        timerRemainingSeconds={setTimerRemainingSeconds}
+        restTracks={restTracksByExerciseId[exercise.id]}
+        now={now}
+        onActionChange={handleActiveSetActionChange}
+        onMove={handleMoveSessionExercise}
+        onGroupWithPrevious={(id) => void handleGroupWithPrevious(id)}
+        onUngroup={(id) => void handleUngroup(id)}
+        onSetCompleted={handleSetCompleted}
+        onStartSetTimer={handleStartSetTimer}
+        onStopSetTimer={handleStopSetTimer}
+        onClearSetTimer={() => void clearSetTimer(sessionId)}
+        onRequestDeleteSetLog={handleRequestDeleteSetLog}
+        onOpenMedia={(mediaAsset, alt) => setMediaPreview({ mediaAsset, alt })}
+      />
     );
   }
 
@@ -884,8 +1264,172 @@ export function SessionPage() {
    * siehe [SessionControlsPlacement]. Die Platzierung dient nur dazu,
    * auseinanderzuhalten, welcher der beiden das Hinzufügen-Formular trägt.
    */
+  /**
+   * Der Knopf, der das Formular für eine zusätzliche Übung auf- und zuklappt.
+   *
+   * Er steht über und unter der Liste; das Formular gehört jeweils zu der
+   * Stelle, an der es geöffnet wurde - sonst tippt man oben und das zweite
+   * Formular unten zeigt unbemerkt dieselben Werte.
+   */
+  function renderAddExerciseControl(
+    placement: SessionControlsPlacement,
+    showAddExerciseForm: boolean,
+  ) {
+    return (
+      <Button
+        variant="ghost"
+        size="md"
+        className="w-full justify-center text-content-muted"
+        onClick={() =>
+          setAddExerciseFormAnchor((current) => (current === placement ? null : placement))
+        }
+      >
+        {showAddExerciseForm ? (
+          <>
+            <X size={16} />
+            Hinzufügen schließen
+          </>
+        ) : (
+          <>
+            <Plus size={16} />
+            Übung hinzufügen
+          </>
+        )}
+      </Button>
+    );
+  }
+
+  /**
+   * Das Formular für eine zusätzliche Übung.
+   *
+   * Es gehört zu der Platzierung, über die es geöffnet wurde - oben wie unten.
+   * Zuvor hing es nur an der unteren Karte; der obere Knopf setzte damit einen
+   * Zustand, zu dem nichts erschien.
+   */
+  function renderAddExerciseForm() {
+    return (
+      <div className="space-y-4 rounded-panel border border-line bg-surface p-4">
+        {(availableExercises?.length ?? 0) > 0 ? (
+          <div className="space-y-3">
+            <SelectField
+              label="Übung"
+              value={exerciseForm.exerciseId}
+              onChange={(event) =>
+                setExerciseForm((current) => ({
+                  ...current,
+                  exerciseId: event.target.value,
+                }))
+              }
+            >
+              {(availableExercises ?? []).map((exercise) => (
+                <option key={exercise.id} value={exercise.id}>
+                  {exercise.name}
+                </option>
+              ))}
+            </SelectField>
+
+            <p className="text-sm text-content-muted">
+              {formatTrackingMode(effectiveTrackingMode)} ·{' '}
+              {effectiveUnilateral ? 'links/rechts getrennt' : 'beidseitig'}
+            </p>
+            <ExerciseMedia
+              mediaAsset={selectedExerciseMedia}
+              alt={selectedExistingExercise?.name ?? 'Übung'}
+              className="h-32 w-full"
+              imageClassName="h-full w-full"
+            />
+          </div>
+        ) : (
+          <div className="rounded-panel bg-surface-raised px-4 py-4 text-sm text-content-muted">
+            Noch keine Übung in der Bibliothek.{' '}
+            <Link to="/exercises" className="text-accent underline underline-offset-2">
+              Jetzt anlegen
+            </Link>
+            .
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-3">
+          <ExerciseTargetFields
+            trackingMode={effectiveTrackingMode}
+            loadKind={effectiveLoadKind}
+            bandLevels={bandLevels}
+            values={exerciseForm}
+            onChange={(field, value) =>
+              setExerciseForm((current) => ({ ...current, [field]: value }))
+            }
+            layout="grid"
+          />
+        </div>
+
+        <CheckboxField
+          label="Warmup-Satz anlegen"
+          checked={exerciseForm.includeWarmup}
+          onChange={(event) =>
+            setExerciseForm((current) => ({
+              ...current,
+              includeWarmup: event.target.checked,
+            }))
+          }
+        />
+
+        <TextArea
+          label="Notizen für diese Session-Übung, optional"
+          value={exerciseForm.notes}
+          onChange={(event) =>
+            setExerciseForm((current) => ({
+              ...current,
+              notes: event.target.value,
+            }))
+          }
+          rows={3}
+        />
+
+        <div className="grid grid-cols-2 gap-3">
+          <Button
+            variant="secondary"
+            onClick={() => {
+              setAddExerciseFormAnchor(null);
+              setExerciseForm({
+                ...defaultSessionExerciseFormState,
+                exerciseId: availableExercises?.[0]?.id ?? '',
+              });
+            }}
+          >
+            Abbrechen
+          </Button>
+          <Button
+            variant="primary"
+            onClick={handleAddExercise}
+            disabled={isSavingExercise || !exerciseForm.exerciseId}
+          >
+            {isSavingExercise ? 'Speichert...' : 'Zur Session hinzufügen'}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   function renderSessionControls(placement: SessionControlsPlacement) {
     const showAddExerciseForm = addExerciseFormAnchor === placement;
+
+    /*
+     * Oben nur die Handgriffe, unten die ganze Karte.
+     *
+     * Der Kopf mit Startzeit und Woche stand vor der Liste und schob die erste
+     * Übung unter die Falz - dieselbe Information steht ohnehin schon in der
+     * Kopfzeile der Seite. Was oben wirklich gebraucht wird, ist das Ergänzen
+     * einer Übung und der Abbruch; abgeschlossen wird am Ende, und dort steht
+     * die Karte weiterhin vollständig.
+     */
+    if (placement === 'top') {
+      return (
+        <div className="space-y-3">
+          {renderAddExerciseControl(placement, showAddExerciseForm)}
+          {showAddExerciseForm ? renderAddExerciseForm() : null}
+        </div>
+      );
+    }
 
     return (
       <SectionCard
@@ -893,127 +1437,9 @@ export function SessionPage() {
         subtitle={`Gestartet ${formatDateTime(session.startedAt)} · ${sessionWeekContext}`}
       >
         <div className="space-y-3">
-          <Button
-            variant="secondary"
-            fullWidth
-            onClick={() =>
-              setAddExerciseFormAnchor((current) => (current === placement ? null : placement))
-            }
-          >
-            {showAddExerciseForm ? (
-              <>
-                <X size={16} />
-                Hinzufügen schließen
-              </>
-            ) : (
-              <>
-                <Plus size={16} />
-                Übung hinzufügen
-              </>
-            )}
-          </Button>
+          {renderAddExerciseControl(placement, showAddExerciseForm)}
 
-          {showAddExerciseForm ? (
-            <div className="space-y-4 rounded-panel border border-line bg-surface p-4">
-              {(availableExercises?.length ?? 0) > 0 ? (
-                <div className="space-y-3">
-                  <SelectField
-                    label="Übung"
-                    value={exerciseForm.exerciseId}
-                    onChange={(event) =>
-                      setExerciseForm((current) => ({
-                        ...current,
-                        exerciseId: event.target.value,
-                      }))
-                    }
-                  >
-                    {(availableExercises ?? []).map((exercise) => (
-                      <option key={exercise.id} value={exercise.id}>
-                        {exercise.name}
-                      </option>
-                    ))}
-                  </SelectField>
-
-                  <p className="text-sm text-content-muted">
-                    {formatTrackingMode(effectiveTrackingMode)} ·{' '}
-                    {effectiveUnilateral ? 'links/rechts getrennt' : 'beidseitig'}
-                  </p>
-                  <ExerciseMedia
-                    mediaAsset={selectedExerciseMedia}
-                    alt={selectedExistingExercise?.name ?? 'Übung'}
-                    className="h-32 w-full"
-                    imageClassName="h-full w-full"
-                  />
-                </div>
-              ) : (
-                <div className="rounded-panel bg-surface-raised px-4 py-4 text-sm text-content-muted">
-                  Noch keine Übung in der Bibliothek.{' '}
-                  <Link to="/exercises" className="text-accent underline underline-offset-2">
-                    Jetzt anlegen
-                  </Link>
-                  .
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-3">
-                <ExerciseTargetFields
-                  trackingMode={effectiveTrackingMode}
-                  loadKind={effectiveLoadKind}
-                  bandLevels={bandLevels}
-                  values={exerciseForm}
-                  onChange={(field, value) =>
-                    setExerciseForm((current) => ({ ...current, [field]: value }))
-                  }
-                  layout="grid"
-                />
-              </div>
-
-              <CheckboxField
-                label="Warmup-Satz anlegen"
-                checked={exerciseForm.includeWarmup}
-                onChange={(event) =>
-                  setExerciseForm((current) => ({
-                    ...current,
-                    includeWarmup: event.target.checked,
-                  }))
-                }
-              />
-
-              <TextArea
-                label="Notizen für diese Session-Übung, optional"
-                value={exerciseForm.notes}
-                onChange={(event) =>
-                  setExerciseForm((current) => ({
-                    ...current,
-                    notes: event.target.value,
-                  }))
-                }
-                rows={3}
-              />
-
-              <div className="grid grid-cols-2 gap-3">
-                <Button
-                  variant="secondary"
-                  onClick={() => {
-                    setAddExerciseFormAnchor(null);
-                    setExerciseForm({
-                      ...defaultSessionExerciseFormState,
-                      exerciseId: availableExercises?.[0]?.id ?? '',
-                    });
-                  }}
-                >
-                  Abbrechen
-                </Button>
-                <Button
-                  variant="primary"
-                  onClick={handleAddExercise}
-                  disabled={isSavingExercise || !exerciseForm.exerciseId}
-                >
-                  {isSavingExercise ? 'Speichert...' : 'Zur Session hinzufügen'}
-                </Button>
-              </div>
-            </div>
-          ) : null}
+          {showAddExerciseForm ? renderAddExerciseForm() : null}
 
           {/*
             Abschließen ist unumkehrbar - abgeschlossene Sessions sind
@@ -1065,60 +1491,44 @@ export function SessionPage() {
     <AppShell title={session.templateNameSnapshot} eyebrow={sessionWeekContext}>
       <div className="space-y-4">
         {/*
-          Der Streifen klebt beim Scrollen oben fest: welche Übung gerade
-          dran ist und wie weit sie ist, muss auch beim letzten Satz noch
-          sichtbar sein.
+          Der Stand der Einheit, nicht der einer einzelnen Übung.
 
-          Er läuft bis an den Geräterand und legt sich beim Scrollen unter die
-          Statusleiste - deshalb das Safe-Area-Padding oben, damit der Inhalt
-          nicht unter den Notch rutscht. Die durchscheinende Fläche mit
-          `backdrop-blur` trennt ihn vom Inhalt, ohne ihn abzuschneiden.
+          Hier klebte zuvor ein Streifen mit Name und Fortschritt der aktiven
+          Übung - der beantwortete dieselbe Frage wie die Karte zwei Zeilen
+          tiefer und nahm dem Überblick den Platz. Die aktive Übung erkennt man
+          jetzt an ihrer limettenen Blockkarte; hier steht, wie weit das
+          Training insgesamt ist.
+
+          Gezählt werden Satzzeilen: eine einbeinige Übung erzeugt pro
+          Satznummer zwei davon, und beide Seiten sind Arbeit.
         */}
-        {focusedExercise ? (
-          <div className="sticky top-0 z-30 -mx-4 border-b border-line bg-surface-glass px-4 pb-3 pt-[max(0.5rem,env(safe-area-inset-top))] backdrop-blur-xl">
-            <button
-              type="button"
-              onClick={handleJumpToFocusedExercise}
-              aria-label={`Zur aktiven Übung springen: ${focusedExercise.exerciseNameSnapshot}`}
-              className="flex w-full items-center gap-3 rounded-control text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            >
-              {focusedExerciseMedia ? (
-                <ExerciseMedia
-                  mediaAsset={focusedExerciseMedia}
-                  alt={focusedExercise.exerciseNameSnapshot}
-                  className="h-11 w-11 shrink-0 rounded-control"
-                  imageClassName="h-full w-full"
-                />
-              ) : (
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-control bg-surface-raised text-content-muted">
-                  <ImageOff size={18} />
+        {orderedSessionExercises.length > 0 ? (
+          <div className="space-y-2.5 px-1">
+            <div className="flex items-end gap-7">
+              <p>
+                <span className="block text-[10px] font-bold uppercase tracking-[0.16em] text-content-muted">
+                  Dauer
                 </span>
-              )}
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-semibold text-content">
-                  {focusedExercise.exerciseNameSnapshot}
+                <span className="font-display text-[26px] font-extrabold leading-none tabular-nums tracking-tight">
+                  {formatTimer(sessionElapsedSeconds)}
                 </span>
-                <span className="block truncate text-xs text-content-muted">
-                  {focusedLogs.length
-                    ? `${focusedCompletedCount} von ${focusedLogs.length} Sätzen erledigt`
-                    : 'Noch kein Satz angelegt'}
+              </p>
+              <p>
+                <span className="block text-[10px] font-bold uppercase tracking-[0.16em] text-content-muted">
+                  Sätze
                 </span>
-              </span>
-              <span
-                aria-hidden="true"
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-line text-content-secondary"
-              >
-                <ArrowDown size={16} />
-              </span>
-            </button>
-            {/*
-              Der Fortschritt als Linie statt als weitere Zahl: er liest sich
-              im Vorbeigehen und braucht keine Breite neben dem Namen.
-            */}
-            <div className="mt-2 h-1 overflow-hidden rounded-full bg-surface-raised">
+                <span className="font-display text-[26px] font-extrabold leading-none tabular-nums tracking-tight">
+                  {sessionProgress.completedCount}
+                  <span className="ml-1.5 text-sm font-semibold text-content-muted">
+                    von {sessionProgress.totalCount}
+                  </span>
+                </span>
+              </p>
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-surface-raised">
               <div
-                className="h-full rounded-full bg-accent transition-[width]"
-                style={{ width: `${focusedProgressPercent}%` }}
+                className="h-full rounded-full bg-success transition-[width]"
+                style={{ width: `${sessionProgress.percent}%` }}
               />
             </div>
           </div>
@@ -1127,68 +1537,38 @@ export function SessionPage() {
         {sessionError ? <Alert>{sessionError}</Alert> : null}
 
         {/*
-          Die Steuerung gleich unter dem Streifen: beim Start der Session ist
-          das Hinzufügen einer Übung der nächste Handgriff, und ein Abbruch
-          passiert eher am Anfang als nach dem letzten Satz.
+          Die Steuerung gleich über der Liste: beim Start der Session ist das
+          Hinzufügen einer Übung der nächste Handgriff.
         */}
         {session.status === 'active' ? renderSessionControls('top') : null}
 
-        {/*
-          Die Übungen stehen darunter. Zuvor lag hier eine Karte, deren Titel
-          der Name der aktiven Übung und deren Untertitel Session-Daten waren -
-          sie beantwortete damit zwei Fragen gleichzeitig und wiederholte Name
-          und Bild der Übung, die zwei Karten tiefer ohnehin schon standen.
-        */}
         {orderedSessionExercises.length > 0 ? (
-          <div className="space-y-4">
-            {sessionBlocks.map((block, blockIndex) => {
-              const isFirstBlock = blockIndex === 0;
-              const isLastBlock = blockIndex === sessionBlocks.length - 1;
+          /*
+            Die Einheit als Liste von Blöcken.
 
-              if (block.kind === 'single') {
-                return (
-                  <div key={block.exercise.id}>
-                    {renderSessionExerciseCard(block.exercise, {
-                      isFirst: isFirstBlock,
-                      isLast: isLastBlock,
-                    })}
-                  </div>
-                );
-              }
-
-              return (
-                <SupersetBlock
-                  key={block.groupId}
-                  positions={block.exercises.map((_, index) => supersetPositionLabel(index))}
-                  action={
-                    <div className="flex shrink-0 items-center gap-2">
-                      <IconButton
-                        label="Supersatz nach oben"
-                        disabled={isReorderingExercises || isReadOnly || isFirstBlock}
-                        onClick={() => void handleMoveSupersetBlock(block.exercises[0].id, -1)}
-                      >
-                        <ChevronUp size={16} />
-                      </IconButton>
-                      <IconButton
-                        label="Supersatz nach unten"
-                        disabled={isReorderingExercises || isReadOnly || isLastBlock}
-                        onClick={() => void handleMoveSupersetBlock(block.exercises[0].id, 1)}
-                      >
-                        <ChevronDown size={16} />
-                      </IconButton>
-                    </div>
-                  }
-                >
-                  {block.exercises.map((exercise, memberIndex) =>
-                    renderSessionExerciseCard(exercise, {
-                      isFirst: memberIndex === 0,
-                      isLast: memberIndex === block.exercises.length - 1,
-                      supersetPosition: supersetPositionLabel(memberIndex),
-                    }),
-                  )}
-                </SupersetBlock>
-              );
-            })}
+            Zuvor stand hier jede Übung als volle Karte samt Sätzen, Feldern
+            und Bild - bei einem Supersatz zweimal untereinander. Wer wissen
+            wollte, wie weit er ist, musste dafür scrollen. Jetzt trägt die
+            Liste den Überblick und das Sheet die Arbeit.
+          */
+          <div className="space-y-3">
+            {blockProgress.map((block, blockIndex) => (
+              <SessionBlockCard
+                key={block.key}
+                isFirstBlock={blockIndex === 0}
+                isLastBlock={blockIndex === blockProgress.length - 1}
+                onMoveBlock={(sessionExerciseId, direction) =>
+                  void handleMoveSupersetBlock(sessionExerciseId, direction)
+                }
+                block={block}
+                restTracks={restTimers}
+                now={now}
+                runningSetTimerExerciseId={runningSetTimerExerciseId}
+                isReadOnly={isReadOnly}
+                isBusy={isReorderingExercises}
+                onOpen={handleOpenExerciseSheet}
+              />
+            ))}
           </div>
         ) : (
           <SectionCard title="Noch keine Übung">
@@ -1216,145 +1596,93 @@ export function SessionPage() {
       </div>
 
       {/*
-        Der Timer gehört dorthin, wo der Daumen liegt, und muss während der
-        Pause sichtbar bleiben - als Karten-Badge scrollt er nach zwei Wischern
-        aus dem Bild.
+        Die Leiste steht nur dort, wo sie gebraucht wird: liegt das Sheet
+        darüber, trägt dessen Fuß dieselbe Leiste. Beide gleichzeitig hieße
+        zwei `role="timer"` im Dokument - und zwei Live-Regionen, die im
+        Sekundentakt sprechen, machen den Screenreader unbenutzbar.
       */}
-      {session.status === 'active' ? (
+      {session.status === 'active' && !openBlock ? (
         <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30 mx-auto w-full max-w-md">
           <div className="pointer-events-auto rounded-t-card border border-b-0 border-line bg-surface-glass p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] shadow-soft backdrop-blur-xl">
-            {/*
-              Der Name über der Zahl: sobald mehrere Pausen laufen, ist "1:12"
-              allein zweideutig - im Supersatz wie bei links und rechts.
-            */}
-            {setTimerRemainingSeconds === 0 && primaryRestTrack ? (
-              <p className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-content-muted">
-                Pause · {describeRestTrack(primaryRestTrack)}
-              </p>
-            ) : null}
-            <div className="flex items-center gap-2">
-              {setTimerRemainingSeconds > 0 ? (
-                /*
-                  Der Satz-Timer verdrängt die Pause: er läuft *während* der
-                  Übung, und wer im Plank liegt, sieht nur diese eine Zahl. Die
-                  Bedienung liegt hier statt in der Satzzeile - beim Halten
-                  scrollt niemand zur Karte zurück.
-                */
-                <>
-                  <div
-                    role="timer"
-                    aria-live="off"
-                    className="flex min-h-touch flex-1 items-center justify-center gap-2 rounded-control bg-accent-soft px-3 text-2xl font-semibold tabular-nums text-accent"
-                  >
-                    <Timer size={18} />
-                    {formatTimer(setTimerRemainingSeconds)}
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="md"
-                    aria-label="Zeit stoppen und in den Satz übernehmen"
-                    onClick={() => void handleStopSetTimer()}
-                  >
-                    Stopp
-                  </Button>
-                  <IconButton
-                    label="Satz-Timer verwerfen, ohne die Zeit zu übernehmen"
-                    onClick={() => void clearSetTimer(sessionId)}
-                  >
-                    <X size={16} />
-                  </IconButton>
-                </>
-              ) : primaryRestTrack && remainingSeconds > 0 ? (
-                <>
-                  {/*
-                    Die verbleibende Zeit ist die einzige Zahl, die während der
-                    Pause zählt - sie trägt deshalb die Größe, nicht die
-                    Bedienelemente daneben.
-                  */}
-                  <div
-                    role="timer"
-                    aria-live="off"
-                    className="flex min-h-touch flex-1 items-center justify-center gap-2 rounded-control bg-warning-soft px-3 text-2xl font-semibold tabular-nums text-warning"
-                  >
-                    <Clock3 size={18} />
-                    {formatTimer(remainingSeconds)}
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="md"
-                    onClick={() =>
-                      void extendRestTimer(
-                        sessionId,
-                        primaryRestTrack.sessionExerciseId,
-                        primaryRestTrack.side,
-                        REST_TIMER_STEP_SECONDS,
-                      )
-                    }
-                  >
-                    +{REST_TIMER_STEP_SECONDS}s
-                  </Button>
-                  <IconButton
-                    label="Pausentimer abbrechen"
-                    onClick={() =>
-                      void clearRestTimer(
-                        sessionId,
-                        primaryRestTrack.sessionExerciseId,
-                        primaryRestTrack.side,
-                      )
-                    }
-                  >
-                    <X size={16} />
-                  </IconButton>
-                </>
-              ) : (
-                <Button variant="secondary" size="md" fullWidth onClick={() => void handleStartRest()}>
-                  <Clock3 size={16} />
-                  Pause starten ({focusedExercise?.restSeconds ?? DEFAULT_REST_SECONDS}s)
-                </Button>
-              )}
-            </div>
-
-            {/*
-              Die übrigen Pausen als Chips: sie beantworten im Vorbeigehen, ob
-              der Partner im Supersatz oder die andere Seite schon wieder frei
-              ist. Bewusst ohne `role="timer"` - mehrere Live-Regionen, die im
-              Sekundentakt sprechen, machen den Screenreader unbenutzbar.
-            */}
-            {secondaryRestTracks.length > 0 ? (
-              <div className="mt-2 flex gap-2 overflow-x-auto px-1 pb-1">
-                {secondaryRestTracks.map((track) => {
-                  const isReady = isRestTrackReady(track, now);
-                  const description = describeRestTrack(track);
-
-                  return (
-                    <button
-                      key={restTrackKey(track.sessionExerciseId, track.side)}
-                      type="button"
-                      onClick={() => handleFocusRestTrack(track)}
-                      aria-label={`Zu ${description} wechseln - ${
-                        isReady ? 'Pause vorbei' : `noch ${formatTimer(remainingRestSeconds(track, now))}`
-                      }`}
-                      className={cn(
-                        'flex min-h-touch shrink-0 items-center gap-2 rounded-control border px-3 text-xs font-semibold',
-                        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
-                        isReady
-                          ? 'border-accent-border bg-accent-soft text-accent'
-                          : 'border-line bg-surface-raised text-content-secondary',
-                      )}
-                    >
-                      <Clock3 size={14} aria-hidden="true" />
-                      <span className="max-w-[9rem] truncate">{description}</span>
-                      <span className="tabular-nums">
-                        {isReady ? 'bereit' : formatTimer(remainingRestSeconds(track, now))}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            ) : null}
+            {renderSessionTimerBar()}
           </div>
         </div>
       ) : null}
+
+      {/*
+        Das Fokus-Sheet.
+
+        Es zeigt den ganzen Block: im Supersatz beide Mitglieder, damit der
+        Wechsel von Satz zu Satz keinen Ansichtswechsel braucht. Groß ist darin
+        immer nur eines - die Übung mit dem Fokus und darin der eine Satz, der
+        dran ist.
+            */}
+      <Sheet
+        open={Boolean(openBlock)}
+        label={
+          openBlock?.isSuperset
+            ? 'Supersatz'
+            : (openBlock?.exercises[0]?.exercise.exerciseNameSnapshot ?? 'Übung')
+        }
+        header={
+          openBlock ? (
+            <div className="min-w-0 space-y-2">
+              <div className="min-w-0">
+                {/*
+                  Oben steht, wo man in der Einheit ist. Der Zählstand ist
+                  bewusst der der ganzen Session und nicht der des Blocks: "Satz
+                  5 von 14" ist die Zahl, nach der man im Training fragt, und
+                  die Liste dahinter zeigt dieselbe.
+                */}
+                <p className="truncate text-[10px] font-bold uppercase tracking-[0.16em] text-content-muted">
+                  {openBlock.isSuperset ? 'Supersatz' : 'Einzelübung'}
+                  {roundLabel ? ` · ${roundLabel}` : ''}
+                </p>
+                <p className="mt-0.5 font-display text-2xl font-extrabold leading-none tabular-nums tracking-tight">
+                  Satz {Math.min(sessionProgress.completedCount + 1, sessionProgress.totalCount)}
+                  <span className="ml-1.5 text-sm font-semibold text-content-muted">
+                    von {sessionProgress.totalCount}
+                  </span>
+                </p>
+              </div>
+              {/*
+                Die Runden als Streifen: er zeigt in einem Blick, wie viel von
+                dieser Übung noch aussteht - eine Zahl, die im Satz selbst
+                niemand nachzählen will.
+              */}
+              {focusedRounds.length > 1 ? (
+                <div aria-hidden="true" className="flex gap-1">
+                  {focusedRounds.map((round, index) => (
+                    <span
+                      key={round.key}
+                      className={cn(
+                        'h-1.5 flex-1 rounded-full',
+                        round.isDone
+                          ? 'bg-success'
+                          : index === activeRoundIndex
+                            ? 'bg-highlight'
+                            : 'bg-surface-raised',
+                      )}
+                    />
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : null
+        }
+        footer={renderSheetFooter()}
+        onClose={() => setOpenSessionBlockKey(null)}
+      >
+        <div className="space-y-2">
+          {openBlock?.exercises.map((item, index) =>
+            renderSheetMember(item, {
+              isFirst: index === 0,
+              isLast: index === (openBlock?.exercises.length ?? 1) - 1,
+              isSupersetMember: openBlock.isSuperset,
+            }),
+          )}
+        </div>
+      </Sheet>
 
       <MediaLightbox
         mediaAsset={mediaPreview?.mediaAsset}

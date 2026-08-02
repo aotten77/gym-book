@@ -1,12 +1,13 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { resetDatabase, seedSampleData, startSampleSession } from './helpers';
-
-/** Die Karte einer Übung, unabhängig von einer Supersatz-Kennzeichnung davor. */
-function exerciseCard(page: Page, name: string): Locator {
-  return page
-    .locator('section')
-    .filter({ has: page.getByRole('heading', { level: 2, name: new RegExp(name) }) });
-}
+import {
+  closeExerciseSheet,
+  completeActiveSet,
+  openExerciseSheet,
+  resetDatabase,
+  seedSampleData,
+  selectSetRow,
+  startSampleSession,
+} from './helpers';
 
 /**
  * Eine Zeile der Planungsliste.
@@ -25,108 +26,132 @@ async function linkWithPrevious(page: Page, name: string) {
   await page.waitForTimeout(600);
 }
 
-test.describe('Supersatz', () => {
+test.describe('Supersatz in der laufenden Einheit', () => {
   test.beforeEach(async ({ page }) => {
     await resetDatabase(page);
     await seedSampleData(page);
   });
 
-  test('verbindet zwei Übungen und kennzeichnet sie als Block', async ({ page }) => {
+  test('verbindet zwei Übungen und führt sie als einen Block', async ({ page }) => {
     await startSampleSession(page);
 
+    // Verbunden wird in der Übung selbst, also im Sheet.
+    await openExerciseSheet(page, 'Bulgarian Split Squat');
     await linkWithPrevious(page, 'Bulgarian Split Squat');
+    await closeExerciseSheet(page);
 
-    await expect(page.getByRole('group', { name: /Supersatz/ })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'A · Front Squat' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'B · Bulgarian Split Squat' })).toBeVisible();
+    /*
+     * Aus zwei Blöcken wird einer: die Liste zeigt den Supersatz als eine
+     * Karte mit beiden Mitgliedern, nicht als zwei Karten mit einem Rahmen
+     * darum.
+     */
+    const superset = page.locator('section[data-block-status]', {
+      hasText: 'Supersatz',
+    });
+    await expect(superset).toBeVisible();
+    await expect(page.locator('section[data-block-status]')).toHaveCount(2);
 
     // Die Verbindung liegt in IndexedDB, nicht im UI-Zustand.
     await page.reload();
     await page.waitForTimeout(1200);
 
-    await expect(page.getByRole('group', { name: /Supersatz/ })).toBeVisible();
+    await expect(
+      page.locator('section[data-block-status]', { hasText: 'Supersatz' }),
+    ).toBeVisible();
   });
 
-  test('wechselt nach einem Satz zur Partnerübung und lässt deren Pause weiterlaufen', async ({
+  test('wechselt nach einer Runde zur Partnerübung, ohne das Sheet zu schließen', async ({
     page,
   }) => {
     await startSampleSession(page);
+    await openExerciseSheet(page, 'Bulgarian Split Squat');
     await linkWithPrevious(page, 'Bulgarian Split Squat');
+    await closeExerciseSheet(page);
+
+    // Beide Mitglieder stehen im selben Sheet - dafür ist die Gruppe da.
+    await openExerciseSheet(page, 'Front Squat');
+    const sheet = page.getByRole('dialog');
+    await expect(sheet.getByRole('heading', { name: /Front Squat/ })).toBeVisible();
+    await expect(sheet.getByRole('heading', { name: /Bulgarian Split Squat/ })).toBeVisible();
 
     // Warmup des Front Squat abhaken - damit ist dessen Runde vollständig.
-    await exerciseCard(page, 'Front Squat')
-      .getByRole('button', { name: 'Satz als erledigt markieren' })
-      .first()
-      .click();
-    await page.waitForTimeout(900);
+    await completeActiveSet(page);
 
-    // Der Fokus steht jetzt beim Partner, die Pause läuft für den Front Squat.
-    await expect(
-      exerciseCard(page, 'Bulgarian Split Squat').getByText('Aktiv', { exact: true }),
-    ).toBeVisible();
-    await expect(page.getByText('Pause · Front Squat')).toBeVisible();
+    /*
+     * Der Wechsel innerhalb der Gruppe bleibt im Sheet: dort geht es ohne
+     * Umbau weiter. Die Pause des Front Squat läuft dabei weiter.
+     */
+    await expect(sheet).toBeVisible();
     await expect(page.getByRole('timer')).toBeVisible();
 
-    // Satz beim Partner abhaken: der Fokus geht zurück, jetzt laufen zwei Pausen.
-    await exerciseCard(page, 'Bulgarian Split Squat')
-      .getByRole('button', { name: 'Satz als erledigt markieren' })
-      .first()
-      .click();
-    await page.waitForTimeout(900);
+    await closeExerciseSheet(page);
 
-    await expect(exerciseCard(page, 'Front Squat').getByText('Aktiv', { exact: true })).toBeVisible();
-    await expect(page.getByText('Pause · Front Squat')).toBeVisible();
-
-    // Die Pause des Partners läuft als Chip weiter und holt den Fokus zurück.
-    const partnerChip = page.getByRole('button', { name: /Zu Bulgarian Split Squat wechseln/ });
-    await expect(partnerChip).toBeVisible();
-
-    await partnerChip.click();
-    await page.waitForTimeout(600);
-
-    await expect(page.getByText('Pause · Bulgarian Split Squat')).toBeVisible();
+    // In der Liste hängt die laufende Pause an der Übung, zu der sie gehört.
+    const superset = page.locator('section[data-block-status]', {
+      hasText: 'Supersatz',
+    });
+    await expect(superset.getByText(/^\d{2}:\d{2}$/).first()).toBeVisible();
   });
 
   test('führt bei einer einseitigen Übung getrennte Pausen für links und rechts', async ({
     page,
   }) => {
     await startSampleSession(page);
+    await openExerciseSheet(page, 'Bulgarian Split Squat');
 
-    const card = exerciseCard(page, 'Bulgarian Split Squat');
-    const completeButtons = card.getByRole('button', { name: 'Satz als erledigt markieren' });
-
-    // Reihenfolge in der Karte: Warmup, Satz 1 links, Satz 1 rechts, ...
-    await completeButtons.nth(1).click();
-    await page.waitForTimeout(900);
-    await completeButtons.nth(1).click();
-    await page.waitForTimeout(900);
+    /*
+     * Beide Seiten werden gezielt ausgewählt. Der Aufwärmsatz bleibt bewusst
+     * offen - er ist beidseitig und legte eine dritte Spur an, die mit der
+     * Frage nach links und rechts nichts zu tun hat. Nachrücken würde er
+     * trotzdem: die nächste offene Zeile ist die *erste* offene, und das ist
+     * er.
+     */
+    await selectSetRow(page, 'Satz 1 · links');
+    await completeActiveSet(page);
+    await selectSetRow(page, 'Satz 1 · rechts');
+    await completeActiveSet(page);
 
     // Eine Seite trägt die große Zahl, die andere steht als Chip daneben.
     await expect(page.getByRole('timer')).toBeVisible();
-    const otherSideChip = page.getByRole('button', {
-      name: /Zu Bulgarian Split Squat · (links|rechts) wechseln/,
+    await closeExerciseSheet(page);
+
+    const block = page.locator('section[data-block-status]', {
+      hasText: 'Bulgarian Split Squat',
     });
-    await expect(otherSideChip).toBeVisible();
+    await expect(block.getByText(/^(Links|Rechts) /).first()).toBeVisible();
+    await expect(block.getByText(/^(Links|Rechts) /)).toHaveCount(2);
 
     // Beide Spuren liegen in IndexedDB und überstehen einen Reload.
     await page.reload();
     await page.waitForTimeout(1400);
 
     await expect(page.getByRole('timer')).toBeVisible();
-    await expect(otherSideChip).toBeVisible();
+    await expect(
+      page
+        .locator('section[data-block-status]', {
+          hasText: 'Bulgarian Split Squat',
+        })
+        .getByText(/^(Links|Rechts) /),
+    ).toHaveCount(2);
   });
 
   test('löst eine Verbindung wieder', async ({ page }) => {
     await startSampleSession(page);
+    await openExerciseSheet(page, 'Bulgarian Split Squat');
     await linkWithPrevious(page, 'Bulgarian Split Squat');
 
     await page
-      .getByRole('button', { name: 'Bulgarian Split Squat aus dem Supersatz lösen' })
+      .getByRole('button', {
+        name: 'Bulgarian Split Squat aus dem Supersatz lösen',
+      })
       .click();
     await page.waitForTimeout(900);
+    await closeExerciseSheet(page);
 
-    await expect(page.getByRole('group', { name: /Supersatz/ })).toHaveCount(0);
-    await expect(page.getByRole('heading', { name: 'Front Squat', exact: true })).toBeVisible();
+    await expect(page.locator('section[data-block-status]')).toHaveCount(3);
+    await expect(page.locator('section[data-block-status]', { hasText: 'Supersatz' })).toHaveCount(
+      0,
+    );
   });
 });
 
@@ -146,15 +171,15 @@ test.describe('Supersatz im Template', () => {
     await page.waitForTimeout(600);
 
     await expect(page.getByRole('group', { name: /Supersatz/ })).toBeVisible();
-    await expect(plannedRow(page, '1. A · Front Squat')).toBeVisible();
-    await expect(plannedRow(page, '2. B · Bulgarian Split Squat')).toBeVisible();
+    await expect(plannedRow(page, '1. Front Squat')).toBeVisible();
+    await expect(plannedRow(page, '2. Bulgarian Split Squat')).toBeVisible();
 
     // Der Block wandert als Ganzes an das Ende - die Gruppe bleibt zusammen.
     await page.getByRole('button', { name: 'Supersatz nach unten', exact: true }).click();
     await page.waitForTimeout(900);
 
     await expect(plannedRow(page, '1. Nordic Curl Iso')).toBeVisible();
-    await expect(plannedRow(page, '2. A · Front Squat')).toBeVisible();
-    await expect(plannedRow(page, '3. B · Bulgarian Split Squat')).toBeVisible();
+    await expect(plannedRow(page, '2. Front Squat')).toBeVisible();
+    await expect(plannedRow(page, '3. Bulgarian Split Squat')).toBeVisible();
   });
 });

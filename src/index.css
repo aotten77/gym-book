@@ -2,6 +2,31 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Die Display-Schrift.
+ *
+ * Nur die Gewichtsachse und nur das Latin-Subset - das sind 35 kB statt der
+ * 90 kB des vollen Schnitts, und die Umlaute liegen in U+00C0-00FF ohnehin
+ * darin. Die Paket-CSS von Fontsource würde zusätzlich `latin-ext` mitziehen,
+ * das hier niemand braucht; deshalb steht die Regel per Hand hier statt als
+ * Import.
+ *
+ * `woff2` steht in der Precache-Liste des Service Workers (vite.config.ts),
+ * die Datei ist also nach dem ersten Start offline verfügbar. Bis dahin
+ * springt `font-display: swap` auf die Systemschrift - für eine App, die
+ * offline läuft, betrifft das genau einen einzigen Start.
+ */
+@font-face {
+  font-family: 'Archivo Variable';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('@fontsource-variable/archivo/files/archivo-latin-wght-normal.woff2') format('woff2-variations');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 :root {
   /*
    * `-apple-system` zuerst: "SF Pro Display" ist fuer Web-Inhalte in Safari
@@ -11,13 +36,21 @@
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   line-height: 1.5;
   font-weight: 400;
-  color: #fafafa;
-  /* Native Controls (select, Scrollbars, Datepicker) im dunklen Chrome rendern. */
-  color-scheme: dark;
+  color: #0c1210;
+  /* Native Controls (select, Scrollbars, Datepicker) im hellen Chrome rendern. */
+  color-scheme: light;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+
+  /*
+   * Diagrammfarben als Variablen, weil SVG-Attribute keine Tailwind-Klassen
+   * kennen. Sie gehoeren zu denselben Tokens wie der Rest: Waldgruen ist die
+   * Linie, Papier der Punkt darauf.
+   */
+  --chart-line: #1d4b3a;
+  --chart-dot: #ffffff;
 }
 
 * {
@@ -45,9 +78,11 @@ body {
    * Satz", Orange heißt "Achtung". Als Dekoration auf dem Hintergrund
    * konkurrierten sie mit genau diesen Signalen, und die hervorgehobene
    * Übung ging darin unter.
+   *
+   * Eine Farbe statt eines Verlaufs: auf hellem Grund trägt der Verlauf
+   * nichts, und die Karten setzen sich ohnehin über ihren Schatten ab.
    */
-  background: linear-gradient(180deg, #18181b 0%, #09090b 100%);
-  background-attachment: fixed;
+  background: #f2f2ef;
 }
 
 body {
@@ -141,7 +176,7 @@ select {
   -webkit-appearance: none;
   min-height: 44px;
   padding-right: 2.75rem;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a1a1aa' stroke-width='2' stroke-linecap='round'><path d='M6 9l6 6 6-6'/></svg>");
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235c625f' stroke-width='2' stroke-linecap='round'><path d='M6 9l6 6 6-6'/></svg>");
   background-repeat: no-repeat;
   background-position: right 1rem center;
   background-size: 1.15rem;
@@ -149,22 +184,41 @@ select {
 
 @layer base {
   /*
+   * Überschriften in der Display-Schrift, eng gesetzt.
+   *
+   * Als Grundregel statt als Klasse an jeder einzelnen Überschrift: die
+   * Auszeichnung gehört zur Ebene, nicht zur Komponente. Der Fließtext bleibt
+   * bewusst bei der Systemschrift - die rendert auf iOS besser und muss nicht
+   * geladen werden.
+   */
+  h1,
+  h2,
+  h3 {
+    font-family: theme('fontFamily.display');
+    letter-spacing: -0.03em;
+  }
+
+  /*
    * Sichtbarer Fokus als Grundregel.
    *
-   * Der Browser-Default-Ring ist auf dunklem Grund praktisch unsichtbar, und
-   * per Hand war er nirgends gesetzt. `:where()` hat Spezifitaet 0, jede
-   * Komponente kann also weiterhin ihren eigenen Ring definieren.
+   * Der Browser-Default-Ring war auf dem alten dunklen Grund praktisch
+   * unsichtbar und per Hand nirgends gesetzt. `:where()` hat Spezifitaet 0,
+   * jede Komponente kann also weiterhin ihren eigenen Ring definieren.
+   *
+   * Tinte statt Limette: der Ring muss sich auch dann abheben, wenn er auf
+   * einer limettenen Flaeche liegt - und genau das ist die Flaeche, die den
+   * Fokus am haeufigsten traegt.
    */
   :where(a, button, input, select, textarea, [tabindex]):focus-visible {
-    outline: 2px solid #bef264;
+    outline: 2px solid #0c1210;
     outline-offset: 2px;
   }
 }
 
 .shadow-soft {
   box-shadow:
-    0 12px 30px rgba(0, 0, 0, 0.28),
-    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    0 10px 26px -16px rgba(12, 18, 16, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
 }
 
 @media (prefers-reduced-motion: reduce) {

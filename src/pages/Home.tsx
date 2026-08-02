@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { ArrowRight, Play, RotateCcw, ShieldAlert } from 'lucide-react';
+import { ArrowRight, Play, ShieldAlert } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
 import { Empty } from '@/components/Empty';
 import { Alert } from '@/components/Alert';
@@ -210,30 +210,21 @@ export default function Home() {
             {startError ? <Alert>{startError}</Alert> : null}
 
             {activeSession ? (
-              <div className="space-y-2">
-                <button
-                  type="button"
-                  onClick={() => navigate(`/session/${activeSession.id}`)}
-                  className="flex w-full items-center justify-between rounded-panel bg-accent px-4 py-4 text-left text-accent-contrast transition hover:brightness-105 focus-visible:ring-2 focus-visible:ring-lime-300/70"
-                >
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.18em] text-accent-contrast/80">Aktive Session</p>
-                    <p className="mt-2 text-lg font-semibold">{activeSession.templateNameSnapshot}</p>
-                    <p className="mt-1 text-sm text-accent-contrast/80">
-                      Gestartet {formatDateTime(activeSession.startedAt)}
-                    </p>
-                  </div>
-                  <RotateCcw size={18} />
-                </button>
-                {/*
-                  Solange eine Session läuft, führt jeder Workout-Tap dorthin
-                  zurück. Das muss sichtbar sein, sonst wirkt die App defekt.
-                */}
-                <p className="px-1 text-sm text-content-muted">
-                  Ein Training läuft bereits. Schließe es ab oder brich es ab, um ein anderes
-                  Workout zu starten.
-                </p>
-              </div>
+              /*
+                Der Rückweg in die laufende Einheit steht in der Leiste am
+                unteren Rand, auf jeder Seite - hier lag zuvor eine große
+                Karte, die dasselbe nur an einem Ort tat und mit ihr die
+                Startseite als Umweg festschrieb.
+
+                Was bleibt, ist die Auskunft, die der Streifen nicht gibt:
+                solange eine Session läuft, führt jeder Workout-Tap darunter
+                dorthin zurück statt ein zweites Training zu starten. Ohne den
+                Satz wirkt das wie ein Defekt.
+              */
+              <p className="px-1 text-sm text-content-muted">
+                Ein Training läuft bereits - die Leiste unten führt zurück. Schließe es ab oder
+                brich es ab, um ein anderes Workout zu starten.
+              </p>
             ) : (
               <Empty
                 title="Keine aktive Session"
@@ -249,7 +240,7 @@ export default function Home() {
                     type="button"
                     onClick={() => void handleStartSession(template.id)}
                     disabled={isStartingSession}
-                    className="flex items-center justify-between rounded-panel border border-line bg-surface-raised px-4 py-4 text-left transition hover:border-accent-border hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-lime-300/70 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="flex items-center justify-between rounded-panel border border-line bg-surface-raised px-4 py-4 text-left transition hover:border-accent-border hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <div>
                       <p className="text-sm font-semibold text-content">{template.name}</p>

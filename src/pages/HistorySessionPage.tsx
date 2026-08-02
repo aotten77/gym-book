@@ -9,7 +9,7 @@ import { SupersetBlock } from '@/components/SupersetBlock';
 import { db } from '@/db/appDb';
 import { sortSetLogs } from '@/domain/history';
 import type { WorkoutSessionExercise, WorkoutSetLog } from '@/domain/models';
-import { buildSupersetBlocks, supersetPositionLabel } from '@/domain/superset';
+import { buildSupersetBlocks } from '@/domain/superset';
 import { formatDateTime, formatLoadLabel, formatSessionWeekContext } from '@/lib/format';
 
 function formatSetLabel(setLog: WorkoutSetLog) {
@@ -115,11 +115,9 @@ export function HistorySessionPage() {
           ) : (
             <SupersetBlock
               key={block.groupId}
-              positions={block.exercises.map((_, index) => supersetPositionLabel(index))}
+              exerciseNames={block.exercises.map((exercise) => exercise.exerciseNameSnapshot)}
             >
-              {block.exercises.map((exercise, memberIndex) =>
-                renderExercise(exercise, supersetPositionLabel(memberIndex)),
-              )}
+              {block.exercises.map((exercise) => renderExercise(exercise))}
             </SupersetBlock>
           ),
         )}
@@ -127,7 +125,7 @@ export function HistorySessionPage() {
     </AppShell>
   );
 
-  function renderExercise(exercise: WorkoutSessionExercise, supersetPosition?: string) {
+  function renderExercise(exercise: WorkoutSessionExercise) {
     const exerciseRecord = exerciseById[exercise.exerciseId];
     const mediaAsset = exerciseRecord?.mediaAssetId
       ? mediaAssetById[exerciseRecord.mediaAssetId]
@@ -144,9 +142,7 @@ export function HistorySessionPage() {
     return (
       <SectionCard
         key={exercise.id}
-        title={`${exercise.orderIndex}. ${supersetPosition ? `${supersetPosition} · ` : ''}${
-          exercise.exerciseNameSnapshot
-        }`}
+        title={`${exercise.orderIndex}. ${exercise.exerciseNameSnapshot}`}
         subtitle={[
           exercise.wasSkipped ? 'Skipped' : null,
           exercise.addedInSession ? 'In Session hinzugefügt' : null,

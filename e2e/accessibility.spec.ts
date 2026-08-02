@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { resetDatabase, seedSampleData } from './helpers';
+import { resetDatabase, seedSampleData, startSampleSession } from './helpers';
 
 const ROUTES = [
   ['Heute', './'],
@@ -48,7 +48,8 @@ async function findContrastViolations(page: Page) {
         node = node.parentElement;
       }
 
-      return [9, 9, 11];
+      // Der Seitengrund, wenn keine deckende Fläche darüber liegt (Feldgrün).
+      return [242, 242, 239];
     };
 
     const violations: Array<{ text: string; ratio: number; required: number }> = [];
@@ -151,6 +152,24 @@ test.describe('Zugänglichkeit', () => {
       expect(await findUnlabelledControls(page)).toEqual([]);
     });
   }
+
+  test('der Streifen der laufenden Einheit hält sich an dieselben Regeln', async ({ page }) => {
+    // Die Route-Schleife oben sieht ihn nie: er steht nur, solange eine
+    // Einheit läuft. Limette auf hellem Grund trägt hier ausnahmsweise Text -
+    // als Fläche mit Tinte darauf, und genau das wird hier nachgemessen.
+    await startSampleSession(page);
+    await page.getByRole('button', { name: 'Session minimieren' }).click();
+    await page.waitForURL(/#\/$/);
+    await page.waitForTimeout(900);
+
+    await expect(page.getByRole('button', { name: /Training läuft/ })).toBeVisible();
+    expect(await findContrastViolations(page)).toEqual([]);
+    expect(await findSmallTargets(page)).toEqual([]);
+    expect(await findUnlabelledControls(page)).toEqual([]);
+
+    // Auch außerhalb der Session gilt: eine Uhr, eine Live-Region.
+    await expect(page.locator('[role="timer"]')).toHaveCount(1);
+  });
 
   test('Tastaturnavigation zeigt einen sichtbaren Fokus', async ({ page }) => {
     // Auf einem Formularfeld statt auf der Startseite: WebKit springt per Tab

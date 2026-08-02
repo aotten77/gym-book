@@ -2,8 +2,8 @@ import type { ReactNode } from 'react';
 import { Repeat } from 'lucide-react';
 
 interface SupersetBlockProps {
-  /** Kennzeichnung der Mitglieder in ihrer Reihenfolge, z. B. ["A", "B"]. */
-  positions: string[];
+  /** Namen der Mitglieder in ihrer Reihenfolge - nur für den zugänglichen Namen. */
+  exerciseNames: string[];
   /** Bedienung des ganzen Blocks - im Training die Pfeile zum Verschieben. */
   action?: ReactNode;
   children: ReactNode;
@@ -15,18 +15,24 @@ interface SupersetBlockProps {
  * Bewusst ein `div` mit `role="group"` und keine `section`: die Karten darin
  * sind selbst `section`s, und zwei verschachtelte Landmarken machen die
  * Gliederung für Screenreader schlechter statt besser.
+ *
+ * Die Mitglieder tragen keine Kennbuchstaben. "A" und "B" benannten nur, was
+ * die Reihenfolge im Block ohnehin zeigt, und nahmen dem Namen der Übung den
+ * Platz, den er auf einem Telefon braucht. Im zugänglichen Namen des Blocks
+ * stehen dafür die Übungsnamen selbst - zwei Supersätze bleiben so
+ * unterscheidbar.
  */
-export function SupersetBlock({ positions, action, children }: SupersetBlockProps) {
+export function SupersetBlock({ exerciseNames, action, children }: SupersetBlockProps) {
   return (
     <div
       role="group"
-      aria-label={`Supersatz ${positions.join(' und ')}`}
+      aria-label={`Supersatz: ${exerciseNames.join(' und ')}`}
       className="rounded-card border border-accent-border bg-surface-sunken p-2"
     >
       <div className="flex items-center justify-between gap-2 px-2 py-1">
         <p className="flex min-w-0 items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-accent">
           <Repeat size={14} className="shrink-0" aria-hidden="true" />
-          <span className="truncate">Supersatz · {positions.join(' → ')}</span>
+          <span className="truncate">Supersatz</span>
         </p>
         {action}
       </div>

@@ -34,7 +34,7 @@ Layering is strict and worth preserving:
 - [src/domain/](src/domain/) — pure types + pure business rules. No Dexie, no React. [session.ts](src/domain/session.ts) holds `materializeSession` and `calculateAsymmetryPercent`.
 - [src/db/](src/db/) — the only place that touches Dexie. [appDb.ts](src/db/appDb.ts) declares the schema; `*-actions.ts` files are the write API (session, template, program, exercise, test, media, settings) and `history-queries.ts` holds the read-side aggregations. UI never writes to `db` directly.
 - [src/pages/](src/pages/) — routed screens. They read via `useLiveQuery` from `dexie-react-hooks` (reactive, re-renders on IndexedDB writes) and mutate by calling `*-actions` functions.
-- [src/store/ui-store.ts](src/store/ui-store.ts) — Zustand, **ephemeral UI state only**: focused exercise, online/offline, SW update available, install prompt. Never domain records, and nothing that must survive a reload — the rest timers and the set timer (`restTimers` / `setTimer`) live on `WorkoutSession` in IndexedDB for exactly that reason.
+- [src/store/ui-store.ts](src/store/ui-store.ts) — Zustand, **ephemeral UI state only**: focused exercise, the open focus sheet (`openSessionBlockKey`), online/offline, SW update available, install prompt. Never domain records, and nothing that must survive a reload — the rest timers and the set timer (`restTimers` / `setTimer`) live on `WorkoutSession` in IndexedDB for exactly that reason. Whether a sheet was open is not training information; after a reload you land in the list and the clocks keep running.
 
 ### The plan/execution split (the core invariant)
 
@@ -42,7 +42,7 @@ Layering is strict and worth preserving:
 
 ### Supersets
 
-Two or more consecutive exercises can be linked into a superset. The model is one optional field — `supersetGroupId` on `WorkoutTemplateExercise` (the plan) and on `WorkoutSessionExercise` (the snapshot copy) — with one invariant: **members of a group are always contiguous in `orderIndex`**. `areGroupsContiguous` guards both reorder actions; the UI never lets you break it either, because the block header's arrows move the whole group and a member's own arrows only sort *within* it.
+Two or more consecutive exercises can be linked into a superset. The model is one optional field — `supersetGroupId` on `WorkoutTemplateExercise` (the plan) and on `WorkoutSessionExercise` (the snapshot copy) — with one invariant: **members of a group are always contiguous in `orderIndex`**. `areGroupsContiguous` guards both reorder actions; the UI never lets you break it either, because the block header's arrows move the whole group and a member's own arrows only sort *within* it. Members carry **no position letters** — "A"/"B" only restated the order the block already shows and cost the exercise name the width it needs on a phone; the accessible name of a superset block therefore lists the exercise names (`Supersatz: Front Squat und Bulgarian Split Squat`), which is also what keeps two blocks distinguishable for tests and voice control.
 
 All grouping rules are pure and shared between plan and execution — [superset.ts](src/domain/superset.ts) works on any `{ id, orderIndex, supersetGroupId? }`, so `groupTemplateExerciseWithPrevious` and `groupSessionExerciseWithPrevious` are the same logic against different tables. `planUngroup` splits a group when a *middle* member leaves (front run keeps the id, back run gets a new one) and dissolves a run left with one member; `normalizeTemplateExerciseOrder` does the same cleanup after a deletion. Grouping in a running session only ever touches the session copy — the template must not change mid-workout.
 
@@ -69,6 +69,33 @@ Band levels live in their own table (`bandLevels`, Dexie `version(3)`), edited i
 Set logs carry **two** flat fields, `bandId` plus `bandNameSnapshot`: the id resolves the rank for the chart, the name keeps history readable after a rename or deletion — a dangling id costs a chart point, never an entry. `updateSetLogValues` resolves the name itself from `bandLevels` and writes both together (or clears both); an unknown id is ignored rather than stored. `deleteBandLevel` therefore leaves set logs alone and only clears `targetBandId` on template exercises and progression rules. For the same reason `assertReferentialIntegrity` in `export.ts` deliberately does **not** check band references — it would reject a user's own backup.
 
 `progressMetricFor(trackingMode, loadKind)` returns the `'band'` metric, and `buildProgressSeries` takes a `bandRank` resolver; `ProgressChart` gets `formatValue` so the axis reads "grün" instead of "3" and drops the numeric delta.
+
+### The session screen: list outside, sheet inside
+
+[SessionPage.tsx](src/pages/SessionPage.tsx) shows the running workout as a **list of blocks** — one card per exercise, or one per superset group. The sets themselves are not in the list. They live in a **full-height sheet** ([ui/Sheet.tsx](src/components/ui/Sheet.tsx)) that opens over it — in a superset, both members, so alternating from set to set needs no view change.
+
+The split exists because the running exercise used to compete with a sticky strip, the card list and the pause bar at once; mid-set you had to search. Now: one exercise, one set, one large action.
+
+- **It opens** on a tap on an exercise row, on the bottom bar, or on a rest chip. **Never automatically on session start** — you walk to the rack first and want to read the plan — and **never** because a timer expired.
+- **It closes** on swipe-down, the close button, Escape, and by itself once its block has no open set left. It deliberately does *not* jump on into the next block: between two exercises you rerack, drink, walk. A switch *within* a superset stays in the sheet.
+- Its footer is anchored to `window.visualViewport`, not to the sheet's end. Without that, iOS pushes the big button under the keyboard the moment a number field takes focus.
+- Exactly one `role="timer"` stays in the DOM. With the sheet closed that is `renderSessionTimerBar()` in the page's bottom bar; with it open, the stage's set-timer panel while a set runs, otherwise the first rest chip in `renderSheetFooter()`. Both branches read the same `setTimerRemainingSeconds > 0`, so no coordination is needed. Outside the session that one timer is the shell's [ActiveSessionBar.tsx](src/components/ActiveSessionBar.tsx), which only renders where the session's own bar does not.
+- **You can leave without ending.** The header slot that carries the Einstellungen link everywhere else carries a `ChevronDown` inside a session ("Session minimieren"), and it does nothing but `navigate('/')` — nothing is written, the session stays `active`. Before that, the only ways out of the list were abort, complete, or a detour through Settings. The counterpart is `ActiveSessionBar`: a lime strip above the bottom nav on **every** other screen, showing the template name, the number that is currently being waited on (set timer, else next rest, else session duration — the same ranking as `renderSessionTimerBar`) and the set count, and tapping it anywhere goes back in. Leaving is only cheap if the session is still visible afterwards, which is why the strip is not optional and why Home no longer carries a resume card of its own.
+- The open block is keyed by *block*, but a superset changes its group id when you link or unlink. An effect in `SessionPage` pulls the key back to the focused exercise's block, otherwise the sheet vanishes mid-gesture.
+- **Nothing is logged from the list.** Every exercise row — including a finished one on the forest-green card — only opens the sheet. There used to be a check button that ticked the next set straight from the list; it wrote *no* values (set logs are materialized empty), so it silently produced completed sets with nothing in them, and next to the row's own tap target it mostly confused. One path in, one place that writes.
+- **A rest starts only by completing a set.** The bottom bar used to carry a clock button that started one by hand; a rest without a set before it does not happen in training.
+
+#### Inside the sheet: one set is big
+
+[SessionExerciseStage.tsx](src/components/SessionExerciseStage.tsx) is the exercise with the focus — image thumbnail, name, the current set as value boxes with `−`/`+` around a real `<input>`, then the remaining sets as narrow rows. There is deliberately **no footer line** with volume or last week's numbers: an open set row already shows what you did last time (`setRowFallback`), and a second, truncated listing of the same figures answers nothing. Every other member of the block collapses to a `SessionPartnerRow`: name, set count, rest chips, "Wechseln". Before this, every set stood as a full editor underneath the next — ten fields for a five-set squat, all equally loud, and the number you were actually working on had to be searched for.
+
+Three things about it are load-bearing:
+
+- **`ActiveSetEditor` keeps the old machinery verbatim** — the field-wise draft reconciliation against the live query, the 600 ms autosave, skipping invalid fields instead of writing `undefined`, `adoptPlaceholders` on completion. Only the frame is new. Do not "simplify" it; each of those lines is a bug that already cost data.
+- **The big button lives in the sheet's footer, its label in the editor.** The footer is anchored to the visual viewport and must stay there; the label ("62,5 kg × 5 abhaken") has to reflect the *draft*, not the stored row, or the button promises something it doesn't write. The editor therefore reports `{label, disabled, run}` upward through `onActionChange`, with `run` behind a ref so the effect only depends on primitives — an object rebuilt per keystroke would loop.
+- **Which set is big is derived, not stored**: the manual pick (`selectedSetLogId`) beats the running set timer beats the first open row. A pick from another exercise simply doesn't match, so switching focus needs no reset.
+
+The derivations are pure and tested in [session-summary.ts](src/domain/session-summary.ts): block status (`upcoming` / `current` / `done`), **set rows** rather than sets (a unilateral exercise produces two per set number, and both sides are work), `buildSetRounds` (one round = one set number, feeding the header strip, the side cards and the row list), `describeSetPosition` in the block card (`Satz 2 von 4` — rows again, so it agrees with the page header and the block counter), and `describeSetRowValues` against a `setRowFallback` in which last week's values beat the exercise target, because those are what completion actually writes. The block card carries its status as `data-block-status` and each set row its id as `data-set-row`; that is what the e2e tests read instead of guessing at class names.
 
 ### Timers
 
@@ -108,9 +135,19 @@ A home-screen web app on iOS owns a storage container separate from Safari, and 
 
 ## UI layer
 
-`src/components/ui/` holds the primitives — `Button`/`IconButton` (the latter requires a `label`), `TextField`/`TextArea`/`SelectField` (each renders a real `<label for>`), and `ConfirmDialog`. Use them instead of hand-rolling class chains; the design tokens live in `tailwind.config.js` (`surface`, `line`, `content`, `accent`, `danger`, plus the `card`/`panel`/`control` radius scale).
+`src/components/ui/` holds the primitives — `Button`/`IconButton` (the latter requires a `label`), `TextField`/`TextArea`/`SelectField` (each renders a real `<label for>`), `ConfirmDialog`, and `Sheet`. Use them instead of hand-rolling class chains; the design tokens live in `tailwind.config.js` (`app`, `surface`, `line`, `content`, `accent`, `highlight`, `success`, `danger`, `warning`, plus the `card`/`panel`/`control` radius scale).
 
-Two rules that are not negotiable, because both were broken across the whole app before: text must reach 4.5:1 contrast (`content-muted` is the lightest muted tone that does), and every interactive element needs a visible focus ring — `index.css` provides a `:where()` baseline, so don't add `outline-none` without a replacement. Touch targets are 44px (`min-h-touch`).
+### The palette is light, and three colours carry meaning
+
+The app is **Feldgrün**: paper ground (`#f2f2ef`), ink text, deep forest green, one lime. Three tokens are semantic and must never appear as decoration — `highlight` (lime) means *this is up next*, `success` (forest) means *done*, and also *rest is over, you can go*, `danger` means *skipped or deleted*.
+
+`accent` is the **ink**, not the lime. That trips people up, so: lime on a light ground measures 1.3:1 as a text colour and is simply unreadable — it only works as a surface. `accent` therefore stayed what it always was (the emphasised interactive colour: primary button, focus ring, active tab) and only changed hue. Reach for `highlight` when you mean "now", never `text-highlight`.
+
+Two rules that are not negotiable, because both were broken across the whole app before: text must reach 4.5:1 contrast (`content-muted` is the *darkest* muted tone the design allows and sits at 5.1:1 on the lightest card), and every interactive element needs a visible focus ring — `index.css` provides a `:where()` baseline, so don't add `outline-none` without a replacement. Touch targets are 44px (`min-h-touch`).
+
+Headings and numbers use `font-display` (Archivo Variable, SIL OFL, self-hosted). Only the weight axis and the latin subset are bundled — 35 kB instead of 90 — and `woff2` is already in the service worker's precache glob, so it is offline after the first start. Body text deliberately stays on the system font.
+
+Changing the ground colour means changing four things outside `tailwind.config.js`: the body colour and `color-scheme` in `index.css`, the focus ring in the same file, the arrow inside `.select-control`'s data-URI SVG, and `theme-color` plus `apple-mobile-web-app-status-bar-style` in `index.html` (`default`, not `black-translucent` — otherwise iOS keeps drawing white status-bar text over a light page).
 
 ## Conventions
 
@@ -118,16 +155,16 @@ Two rules that are not negotiable, because both were broken across the whole app
 - Imports use the `@/` alias for `src/` (configured in `tsconfig.json`, `vite-tsconfig-paths`, and separately in `vitest.config.ts`).
 - IDs: `createId()` from [src/lib/id.ts](src/lib/id.ts) (`crypto.randomUUID`). Timestamps are ISO strings.
 - Routing is `HashRouter` — required for GitHub Pages deep links. Don't switch to `BrowserRouter`.
-- Styling is Tailwind, dark-first, with `cn()` (clsx + tailwind-merge) for conditional classes. UI targets one-handed phone use: large touch targets, bottom-reachable primary actions, minimal typing during a workout.
+- Styling is Tailwind, light-first (single theme, no `dark:` variants anywhere), with `cn()` (clsx + tailwind-merge) for conditional classes. UI targets one-handed phone use: large touch targets, bottom-reachable primary actions, minimal typing during a workout.
 - Reordering runs on up/down arrow buttons (`moveItem` in [src/lib/reorder.ts](src/lib/reorder.ts)), not drag-and-drop — the old `@dnd-kit` gesture fired after 8px and reordered by accident while scrolling. Both `reorderTemplateExercises` and `reorderSessionExercises` reject incomplete id lists and rewrite `orderIndex` as a dense 1-based sequence.
 
 ## Tests
 
 `src/test/setup.ts` wipes and reopens the fake IndexedDB before every test, so `db/*.test.ts` files can call actions against a clean database with no manual teardown. Test coverage is deliberately concentrated on domain rules, db actions, and import/export validation — not components.
 
-For anything jsdom cannot express — safe-area insets, the sticky rest timer, contrast, focus rings, native control sizing — `e2e/` runs Playwright against **WebKit** on two iPhone widths. WebKit is deliberate: the app targets iOS Safari, and Chromium hides real problems. Two examples that only surfaced there: `<select>` ignores `min-height` under native `appearance` and collapsed to 22px, and a debounced autosave bug survived every unit test.
+For anything jsdom cannot express — safe-area insets, the sticky rest timer, contrast, focus rings, native control sizing — `e2e/` runs Playwright against **WebKit** on two iPhone widths. Since the sets moved into the focus sheet, any test that touches a set field has to open it first, and since only one set is big at a time, it has to work through the four helpers in [e2e/helpers.ts](e2e/helpers.ts): `openExerciseSheet(page, name?)`, `closeExerciseSheet(page)`, `completeActiveSet(page)` (the footer button, matched by `/abhaken$/` inside the dialog), `selectSetRow(page, 'Satz 1 · links')` for anything that is not the next open row, and `startRestByCompletingSet(page, name?)` — since the manual rest button is gone, that is the only way to get a running rest timer. A reload closes the sheet — that is the contract, and several tests assert exactly that. WebKit is deliberate: the app targets iOS Safari, and Chromium hides real problems. Two examples that only surfaced there: `<select>` ignores `min-height` under native `appearance` and collapsed to 22px, and a debounced autosave bug survived every unit test.
 
-`vitest.config.ts` excludes `e2e/`, so `npm test` and `npm run test:e2e` stay separate. When writing e2e tests, note that `seedSampleData` brings its own asymmetry test at 8.3% — pick different numbers or you will assert against the wrong row.
+`vitest.config.ts` excludes `e2e/`, so `npm test` and `npm run test:e2e` stay separate. `playwright.config.ts` sets `reuseExistingServer` outside CI: if a dev server from an earlier session is still on 5173, Playwright silently tests *that* one — and a stale server keeps serving the old Tailwind build, because a change to `tailwind.config.js` needs a restart. Restart the dev server before trusting an e2e run. When writing e2e tests, note that `seedSampleData` brings its own asymmetry test at 8.3% — pick different numbers or you will assert against the wrong row.
 
 ## First run
 

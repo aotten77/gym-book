@@ -34,8 +34,8 @@ export default defineConfig({
         short_name: 'Gym Book',
         description: 'Offline-first Trainingsprotokoll als installierbare PWA.',
         lang: 'de',
-        theme_color: '#09090b',
-        background_color: '#09090b',
+        theme_color: '#f2f2ef',
+        background_color: '#f2f2ef',
         display: 'standalone',
         // 'portrait' erlaubt beide Hochformat-Lagen; 'portrait-primary' legt
         // sich auf eine fest - dort, wo der Browser die Sperre umsetzt.

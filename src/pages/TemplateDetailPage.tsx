@@ -23,12 +23,7 @@ import {
   updateTemplate,
 } from '@/db/template-actions';
 import type { MediaAsset, WorkoutTemplateExercise } from '@/domain/models';
-import {
-  buildSupersetBlocks,
-  moveSupersetBlock,
-  moveWithinGroup,
-  supersetPositionLabel,
-} from '@/domain/superset';
+import { buildSupersetBlocks, moveSupersetBlock, moveWithinGroup } from '@/domain/superset';
 
 interface TemplateExerciseFormState {
   exerciseId: string;
@@ -91,15 +86,12 @@ function TemplateExerciseMeta({
   exerciseName,
   bandName,
   mediaAsset,
-  supersetPosition,
 }: {
   item: WorkoutTemplateExercise;
   exerciseName: string;
   /** Name des Ziel-Bands, aufgelöst aus dem Katalog. */
   bandName?: string;
   mediaAsset?: MediaAsset;
-  /** Kennzeichnung im Supersatz ("A", "B") - leer bei einzelnen Übungen. */
-  supersetPosition?: string;
 }) {
   return (
     <div className="flex min-w-0 gap-3">
@@ -111,8 +103,7 @@ function TemplateExerciseMeta({
       />
       <div className="min-w-0">
         <p className="text-sm font-semibold text-content">
-          {item.orderIndex}. {supersetPosition ? `${supersetPosition} · ` : ''}
-          {exerciseName}
+          {item.orderIndex}. {exerciseName}
         </p>
         <p className="mt-1 text-sm text-content-muted">
           {item.targetReps ? `${item.workSetCount} x ${item.targetReps} Wdh` : null}
@@ -136,7 +127,8 @@ interface TemplateExerciseCardProps {
   isBusy: boolean;
   isFirst: boolean;
   isLast: boolean;
-  supersetPosition?: string;
+  /** Ob die Übung zu einem Supersatz gehört. */
+  isSupersetMember: boolean;
   /** Ob es eine Vorgängerin gibt, mit der sich verbinden lässt. */
   canGroupWithPrevious: boolean;
   onMove: (templateExerciseId: string, direction: -1 | 1) => void;
@@ -159,7 +151,7 @@ function TemplateExerciseCard({
   isBusy,
   isFirst,
   isLast,
-  supersetPosition,
+  isSupersetMember,
   canGroupWithPrevious,
   onMove,
   onEdit,
@@ -172,7 +164,7 @@ function TemplateExerciseCard({
    * Block als Ganzes bewegen die Pfeile in seiner Kopfzeile. Ohne den Zusatz
    * hießen zwei Pfeilpaare auf demselben Bildschirm gleich.
    */
-  const moveScopeLabel = supersetPosition ? ' im Supersatz' : '';
+  const moveScopeLabel = isSupersetMember ? ' im Supersatz' : '';
 
   return (
     <div className="rounded-panel border border-line bg-surface p-4 transition hover:border-accent-border hover:bg-surface-sunken">
@@ -199,7 +191,6 @@ function TemplateExerciseCard({
             exerciseName={exerciseName}
             bandName={bandName}
             mediaAsset={mediaAsset}
-            supersetPosition={supersetPosition}
           />
         </div>
         <div className="flex gap-2">
@@ -234,7 +225,7 @@ function TemplateExerciseCard({
           "Mit voriger verbinden" steht auf jeder Zeile und wäre in einer
           Vorlesereihe nicht auseinanderzuhalten.
         */}
-        {supersetPosition ? (
+        {isSupersetMember ? (
           <Button
             variant="ghost"
             size="md"
@@ -538,7 +529,7 @@ export function TemplateDetailPage() {
    */
   function renderTemplateExerciseCard(
     item: WorkoutTemplateExercise,
-    position: { isFirst: boolean; isLast: boolean; supersetPosition?: string },
+    position: { isFirst: boolean; isLast: boolean; isSupersetMember?: boolean },
   ) {
     const mediaAssetId = exerciseById[item.exerciseId]?.mediaAssetId;
 
@@ -552,7 +543,7 @@ export function TemplateDetailPage() {
         isBusy={isReorderingExercises}
         isFirst={position.isFirst}
         isLast={position.isLast}
-        supersetPosition={position.supersetPosition}
+        isSupersetMember={position.isSupersetMember ?? false}
         canGroupWithPrevious={orderedTemplateExercises[0]?.id !== item.id}
         onMove={handleMoveTemplateExercise}
         onEdit={handleEditTemplateExercise}
@@ -601,7 +592,7 @@ export function TemplateDetailPage() {
             <button
               type="button"
               onClick={() => setPendingDelete({ kind: 'template' })}
-              className="min-h-touch inline-flex items-center justify-center rounded-control border border-rose-400/20 px-3 py-2 text-sm text-rose-200 transition hover:bg-rose-400/10"
+              className="min-h-touch inline-flex items-center justify-center rounded-control border border-danger-border px-3 py-2 text-sm text-danger transition hover:bg-danger-soft"
             >
               Löschen
             </button>
@@ -663,7 +654,9 @@ export function TemplateDetailPage() {
                   return (
                     <SupersetBlock
                       key={block.groupId}
-                      positions={block.exercises.map((_, index) => supersetPositionLabel(index))}
+                      exerciseNames={block.exercises.map(
+                        (entry) => nameById[entry.exerciseId] ?? 'Unbekannte Übung',
+                      )}
                       action={
                         <div className="flex shrink-0 items-center gap-2">
                           <IconButton
@@ -687,7 +680,7 @@ export function TemplateDetailPage() {
                         renderTemplateExerciseCard(item, {
                           isFirst: memberIndex === 0,
                           isLast: memberIndex === block.exercises.length - 1,
-                          supersetPosition: supersetPositionLabel(memberIndex),
+                          isSupersetMember: true,
                         }),
                       )}
                     </SupersetBlock>
@@ -781,7 +774,7 @@ export function TemplateDetailPage() {
                           type="button"
                           onClick={handleClearExistingExerciseMedia}
                           disabled={isUpdatingExerciseMedia}
-                          className="min-h-touch inline-flex items-center justify-center rounded-control border border-rose-400/20 px-3 py-2 text-sm text-rose-200 transition hover:bg-rose-400/10 disabled:cursor-not-allowed disabled:opacity-50"
+                          className="min-h-touch inline-flex items-center justify-center rounded-control border border-danger-border px-3 py-2 text-sm text-danger transition hover:bg-danger-soft disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           Bild entfernen
                         </button>
@@ -838,7 +831,7 @@ export function TemplateDetailPage() {
             </div>
 
             {mediaError ? (
-              <div className="rounded-panel border border-rose-300/20 bg-rose-300/10 px-4 py-4 text-sm text-rose-100">
+              <div className="rounded-panel border border-danger-border bg-danger-soft px-4 py-4 text-sm text-danger">
                 {mediaError}
               </div>
             ) : null}

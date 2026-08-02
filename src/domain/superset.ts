@@ -284,8 +284,3 @@ export function areGroupsContiguous<T extends GroupableExercise>(items: T[]) {
 
   return true;
 }
-
-/** Kennzeichnung innerhalb der Gruppe: A, B, C - ab 27 Mitgliedern die Zahl. */
-export function supersetPositionLabel(indexInGroup: number) {
-  return indexInGroup < 26 ? String.fromCharCode(65 + indexInGroup) : `${indexInGroup + 1}`;
-}

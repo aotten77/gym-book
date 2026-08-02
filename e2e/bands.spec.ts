@@ -1,5 +1,13 @@
 import { expect, test } from '@playwright/test';
-import { collectPageErrors, resetDatabase, seedSampleData, startSampleSession } from './helpers';
+import {
+  collectPageErrors,
+  closeExerciseSheet,
+  completeActiveSet,
+  openExerciseSheet,
+  resetDatabase,
+  seedSampleData,
+  startSampleSession,
+} from './helpers';
 
 /*
  * Übungen mit Widerstandsbändern protokollieren statt Kilo eine Stufe aus dem
@@ -53,6 +61,9 @@ test.describe('Band-Übungen', () => {
     await page.getByRole('button', { name: 'Zur Session hinzufügen' }).click();
     await page.waitForTimeout(1200);
 
+    // Die Satzfelder stehen im Fokus-Sheet, nicht in der Liste.
+    await openExerciseSheet(page, 'Band Pull-Apart');
+
     const bandSelect = page.locator('select[id$="-bandId"]').first();
     await expect(bandSelect).toBeVisible();
 
@@ -66,10 +77,14 @@ test.describe('Band-Übungen', () => {
     // durch ein Service-Worker-Update mitten im Satz.
     await page.goto(sessionUrl);
     await page.waitForTimeout(1200);
+    await openExerciseSheet(page, 'Band Pull-Apart');
     await expect(page.locator('select[id$="-bandId"]').first()).toHaveValue(/.+/);
 
-    await page.locator('button[aria-label="Satz als erledigt markieren"]').first().click();
-    await page.waitForTimeout(1000);
+    await completeActiveSet(page);
+
+    // Das Sheet liegt als Modal über der Seite und fängt Klicks ab - erst zu,
+    // dann abschließen. Genau so läuft es auch am Gerät.
+    await closeExerciseSheet(page);
 
     await page.getByRole('button', { name: 'Session abschließen' }).first().click();
     await page.waitForTimeout(1500);

@@ -1,5 +1,15 @@
 import { expect, test, type Page } from '@playwright/test';
-import { collectPageErrors, resetDatabase, seedSampleData, startSampleSession } from './helpers';
+import {
+  collectPageErrors,
+  completeActiveSet,
+  openExerciseSheet,
+  resetDatabase,
+  seedSampleData,
+  selectSetRow,
+  startRestByCompletingSet,
+  startSampleSession,
+  closeExerciseSheet,
+} from './helpers';
 
 /*
  * Deckt die Befunde ab, an denen zuvor Trainingsdaten verloren gingen.
@@ -14,6 +24,7 @@ test.describe('Satz-Protokollierung', () => {
 
   test('deutsches Dezimalkomma wird gespeichert und überlebt einen Reload', async ({ page }) => {
     await startSampleSession(page);
+    await openExerciseSheet(page);
 
     // Number("52,5") ergibt NaN. Früher wurde daraus `undefined`, und Dexies
     // Table.update löscht damit die Property - der Wert war weg.
@@ -23,6 +34,8 @@ test.describe('Satz-Protokollierung', () => {
 
     await page.reload();
     await page.waitForTimeout(1200);
+    // Ein offenes Sheet ist Oberflächenzustand und überlebt den Reload nicht.
+    await openExerciseSheet(page);
 
     await expect(page.locator('input[id$="-weight"]').first()).toHaveValue('82.5');
     await expect(page.locator('input[id$="-reps"]').first()).toHaveValue('5');
@@ -30,6 +43,7 @@ test.describe('Satz-Protokollierung', () => {
 
   test('eine ungültige Eingabe lässt den gespeicherten Wert unangetastet', async ({ page }) => {
     await startSampleSession(page);
+    await openExerciseSheet(page);
 
     const weight = page.locator('input[id$="-weight"]').first();
     await weight.fill('82,5');
@@ -41,12 +55,14 @@ test.describe('Satz-Protokollierung', () => {
 
     await page.reload();
     await page.waitForTimeout(1200);
+    await openExerciseSheet(page);
 
     await expect(page.locator('input[id$="-weight"]').first()).toHaveValue('82.5');
   });
 
   test('das Speichern eines Feldes überschreibt nicht das Nachbarfeld', async ({ page }) => {
     await startSampleSession(page);
+    await openExerciseSheet(page);
 
     // Genau hier lag ein Fehler, den alle Unit-Tests passierten: der Sync aus
     // der Live-Query warf den gerade getippten Wert im Nachbarfeld weg.
@@ -55,6 +71,7 @@ test.describe('Satz-Protokollierung', () => {
     await page.waitForTimeout(1400);
     await page.reload();
     await page.waitForTimeout(1200);
+    await openExerciseSheet(page);
 
     await expect(page.locator('input[id$="-weight"]').first()).toHaveValue('60');
     await expect(page.locator('input[id$="-reps"]').first()).toHaveValue('8');
@@ -74,6 +91,8 @@ test.describe('Satz-Timer', () => {
 
   test('läuft nach einem Reload weiter und übernimmt die gehaltene Zeit', async ({ page }) => {
     await startSampleSession(page);
+    // Die Zeitübung steht im Beispielprogramm an dritter Stelle.
+    await openExerciseSheet(page, 'Nordic Curl Iso');
 
     // Zeit anpassen, bevor es losgeht: 90s reichen sicher über den Reload
     // hinaus, ohne dass der Test auf das Ablaufen wartet.
@@ -88,7 +107,9 @@ test.describe('Satz-Timer', () => {
     // Bildschirmsperre und Reload, also liegt der Timer in IndexedDB.
     await page.reload();
     await page.waitForTimeout(1200);
+    // Der Timer hängt an der Session und läuft weiter, auch ohne offenes Sheet.
     await expect(page.getByRole('timer')).toBeVisible();
+    await openExerciseSheet(page, 'Nordic Curl Iso');
 
     await page.getByRole('button', { name: /Zeit stoppen/ }).click();
     await page.waitForTimeout(800);
@@ -103,6 +124,7 @@ test.describe('Satz-Timer', () => {
 
   test('verwerfen lässt den bereits eingetragenen Wert stehen', async ({ page }) => {
     await startSampleSession(page);
+    await openExerciseSheet(page, 'Nordic Curl Iso');
 
     const seconds = page.locator('input[id$="-seconds"]').first();
     await seconds.fill('30');
@@ -110,8 +132,9 @@ test.describe('Satz-Timer', () => {
 
     await startButton(page).click();
     await expect(page.getByRole('timer')).toBeVisible();
-    // Während der Messung gehört das Feld dem Timer.
-    await expect(seconds).toBeDisabled();
+    // Während der Messung gehört die Bühne dem Timer: das Feld tritt ab,
+    // gemessen wird ohnehin und eine Eingabe würde beim Stoppen überschrieben.
+    await expect(seconds).toBeHidden();
 
     await page.getByRole('button', { name: /Satz-Timer verwerfen/ }).click();
     await page.waitForTimeout(600);
@@ -130,7 +153,7 @@ test.describe('Pausentimer', () => {
   test('läuft nach einem Reload weiter', async ({ page }) => {
     await startSampleSession(page);
 
-    await page.getByRole('button', { name: /Pause starten/ }).click();
+    await startRestByCompletingSet(page);
     await expect(page.getByRole('timer')).toBeVisible();
 
     // Der Vertrag verlangt "recoverable after backgrounding or reload" -
@@ -144,7 +167,7 @@ test.describe('Pausentimer', () => {
   test('lässt sich abbrechen', async ({ page }) => {
     await startSampleSession(page);
 
-    await page.getByRole('button', { name: /Pause starten/ }).click();
+    await startRestByCompletingSet(page);
     await expect(page.getByRole('timer')).toBeVisible();
 
     await page.getByRole('button', { name: 'Pausentimer abbrechen' }).click();
@@ -198,6 +221,30 @@ test.describe('Session-Lebenszyklus', () => {
     expect(errors).toEqual([]);
   });
 
+  test('die Session lässt sich verlassen, ohne sie zu beenden', async ({ page }) => {
+    const sessionUrl = await startSampleSession(page);
+
+    // Zuvor führte aus der Übungsliste nur der Weg über die Einstellungen
+    // hinaus - abbrechen und abschließen sind keine Antwort auf "ich will
+    // kurz woanders nachsehen".
+    await page.getByRole('button', { name: 'Session minimieren' }).click();
+    await page.waitForURL(/#\/$/);
+    await page.waitForTimeout(600);
+
+    const sessionBar = page.getByRole('button', { name: /Training läuft/ });
+    await expect(sessionBar).toBeVisible();
+
+    // Der Streifen steht auf jeder Seite, nicht nur auf der Startseite:
+    // sonst wäre das Minimieren nur ein Umweg zurück zur Karte.
+    await page.goto('./#/history');
+    await page.waitForTimeout(600);
+    await expect(page.getByRole('button', { name: /Training läuft/ })).toBeVisible();
+
+    await page.getByRole('button', { name: /Training läuft/ }).click();
+    await page.waitForURL(/#\/session\//);
+    expect(page.url()).toBe(sessionUrl);
+  });
+
   test('bei laufendem Training wird das sichtbar gemacht', async ({ page }) => {
     await startSampleSession(page);
     await page.goto('./');
@@ -217,6 +264,7 @@ test.describe('Eingabefelder', () => {
 
   test('kein Feld liegt unter 16px', async ({ page }) => {
     await startSampleSession(page);
+    await openExerciseSheet(page);
 
     /*
      * iOS Safari zoomt beim Fokus in jedes Feld hinein, dessen Schrift kleiner
@@ -249,6 +297,7 @@ test.describe('Werte der letzten Session', () => {
      * mit - deren Werte sind die "letzte Woche" für die neue Session.
      */
     await startSampleSession(page);
+    await openExerciseSheet(page);
 
     const weight = page.locator('input[id$="-weight"]').first();
     const placeholder = await weight.getAttribute('placeholder');
@@ -256,14 +305,19 @@ test.describe('Werte der letzten Session', () => {
     expect(placeholder).toBeTruthy();
     await expect(weight).toHaveValue('');
 
-    await page.getByRole('button', { name: 'Satz als erledigt markieren' }).first().click();
-    await page.waitForTimeout(900);
+    await completeActiveSet(page);
 
     // Ohne Eingabe abgehakt: der Platzhalter wird zum gespeicherten Wert und
     // überlebt einen Reload.
     await page.reload();
     await page.waitForTimeout(1200);
+    await openExerciseSheet(page);
 
+    /*
+     * Nach dem Reload liegt der nächste offene Satz auf der Bühne - der
+     * abgehakte Aufwärmsatz muss dafür erst wieder ausgewählt werden.
+     */
+    await selectSetRow(page, 'Aufwärmen');
     await expect(page.locator('input[id$="-weight"]').first()).toHaveValue(placeholder!);
   });
 });
@@ -276,14 +330,19 @@ test.describe('Sätze und Reihenfolge', () => {
 
   test('ein leerer Warmup-Satz lässt sich ohne Rückfrage entfernen', async ({ page }) => {
     await startSampleSession(page);
+    await openExerciseSheet(page);
 
-    const warmupRemove = page.getByRole('button', { name: 'Warmup entfernen' }).first();
-    const countBefore = await page.getByRole('button', { name: /entfernen$/ }).count();
+    /*
+     * Der Aufwärmsatz liegt beim Öffnen ohnehin auf der Bühne - er ist die
+     * erste offene Zeile. Entfernt wird er über den Knopf an der Bühne, und
+     * gezählt werden die Satzzeilen darunter.
+     */
+    const rowsBefore = await page.locator('[data-set-row]').count();
 
-    await warmupRemove.click();
+    await page.getByRole('button', { name: 'Aufwärmen entfernen' }).click();
     await page.waitForTimeout(900);
 
-    expect(await page.getByRole('button', { name: /entfernen$/ }).count()).toBe(countBefore - 1);
+    expect(await page.locator('[data-set-row]').count()).toBe(rowsBefore - 1);
   });
 
   test('die Reihenfolge ändert sich nur über die Pfeile', async ({ page }) => {
@@ -293,12 +352,15 @@ test.describe('Sätze und Reihenfolge', () => {
     // versehentlich um.
     await expect(page.getByRole('button', { name: /ziehen und umsortieren/ })).toHaveCount(0);
 
-    // Nur die Übungskarten, nicht die Übersicht darüber: die trägt den
-    // Namen der fokussierten Übung als eigene Überschrift.
+    // Die Reihenfolge der Blöcke, wie sie in der Liste steht.
     const cardOrder = async () =>
-      (
-        await page.locator('section:has(> div button[aria-label$="nach unten"]) h2').allTextContents()
-      ).map((text) => text.trim());
+      (await page.locator('section[data-block-status]').all()).length
+        ? Promise.all(
+            (await page.locator('section[data-block-status]').all()).map(async (block) =>
+              ((await block.getAttribute('aria-label')) ?? '').trim(),
+            ),
+          )
+        : [];
 
     expect(await cardOrder()).toEqual([
       'Front Squat',
@@ -323,15 +385,16 @@ test.describe('Aktive Übung', () => {
     await seedSampleData(page);
   });
 
-  /** Name der Karte, die gerade das "Aktiv"-Abzeichen trägt. */
+  /**
+   * Name des Blocks, der gerade dran ist.
+   *
+   * Früher hing das am Abzeichen "Aktiv" auf der Karte. Die Liste zeigt den
+   * Zustand jetzt an der Blockkarte selbst - als Attribut, nicht nur als Farbe.
+   */
   async function activeExerciseName(page: Page) {
-    return page.evaluate(() => {
-      const chip = [...document.querySelectorAll('span')].find(
-        (element) => element.textContent?.trim() === 'Aktiv',
-      );
+    const current = page.locator('section[data-block-status="current"]');
 
-      return chip?.closest('section')?.querySelector('h2')?.textContent?.trim() ?? null;
-    });
+    return (await current.count()) ? current.first().getAttribute('aria-label') : null;
   }
 
   test('der Fokus wandert erst weiter, wenn alle Sätze erledigt sind', async ({ page }) => {
@@ -339,10 +402,11 @@ test.describe('Aktive Übung', () => {
 
     expect(await activeExerciseName(page)).toBe('Front Squat');
 
-    const openSets = await page
-      .locator('section', { has: page.getByRole('button', { name: 'Front Squat nach unten' }) })
-      .getByRole('button', { name: 'Satz als erledigt markieren' })
-      .count();
+    await openExerciseSheet(page, 'Front Squat');
+
+    // Im Sheet liegt immer genau ein Satz groß; die Satzzeilen darunter sagen,
+    // wie viele es insgesamt sind.
+    const openSets = await page.getByRole('dialog').locator('[data-set-row]').count();
 
     expect(openSets).toBeGreaterThan(1);
 
@@ -351,15 +415,17 @@ test.describe('Aktive Übung', () => {
      * falsch gebauter Fokuswechsel an - und der Nutzer verliert die Übung,
      * an der er gerade arbeitet.
      */
-    await page.getByRole('button', { name: 'Satz als erledigt markieren' }).first().click();
-    await page.waitForTimeout(800);
+    await completeActiveSet(page);
 
     expect(await activeExerciseName(page)).toBe('Front Squat');
 
     for (let index = 1; index < openSets; index += 1) {
-      await page.getByRole('button', { name: 'Satz als erledigt markieren' }).first().click();
-      await page.waitForTimeout(700);
+      await completeActiveSet(page);
     }
+
+    // Beim letzten Satz schließt sich das Sheet von selbst - der Block ist
+    // fertig, und der nächste wird nicht ungefragt aufgerissen.
+    await expect(page.getByRole('dialog')).toBeHidden();
 
     /*
      * Beim letzten Satz muss der Sprung kommen. Die Live-Query hinkt dem
@@ -368,67 +434,69 @@ test.describe('Aktive Übung', () => {
      */
     expect(await activeExerciseName(page)).toBe('Bulgarian Split Squat');
   });
-
-  test('der Pausen-Start aus der Leiste bewegt den Fokus nicht', async ({ page }) => {
-    await startSampleSession(page);
-
-    await page.getByRole('button', { name: /Pause starten/ }).click();
-    await page.waitForTimeout(800);
-
-    await expect(page.getByRole('timer')).toBeVisible();
-    expect(await activeExerciseName(page)).toBe('Front Squat');
-  });
 });
 
-test.describe('Streifen der aktiven Übung', () => {
+test.describe('Fokus-Sheet', () => {
   test.beforeEach(async ({ page }) => {
     await resetDatabase(page);
     await seedSampleData(page);
   });
 
-  test('der Streifen bleibt beim Scrollen zum letzten Satz sichtbar', async ({ page }) => {
+  test('öffnet sich nicht von selbst - erst die Liste, dann die Übung', async ({ page }) => {
     await startSampleSession(page);
 
-    const strip = page.getByRole('button', { name: /Zur aktiven Übung springen/ });
-    await expect(strip).toBeVisible();
-
-    // mouse.wheel gibt es im mobilen WebKit nicht - hier zählt ohnehin, was
-    // ein echtes Scrollen des Dokuments bewirkt.
-    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-    await page.waitForTimeout(600);
-
-    // Sticky: welche Übung dran ist, muss auch beim letzten Satz noch
-    // sichtbar sein.
-    await expect(strip).toBeInViewport();
+    /*
+     * Wer eine Einheit startet, geht zur Hantel und will den Plan sehen. Ein
+     * Sheet, das man erst wegwischen muss, um die Liste zu lesen, kostet genau
+     * dort einen Handgriff.
+     */
+    await expect(page.getByRole('dialog')).toBeHidden();
+    await expect(page.locator('section[data-block-status]')).toHaveCount(3);
   });
 
-  test('ein Tipp auf den Streifen scrollt zur aktiven Übung', async ({ page }) => {
+  test('trägt die Sätze und lässt sich wieder schließen', async ({ page }) => {
     await startSampleSession(page);
 
-    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-    await page.waitForTimeout(600);
+    // In der Liste stehen keine Eingabefelder - dafür ist das Sheet da.
+    await expect(page.locator('input[id$="-weight"]')).toHaveCount(0);
 
-    // Die aktive Übung steht ganz oben in der Liste - nach dem Sprung an den
-    // Seitenfuß ist sie sicher aus dem Bild.
-    const activeCard = page.locator('[id^="session-exercise-"]').first();
-    await expect(activeCard).not.toBeInViewport();
+    await openExerciseSheet(page, 'Front Squat');
+    await expect(page.locator('input[id$="-weight"]').first()).toBeVisible();
 
-    await page.getByRole('button', { name: /Zur aktiven Übung springen/ }).click();
-    await page.waitForTimeout(900);
+    await closeExerciseSheet(page);
+    await expect(page.getByRole('dialog')).toBeHidden();
+    await expect(page.locator('input[id$="-weight"]')).toHaveCount(0);
+  });
 
-    await expect(activeCard).toBeInViewport();
-    // Der Streifen darf die Karte dabei nicht überdecken: die Sprungmarke
-    // trägt dafür ein scroll-margin.
-    const overlap = await page.evaluate(() => {
-      const card = document.querySelector('[id^="session-exercise-"]');
-      const bar = document.querySelector('[aria-label^="Zur aktiven Übung springen"]');
+  test('überlebt keinen Reload, die Uhren dagegen schon', async ({ page }) => {
+    await startSampleSession(page);
 
-      if (!card || !bar) return null;
+    await startRestByCompletingSet(page, 'Front Squat');
+    await expect(page.getByRole('timer')).toBeVisible();
 
-      return card.getBoundingClientRect().top - bar.getBoundingClientRect().bottom;
-    });
+    await openExerciseSheet(page, 'Front Squat');
 
-    expect(overlap).not.toBeNull();
-    expect(overlap).toBeGreaterThanOrEqual(0);
+    await page.reload();
+    await page.waitForTimeout(1200);
+
+    /*
+     * Das offene Sheet ist reiner Oberflächenzustand und liegt deshalb im
+     * ui-store, nicht in IndexedDB. Die Pause hängt dagegen an der Session -
+     * sie läuft weiter und ist in der Liste weiter zu sehen.
+     */
+    await expect(page.getByRole('dialog')).toBeHidden();
+    await expect(page.getByRole('timer')).toBeVisible();
+  });
+
+  test('genau eine Uhr spricht - im Sheet wie in der Liste', async ({ page }) => {
+    await startSampleSession(page);
+
+    await startRestByCompletingSet(page, 'Front Squat');
+    await expect(page.getByRole('timer')).toHaveCount(1);
+
+    // Die Leiste steht im Sheet im Fuß, nicht zusätzlich darunter.
+    await openExerciseSheet(page, 'Front Squat');
+    await expect(page.getByRole('timer')).toHaveCount(1);
   });
 });
+

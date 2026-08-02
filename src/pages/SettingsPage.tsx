@@ -402,7 +402,7 @@ export function SettingsPage() {
             />
 
             {programError ? (
-              <div className="rounded-panel border border-rose-300/20 bg-rose-300/10 px-4 py-4 text-sm text-rose-100">
+              <div className="rounded-panel border border-danger-border bg-danger-soft px-4 py-4 text-sm text-danger">
                 {programError}
               </div>
             ) : null}
@@ -554,37 +554,37 @@ export function SettingsPage() {
             </button>
 
             {pendingImport && pendingSummary ? (
-              <div className="rounded-panel border border-amber-300/20 bg-amber-300/10 p-4">
-                <p className="text-sm font-semibold text-amber-100">
+              <div className="rounded-panel border border-warning-border bg-warning-soft p-4">
+                <p className="text-sm font-semibold text-warning">
                   Restore bereit: {pendingImport.fileName}
                 </p>
-                <p className="mt-1 text-sm text-amber-50/80">
+                <p className="mt-1 text-sm text-content-secondary">
                   Der Import ersetzt den aktuellen lokalen Datenbestand vollständig. Vom bisherigen
                   Stand wird vorher automatisch ein Backup heruntergeladen.
                 </p>
                 {/* Das Exportdatum ist der einzige Weg zu erkennen, ob es die
                     gemeinte Datei ist. */}
-                <p className="mt-2 text-sm text-amber-50/80">
+                <p className="mt-2 text-sm text-content-secondary">
                   Erstellt am {formatDateTime(pendingImport.snapshot.exportedAt)} ·{' '}
                   {pendingSummary.exercises} Übungen · {pendingSummary.mediaAssets} Bilder
                 </p>
 
                 <div className="mt-4 grid grid-cols-2 gap-3">
-                  <div className="rounded-panel bg-black/15 p-3">
-                    <p className="text-xs uppercase tracking-[0.18em] text-amber-100/60">Templates</p>
-                    <p className="mt-2 text-xl font-semibold text-amber-50">{pendingSummary.templates}</p>
+                  <div className="rounded-panel bg-surface p-3">
+                    <p className="text-xs uppercase tracking-[0.18em] text-content-muted">Templates</p>
+                    <p className="mt-2 text-xl font-semibold text-content">{pendingSummary.templates}</p>
                   </div>
-                  <div className="rounded-panel bg-black/15 p-3">
-                    <p className="text-xs uppercase tracking-[0.18em] text-amber-100/60">Sessions</p>
-                    <p className="mt-2 text-xl font-semibold text-amber-50">{pendingSummary.sessions}</p>
+                  <div className="rounded-panel bg-surface p-3">
+                    <p className="text-xs uppercase tracking-[0.18em] text-content-muted">Sessions</p>
+                    <p className="mt-2 text-xl font-semibold text-content">{pendingSummary.sessions}</p>
                   </div>
-                  <div className="rounded-panel bg-black/15 p-3">
-                    <p className="text-xs uppercase tracking-[0.18em] text-amber-100/60">Set-Logs</p>
-                    <p className="mt-2 text-xl font-semibold text-amber-50">{pendingSummary.setLogs}</p>
+                  <div className="rounded-panel bg-surface p-3">
+                    <p className="text-xs uppercase tracking-[0.18em] text-content-muted">Set-Logs</p>
+                    <p className="mt-2 text-xl font-semibold text-content">{pendingSummary.setLogs}</p>
                   </div>
-                  <div className="rounded-panel bg-black/15 p-3">
-                    <p className="text-xs uppercase tracking-[0.18em] text-amber-100/60">Tests</p>
-                    <p className="mt-2 text-xl font-semibold text-amber-50">{pendingSummary.tests}</p>
+                  <div className="rounded-panel bg-surface p-3">
+                    <p className="text-xs uppercase tracking-[0.18em] text-content-muted">Tests</p>
+                    <p className="mt-2 text-xl font-semibold text-content">{pendingSummary.tests}</p>
                   </div>
                 </div>
 
@@ -610,13 +610,13 @@ export function SettingsPage() {
             ) : null}
 
             {importSuccess ? (
-              <div className="rounded-panel border border-accent-border bg-accent-soft px-4 py-4 text-sm text-lime-100">
+              <div className="rounded-panel border border-success-border bg-success-soft px-4 py-4 text-sm text-success">
                 {importSuccess}
               </div>
             ) : null}
 
             {importError ? (
-              <div className="rounded-panel border border-rose-300/20 bg-rose-300/10 px-4 py-4 text-sm text-rose-100">
+              <div className="rounded-panel border border-danger-border bg-danger-soft px-4 py-4 text-sm text-danger">
                 {importError}
               </div>
             ) : null}
