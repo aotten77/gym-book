@@ -500,3 +500,42 @@ test.describe('Fokus-Sheet', () => {
   });
 });
 
+test.describe('Kopf der Einheit', () => {
+  test.beforeEach(async ({ page }) => {
+    await resetDatabase(page);
+    await seedSampleData(page);
+  });
+
+  test('der Kopf schätzt die Restzeit und läuft auch ohne Timer weiter', async ({ page }) => {
+    await startSampleSession(page);
+
+    const estimate = page.locator('[data-session-estimate]');
+    const duration = page.locator('[data-session-stats] p').first();
+
+    // Vor dem ersten Satz steht die reine Planschätzung da.
+    await expect(estimate).toHaveAttribute('data-session-estimate', 'plan');
+    await expect(estimate).toContainText(/~\d/);
+
+    /*
+     * Die Dauer muss ticken, obwohl weder eine Pause noch ein Satz-Timer läuft
+     * - genau das tat sie vorher nicht. Die Prüfung steht deshalb *vor* dem
+     * ersten Abhaken: die Pause danach würde den Takt der Seite starten und
+     * den Fehler verdecken.
+     */
+    const before = await duration.textContent();
+    await page.waitForTimeout(2500);
+    expect(await duration.textContent()).not.toBe(before);
+
+    // Drei Spalten müssen auch auf dem schmalsten iPhone nebeneinander passen.
+    const clipped = await page
+      .locator('[data-session-stats]')
+      .evaluate((element) => element.scrollWidth > element.clientWidth + 1);
+    expect(clipped).toBe(false);
+
+    await openExerciseSheet(page, 'Front Squat');
+    await completeActiveSet(page);
+    await closeExerciseSheet(page);
+
+    await expect(estimate).toContainText(/~\d/);
+  });
+});

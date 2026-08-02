@@ -17,6 +17,7 @@ import {
   SessionPartnerRow,
   type ActiveSetAction,
 } from '@/components/SessionExerciseStage';
+import { SessionStatsHeader } from '@/components/SessionStatsHeader';
 import { db } from '@/db/appDb';
 import {
   abortSession,
@@ -484,21 +485,6 @@ export function SessionPage() {
     [activeSessionExerciseId, groupedLogs, sessionBlocks],
   );
   const sessionProgress = useMemo(() => summarizeSessionProgress(setLogs ?? []), [setLogs]);
-  /*
-   * Wie lange die Einheit schon läuft. `now` tickt ohnehin für die Timer; bei
-   * einer abgeschlossenen Session zählt die Zeit bis zum Abschluss, nicht bis
-   * jetzt - sonst wüchse die Dauer in der Historie immer weiter.
-   */
-  const sessionElapsedSeconds = session
-    ? Math.max(
-        0,
-        Math.round(
-          ((session.completedAt ? Date.parse(session.completedAt) : now) -
-            Date.parse(session.startedAt)) /
-            1000,
-        ),
-      )
-    : 0;
   const openBlock = blockProgress.find((block) => block.key === openSessionBlockKey);
   /*
    * Welcher Satz auf der Bühne groß liegt.
@@ -1490,48 +1476,14 @@ export function SessionPage() {
     // ein Training läuft, ist ohnehin offensichtlich.
     <AppShell title={session.templateNameSnapshot} eyebrow={sessionWeekContext}>
       <div className="space-y-4">
-        {/*
-          Der Stand der Einheit, nicht der einer einzelnen Übung.
-
-          Hier klebte zuvor ein Streifen mit Name und Fortschritt der aktiven
-          Übung - der beantwortete dieselbe Frage wie die Karte zwei Zeilen
-          tiefer und nahm dem Überblick den Platz. Die aktive Übung erkennt man
-          jetzt an ihrer limettenen Blockkarte; hier steht, wie weit das
-          Training insgesamt ist.
-
-          Gezählt werden Satzzeilen: eine einbeinige Übung erzeugt pro
-          Satznummer zwei davon, und beide Seiten sind Arbeit.
-        */}
+        {/* Der Stand der Einheit, nicht der einer einzelnen Übung. */}
         {orderedSessionExercises.length > 0 ? (
-          <div className="space-y-2.5 px-1">
-            <div className="flex items-end gap-7">
-              <p>
-                <span className="block text-[10px] font-bold uppercase tracking-[0.16em] text-content-muted">
-                  Dauer
-                </span>
-                <span className="font-display text-[26px] font-extrabold leading-none tabular-nums tracking-tight">
-                  {formatTimer(sessionElapsedSeconds)}
-                </span>
-              </p>
-              <p>
-                <span className="block text-[10px] font-bold uppercase tracking-[0.16em] text-content-muted">
-                  Sätze
-                </span>
-                <span className="font-display text-[26px] font-extrabold leading-none tabular-nums tracking-tight">
-                  {sessionProgress.completedCount}
-                  <span className="ml-1.5 text-sm font-semibold text-content-muted">
-                    von {sessionProgress.totalCount}
-                  </span>
-                </span>
-              </p>
-            </div>
-            <div className="h-1.5 overflow-hidden rounded-full bg-surface-raised">
-              <div
-                className="h-full rounded-full bg-success transition-[width]"
-                style={{ width: `${sessionProgress.percent}%` }}
-              />
-            </div>
-          </div>
+          <SessionStatsHeader
+            session={session}
+            progress={sessionProgress}
+            blocks={sessionBlocks}
+            logsByExercise={groupedLogs}
+          />
         ) : null}
 
         {sessionError ? <Alert>{sessionError}</Alert> : null}

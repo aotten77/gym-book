@@ -100,3 +100,55 @@ export function formatTimer(seconds: number) {
 
   return `${String(minutes).padStart(2, '0')}:${String(restSeconds).padStart(2, '0')}`;
 }
+
+/** Die Schätzung in zwei Teilen - die Zahl groß, die Einheit klein daneben. */
+export interface RemainingEstimateLabel {
+  value: string;
+  unit: string;
+}
+
+/**
+ * Grobe Restzeit: "~42 min", "~1:20 h", "<1 min".
+ *
+ * Die Tilde gehört dazu: das ist eine Schätzung, keine Uhr. Ab einer Stunde
+ * wird auf Stunden umgestellt, weil "~102 min" neben Dauer und Sätzen nicht
+ * mehr auf ein 320px-Gerät passt - anders als `formatTimer`, das die beiden
+ * Countdowns trägt und deshalb bei mm:ss bleibt.
+ */
+export function formatRemainingEstimate(seconds: number): RemainingEstimateLabel {
+  const minutes = Math.round(Math.max(0, seconds) / 60);
+
+  // Nie "0 min": solange eine Zeile offen ist, steht noch etwas an.
+  if (minutes < 1) {
+    return { value: '<1', unit: 'min' };
+  }
+
+  if (minutes < 60) {
+    return { value: `~${minutes}`, unit: 'min' };
+  }
+
+  const hours = Math.floor(minutes / 60);
+
+  return { value: `~${hours}:${String(minutes % 60).padStart(2, '0')}`, unit: 'h' };
+}
+
+/** Dieselbe Angabe als Fließtext, für Screenreader: "etwa 42 Minuten". */
+export function describeRemainingEstimate(seconds: number) {
+  const minutes = Math.round(Math.max(0, seconds) / 60);
+
+  if (minutes < 1) {
+    return 'weniger als eine Minute';
+  }
+
+  if (minutes < 60) {
+    return `etwa ${minutes} Minuten`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+  const restMinutes = minutes % 60;
+  const hourLabel = hours === 1 ? 'eine Stunde' : `${hours} Stunden`;
+
+  return restMinutes === 0
+    ? `etwa ${hourLabel}`
+    : `etwa ${hourLabel} und ${restMinutes} Minuten`;
+}
