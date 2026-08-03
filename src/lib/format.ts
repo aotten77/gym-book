@@ -35,6 +35,22 @@ export function formatSessionWeekContext(session: WorkoutSession) {
   return parts.filter(Boolean).join(' · ');
 }
 
+/**
+ * Eine Zahl in deutscher Schreibweise: "82,5" statt "82.5".
+ *
+ * Ohne das steht im ganzen UI der englische Dezimalpunkt - eine Stange wiegt
+ * 82,5 kg, nicht 82.5. Zwei Nachkommastellen, weil die kleinste Scheibe 1,25
+ * wiegt; mehr entsteht in der Eingabe nicht.
+ *
+ * `Intl` gruppiert ab vier Stellen ("1.250" für Volumen), was hier richtig ist
+ * - dieselbe Zahl mit Punkt als Tausendertrenner ist deutsch eindeutig.
+ */
+const numberFormat = new Intl.NumberFormat('de-DE', { maximumFractionDigits: 2 });
+
+export function formatNumber(value: number) {
+  return numberFormat.format(value);
+}
+
 export function formatDateTime(value?: string) {
   if (!value) {
     return 'Noch offen';
@@ -61,7 +77,7 @@ export function formatLoadLabel(setLog: WorkoutSetLog) {
   }
 
   if (typeof setLog.weight === 'number') {
-    parts.push(`${setLog.weight} kg`);
+    parts.push(`${formatNumber(setLog.weight)} kg`);
   }
 
   // Band statt Kilo: die Übung trägt entweder das eine oder das andere, und

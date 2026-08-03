@@ -24,12 +24,21 @@ interface SupersetBlockProps {
  */
 export function SupersetBlock({ exerciseNames, action, children }: SupersetBlockProps) {
   return (
+    /*
+     * Eine Klammer, keine Karte um Karten.
+     *
+     * Vorher lag eine getönte Fläche mit eigenem Rand um Zeilen, die selbst
+     * schon Karten mit Rand sind - drei Kanten auf zwölf Pixeln, und die
+     * Gruppe wirkte schwerer als ihre Mitglieder. Der senkrechte Strich sagt
+     * dasselbe (die Zeilen daneben gehören zusammen) und nimmt auf einem
+     * Telefon keine Breite von den Übungsnamen weg.
+     */
     <div
       role="group"
       aria-label={`Supersatz: ${exerciseNames.join(' und ')}`}
-      className="rounded-card border border-accent-border bg-surface-sunken p-2"
+      className="border-l-2 border-accent-border pl-3"
     >
-      <div className="flex items-center justify-between gap-2 px-2 py-1">
+      <div className="flex items-center justify-between gap-2 pb-1">
         <p className="flex min-w-0 items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-accent">
           <Repeat size={14} className="shrink-0" aria-hidden="true" />
           <span className="truncate">Supersatz</span>
@@ -40,7 +49,7 @@ export function SupersetBlock({ exerciseNames, action, children }: SupersetBlock
         Der Hinweis steht einmal am Block statt auf jeder Karte: dass die
         Sätze im Wechsel laufen, ist die Eigenschaft der Gruppe.
       */}
-      <p className="px-2 pb-2 text-xs text-content-muted">
+      <p className="pb-2 text-xs text-content-muted">
         Sätze im Wechsel - die Pause der einen Übung läuft weiter, während die andere dran ist.
       </p>
       <div className="space-y-2">{children}</div>

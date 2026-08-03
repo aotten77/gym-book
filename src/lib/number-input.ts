@@ -42,6 +42,14 @@ export function optionalNumberInput(value: string) {
   return parsed.status === 'valid' ? parsed.value : undefined;
 }
 
+/**
+ * Der Wert, wie er im Feld steht - mit Dezimalkomma.
+ *
+ * Eine deutsche Tastatur liefert ohnehin ein Komma, und die Zeile unter dem
+ * Feld schreibt "82,5 kg": stünde im Feld "82.5", wäre dieselbe Zahl zweimal
+ * verschieden geschrieben. Zurück kommt sie über `parseNumberInput`, das beide
+ * Schreibweisen annimmt.
+ */
 export function toInputValue(value?: number) {
-  return typeof value === 'number' ? String(value) : '';
+  return typeof value === 'number' ? String(value).replace('.', ',') : '';
 }

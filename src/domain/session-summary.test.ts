@@ -209,7 +209,7 @@ describe('describeExerciseTarget', () => {
   it('beschreibt eine Langhantelübung mit Gewicht', () => {
     expect(
       describeExerciseTarget(exercise({ id: 'a', workSetCount: 4, targetReps: 5, targetWeight: 62.5 })),
-    ).toBe('4 × 5 Wdh · 62.5 kg');
+    ).toBe('4 × 5 Wdh · 62,5 kg');
   });
 });
 
@@ -264,12 +264,12 @@ describe('describeSetRowValues', () => {
         reps: 8,
         weight: 50,
       }),
-    ).toBe('62.5 kg × 5');
+    ).toBe('62,5 kg × 5');
   });
 
   it('greift auf die Vorgabe zurück, solange der Satz offen ist', () => {
     expect(describeSetRowValues(log({ id: '1', sessionExerciseId: 'a' }), { reps: 5, weight: 62.5 })).toBe(
-      '62.5 kg × 5',
+      '62,5 kg × 5',
     );
   });
 

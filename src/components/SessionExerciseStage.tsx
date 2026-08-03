@@ -387,7 +387,7 @@ function ActiveSetEditor({
             // sonst gelegentlich 65.00000000000001.
             Math.max(0, Math.round((base + delta) * 100) / 100);
 
-      return { ...current, [key]: String(next) };
+      return { ...current, [key]: toInputValue(next) };
     });
   }
 
@@ -511,7 +511,7 @@ function ActiveSetEditor({
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-content-muted">
+        <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-content-muted">
           {describeSetRow(log)}
           {log.completed ? ' · erledigt' : ''}
         </p>
@@ -778,7 +778,7 @@ function StageSetTimer({
   return (
     <div className="space-y-3 rounded-panel bg-success p-4 text-success-contrast">
       <div className="flex items-baseline justify-between gap-3">
-        <span className="text-[10px] font-bold uppercase tracking-[0.16em] opacity-75">
+        <span className="text-[11px] font-bold uppercase tracking-[0.16em] opacity-75">
           Satz läuft
         </span>
         <span className="text-xs font-bold tabular-nums opacity-75">
@@ -1094,7 +1094,7 @@ function SideCard({
             : 'bg-surface-sunken text-content',
       )}
     >
-      <span className="block truncate text-[10px] font-bold uppercase tracking-[0.16em] opacity-75">
+      <span className="block truncate text-[11px] font-bold uppercase tracking-[0.16em] opacity-75">
         {formatSideLabel(log.side) || 'beidseitig'}
       </span>
       {/* Auf 320px bleibt für "23,75 kg × 7" keine zweite Zeile - lieber kürzen. */}
@@ -1129,7 +1129,7 @@ function SetRowButton({
       aria-current={isActive}
       data-set-row={log.id}
       className={cn(
-        'flex w-full items-center gap-2 rounded-control px-3 py-1.5 text-left text-xs transition',
+        'flex w-full items-center gap-2 rounded-control px-3 py-1.5 text-left text-[13px] transition',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
         log.completed
           ? 'bg-success text-success-contrast'
@@ -1142,7 +1142,7 @@ function SetRowButton({
         className={cn(
           // Breit genug für "Satz 1 · links": abgeschnitten benennt die Zeile
           // den Satz nicht mehr eindeutig.
-          'w-[6.5rem] shrink-0 truncate text-[10px] font-bold uppercase tracking-[0.06em]',
+          'w-[6.5rem] shrink-0 truncate text-[11px] font-bold uppercase tracking-[0.06em]',
           log.completed || isActive ? 'opacity-75' : 'text-content-muted',
         )}
       >
@@ -1157,7 +1157,7 @@ function SetRowButton({
       {restBadge ? (
         <span
           className={cn(
-            'shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold tabular-nums',
+            'shrink-0 rounded-full px-2 py-0.5 text-[12px] font-bold tabular-nums',
             // Laufend ist neutral - dieselbe Papierfläche wie der Chip auf der
             // Blockkarte. Sie hebt sich von jeder Zeile ab, auf der das Abzeichen
             // sitzen kann: gesenkt, limette oder grün. Bedeutung trägt erst
@@ -1170,7 +1170,7 @@ function SetRowButton({
       ) : null}
       {log.completed ? <Check size={14} strokeWidth={3} className="shrink-0" /> : null}
       {isActive && !log.completed ? (
-        <span className="shrink-0 text-[10px] font-bold uppercase tracking-[0.1em]">jetzt</span>
+        <span className="shrink-0 text-[11px] font-bold uppercase tracking-[0.1em]">jetzt</span>
       ) : null}
     </button>
   );
@@ -1208,7 +1208,7 @@ export function SessionPartnerRow({
         <h3 className="truncate font-display text-sm font-bold tracking-tight">
           {exercise.exerciseNameSnapshot}
         </h3>
-        <p className="text-[11px] font-semibold text-content-muted tabular-nums">
+        <p className="text-[12px] font-semibold text-content-muted tabular-nums">
           {completedCount} von {totalCount} Sätzen
         </p>
       </div>
@@ -1220,7 +1220,7 @@ export function SessionPartnerRow({
           <span
             key={`${track.sessionExerciseId}-${track.side}`}
             className={cn(
-              'shrink-0 rounded-full px-2 py-1 text-[10px] font-bold tabular-nums',
+              'shrink-0 rounded-full px-2 py-1 text-[12px] font-bold tabular-nums',
               isReady ? 'bg-success text-success-contrast' : 'bg-surface text-content-secondary',
             )}
           >

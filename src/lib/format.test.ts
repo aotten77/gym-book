@@ -1,5 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { describeRemainingEstimate, formatRemainingEstimate } from '@/lib/format';
+import { describeRemainingEstimate, formatNumber, formatRemainingEstimate } from '@/lib/format';
+
+describe('formatNumber', () => {
+  it('schreibt Dezimalstellen mit Komma', () => {
+    expect(formatNumber(82.5)).toBe('82,5');
+    expect(formatNumber(41.25)).toBe('41,25');
+  });
+
+  it('lässt ganze Zahlen ganz', () => {
+    expect(formatNumber(80)).toBe('80');
+    expect(formatNumber(0)).toBe('0');
+  });
+
+  it('gruppiert ab vier Stellen', () => {
+    expect(formatNumber(1250)).toBe('1.250');
+  });
+});
 
 describe('formatRemainingEstimate', () => {
   it('sagt unter einer Minute nie "0 min"', () => {

@@ -211,7 +211,7 @@ export function AppShell({ title, eyebrow, children }: AppShellProps) {
         <main id="main-content" className="flex-1 py-5">
           <div className="space-y-4">
             {!isOnline ? (
-              <div role="status" className="rounded-card border border-warning/20 bg-warning-soft px-4 py-4">
+              <div role="status" className="rounded-card border border-warning-border bg-warning-soft px-4 py-4">
                 <p className="text-sm font-semibold text-warning">Offline aktiv</p>
                 <p className="mt-1 text-sm text-content-secondary">
                   Bereits geladene Daten und lokale Änderungen bleiben weiter nutzbar.

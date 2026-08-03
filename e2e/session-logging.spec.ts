@@ -37,7 +37,7 @@ test.describe('Satz-Protokollierung', () => {
     // Ein offenes Sheet ist Oberflächenzustand und überlebt den Reload nicht.
     await openExerciseSheet(page);
 
-    await expect(page.locator('input[id$="-weight"]').first()).toHaveValue('82.5');
+    await expect(page.locator('input[id$="-weight"]').first()).toHaveValue('82,5');
     await expect(page.locator('input[id$="-reps"]').first()).toHaveValue('5');
   });
 
@@ -57,7 +57,7 @@ test.describe('Satz-Protokollierung', () => {
     await page.waitForTimeout(1200);
     await openExerciseSheet(page);
 
-    await expect(page.locator('input[id$="-weight"]').first()).toHaveValue('82.5');
+    await expect(page.locator('input[id$="-weight"]').first()).toHaveValue('82,5');
   });
 
   test('das Speichern eines Feldes überschreibt nicht das Nachbarfeld', async ({ page }) => {

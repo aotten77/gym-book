@@ -27,7 +27,7 @@ describe('parseNumberInput', () => {
 
 describe('toInputValue', () => {
   it('renders numbers and treats undefined as an empty field', () => {
-    expect(toInputValue(52.5)).toBe('52.5');
+    expect(toInputValue(52.5)).toBe('52,5');
     expect(toInputValue(0)).toBe('0');
     expect(toInputValue(undefined)).toBe('');
   });

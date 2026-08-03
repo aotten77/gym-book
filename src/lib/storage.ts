@@ -1,3 +1,5 @@
+import { formatNumber } from '@/lib/format';
+
 export interface StorageStatus {
   /** Ob der Browser die Speicher-API überhaupt anbietet. */
   supported: boolean;
@@ -78,5 +80,8 @@ export function formatBytes(bytes?: number) {
     unitIndex += 1;
   }
 
-  return `${value.toFixed(value >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+  // Erst runden, dann deutsch schreiben: "12,3 MB" statt "12.3 MB".
+  const digits = value >= 10 || unitIndex === 0 ? 0 : 1;
+
+  return `${formatNumber(Number(value.toFixed(digits)))} ${units[unitIndex]}`;
 }

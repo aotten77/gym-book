@@ -1,4 +1,5 @@
 import type { LoadKind, TrackingMode, WorkoutSetLog } from '@/domain/models';
+import { sumWorkVolume } from '@/domain/volume';
 
 export interface ProgressPoint {
   completedAt: string;
@@ -76,14 +77,10 @@ export function buildProgressSeries(
       }
 
       // Bänder tragen keine Last in Kilo, ein Volumen ergäbe dort keine Zahl.
-      const volume =
-        metric === 'band'
-          ? 0
-          : execution.workLogs.reduce((sum, log) => {
-              const load = log.weight ?? 0;
-              const reps = log.reps ?? log.seconds ?? 0;
-              return sum + load * reps;
-            }, 0);
+      // Die Ausnahme steht hier und nicht in `sumWorkVolume`: dort käme
+      // ohnehin null heraus, aber nur hier ist bekannt, dass das kein
+      // Messwert ist, sondern eine Kennzahl, die es für Bänder nicht gibt.
+      const volume = metric === 'band' ? 0 : sumWorkVolume(execution.workLogs);
 
       return {
         completedAt: execution.completedAt,

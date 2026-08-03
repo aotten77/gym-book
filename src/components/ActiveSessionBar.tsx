@@ -112,7 +112,7 @@ export function ActiveSessionBar({ session }: ActiveSessionBarProps) {
       className="flex w-full items-center gap-3 border-b border-highlight-border bg-highlight px-4 py-2.5 text-left text-highlight-contrast transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
     >
       <div className="min-w-0 flex-1">
-        <p className="truncate text-[10px] font-bold uppercase tracking-[0.16em] opacity-70">
+        <p className="truncate text-[11px] font-bold uppercase tracking-[0.16em] opacity-70">
           Training läuft
         </p>
         <p className="truncate text-sm font-semibold">{session.templateNameSnapshot}</p>

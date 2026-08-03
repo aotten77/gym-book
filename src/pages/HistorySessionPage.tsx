@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { ArrowLeft } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
+import { Empty } from '@/components/Empty';
 import { ExerciseMedia } from '@/components/ExerciseMedia';
 import { SectionCard } from '@/components/SectionCard';
 import { SupersetBlock } from '@/components/SupersetBlock';
@@ -10,7 +11,12 @@ import { db } from '@/db/appDb';
 import { sortSetLogs } from '@/domain/history';
 import type { WorkoutSessionExercise, WorkoutSetLog } from '@/domain/models';
 import { buildSupersetBlocks } from '@/domain/superset';
-import { formatDateTime, formatLoadLabel, formatSessionWeekContext } from '@/lib/format';
+import {
+  formatDateTime,
+  formatLoadLabel,
+  formatNumber,
+  formatSessionWeekContext,
+} from '@/lib/format';
 
 function formatSetLabel(setLog: WorkoutSetLog) {
   if (setLog.setKind === 'warmup') {
@@ -59,7 +65,7 @@ export function HistorySessionPage() {
           action={
             <Link
               to="/history"
-              className="min-h-touch inline-flex items-center justify-center flex items-center gap-2 rounded-control border border-line px-3 py-2 text-sm text-content-secondary transition hover:bg-surface-raised"
+              className="min-h-touch inline-flex items-center justify-center gap-2 rounded-control border border-line px-3 py-2 text-sm text-content-secondary transition hover:bg-surface-raised"
             >
               <ArrowLeft size={16} />
               Zurück
@@ -83,7 +89,7 @@ export function HistorySessionPage() {
           action={
             <Link
               to="/history"
-              className="min-h-touch inline-flex items-center justify-center flex items-center gap-2 rounded-control border border-line px-3 py-2 text-sm text-content-secondary transition hover:bg-surface-raised"
+              className="min-h-touch inline-flex items-center justify-center gap-2 rounded-control border border-line px-3 py-2 text-sm text-content-secondary transition hover:bg-surface-raised"
             >
               <ArrowLeft size={16} />
               Zurück
@@ -135,7 +141,7 @@ export function HistorySessionPage() {
     const targetParts = [
       typeof exercise.targetReps === 'number' ? `${exercise.targetReps} Wdh` : null,
       typeof exercise.targetSeconds === 'number' ? `${exercise.targetSeconds}s` : null,
-      typeof exercise.targetWeight === 'number' ? `${exercise.targetWeight} kg` : null,
+      typeof exercise.targetWeight === 'number' ? `${formatNumber(exercise.targetWeight)} kg` : null,
       exercise.targetBandNameSnapshot ?? null,
     ].filter(Boolean);
 
@@ -144,7 +150,9 @@ export function HistorySessionPage() {
         key={exercise.id}
         title={`${exercise.orderIndex}. ${exercise.exerciseNameSnapshot}`}
         subtitle={[
-          exercise.wasSkipped ? 'Skipped' : null,
+          // Deutsch mit Umlauten, wie überall sonst - "Skipped" war der
+          // letzte englische Rest im sichtbaren Text dieser Seite.
+          exercise.wasSkipped ? 'Ausgelassen' : null,
           exercise.addedInSession ? 'In Session hinzugefügt' : null,
           targetParts.length > 0 ? `Ziel: ${targetParts.join(' · ')}` : null,
         ]
@@ -166,10 +174,16 @@ export function HistorySessionPage() {
                     <p className="text-sm font-semibold text-content">{formatSetLabel(log)}</p>
                     <p className="mt-1 text-sm text-content-muted">{formatLoadLabel(log)}</p>
                   </div>
+                  {/*
+                    Derselbe Zustand, den die laufende Einheit waldgrün malt,
+                    stand hier grau: `bg-accent-soft text-accent` ist auf
+                    hellem Grund Tinte auf Papier und sagt nichts. "Erledigt"
+                    hat in dieser App eine Farbe.
+                  */}
                   <span
                     className={`rounded-control px-3 py-2 text-xs font-medium ${
                       log.completed
-                        ? 'bg-accent-soft text-accent'
+                        ? 'bg-success text-success-contrast'
                         : 'bg-surface-raised text-content-secondary'
                     }`}
                   >
@@ -179,9 +193,10 @@ export function HistorySessionPage() {
               </div>
             ))
           ) : (
-            <div className="rounded-panel border border-dashed border-line bg-surface px-4 py-5 text-sm text-content-muted">
-              Keine Set-Logs vorhanden.
-            </div>
+            <Empty
+              title="Keine Sätze protokolliert"
+              description="Diese Übung wurde in der Einheit nicht geloggt."
+            />
           )}
         </div>
       </SectionCard>

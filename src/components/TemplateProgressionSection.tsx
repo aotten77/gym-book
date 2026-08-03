@@ -12,6 +12,8 @@ import type {
   WorkoutTemplateExercise,
 } from '@/domain/models';
 import { supportsBand, supportsReps, supportsSeconds, supportsWeight } from '@/domain/tracking';
+import { formatNumber } from '@/lib/format';
+import { optionalNumberInput, toInputValue } from '@/lib/number-input';
 
 interface ProgressionRuleFormState {
   targetReps: string;
@@ -29,19 +31,6 @@ const defaultProgressionRuleFormState: ProgressionRuleFormState = {
   notes: '',
 };
 
-function numberToInputValue(value?: number) {
-  return typeof value === 'number' ? String(value) : '';
-}
-
-function parseOptionalNumber(value: string) {
-  if (!value.trim()) {
-    return undefined;
-  }
-
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : undefined;
-}
-
 function buildProgressionRuleFormState(rule?: {
   targetReps?: number;
   targetSeconds?: number;
@@ -50,9 +39,9 @@ function buildProgressionRuleFormState(rule?: {
   notes?: string;
 }): ProgressionRuleFormState {
   return {
-    targetReps: numberToInputValue(rule?.targetReps),
-    targetSeconds: numberToInputValue(rule?.targetSeconds),
-    targetWeight: numberToInputValue(rule?.targetWeight),
+    targetReps: toInputValue(rule?.targetReps),
+    targetSeconds: toInputValue(rule?.targetSeconds),
+    targetWeight: toInputValue(rule?.targetWeight),
     targetBandId: rule?.targetBandId ?? '',
     notes: rule?.notes ?? '',
   };
@@ -72,7 +61,7 @@ function formatPrescriptionLine(
   const parts = [
     input.targetReps ? `${input.workSetCount} x ${input.targetReps} Wdh` : null,
     input.targetSeconds ? `${input.workSetCount} x ${input.targetSeconds}s` : null,
-    typeof input.targetWeight === 'number' ? `${input.targetWeight} kg` : null,
+    typeof input.targetWeight === 'number' ? `${formatNumber(input.targetWeight)} kg` : null,
     input.targetBandId ? (bandNameById[input.targetBandId] ?? 'Band') : null,
     typeof input.restSeconds === 'number' ? `Pause ${input.restSeconds}s` : null,
   ].filter(Boolean);
@@ -216,16 +205,16 @@ export function TemplateProgressionSection({
         templateExerciseId: selectedProgressionTemplateExercise.id,
         programWeekId,
         targetReps: supportsReps(selectedProgressionExercise?.trackingMode)
-          ? parseOptionalNumber(draft.targetReps)
+          ? optionalNumberInput(draft.targetReps)
           : undefined,
         targetSeconds: supportsSeconds(selectedProgressionExercise?.trackingMode)
-          ? parseOptionalNumber(draft.targetSeconds)
+          ? optionalNumberInput(draft.targetSeconds)
           : undefined,
         targetWeight: supportsWeight(
           selectedProgressionExercise?.trackingMode,
           selectedProgressionExercise?.loadKind,
         )
-          ? parseOptionalNumber(draft.targetWeight)
+          ? optionalNumberInput(draft.targetWeight)
           : undefined,
         targetBandId: supportsBand(
           selectedProgressionExercise?.trackingMode,

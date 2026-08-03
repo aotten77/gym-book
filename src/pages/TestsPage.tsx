@@ -11,7 +11,7 @@ import { SelectField, TextArea, TextField } from '@/components/ui/Field';
 import { db } from '@/db/appDb';
 import { createExerciseTest, deleteExerciseTest } from '@/db/test-actions';
 import { calculateAsymmetryPercent } from '@/domain/session';
-import { formatDateTime } from '@/lib/format';
+import { formatDateTime, formatNumber } from '@/lib/format';
 import { parseNumberInput } from '@/lib/number-input';
 
 interface TestFormState {
@@ -210,15 +210,15 @@ export function TestsPage() {
               <div className="grid grid-cols-3 gap-3">
                 <div className="rounded-panel bg-surface p-4">
                   <p className="text-xs uppercase tracking-[0.18em] text-content-muted">Links</p>
-                  <p className="mt-2 text-2xl font-semibold text-content">{test.leftValue}</p>
+                  <p className="mt-2 text-2xl font-semibold text-content">{formatNumber(test.leftValue)}</p>
                 </div>
                 <div className="rounded-panel bg-surface p-4">
                   <p className="text-xs uppercase tracking-[0.18em] text-content-muted">Rechts</p>
-                  <p className="mt-2 text-2xl font-semibold text-content">{test.rightValue}</p>
+                  <p className="mt-2 text-2xl font-semibold text-content">{formatNumber(test.rightValue)}</p>
                 </div>
                 <div className="rounded-panel bg-accent-soft p-4">
                   <p className="text-xs uppercase tracking-[0.18em] text-accent">Asymmetrie</p>
-                  <p className="mt-2 text-2xl font-semibold text-accent">{test.asymmetryPercent}%</p>
+                  <p className="mt-2 text-2xl font-semibold text-accent">{formatNumber(test.asymmetryPercent)}%</p>
                 </div>
               </div>
               {test.notes ? <p className="mt-4 text-sm text-content-muted">{test.notes}</p> : null}

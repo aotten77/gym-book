@@ -1,25 +1,46 @@
 import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { ChevronRight, Plus } from 'lucide-react';
+import { Check, ChevronRight, Play, Plus } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AppShell } from '@/components/AppShell';
+import { Alert } from '@/components/Alert';
+import { Empty } from '@/components/Empty';
 import { SectionCard } from '@/components/SectionCard';
+import { Button } from '@/components/ui/Button';
+import { DoneRow, NowCard } from '@/components/ui/StatusCard';
 import { db } from '@/db/appDb';
+import { loadTemplateRecency, loadWeekSummary } from '@/db/history-queries';
+import { startSessionFromTemplate } from '@/db/session-actions';
 import { createTemplate } from '@/db/template-actions';
+import { startOfCalendarWeek } from '@/domain/calendar-week';
+import { pickNextTemplate } from '@/domain/next-workout';
 import { buildSupersetBlocks } from '@/domain/superset';
+import { formatDateTime, formatNumber } from '@/lib/format';
 
 export function TemplatesPage() {
   const navigate = useNavigate();
   const [name, setName] = useState('');
   const [notes, setNotes] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [isStartingSession, setIsStartingSession] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
   const templates = useLiveQuery(() => db.workoutTemplates.toArray(), []);
   const templateExercises = useLiveQuery(() => db.workoutTemplateExercises.toArray(), []);
   const exercises = useLiveQuery(() => db.exercises.toArray(), []);
   const bandLevels = useLiveQuery(() => db.bandLevels.toArray(), []);
+  const templateRecency = useLiveQuery(() => loadTemplateRecency(), []);
+  const weekSummary = useLiveQuery(
+    () => loadWeekSummary(startOfCalendarWeek(new Date()).toISOString()),
+    [],
+  );
 
   const exerciseNameById = Object.fromEntries((exercises ?? []).map((item) => [item.id, item.name]));
   const bandNameById = Object.fromEntries((bandLevels ?? []).map((band) => [band.id, band.name]));
+
+  const nextTemplate = pickNextTemplate(templates ?? [], templateRecency ?? {});
+  const nextTemplateExerciseCount = (templateExercises ?? []).filter(
+    (item) => item.templateId === nextTemplate?.id,
+  ).length;
 
   async function handleCreateTemplate() {
     if (!name.trim()) {
@@ -38,42 +59,66 @@ export function TemplatesPage() {
     }
   }
 
+  /*
+   * Von hier ließ sich bisher kein Training starten - man musste zurück auf
+   * die Startseite, obwohl man genau vor der Liste der Workouts stand.
+   */
+  async function handleStartSession(templateId: string) {
+    setIsStartingSession(true);
+
+    try {
+      const sessionId = await startSessionFromTemplate(templateId);
+      setStartError(null);
+      navigate(`/session/${sessionId}`);
+    } catch (error) {
+      setStartError(
+        error instanceof Error ? error.message : 'Session konnte nicht gestartet werden.',
+      );
+      setIsStartingSession(false);
+    }
+  }
+
   return (
     <AppShell title="Workouts">
       <div className="space-y-4">
-        <SectionCard
-          title="Neues Workout"
-          subtitle="Erst benennen, dann im Detail mit Übungen füllen."
-          action={
-            <div className="flex h-10 w-10 items-center justify-center rounded-control bg-accent-soft text-accent">
-              <Plus size={18} />
-            </div>
-          }
-        >
-          <div className="space-y-3">
-            <input
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              aria-label="z. B. Einheit B" placeholder="z. B. Einheit B"
-              className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-base text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
-            />
-            <textarea
-              value={notes}
-              onChange={(event) => setNotes(event.target.value)}
-              aria-label="Kurznotiz für Fokus, Ziel oder Belastungssteuerung" placeholder="Kurznotiz für Fokus, Ziel oder Belastungssteuerung"
-              rows={3}
-              className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-base text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
-            />
-            <button
-              type="button"
-              onClick={handleCreateTemplate}
-              disabled={!name.trim() || isSaving}
-              className="w-full rounded-panel bg-accent px-4 py-4 text-sm font-semibold text-accent-contrast transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Workout anlegen
-            </button>
-          </div>
-        </SectionCard>
+        {startError ? <Alert>{startError}</Alert> : null}
+
+        {/* Das eine Limettenfeld dieser Seite - dieselbe Heuristik wie auf der Startseite. */}
+        {nextTemplate ? (
+          <NowCard
+            eyebrow="Am längsten her"
+            title={nextTemplate.name}
+            subtitle={nextTemplateExerciseCount === 1 ? '1 Übung' : `${nextTemplateExerciseCount} Übungen`}
+            onClick={() => void handleStartSession(nextTemplate.id)}
+            disabled={isStartingSession}
+            action={
+              <span className="flex h-11 w-11 items-center justify-center rounded-control bg-accent text-accent-contrast">
+                <Play size={18} />
+              </span>
+            }
+          />
+        ) : null}
+
+        {/*
+          Waldgrün darf sich wiederholen: erledigt sind mehrere Einheiten
+          gleichzeitig, und eine Zeile reicht dafür - "fertig" braucht wenig
+          Platz, im Gegensatz zu dem, was als Nächstes ansteht.
+        */}
+        {weekSummary && weekSummary.sessions.length > 0 ? (
+          <section className="space-y-2">
+            <h2 className="px-1 text-xs font-bold uppercase tracking-[0.16em] text-content-muted">
+              Diese Woche erledigt
+            </h2>
+            {weekSummary.sessions.map((session) => (
+              <DoneRow
+                key={session.id}
+                title={session.templateName}
+                meta={formatDateTime(session.completedAt)}
+                icon={<Check size={16} strokeWidth={3} aria-hidden="true" />}
+              />
+            ))}
+          </section>
+        ) : null}
 
         {(templates ?? []).map((template) => {
           const items = (templateExercises ?? [])
@@ -122,7 +167,7 @@ export function TemplatesPage() {
                           {item.targetReps ? `${item.workSetCount} x ${item.targetReps} Wdh` : null}
                           {item.targetReps && item.targetSeconds ? ' · ' : null}
                           {item.targetSeconds ? `${item.workSetCount} x ${item.targetSeconds}s` : null}
-                          {item.targetWeight ? ` · ${item.targetWeight} kg` : ''}
+                          {item.targetWeight ? ` · ${formatNumber(item.targetWeight)} kg` : ''}
                           {item.targetBandId ? ` · ${bandNameById[item.targetBandId] ?? 'Band'}` : ''}
                           {supersetExerciseIds.has(item.id) ? ' · Supersatz' : ''}
                         </p>
@@ -131,15 +176,53 @@ export function TemplatesPage() {
                     </Link>
                   ))
                 ) : (
-                  <div className="rounded-panel border border-dashed border-line bg-surface px-4 py-5 text-sm text-content-muted">
-                    Noch keine Übungen hinterlegt. Im Detailscreen kannst du bestehende Übungen
-                    referenzieren oder neue anlegen.
-                  </div>
+                  <Empty
+                    title="Noch keine Übungen"
+                    description="Im Detailscreen referenzierst du bestehende Übungen oder legst neue an."
+                  />
                 )}
               </div>
             </SectionCard>
           );
         })}
+
+        {/*
+          Anlegen steht unter der Liste, nicht darüber: die Seite wird
+          überwiegend gelesen und gestartet, nicht befüllt.
+        */}
+        <SectionCard
+          title="Neues Workout"
+          subtitle="Erst benennen, dann im Detail mit Übungen füllen."
+          action={
+            <div className="flex h-10 w-10 items-center justify-center rounded-control bg-accent-soft text-accent">
+              <Plus size={18} />
+            </div>
+          }
+        >
+          <div className="space-y-3">
+            <input
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              aria-label="z. B. Einheit B" placeholder="z. B. Einheit B"
+              className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-base text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
+            />
+            <textarea
+              value={notes}
+              onChange={(event) => setNotes(event.target.value)}
+              aria-label="Kurznotiz für Fokus, Ziel oder Belastungssteuerung" placeholder="Kurznotiz für Fokus, Ziel oder Belastungssteuerung"
+              rows={3}
+              className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-base text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
+            />
+            <Button
+              variant="primary"
+              fullWidth
+              onClick={handleCreateTemplate}
+              disabled={!name.trim() || isSaving}
+            >
+              Workout anlegen
+            </Button>
+          </div>
+        </SectionCard>
       </div>
     </AppShell>
   );

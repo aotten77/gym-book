@@ -18,7 +18,7 @@ import {
   type SessionBlockProgress,
   type SessionExerciseProgress,
 } from '@/domain/session-summary';
-import { formatSideLabel, formatTimer } from '@/lib/format';
+import { formatNumber, formatSideLabel, formatTimer } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
 interface SessionBlockCardProps {
@@ -268,7 +268,7 @@ function SessionBlockExerciseRow({
             <span className="block truncate font-display text-[15px] font-bold tracking-tight text-content">
               {exercise.exerciseNameSnapshot}
             </span>
-            <span className="block truncate text-[11px] font-semibold text-content-muted">
+            <span className="block truncate text-[12px] font-semibold text-content-muted">
               {exercise.wasSkipped
                 ? 'Ausgelassen'
                 : hasRunningSetTimer
@@ -296,7 +296,7 @@ function SessionBlockExerciseRow({
               <span
                 key={`${track.sessionExerciseId}-${track.side}`}
                 className={cn(
-                  'inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold tabular-nums',
+                  'inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[12px] font-bold tabular-nums',
                   isReady
                     ? 'bg-success text-success-contrast'
                     : 'bg-surface text-content-secondary',
@@ -357,7 +357,7 @@ function ExerciseSummaryLine({
           <>
             {logsSummary}
             {typeof asymmetryPercent === 'number' ? (
-              <span className="ml-2 opacity-75">Δ {asymmetryPercent} %</span>
+              <span className="ml-2 opacity-75">Δ {formatNumber(asymmetryPercent)} %</span>
             ) : null}
           </>
         )}

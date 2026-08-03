@@ -1,21 +1,24 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { ArrowRight, Play, ShieldAlert } from 'lucide-react';
+import { Play, ShieldAlert } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
 import { Empty } from '@/components/Empty';
 import { Alert } from '@/components/Alert';
 import { Button } from '@/components/ui/Button';
+import { DoneCard, NowCard } from '@/components/ui/StatusCard';
 import { SectionCard } from '@/components/SectionCard';
-import { StatCard } from '@/components/StatCard';
 import { WeekStepper } from '@/components/WeekStepper';
 import { db } from '@/db/appDb';
+import { loadTemplateRecency, loadWeekSummary } from '@/db/history-queries';
 import { clearWeekOverride, setWeekOverride } from '@/db/settings-actions';
 import { startSessionFromTemplate } from '@/db/session-actions';
 import { evaluateBackupStatus } from '@/domain/backup';
+import { startOfCalendarWeek } from '@/domain/calendar-week';
+import { pickNextTemplate } from '@/domain/next-workout';
 import { resolveWeekControl } from '@/domain/program';
 import { exportDatabaseSnapshot } from '@/lib/export';
-import { formatDateTime } from '@/lib/format';
+import { formatDateTime, formatNumber } from '@/lib/format';
 
 export default function Home() {
   const navigate = useNavigate();
@@ -49,10 +52,22 @@ export default function Home() {
     () => db.workoutSessions.where('status').equals('active').first(),
     [],
   );
-  const lastCompletedSession = useLiveQuery(
-    async () => {
-      return db.workoutSessions.orderBy('completedAt').reverse().filter((item) => item.status === 'completed').first();
-    },
+  /** Übungszahl je Workout - die Unterzeile der Karten, ohne zweite Abfrage. */
+  const exerciseCountByTemplateId = useLiveQuery(async () => {
+    const rows = await db.workoutTemplateExercises.toArray();
+
+    return rows.reduce<Record<string, number>>((counts, row) => {
+      counts[row.templateId] = (counts[row.templateId] ?? 0) + 1;
+      return counts;
+    }, {});
+  }, []);
+  const templateRecency = useLiveQuery(() => loadTemplateRecency(), []);
+  /*
+   * Die Kalenderwoche, nicht die Programmwoche: `weekControl` daneben zählt
+   * eine von Hand gestellte Zahl, die mit dem Datum nichts zu tun hat.
+   */
+  const weekSummary = useLiveQuery(
+    () => loadWeekSummary(startOfCalendarWeek(new Date()).toISOString()),
     [],
   );
 
@@ -84,10 +99,32 @@ export default function Home() {
     }
   }
 
-  const templateCountLabel = useMemo(() => `${templates?.length ?? 0}`, [templates]);
+  /*
+   * Die eine Frage, die diese Seite beantwortet: was mache ich heute? Ohne
+   * Ablaufplan im Datenmodell entscheidet das eine Heuristik - deshalb steht
+   * ihre Begründung als Beschriftung auf der Karte und nicht im Code allein.
+   */
+  const nextTemplate = pickNextTemplate(templates ?? [], templateRecency ?? {});
+  const otherTemplates = useMemo(
+    () =>
+      (templates ?? [])
+        .filter((template) => template.id !== nextTemplate?.id)
+        .sort((left, right) => left.name.localeCompare(right.name, 'de')),
+    [templates, nextTemplate?.id],
+  );
   const weekControl = resolveWeekControl(settings?.weekOverride, program, programWeeks ?? []);
   const weekHint = program?.name ?? 'Programm in /programme anlegen';
   const weekModeHint = weekControl.mode === 'override' ? 'Override aktiv' : 'Programm';
+
+  function describeExerciseCount(templateId: string) {
+    const count = exerciseCountByTemplateId?.[templateId];
+
+    if (typeof count !== 'number') {
+      return undefined;
+    }
+
+    return count === 1 ? '1 Übung' : `${count} Übungen`;
+  }
 
   async function handleStartSession(templateId: string) {
     setIsStartingSession(true);
@@ -141,7 +178,7 @@ export default function Home() {
           Erinnerung genau dann, wenn ungesicherte Trainings existieren.
         */}
         {backupStatus.needsReminder ? (
-          <section className="rounded-card border border-warning/20 bg-warning-soft px-4 py-4">
+          <section className="rounded-card border border-warning-border bg-warning-soft px-4 py-4">
             <div className="flex items-start gap-3">
               <ShieldAlert size={18} className="mt-0.5 shrink-0 text-warning" />
               <div className="min-w-0 flex-1">
@@ -171,137 +208,141 @@ export default function Home() {
           </section>
         ) : null}
 
+        {startError ? <Alert>{startError}</Alert> : null}
+
         {/*
-          Bei zwei gleich breiten Spalten reicht der Platz nicht für Label
-          plus drei 44px-Buttons - sie liefen über den Kartenrand und lagen
-          dann unter der Workout-Karte, außerhalb der Klickfläche.
+          Das einzige Limettenfeld dieser Seite - "jetzt dran" gibt es genau
+          einmal, sonst heben sich zwei Flächen gegenseitig auf. Die Karte ist
+          selbst der Knopf: ein Tap auf irgendetwas darin startet das Training,
+          und der Name des Workouts steht damit im zugänglichen Namen des
+          Knopfes (worauf die e2e-Tests seit jeher zeigen).
         */}
-        <section className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <WeekStepper
-            label="Aktive Woche"
-            week={weekControl.effectiveWeek}
-            hint={
-              <>
-                <p className="mt-2 text-sm text-content-muted">{weekHint}</p>
-                <p className="mt-1 text-xs text-content-muted">{weekModeHint}</p>
-              </>
-            }
-            backLabel="Eine Woche zurück"
-            forwardLabel="Eine Woche vor"
-            onStepBack={() => handleStepWeek(-1)}
-            onStepForward={() => handleStepWeek(1)}
-            disabled={!program || isUpdatingWeek}
-            onReset={handleClearWeek}
-            resetLabel="Wochen-Override zurücksetzen"
-            resetDisabled={!settings?.weekOverride || isUpdatingWeek}
-          />
-          <StatCard
-            label="Workouts"
-            value={templateCountLabel}
-            hint="Vorbereitete Trainingseinheiten"
-          />
-        </section>
-
-        <SectionCard
-          title="Heute im Fokus"
-          subtitle="Schneller Einstieg für verschwitzte Hände und kurze Aufmerksamkeit."
-        >
-          <div className="space-y-3">
-            {startError ? <Alert>{startError}</Alert> : null}
-
-            {activeSession ? (
+        {nextTemplate ? (
+          <NowCard
+            eyebrow="Am längsten her"
+            title={nextTemplate.name}
+            subtitle={describeExerciseCount(nextTemplate.id)}
+            onClick={() => void handleStartSession(nextTemplate.id)}
+            disabled={isStartingSession}
+            action={
               /*
-                Der Rückweg in die laufende Einheit steht in der Leiste am
-                unteren Rand, auf jeder Seite - hier lag zuvor eine große
-                Karte, die dasselbe nur an einem Ort tat und mit ihr die
-                Startseite als Umweg festschrieb.
-
-                Was bleibt, ist die Auskunft, die der Streifen nicht gibt:
-                solange eine Session läuft, führt jeder Workout-Tap darunter
-                dorthin zurück statt ein zweites Training zu starten. Ohne den
-                Satz wirkt das wie ein Defekt.
+                Tinte auf Limette, nicht Limette auf Limette: die Fläche sagt
+                "jetzt dran", die Handlung braucht den Kontrast dagegen.
               */
-              <p className="px-1 text-sm text-content-muted">
-                Ein Training läuft bereits - die Leiste unten führt zurück. Schließe es ab oder
-                brich es ab, um ein anderes Workout zu starten.
+              <span className="flex h-11 w-11 items-center justify-center rounded-control bg-accent text-accent-contrast">
+                <Play size={18} />
+              </span>
+            }
+          />
+        ) : (
+          <Empty
+            title="Noch kein Workout"
+            description="Lege zuerst ein Workout an. Danach startest du ein Training mit einem Tap."
+            action={
+              <Button variant="ghost" size="md" onClick={() => navigate('/templates')}>
+                Zu den Workouts
+              </Button>
+            }
+          />
+        )}
+
+        {activeSession ? (
+          /*
+            Der Rückweg in die laufende Einheit steht in der Leiste am unteren
+            Rand, auf jeder Seite. Was bleibt, ist die Auskunft, die der
+            Streifen nicht gibt: solange eine Session läuft, führt jeder
+            Workout-Tap dorthin zurück statt ein zweites Training zu starten.
+            Ohne den Satz wirkt das wie ein Defekt.
+          */
+          <p className="px-1 text-sm text-content-muted">
+            Ein Training läuft bereits - die Leiste unten führt zurück. Schließe es ab oder
+            brich es ab, um ein anderes Workout zu starten.
+          </p>
+        ) : null}
+
+        {/*
+          Waldgrün heißt "erledigt" - und darf sich deshalb wiederholen, anders
+          als die Limette. Bei null Einheiten steht hier aber keine gefüllte
+          Fläche: sie behauptete einen Zustand, den es nicht gibt.
+        */}
+        {weekSummary && weekSummary.sessionCount > 0 ? (
+          <DoneCard
+            eyebrow="Diese Woche"
+            title={
+              weekSummary.sessionCount === 1 ? '1 Einheit' : `${weekSummary.sessionCount} Einheiten`
+            }
+            subtitle={`${formatNumber(Math.round(weekSummary.volume))} kg Volumen`}
+          >
+            {weekSummary.sessions[0] ? (
+              <p className="text-sm opacity-75">
+                Zuletzt: {weekSummary.sessions[0].templateName} ·{' '}
+                {formatDateTime(weekSummary.sessions[0].completedAt)}
               </p>
-            ) : (
-              <Empty
-                title="Keine aktive Session"
-                description="Starte direkt aus einem Workout. Der Stand bleibt lokal gespeichert."
-              />
-            )}
+            ) : null}
+          </DoneCard>
+        ) : (
+          <Empty
+            title="Diese Woche noch nichts"
+            description="Sobald du eine Einheit abschließt, steht hier, was du geschafft hast."
+          />
+        )}
 
-            <div className="grid gap-3">
-              {(templates?.length ?? 0) > 0 ? (
-                (templates ?? []).map((template) => (
-                  <button
-                    key={template.id}
-                    type="button"
-                    onClick={() => void handleStartSession(template.id)}
-                    disabled={isStartingSession}
-                    className="flex items-center justify-between rounded-panel border border-line bg-surface-raised px-4 py-4 text-left transition hover:border-accent-border hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <div>
-                      <p className="text-sm font-semibold text-content">{template.name}</p>
-                      <p className="mt-1 text-sm text-content-muted">{template.notes}</p>
-                    </div>
-                    <div className="flex h-11 w-11 items-center justify-center rounded-control bg-accent-soft text-accent">
-                      <Play size={18} />
-                    </div>
-                  </button>
-                ))
-              ) : (
-                <Empty
-                  title="Noch kein Workout"
-                  description="Lege zuerst ein Workout an. Danach startest du ein Training mit einem Tap."
-                  action={
-                    <button
-                      type="button"
-                      onClick={() => navigate('/templates')}
-                      className="min-h-touch inline-flex items-center justify-center rounded-control border border-line px-4 py-2 text-sm text-content-secondary transition hover:bg-surface-raised"
-                    >
-                      Zu den Workouts
-                    </button>
-                  }
-                />
-              )}
-            </div>
-          </div>
-        </SectionCard>
-
-        <SectionCard
-          title="Letzter Abschluss"
-          subtitle="Bleibt unverändert, auch wenn du das Workout später bearbeitest."
-          action={
-            <Button variant="ghost" size="md" onClick={() => navigate('/history')}>
-              Verlauf
-            </Button>
+        {/*
+          Die einzige Bedienung für Programmwoche und Override - bleibt
+          deshalb auf der Startseite, jetzt aber als schmale Zeile statt als
+          halbe Kachel neben der wichtigsten Karte.
+        */}
+        <WeekStepper
+          label="Aktive Woche"
+          week={weekControl.effectiveWeek}
+          hint={
+            <>
+              <p className="mt-2 text-sm text-content-muted">{weekHint}</p>
+              <p className="mt-1 text-xs text-content-muted">{weekModeHint}</p>
+            </>
           }
-        >
-          {lastCompletedSession ? (
-            <div className="rounded-panel bg-surface p-4">
-              <p className="text-xs uppercase tracking-[0.18em] text-content-muted">Zuletzt beendet</p>
-              <div className="mt-2 flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-lg font-semibold text-content">
-                    {lastCompletedSession.templateNameSnapshot}
-                  </p>
-                  <p className="mt-1 text-sm text-content-muted">
-                    {formatDateTime(lastCompletedSession.completedAt)}
-                  </p>
-                </div>
-                <ArrowRight className="text-content-muted" size={18} />
-              </div>
+          backLabel="Eine Woche zurück"
+          forwardLabel="Eine Woche vor"
+          onStepBack={() => handleStepWeek(-1)}
+          onStepForward={() => handleStepWeek(1)}
+          disabled={!program || isUpdatingWeek}
+          onReset={handleClearWeek}
+          resetLabel="Wochen-Override zurücksetzen"
+          resetDisabled={!settings?.weekOverride || isUpdatingWeek}
+        />
+
+        {/*
+          Nur, wenn es sie gibt: mit einem einzigen Workout trägt die Karte
+          eine leere Liste und eine Zahl, die schon oben steht.
+        */}
+        {otherTemplates.length > 0 ? (
+          <SectionCard
+            title="Weitere Workouts"
+            subtitle={`${templates?.length ?? 0} vorbereitete Einheiten`}
+          >
+            <div className="grid gap-2">
+              {otherTemplates.map((template) => (
+                <button
+                  key={template.id}
+                  type="button"
+                  onClick={() => void handleStartSession(template.id)}
+                  disabled={isStartingSession}
+                  className="flex min-h-touch items-center justify-between gap-3 rounded-panel border border-line bg-surface px-4 py-3 text-left transition hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-app disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-semibold text-content">
+                      {template.name}
+                    </span>
+                    <span className="mt-0.5 block text-sm text-content-muted">
+                      {describeExerciseCount(template.id) ?? template.notes}
+                    </span>
+                  </span>
+                  <Play size={18} className="shrink-0 text-content-muted" />
+                </button>
+              ))}
             </div>
-          ) : (
-            <Empty
-              title="Noch kein Abschluss"
-              description="Sobald du eine Session abschließt, taucht sie hier als schneller Rücksprung auf."
-              className="border-transparent bg-surface text-left"
-            />
-          )}
-        </SectionCard>
+          </SectionCard>
+        ) : null}
       </div>
     </AppShell>
   );

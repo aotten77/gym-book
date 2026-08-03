@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { ChevronDown, ChevronUp, ImagePlus, Pencil, Plus, Trash2 } from 'lucide-react';
+import { Check, ChevronDown, ChevronUp, ImageOff, ImagePlus, Pencil, Plus, Trash2 } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
 import { Alert } from '@/components/Alert';
 import { Empty } from '@/components/Empty';
@@ -18,13 +18,14 @@ import {
   updateExercise,
   type ExerciseInput,
 } from '@/db/exercise-actions';
-import { loadExerciseExecutions } from '@/db/history-queries';
+import { loadExerciseExecutions, loadExercisesTrainedSince } from '@/db/history-queries';
 import { clearExerciseMedia, replaceExerciseMedia } from '@/db/media-actions';
 import { loadTestsForExercise } from '@/db/test-actions';
+import { startOfCalendarWeek } from '@/domain/calendar-week';
 import type { Exercise, LoadKind, TrackingMode } from '@/domain/models';
 import { buildProgressSeries, progressMetricFor } from '@/domain/progress';
 import { supportsLoad } from '@/domain/tracking';
-import { formatDateTime, formatLoadLabel } from '@/lib/format';
+import { formatDateTime, formatLoadLabel, formatNumber } from '@/lib/format';
 import { isSupportedMediaType } from '@/lib/media';
 
 const TRACKING_MODE_LABELS: Record<TrackingMode, string> = {
@@ -135,8 +136,8 @@ function ExerciseDetail({ exercise }: { exercise: Exercise }) {
               <li key={test.id} className="text-sm">
                 <p className="text-content-secondary">{formatDateTime(test.recordedAt)}</p>
                 <p className="mt-0.5 text-content-muted">
-                  Links {test.leftValue} · Rechts {test.rightValue} · Asymmetrie{' '}
-                  {test.asymmetryPercent}%
+                  Links {formatNumber(test.leftValue)} · Rechts {formatNumber(test.rightValue)} ·
+                  Asymmetrie {formatNumber(test.asymmetryPercent)}%
                 </p>
               </li>
             ))}
@@ -150,6 +151,12 @@ function ExerciseDetail({ exercise }: { exercise: Exercise }) {
 export function ExercisesPage() {
   const exercises = useLiveQuery(() => db.exercises.orderBy('name').toArray(), []);
   const bandLevels = useLiveQuery(() => db.bandLevels.orderBy('orderIndex').toArray(), []);
+  const mediaAssets = useLiveQuery(() => db.mediaAssets.toArray(), []);
+  const exercisesTrainedThisWeek = useLiveQuery(
+    () => loadExercisesTrainedSince(startOfCalendarWeek(new Date()).toISOString()),
+    [],
+  );
+  const mediaAssetById = Object.fromEntries((mediaAssets ?? []).map((asset) => [asset.id, asset]));
   const [form, setForm] = useState<ExerciseInput>(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -461,18 +468,59 @@ export function ExercisesPage() {
           />
         ) : null}
 
+        {/*
+          Eine Zeile je Übung statt einer ganzen `SectionCard`: die Seite ist
+          eine Bibliothek, durch die man scrollt, und 20 gleich große Karten
+          mit je einer Überschrift lassen sich nicht überfliegen. Kein
+          Limettenfeld - in einer Bibliothek ist nichts "jetzt dran"; getragen
+          wird die Liste von den Bildern.
+        */}
         {(exercises ?? []).map((exercise) => {
           const isExpanded = expandedId === exercise.id;
+          const media = exercise.mediaAssetId ? mediaAssetById[exercise.mediaAssetId] : undefined;
+          const trainedThisWeek = exercisesTrainedThisWeek?.has(exercise.id) ?? false;
 
           return (
-            <SectionCard
-              key={exercise.id}
-              title={exercise.name}
-              subtitle={`${TRACKING_MODE_LABELS[exercise.trackingMode]}${
-                exercise.unilateral ? ' · links/rechts' : ''
-              }`}
-              action={
-                <div className="flex gap-2">
+            <section key={exercise.id} className="rounded-card border border-line bg-surface p-3 shadow-soft">
+              <div className="flex items-start gap-3">
+                {/*
+                  Der Platzhalter liegt außen herum: `ExerciseMedia` rendert
+                  ohne Bild `null`, und ohne festen Rahmen sprängen die Zeilen
+                  je nachdem, ob eine Übung ein Bild hat.
+                */}
+                <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-control border border-line bg-surface-raised text-content-muted">
+                  {media ? (
+                    <ExerciseMedia
+                      mediaAsset={media}
+                      alt=""
+                      className="h-full w-full rounded-none border-0"
+                      imageClassName="h-full w-full"
+                    />
+                  ) : (
+                    <ImageOff size={18} aria-hidden="true" />
+                  )}
+                </div>
+
+                <div className="min-w-0 flex-1">
+                  <h2 className="truncate text-sm font-semibold text-content">{exercise.name}</h2>
+                  <p className="mt-0.5 text-sm text-content-muted">
+                    {TRACKING_MODE_LABELS[exercise.trackingMode]}
+                    {exercise.unilateral ? ' · links/rechts' : ''}
+                  </p>
+                  {/*
+                    Waldgrün heißt erledigt - und darf sich wiederholen. Mehr
+                    braucht die Bibliothek nicht: sie beantwortet "habe ich das
+                    schon trainiert", nicht "was mache ich als Nächstes".
+                  */}
+                  {trainedThisWeek ? (
+                    <p className="mt-2 inline-flex items-center gap-1 rounded-full bg-success px-2.5 py-1 text-[11px] font-semibold text-success-contrast">
+                      <Check size={12} strokeWidth={3} aria-hidden="true" />
+                      Diese Woche
+                    </p>
+                  ) : null}
+                </div>
+
+                <div className="flex shrink-0 gap-1">
                   <IconButton
                     label={`${exercise.name} bearbeiten`}
                     onClick={() => {
@@ -491,27 +539,26 @@ export function ExercisesPage() {
                     <Trash2 size={16} />
                   </IconButton>
                 </div>
-              }
-            >
-              <div className="space-y-3">
-                {/*
-                  Das Bild wird im Formular gepflegt, nicht hier: eine zweite
-                  Stelle dafür hieß, dass man es beim Anlegen erst nachreichen
-                  musste.
-                */}
-                <Button
-                  size="md"
-                  variant="ghost"
-                  onClick={() => setExpandedId(isExpanded ? null : exercise.id)}
-                  aria-expanded={isExpanded}
-                >
-                  {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                  {isExpanded ? 'Verlauf ausblenden' : 'Verlauf anzeigen'}
-                </Button>
-
-                {isExpanded ? <ExerciseDetail exercise={exercise} /> : null}
               </div>
-            </SectionCard>
+
+              {/*
+                Das Bild wird im Formular gepflegt, nicht hier: eine zweite
+                Stelle dafür hieß, dass man es beim Anlegen erst nachreichen
+                musste.
+              */}
+              <Button
+                size="md"
+                variant="ghost"
+                className="mt-3"
+                onClick={() => setExpandedId(isExpanded ? null : exercise.id)}
+                aria-expanded={isExpanded}
+              >
+                {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                {isExpanded ? 'Verlauf ausblenden' : 'Verlauf anzeigen'}
+              </Button>
+
+              {isExpanded ? <ExerciseDetail exercise={exercise} /> : null}
+            </section>
           );
         })}
       </div>

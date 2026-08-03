@@ -1,6 +1,7 @@
 import { useId } from 'react';
 import type { ProgressPoint } from '@/domain/progress';
 import { summarizeTrend } from '@/domain/progress';
+import { formatNumber } from '@/lib/format';
 
 interface ProgressChartProps {
   points: ProgressPoint[];
@@ -56,11 +57,11 @@ export function ProgressChart({ points, unit, label, formatValue }: ProgressChar
   const formatDate = (iso: string) =>
     new Intl.DateTimeFormat('de-DE', { day: '2-digit', month: '2-digit' }).format(new Date(iso));
 
-  const format = (value: number) => (formatValue ? formatValue(value) : `${value} ${unit}`);
+  const format = (value: number) => (formatValue ? formatValue(value) : `${formatNumber(value)} ${unit}`);
   const summary = trend
     ? formatValue
       ? `${label} von ${format(trend.first)} auf ${format(trend.last)}`
-      : `${label} von ${trend.first} auf ${trend.last} ${unit}, ${trend.delta >= 0 ? 'plus' : 'minus'} ${Math.abs(trend.delta)} ${unit}`
+      : `${label} von ${formatNumber(trend.first)} auf ${formatNumber(trend.last)} ${unit}, ${trend.delta >= 0 ? 'plus' : 'minus'} ${formatNumber(Math.abs(trend.delta))} ${unit}`
     : `${label}: ${format(points[0].topValue)} bei einer Ausführung`;
 
   return (
@@ -107,12 +108,16 @@ export function ProgressChart({ points, unit, label, formatValue }: ProgressChar
       <figcaption className="mt-2 flex items-baseline justify-between gap-2 text-xs text-content-muted">
         <span>{formatDate(points[0].completedAt)}</span>
         <span className="text-content-secondary">
-          {min === max ? format(max) : formatValue ? `${format(min)}–${format(max)}` : `${min}–${max} ${unit}`}
+          {min === max
+            ? format(max)
+            : formatValue
+              ? `${format(min)}–${format(max)}`
+              : `${formatNumber(min)}–${formatNumber(max)} ${unit}`}
           {trend && !formatValue ? (
             <span className={trend.delta >= 0 ? ' text-success' : ' text-danger'}>
               {' '}
               {trend.delta >= 0 ? '+' : ''}
-              {trend.delta} {unit}
+              {formatNumber(trend.delta)} {unit}
             </span>
           ) : null}
         </span>

@@ -1,18 +1,24 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { ChevronDown, ChevronUp, Link2, Pencil, Plus, Trash2, Unlink } from 'lucide-react';
+import { ChevronDown, ChevronUp, Link2, Pencil, Play, Plus, Trash2, Unlink } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
+import { Alert } from '@/components/Alert';
+import { Empty } from '@/components/Empty';
 import { Button, IconButton } from '@/components/ui/Button';
 import { CheckboxField } from '@/components/ui/Field';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { NowCard } from '@/components/ui/StatusCard';
 import { ExerciseMedia } from '@/components/ExerciseMedia';
 import { ExerciseTargetFields } from '@/components/ExerciseTargetFields';
+import { formatNumber } from '@/lib/format';
+import { optionalNumberInput, toInputValue } from '@/lib/number-input';
 import { SectionCard } from '@/components/SectionCard';
 import { SupersetBlock } from '@/components/SupersetBlock';
 import { TemplateProgressionSection } from '@/components/TemplateProgressionSection';
 import { db } from '@/db/appDb';
 import { clearExerciseMedia, replaceExerciseMedia } from '@/db/media-actions';
+import { startSessionFromTemplate } from '@/db/session-actions';
 import {
   deleteTemplate,
   deleteTemplateExercise,
@@ -49,19 +55,6 @@ const defaultFormState: TemplateExerciseFormState = {
   notes: '',
 };
 
-function numberToInputValue(value?: number) {
-  return typeof value === 'number' ? String(value) : '';
-}
-
-function parseOptionalNumber(value: string) {
-  if (!value.trim()) {
-    return undefined;
-  }
-
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : undefined;
-}
-
 function buildFormState(item?: WorkoutTemplateExercise): TemplateExerciseFormState {
   if (!item) {
     return defaultFormState;
@@ -72,11 +65,11 @@ function buildFormState(item?: WorkoutTemplateExercise): TemplateExerciseFormSta
     workSetCount: String(item.workSetCount),
     // Altdaten ohne den Schlüssel behalten ihr Warmup.
     includeWarmup: item.includeWarmup !== false,
-    targetReps: numberToInputValue(item.targetReps),
-    targetSeconds: numberToInputValue(item.targetSeconds),
-    targetWeight: numberToInputValue(item.targetWeight),
+    targetReps: toInputValue(item.targetReps),
+    targetSeconds: toInputValue(item.targetSeconds),
+    targetWeight: toInputValue(item.targetWeight),
     targetBandId: item.targetBandId ?? '',
-    restSeconds: numberToInputValue(item.restSeconds),
+    restSeconds: toInputValue(item.restSeconds),
     notes: item.notes ?? '',
   };
 }
@@ -109,7 +102,7 @@ function TemplateExerciseMeta({
           {item.targetReps ? `${item.workSetCount} x ${item.targetReps} Wdh` : null}
           {item.targetReps && item.targetSeconds ? ' · ' : null}
           {item.targetSeconds ? `${item.workSetCount} x ${item.targetSeconds}s` : null}
-          {item.targetWeight ? ` · ${item.targetWeight} kg` : ''}
+          {item.targetWeight ? ` · ${formatNumber(item.targetWeight)} kg` : ''}
           {bandName ? ` · ${bandName}` : ''}
           {item.restSeconds ? ` · Pause ${item.restSeconds}s` : ''}
         </p>
@@ -272,6 +265,8 @@ export function TemplateDetailPage() {
   const [isSavingExercise, setIsSavingExercise] = useState(false);
   const [isUpdatingExerciseMedia, setIsUpdatingExerciseMedia] = useState(false);
   const [isReorderingExercises, setIsReorderingExercises] = useState(false);
+  const [isStartingSession, setIsStartingSession] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
   const [templateExerciseOrder, setTemplateExerciseOrder] = useState<string[]>([]);
   const [mediaError, setMediaError] = useState<string | null>(null);
   const template = useLiveQuery(() => db.workoutTemplates.get(templateId), [templateId]);
@@ -313,6 +308,16 @@ export function TemplateDetailPage() {
   const templateBlocks = useMemo(
     () => buildSupersetBlocks(orderedTemplateExercises),
     [orderedTemplateExercises],
+  );
+  /*
+   * Was der Plan kostet, in den zwei Zahlen, die heute ableitbar sind. Eine
+   * geschätzte Dauer stünde hier gern - sie bräuchte aber `materializeSession`
+   * und die Schätzlogik der laufenden Einheit und ist deshalb ein eigenes
+   * Vorhaben, kein Nebenprodukt einer Farbanpassung.
+   */
+  const plannedWorkSetCount = orderedTemplateExercises.reduce(
+    (sum, item) => sum + item.workSetCount,
+    0,
   );
   const selectedExistingExercise = sortedExercises.find((item) => item.id === form.exerciseId);
   const selectedExistingExerciseMedia =
@@ -380,6 +385,25 @@ export function TemplateDetailPage() {
     }
   }
 
+  async function handleStartSession() {
+    if (!template) {
+      return;
+    }
+
+    setIsStartingSession(true);
+
+    try {
+      const sessionId = await startSessionFromTemplate(template.id);
+      setStartError(null);
+      navigate(`/session/${sessionId}`);
+    } catch (error) {
+      setStartError(
+        error instanceof Error ? error.message : 'Session konnte nicht gestartet werden.',
+      );
+      setIsStartingSession(false);
+    }
+  }
+
   async function handleDeleteTemplate() {
     if (!template) {
       return;
@@ -412,11 +436,11 @@ export function TemplateDetailPage() {
         orderIndex: currentItem?.orderIndex ?? orderedTemplateExercises.length + 1,
         workSetCount: Number(form.workSetCount) || 1,
         includeWarmup: form.includeWarmup,
-        targetReps: parseOptionalNumber(form.targetReps),
-        targetSeconds: parseOptionalNumber(form.targetSeconds),
-        targetWeight: parseOptionalNumber(form.targetWeight),
+        targetReps: optionalNumberInput(form.targetReps),
+        targetSeconds: optionalNumberInput(form.targetSeconds),
+        targetWeight: optionalNumberInput(form.targetWeight),
         targetBandId: form.targetBandId,
-        restSeconds: parseOptionalNumber(form.restSeconds),
+        restSeconds: optionalNumberInput(form.restSeconds),
         notes: form.notes,
         exerciseId: form.exerciseId,
         trackingMode: selectedExistingExercise?.trackingMode ?? 'reps_weight',
@@ -585,6 +609,28 @@ export function TemplateDetailPage() {
   return (
     <AppShell title={template?.name ?? 'Workout'} eyebrow="Workout">
       <div className="space-y-4">
+        {startError ? <Alert>{startError}</Alert> : null}
+
+        {/*
+          Ein Plan kennt kein "erledigt" - es gibt hier nichts, was waldgrün
+          werden könnte. Das eine Limettenfeld trägt deshalb nicht einen
+          Zustand, sondern die Handlung, für die die ganze Seite da ist.
+        */}
+        {orderedTemplateExercises.length > 0 ? (
+          <NowCard
+            eyebrow="Bereit"
+            title="Training starten"
+            subtitle={`${orderedTemplateExercises.length === 1 ? '1 Übung' : `${orderedTemplateExercises.length} Übungen`} · ${plannedWorkSetCount === 1 ? '1 Satz' : `${plannedWorkSetCount} Sätze`}`}
+            onClick={() => void handleStartSession()}
+            disabled={isStartingSession}
+            action={
+              <span className="flex h-11 w-11 items-center justify-center rounded-control bg-accent text-accent-contrast">
+                <Play size={18} />
+              </span>
+            }
+          />
+        ) : null}
+
         <SectionCard
           title="Workout-Daten"
           subtitle="Änderungen hier wirken auf künftige Trainings - bereits absolvierte bleiben, wie sie waren."
@@ -612,14 +658,14 @@ export function TemplateDetailPage() {
               rows={3}
               className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-base text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
             />
-            <button
-              type="button"
+            <Button
+              variant="primary"
+              fullWidth
               onClick={handleSaveTemplate}
               disabled={!templateName.trim() || isSavingTemplate}
-              className="w-full rounded-panel bg-accent px-4 py-4 text-sm font-semibold text-accent-contrast transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Workout speichern
-            </button>
+            </Button>
           </div>
         </SectionCard>
 
@@ -627,14 +673,15 @@ export function TemplateDetailPage() {
           title="Übungen im Workout"
           subtitle="Reihenfolge über die Pfeile - so verrutscht beim Scrollen nichts."
           action={
-            <button
-              type="button"
-              onClick={handleOpenAddTemplateExercise}
-              className="min-h-touch inline-flex items-center justify-center flex h-10 items-center gap-2 rounded-control bg-accent-soft px-3 py-2 text-sm text-accent transition hover:bg-accent/20"
-            >
+            /*
+              Vorher standen hier zwei `flex` und ein `h-10` gegen das
+              `min-h-touch` derselben Klassenkette - der Knopf maß 40px statt
+              44px, je nachdem, welche Regel gewann.
+            */
+            <Button variant="ghost" size="md" onClick={handleOpenAddTemplateExercise}>
               <Plus size={16} />
               Hinzufügen
-            </button>
+            </Button>
           }
         >
           <div className="space-y-3">
@@ -688,9 +735,10 @@ export function TemplateDetailPage() {
                 })}
               </div>
             ) : (
-              <div className="rounded-panel border border-dashed border-line bg-surface px-4 py-5 text-sm text-content-muted">
-                Noch keine Übungen in diesem Workout.
-              </div>
+              <Empty
+                title="Noch keine Übungen"
+                description="Füge unten eine Übung aus der Bibliothek hinzu, dann lässt sich das Workout starten."
+              />
             )}
           </div>
         </SectionCard>
@@ -718,13 +766,18 @@ export function TemplateDetailPage() {
           >
           <div className="space-y-4">
             {sortedExercises.length === 0 ? (
-              <div className="rounded-panel border border-dashed border-line bg-surface px-4 py-5 text-sm text-content-muted">
-                Noch keine Übung in der Bibliothek.{' '}
-                <Link to="/exercises" className="text-accent underline underline-offset-2">
-                  Jetzt anlegen
-                </Link>
-                .
-              </div>
+              <Empty
+                title="Noch keine Übung in der Bibliothek"
+                description="Lege zuerst eine Übung an - hier lassen sich nur bestehende auswählen."
+                action={
+                  <Link
+                    to="/exercises"
+                    className="min-h-touch inline-flex items-center justify-center rounded-control border border-line px-4 py-2 text-sm text-content-secondary transition hover:bg-surface-raised"
+                  >
+                    Jetzt anlegen
+                  </Link>
+                }
+              />
             ) : (
               <div className="space-y-3">
                 <select
@@ -813,28 +866,19 @@ export function TemplateDetailPage() {
             />
 
             <div className="grid grid-cols-2 gap-3">
-              <button
-                type="button"
+              <Button
+                variant="primary"
                 onClick={handleSaveTemplateExercise}
                 disabled={isSavingExercise || isUpdatingExerciseMedia}
-                className="rounded-panel bg-accent px-4 py-4 text-sm font-semibold text-accent-contrast transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {editingTemplateExerciseId ? 'Änderung speichern' : 'Übung hinzufügen'}
-              </button>
-              <button
-                type="button"
-                onClick={() => setEditingTemplateExerciseId(null)}
-                className="rounded-panel bg-surface-raised px-4 py-4 text-sm font-medium text-content-secondary transition hover:bg-surface-hover"
-              >
+              </Button>
+              <Button variant="secondary" onClick={() => setEditingTemplateExerciseId(null)}>
                 Zurücksetzen
-              </button>
+              </Button>
             </div>
 
-            {mediaError ? (
-              <div className="rounded-panel border border-danger-border bg-danger-soft px-4 py-4 text-sm text-danger">
-                {mediaError}
-              </div>
-            ) : null}
+            {mediaError ? <Alert>{mediaError}</Alert> : null}
           </div>
         </SectionCard>
         </div>

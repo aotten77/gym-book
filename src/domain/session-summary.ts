@@ -2,7 +2,7 @@ import { sortSetLogs } from '@/domain/history';
 import type { SetKind, WorkoutSessionExercise, WorkoutSetLog } from '@/domain/models';
 import { calculateAsymmetryPercent } from '@/domain/session';
 import type { SupersetBlock } from '@/domain/superset';
-import { formatSideLabel } from '@/lib/format';
+import { formatNumber, formatSideLabel } from '@/lib/format';
 
 /**
  * Der Stand eines Blocks in der laufenden Einheit.
@@ -189,7 +189,7 @@ export function describeSetRowValues(log: WorkoutSetLog, fallback: SetRowFallbac
     value ?? (log.completed ? undefined : vorgabe);
   const bandName = log.bandNameSnapshot ?? (log.completed ? undefined : fallback.bandNameSnapshot);
   const weight = take(log.weight, fallback.weight);
-  const load = bandName ?? (typeof weight === 'number' ? `${weight} kg` : undefined);
+  const load = bandName ?? (typeof weight === 'number' ? `${formatNumber(weight)} kg` : undefined);
   const reps = take(log.reps, fallback.reps);
   const seconds = take(log.seconds, fallback.seconds);
 
@@ -317,7 +317,7 @@ export function describeExerciseTarget(exercise: WorkoutSessionExercise): string
   }
 
   if (typeof exercise.targetWeight === 'number') {
-    parts.push(`${exercise.targetWeight} kg`);
+    parts.push(`${formatNumber(exercise.targetWeight)} kg`);
   }
 
   if (exercise.targetBandNameSnapshot) {
