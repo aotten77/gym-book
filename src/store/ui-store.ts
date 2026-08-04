@@ -12,12 +12,26 @@ interface UiStoreState {
    * die Timer weiterlaufen - die hängen an der Session.
    */
   openSessionBlockKey: string | null;
+  /**
+   * Die Pause, deren Ruhemodus zum Reiter zusammengeklappt ist.
+   *
+   * Der Schlüssel ist der der Spur (Übung und Seite), nicht ihr Ablauf: wer
+   * während der Pause auf "+30 s" tippt, will nicht, dass der Ruhemodus
+   * deswegen wieder aufspringt. Jede *neue* Pause öffnet ihn dagegen von
+   * selbst - das ist der Zustand, in dem man ohnehin wartet.
+   *
+   * Flüchtig wie [openSessionBlockKey]: ob etwas minimiert war, ist keine
+   * Trainingsinformation. Nach einem Neustart läuft die Pause weiter, der
+   * Ruhemodus steht wieder offen.
+   */
+  minimizedRestKey: string | null;
   isOnline: boolean;
   isOfflineReady: boolean;
   isUpdateAvailable: boolean;
   deferredInstallPrompt: BeforeInstallPromptEvent | null;
   setActiveSessionExerciseId: (sessionExerciseId: string | null) => void;
   setOpenSessionBlockKey: (blockKey: string | null) => void;
+  setMinimizedRestKey: (restKey: string | null) => void;
   setOnlineStatus: (isOnline: boolean) => void;
   setOfflineReady: (isOfflineReady: boolean) => void;
   setUpdateAvailable: (isUpdateAvailable: boolean) => void;
@@ -35,12 +49,14 @@ interface BeforeInstallPromptEvent extends Event {
 export const useUiStore = create<UiStoreState>((set) => ({
   activeSessionExerciseId: null,
   openSessionBlockKey: null,
+  minimizedRestKey: null,
   isOnline: true,
   isOfflineReady: false,
   isUpdateAvailable: false,
   deferredInstallPrompt: null,
   setActiveSessionExerciseId: (activeSessionExerciseId) => set({ activeSessionExerciseId }),
   setOpenSessionBlockKey: (openSessionBlockKey) => set({ openSessionBlockKey }),
+  setMinimizedRestKey: (minimizedRestKey) => set({ minimizedRestKey }),
   setOnlineStatus: (isOnline) => set({ isOnline }),
   setOfflineReady: (isOfflineReady) => set({ isOfflineReady }),
   setUpdateAvailable: (isUpdateAvailable) => set({ isUpdateAvailable }),

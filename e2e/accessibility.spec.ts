@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { resetDatabase, seedSampleData, startSampleSession } from './helpers';
+import { openExerciseSheet, resetDatabase, seedSampleData, startSampleSession } from './helpers';
 
 const ROUTES = [
   ['Heute', './'],
@@ -169,6 +169,60 @@ test.describe('Zugänglichkeit', () => {
 
     // Auch außerhalb der Session gilt: eine Uhr, eine Live-Region.
     await expect(page.locator('[role="timer"]')).toHaveCount(1);
+  });
+
+  test('der Ruhemodus hält sich auf Tinte an dieselben Regeln', async ({ page }) => {
+    /*
+      Die einzige Fläche der App in Tinte - und damit die einzige, auf der ein
+      Papier-Kontrast überhaupt gemessen werden muss. Der Fokusring der App ist
+      ebenfalls Tinte und wäre hier unsichtbar; auch das steht hier auf dem
+      Prüfstand, weil jede Bedienfläche im Ruhemodus ihren eigenen hellen Ring
+      setzen muss.
+    */
+    await startSampleSession(page);
+    await openExerciseSheet(page, 'Front Squat');
+    await page.locator('[data-sheet]').getByRole('button', { name: /abhaken$/ }).click();
+    await page.waitForTimeout(800);
+
+    await expect(page.getByRole('dialog', { name: /^Pause · / })).toBeVisible();
+
+    /*
+      Kontrast über die ganze Seite - der greift auch durch den Ruhemodus
+      hindurch und rechnet dabei mit dessen deckender Fläche.
+    */
+    expect(await findContrastViolations(page)).toEqual([]);
+    expect(await findUnlabelledControls(page)).toEqual([]);
+
+    /*
+      Trefferflächen dagegen nur innerhalb des Ruhemodus. Unter ihm liegt die
+      Übungsliste mit ihren 36px-Pfeilen; die sind ein eigener, älterer Befund
+      und würden hier nur verdecken, ob *diese* Ansicht ihre Maße hält.
+    */
+    const smallInRestMode = await page.evaluate(() => {
+      const dialog = document.querySelector('[role="dialog"][aria-label^="Pause · "]');
+
+      return [...(dialog?.querySelectorAll('button') ?? [])]
+        .map((button) => ({
+          label: (button.getAttribute('aria-label') || button.textContent || '').trim().slice(0, 30),
+          width: Math.round(button.getBoundingClientRect().width),
+          height: Math.round(button.getBoundingClientRect().height),
+        }))
+        .filter((entry) => entry.width < 44 || entry.height < 44);
+    });
+
+    expect(smallInRestMode).toEqual([]);
+
+    const ringsAreLight = await page.evaluate(() => {
+      const dialog = document.querySelector('[role="dialog"][aria-label^="Pause · "]');
+
+      return [...(dialog?.querySelectorAll('button') ?? [])].every((button) =>
+        // Der helle Ring ist als Tailwind-Variable gesetzt, nicht als Farbe im
+        // berechneten Stil - die Klasse ist hier die belastbare Auskunft.
+        button.className.includes('focus-visible:ring-accent-contrast'),
+      );
+    });
+
+    expect(ringsAreLight).toBe(true);
   });
 
   test('Tastaturnavigation zeigt einen sichtbaren Fokus', async ({ page }) => {

@@ -62,19 +62,37 @@ export async function startSampleSession(page: Page) {
  * müssen die Tests nachstellen können.
  */
 export async function openExerciseSheet(page: Page, exerciseName?: string) {
+  await minimizeRestMode(page);
   const opener = exerciseName
     ? page.getByRole('button', { name: `${exerciseName} öffnen` })
     : page.getByRole('button', { name: /öffnen$/ });
 
   await opener.first().click();
-  await page.getByRole('dialog').waitFor();
+  await page.locator('[data-sheet]').waitFor();
   await page.waitForTimeout(400);
 }
 
 /** Schließt das Fokus-Sheet über den Knopf in seiner Kopfzeile. */
 export async function closeExerciseSheet(page: Page) {
+  await minimizeRestMode(page);
   await page.getByRole('button', { name: 'Übung schließen' }).click();
   await page.waitForTimeout(400);
+}
+
+/**
+ * Klappt den Ruhemodus zum Reiter zusammen, falls er offen ist.
+ *
+ * Seit die Pause ein eigener Vollbildzustand ist, liegt sie nach jedem
+ * Abhaken über dem Sheet - genau so ist sie gedacht. Wer im Test weiterklicken
+ * will, muss sie vorher weglegen, wie im Training auch.
+ */
+export async function minimizeRestMode(page: Page) {
+  const minimize = page.getByRole('button', { name: 'Pause minimieren' });
+
+  if (await minimize.isVisible().catch(() => false)) {
+    await minimize.click();
+    await page.waitForTimeout(300);
+  }
 }
 
 /**
@@ -84,10 +102,16 @@ export async function closeExerciseSheet(page: Page) {
  * Knopf im Fuß - der hängt am `visualViewport` und bleibt deshalb auch über
  * einer offenen Tastatur stehen. Seine Beschriftung trägt die Werte ("62,5 kg
  * × 5 abhaken"), weshalb hier nur das Ende des Namens geprüft wird.
+ *
+ * Danach übernimmt der Ruhemodus den Bildschirm; er wird gleich wieder
+ * weggelegt, damit der aufrufende Test dort weitermachen kann, wo er war. Den
+ * Vollbildzustand selbst prüft `session-rest-mode.spec.ts`.
  */
 export async function completeActiveSet(page: Page) {
-  await page.getByRole('dialog').getByRole('button', { name: /abhaken$/ }).click();
+  await minimizeRestMode(page);
+  await page.locator('[data-sheet]').getByRole('button', { name: /abhaken$/ }).click();
   await page.waitForTimeout(800);
+  await minimizeRestMode(page);
 }
 
 /**
@@ -110,7 +134,9 @@ export async function startRestByCompletingSet(page: Page, exerciseName?: string
  * korrigieren, eine Seite gezielt abhaken.
  */
 export async function selectSetRow(page: Page, label: string) {
+  await minimizeRestMode(page);
   await page.getByRole('button', { name: `${label} auswählen` }).first().click();
+  await minimizeRestMode(page);
   await page.waitForTimeout(400);
 }
 

@@ -4,6 +4,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { CheckCircle2, Clock3, Plus, Timer, X } from 'lucide-react';
 import { Alert } from '@/components/Alert';
 import { AppShell } from '@/components/AppShell';
+import { RestMode } from '@/components/RestMode';
 import { ExerciseMedia } from '@/components/ExerciseMedia';
 import { ExerciseTargetFields } from '@/components/ExerciseTargetFields';
 import { MediaLightbox } from '@/components/MediaLightbox';
@@ -45,6 +46,7 @@ import type {
   WorkoutSetLog,
 } from '@/domain/models';
 import {
+  findRestTrack,
   isRestTrackReady,
   REST_TIMER_STEP_SECONDS,
   remainingRestSeconds,
@@ -57,6 +59,9 @@ import { buildSupersetBlocks, moveSupersetBlock, moveWithinGroup } from '@/domai
 import {
   buildSessionBlockProgress,
   buildSetRounds,
+  describeSetRow,
+  describeSetRowValues,
+  setRowFallback,
   summarizeSessionProgress,
   type SessionExerciseProgress,
 } from '@/domain/session-summary';
@@ -102,6 +107,15 @@ const defaultSessionExerciseFormState: SessionExerciseFormState = {
 const EMPTY_REST_TIMERS: RestTimerTrack[] = [];
 
 /**
+ * Wie oft nach abgelaufener Karenzzeit gesucht wird.
+ *
+ * Gemessen an den zehn Minuten Karenz ist eine halbe Minute genau genug, und
+ * gröber als der Sekundentakt zu sein ist Absicht: [pruneRestTimers] schreibt
+ * zwar nur bei echter Änderung, aber jeder Lauf ist eine Dexie-Transaktion.
+ */
+const REST_PRUNE_INTERVAL_MS = 30_000;
+
+/**
  * Sortierung aller Pausenanzeigen: was zuerst wieder frei ist, steht vorn.
  *
  * Die Einfügereihenfolge wäre die des Abhakens - für den Blick auf die Leiste
@@ -144,6 +158,8 @@ export function SessionPage() {
   const setActiveSessionExerciseId = useUiStore((state) => state.setActiveSessionExerciseId);
   const openSessionBlockKey = useUiStore((state) => state.openSessionBlockKey);
   const setOpenSessionBlockKey = useUiStore((state) => state.setOpenSessionBlockKey);
+  const minimizedRestKey = useUiStore((state) => state.minimizedRestKey);
+  const setMinimizedRestKey = useUiStore((state) => state.setMinimizedRestKey);
   const [now, setNow] = useState(Date.now());
   const [sessionError, setSessionError] = useState<string | null>(null);
   /*
@@ -345,13 +361,34 @@ export function SessionPage() {
       playTimerChime();
     }
 
-    /*
-     * Abgelaufene Spuren bleiben zunächst stehen und melden "bereit" - genau
-     * das sucht man beim Zurückwechseln. Weggeräumt werden sie erst nach der
-     * Karenzzeit in [pruneRestTimers].
-     */
-    void pruneRestTimers(sessionId);
   }, [expiredRestTrackKeys, sessionId, timerSoundEnabled]);
+
+  /*
+   * Abgelaufene Spuren bleiben zunächst stehen und melden "bereit" - genau das
+   * sucht man beim Zurückwechseln. Weggeräumt werden sie erst nach der
+   * Karenzzeit, und dafür braucht es einen eigenen Takt.
+   *
+   * Am Ablauf-Ereignis hing der Aufruf hier früher, und dort konnte er nichts
+   * ausrichten: in der Sekunde des Ablaufs ist die Karenz noch keine zehn
+   * Minuten alt. Danach kam kein zweiter Anlass mehr, also blieb ein "bereit"
+   * beliebig lange stehen - bis zufällig eine neue Pause startete, die beim
+   * Schreiben ohnehin aufräumt.
+   */
+  useEffect(() => {
+    if (!hasRestTimers) {
+      return undefined;
+    }
+
+    // Auch sofort: nach Minuten im Hintergrund ist beim Zurückkommen die halbe
+    // Leiste veraltet, und darauf will niemand erst den nächsten Takt abwarten.
+    void pruneRestTimers(sessionId);
+
+    const timer = window.setInterval(() => {
+      void pruneRestTimers(sessionId);
+    }, REST_PRUNE_INTERVAL_MS);
+
+    return () => window.clearInterval(timer);
+  }, [hasRestTimers, sessionId]);
 
   useEffect(() => {
     if (!setTimerEndsAt || !setTimerDurationSeconds || setTimerEndsAt > now) {
@@ -593,6 +630,65 @@ export function SessionPage() {
   const runningSetTimerExerciseId = setTimer
     ? (setLogs ?? []).find((log) => log.id === setTimer.setLogId)?.sessionExerciseId
     : undefined;
+
+  /*
+   * Die Pause des Ruhemodus: die der Satzzeile, die gerade dran ist - genau
+   * die, die auf dem limettenen Balken steht.
+   *
+   * Vorher stand hier einmal die kürzeste laufende Uhr überhaupt. Das war im
+   * Supersatz und bei einer einbeinigen Übung nicht zu gebrauchen: dort laufen
+   * zwei, drei Pausen gleichzeitig, und die große Zahl sprang zwischen ihnen
+   * hin und her, ohne zu sagen, wozu sie gehört. Läuft für die dran-Zeile
+   * keine, bleibt der Bildschirm frei; die übrigen stehen unverändert als
+   * Chips und Abzeichen daneben.
+   *
+   * Der Satz-Timer bleibt bewusst außen vor. Der Ruhemodus ist der Zustand des
+   * Wartens - während ein Satz auf Zeit läuft, wartet man nicht, sondern hält,
+   * und die Zeit dafür steht auf der Bühne im Sheet, wo auch der Satz steht.
+   */
+  const activeRestTrack = activeSetLog
+    ? findRestTrack(restTimers, activeSetLog.sessionExerciseId, activeSetLog.side)
+    : undefined;
+  const activeRestSeconds = remainingRestSeconds(activeRestTrack, now);
+  /*
+   * Der Schlüssel gilt nur, solange die Pause läuft. Abgelaufene Spuren bleiben
+   * als "bereit" stehen (siehe `pruneRestTracks`) - hinge der Schlüssel an
+   * ihnen, bliebe der Reiter für diese Übung und Seite auf Dauer
+   * zusammengeklappt, und die nächste Pause käme nie mehr groß.
+   */
+  const activeRestKey =
+    activeRestTrack && activeRestSeconds > 0
+      ? restTrackKey(activeRestTrack.sessionExerciseId, activeRestTrack.side)
+      : null;
+
+  /*
+   * Nach der Pause bleibt der Reiter nicht zusammengeklappt liegen: die
+   * nächste öffnet den Ruhemodus wieder. Wer eine Pause weggelegt hat, hat das
+   * für diese eine getan.
+   */
+  useEffect(() => {
+    if (!activeRestKey && minimizedRestKey) {
+      setMinimizedRestKey(null);
+    }
+  }, [activeRestKey, minimizedRestKey, setMinimizedRestKey]);
+
+  /*
+   * Was nach der Pause ansteht - dieselbe Zeile, auf die die Pause wartet, und
+   * dieselben Werte, die das Sheet auf seinem großen Knopf verspricht.
+   */
+  const activeSetExercise = activeSetLog
+    ? orderedSessionExercises.find((item) => item.id === activeSetLog.sessionExerciseId)
+    : undefined;
+  const nextValues =
+    activeSetLog && activeSetExercise
+      ? describeSetRowValues(
+          activeSetLog,
+          setRowFallback(
+            activeSetExercise,
+            lastValues?.[activeSetExercise.exerciseId]?.setValues?.resolve(activeSetLog),
+          ),
+        )
+      : undefined;
   const isReadOnly = session?.status !== 'active';
   const selectedExistingExercise = (availableExercises ?? []).find(
     (exercise) => exercise.id === exerciseForm.exerciseId,
@@ -634,9 +730,21 @@ export function SessionPage() {
     setSelectedSetLogId(null);
   }
 
-  /** Fokus über einen Chip der Pausenleiste - dorthin will man auch sehen. */
+  /**
+   * Fokus über einen Chip der Pausenleiste - dorthin will man auch sehen.
+   *
+   * Eine abgelaufene Spur ist damit erledigt: "bereit" ist die Auskunft, dass
+   * diese Übung wieder frei ist, und wer daraufhin hingeht, hat sie erhalten.
+   * Das ist zugleich der einzige Weg, sie von Hand loszuwerden - die große
+   * Zahl in der Leiste trägt zwar ein Abbrechen-Kreuz, bekommt aber nur
+   * laufende Spuren.
+   */
   function handleFocusRestTrack(track: RestTimerTrack) {
     handleOpenExerciseSheet(track.sessionExerciseId);
+
+    if (isRestTrackReady(track, Date.now())) {
+      void clearRestTimer(sessionId, track.sessionExerciseId, track.side);
+    }
   }
 
   async function handleAddExercise() {
@@ -1635,6 +1743,45 @@ export function SessionPage() {
           )}
         </div>
       </Sheet>
+
+      {/*
+        Der Ruhemodus - für den Blick aus einem Meter Entfernung, wenn das
+        Handy während der Pause auf dem Boden liegt. Er nimmt den Bildschirm
+        ein, solange man wartet, und klappt zum Reiter an der Kante zusammen,
+        sobald man doch etwas eintragen will: siehe [RestMode].
+
+        Nur über dem Sheet. In der Liste hat man die Einheit vor sich - welcher
+        Block dran ist, was noch aussteht, wo man weitermacht -, und dort trägt
+        die Leiste am unteren Rand die Restzeit. Im Sheet steht ohnehin nur die
+        eine Übung, und man wartet.
+      */}
+      {openBlock && activeRestTrack ? (
+        <RestMode
+          seconds={activeRestSeconds}
+          total={activeRestTrack.durationSeconds}
+          restLabel={describeRestTrack(activeRestTrack)}
+          nextLabel={activeSetLog ? describeSetRow(activeSetLog) : undefined}
+          nextValues={nextValues}
+          isMinimized={minimizedRestKey === activeRestKey}
+          onMinimize={() => setMinimizedRestKey(activeRestKey)}
+          onExpand={() => setMinimizedRestKey(null)}
+          onExtend={() =>
+            void extendRestTimer(
+              sessionId,
+              activeRestTrack.sessionExerciseId,
+              activeRestTrack.side,
+              REST_TIMER_STEP_SECONDS,
+            )
+          }
+          onFinish={() =>
+            void clearRestTimer(
+              sessionId,
+              activeRestTrack.sessionExerciseId,
+              activeRestTrack.side,
+            )
+          }
+        />
+      ) : null}
 
       <MediaLightbox
         mediaAsset={mediaPreview?.mediaAsset}

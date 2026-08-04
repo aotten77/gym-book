@@ -154,6 +154,14 @@ export function Sheet({
         role="dialog"
         aria-modal="true"
         aria-label={label}
+        /*
+          Marke fürs Sheet selbst. Über der Session kann ein zweiter Dialog
+          liegen - der Ruhemodus -, und "irgendein Dialog" trifft dann mal den
+          einen, mal den anderen. Wie `data-block-status` und `data-set-row`
+          ist das die Fassung, an der die e2e-Tests greifen, statt Klassen zu
+          raten.
+        */
+        data-sheet=""
         className={cn(
           'flex h-full flex-col overflow-hidden rounded-t-card bg-surface shadow-soft',
           // Während des Zuges ohne Übergang, sonst hinkt die Fläche am Finger
