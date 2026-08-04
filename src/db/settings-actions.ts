@@ -75,6 +75,23 @@ export async function setTimerSoundEnabled(enabled: boolean) {
 }
 
 /**
+ * Schaltet das Wachhalten des Bildschirms während einer laufenden Einheit.
+ *
+ * Wie beim Signalton gilt `undefined` als eingeschaltet, deshalb wird auch
+ * hier immer explizit geschrieben.
+ */
+export async function setKeepScreenAwakeEnabled(enabled: boolean) {
+  const current = await ensureSettings();
+
+  await db.appSettings.put({
+    ...current,
+    id: SETTINGS_ID,
+    keepScreenAwakeEnabled: enabled,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+/**
  * Merkt sich, dass eine Sicherung geschrieben wurde.
  *
  * Die Erinnerung auf der Startseite zählt abgeschlossene Trainings, die

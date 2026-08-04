@@ -261,6 +261,14 @@ export interface AppSettings {
    * jede Zeile anfassen müsste.
    */
   timerSoundEnabled?: boolean;
+  /**
+   * Bildschirm während einer laufenden Einheit wachhalten.
+   *
+   * Additiv wie `timerSoundEnabled`: `undefined` zählt als eingeschaltet. Das
+   * abgeschaltete Display friert die App ein und verschluckt damit den
+   * Signalton des Satz-Timers - siehe `lib/wake-lock.ts`.
+   */
+  keepScreenAwakeEnabled?: boolean;
   exportSchemaVersion: number;
   updatedAt: string;
 }

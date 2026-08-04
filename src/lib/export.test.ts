@@ -190,6 +190,7 @@ describe('parseDatabaseSnapshot', () => {
             {
               id: 'app-settings',
               timerSoundEnabled: false,
+              keepScreenAwakeEnabled: false,
               exportSchemaVersion: SNAPSHOT_SCHEMA_VERSION,
               updatedAt: '2026-07-27T20:00:00.000Z',
             },
@@ -199,10 +200,13 @@ describe('parseDatabaseSnapshot', () => {
     );
 
     expect(withSound.appSettings[0].timerSoundEnabled).toBe(false);
+    expect(withSound.appSettings[0].keepScreenAwakeEnabled).toBe(false);
 
-    // Ältere Sicherungen kennen den Schlüssel nicht und bleiben gültig.
-    expect(parseDatabaseSnapshot(JSON.stringify(createSnapshot())).appSettings[0].timerSoundEnabled)
-      .toBeUndefined();
+    // Ältere Sicherungen kennen die Schlüssel nicht und bleiben gültig.
+    const withoutSound = parseDatabaseSnapshot(JSON.stringify(createSnapshot())).appSettings[0];
+
+    expect(withoutSound.timerSoundEnabled).toBeUndefined();
+    expect(withoutSound.keepScreenAwakeEnabled).toBeUndefined();
   });
 
   it('accepts a set log whose band was deleted from the catalogue', () => {

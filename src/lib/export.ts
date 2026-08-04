@@ -195,6 +195,7 @@ const appSettingsSchema = z.object({
   // Additiv wie includeWarmup: ältere Backups kennen die Schlüssel nicht.
   lastBackupAt: z.string().optional(),
   timerSoundEnabled: z.boolean().optional(),
+  keepScreenAwakeEnabled: z.boolean().optional(),
   exportSchemaVersion: z.number().int().positive(),
   updatedAt: z.string(),
 });

@@ -14,11 +14,13 @@ import { bootstrapAppData, seedSampleData } from '@/db/bootstrap';
 import { formatDateTime } from '@/lib/format';
 import { playTimerChimeFromGesture, primeTimerSound } from '@/lib/sound';
 import { formatBytes, readStorageStatus, requestPersistentStorage, type StorageStatus } from '@/lib/storage';
+import { isScreenWakeLockSupported } from '@/lib/wake-lock';
 import { db } from '@/db/appDb';
 import { setProgramActiveWeek } from '@/db/program-actions';
 import {
   clearWeekOverride,
   setActiveProgram,
+  setKeepScreenAwakeEnabled,
   setTimerSoundEnabled,
   setWeekOverride,
 } from '@/db/settings-actions';
@@ -53,6 +55,7 @@ export function SettingsPage() {
   const [isExporting, setIsExporting] = useState(false);
   const [exportMessage, setExportMessage] = useState<string | null>(null);
   const [soundError, setSoundError] = useState<string | null>(null);
+  const [screenAwakeError, setScreenAwakeError] = useState<string | null>(null);
 
   const refreshStorageStatus = useCallback(async () => {
     setStorageStatus(await readStorageStatus());
@@ -299,6 +302,17 @@ export function SettingsPage() {
     }
   }
 
+  async function handleToggleKeepScreenAwake(enabled: boolean) {
+    try {
+      await setKeepScreenAwakeEnabled(enabled);
+      setScreenAwakeError(null);
+    } catch (error) {
+      setScreenAwakeError(
+        error instanceof Error ? error.message : 'Einstellung konnte nicht gespeichert werden.',
+      );
+    }
+  }
+
   return (
     <AppShell title="Einstellungen">
       <div className="space-y-4">
@@ -438,6 +452,29 @@ export function SettingsPage() {
             </Button>
 
             {soundError ? <Alert variant="error">{soundError}</Alert> : null}
+          </div>
+        </SectionCard>
+
+        <SectionCard
+          title="Bildschirm"
+          subtitle="Was passiert, während eine Einheit läuft."
+        >
+          <div className="space-y-4">
+            <ToggleField
+              label="Bildschirm während der Einheit anlassen"
+              hint="Verhindert, dass das iPhone mitten in einem Satz auf Zeit abschaltet. Zum Sperren zwischendurch reicht die Seitentaste - nach dem Entsperren gilt die Einstellung wieder."
+              checked={settings?.keepScreenAwakeEnabled !== false}
+              onCheckedChange={(enabled) => void handleToggleKeepScreenAwake(enabled)}
+              disabled={!isScreenWakeLockSupported()}
+            />
+
+            <p className="text-sm text-content-muted">
+              {isScreenWakeLockSupported()
+                ? 'Ein abgeschaltetes Display friert die App ein: Timer melden sich dann erst beim Entsperren, und der Ton bleibt aus. Die Sperre endet mit der Einheit.'
+                : 'Dieses Gerät kennt die nötige Schnittstelle nicht - unter iOS gibt es sie ab Version 16.4.'}
+            </p>
+
+            {screenAwakeError ? <Alert variant="error">{screenAwakeError}</Alert> : null}
           </div>
         </SectionCard>
 

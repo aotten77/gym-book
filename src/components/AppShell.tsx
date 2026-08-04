@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
@@ -19,6 +19,7 @@ import { ActiveSessionBar } from '@/components/ActiveSessionBar';
 import { Button, IconButton } from '@/components/ui/Button';
 import { db } from '@/db/appDb';
 import { cn } from '@/lib/utils';
+import { keepScreenAwake } from '@/lib/wake-lock';
 import { useUiStore } from '@/store/ui-store';
 
 /*
@@ -65,6 +66,15 @@ export function AppShell({ title, eyebrow, children }: AppShellProps) {
   const isViewingActiveSession =
     inSession && Boolean(activeSession) && location.pathname === `/session/${activeSession?.id}`;
   const showSessionBar = !inSession && Boolean(activeSession);
+  const appSettings = useLiveQuery(() => db.appSettings.get('app-settings'), []);
+  // Additiv wie timerSoundEnabled: nur ein ausdrückliches Aus schaltet ab.
+  const keepScreenAwakeEnabled = appSettings?.keepScreenAwakeEnabled !== false;
+  /*
+   * Die Primitive statt der Session selbst: useLiveQuery liefert bei jedem
+   * Emit - also nach jedem abgehakten Satz - eine neue Identität, an der der
+   * Effekt sonst die Sperre laufend abräumen und neu anfordern würde.
+   */
+  const activeSessionId = activeSession?.id ?? null;
   const isOnline = useUiStore((state) => state.isOnline);
   const isOfflineReady = useUiStore((state) => state.isOfflineReady);
   const isUpdateAvailable = useUiStore((state) => state.isUpdateAvailable);
@@ -72,6 +82,26 @@ export function AppShell({ title, eyebrow, children }: AppShellProps) {
   const setDeferredInstallPrompt = useUiStore((state) => state.setDeferredInstallPrompt);
   const setOfflineReady = useUiStore((state) => state.setOfflineReady);
   const setUpdateAvailable = useUiStore((state) => state.setUpdateAvailable);
+
+  /*
+   * Die Sperre hängt an der laufenden Einheit, nicht an der Session-Seite:
+   * eine minimierte Session läuft weiter, ihre Timer auch, und der Streifen
+   * unten zeigt sie auf jedem Screen. Ginge das Display beim Blick in den
+   * Verlauf aus, wäre der Signalton wieder verschluckt.
+   *
+   * Was hier absichtlich nicht passiert: die Sperre bei jedem Ende eines
+   * Timers wieder abzugeben. Zwischen zwei Sätzen legt man das Handy hin, und
+   * ein Bildschirm, der genau dann ausgeht, kostet die Übersicht über die
+   * Pause. Beendet die Einheit, endet die Sperre - alles dazwischen ist
+   * Training.
+   */
+  useEffect(() => {
+    if (!activeSessionId || !keepScreenAwakeEnabled) {
+      return undefined;
+    }
+
+    return keepScreenAwake();
+  }, [activeSessionId, keepScreenAwakeEnabled]);
 
   async function handleInstallApp() {
     if (!deferredInstallPrompt) {
