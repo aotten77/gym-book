@@ -205,19 +205,60 @@ test.describe('Workouts', () => {
     await page.getByRole('link', { name: 'Bearbeiten' }).first().click();
     await page.waitForTimeout(900);
 
+    // Die Form liegt seit dem Umbau im Sheet über der Liste, nicht mehr als
+    // Abschnitt am Seitenende - erst öffnen, dann prüfen.
+    await page.getByRole('button', { name: 'Hinzufügen' }).click();
+    await page.waitForTimeout(500);
+
     // Der "Bestehend"/"Neu"-Toggle samt Neuanlage-Formular ist mit der
     // Bibliothek überflüssig geworden - nur noch Auswahl.
-    const addExerciseSection = page.locator('section', {
-      has: page.getByRole('heading', { name: 'Übung hinzufügen' }),
-    });
+    const addExerciseSheet = page.getByRole('dialog', { name: 'Übung hinzufügen' });
+    await expect(addExerciseSheet).toBeVisible();
     await expect(page.getByRole('button', { name: 'Neue Übung' })).toHaveCount(0);
-    await expect(addExerciseSection.locator('select')).toHaveCount(1);
+    await expect(addExerciseSheet.locator('select')).toHaveCount(1);
 
-    await addExerciseSection.locator('select').selectOption({ label: 'Nordic Curl Iso' });
+    await addExerciseSheet.locator('select').selectOption({ label: 'Nordic Curl Iso' });
     await page.waitForTimeout(400);
 
     // Vorschau-Absatz statt der <option> - sonst matcht auch der Select selbst.
-    await expect(addExerciseSection.getByRole('paragraph').filter({ hasText: 'Nordic Curl Iso' })).toBeVisible();
+    await expect(addExerciseSheet.getByRole('paragraph').filter({ hasText: 'Nordic Curl Iso' })).toBeVisible();
+  });
+
+  test('Bearbeiten öffnet das Sheet über der Liste, statt ans Seitenende zu scrollen', async ({
+    page,
+  }) => {
+    await resetDatabase(page);
+    await seedSampleData(page);
+
+    await page.goto('./#/templates');
+    await page.waitForTimeout(900);
+    await page.getByRole('link', { name: 'Bearbeiten' }).first().click();
+    await page.waitForTimeout(900);
+
+    // Erst in Sicht bringen, dann messen: sonst misst der Test das
+    // Heranscrollen von Playwright und nicht das der Anwendung.
+    const editButton = page.getByRole('button', { name: 'Front Squat bearbeiten' });
+    await editButton.scrollIntoViewIfNeeded();
+    await page.waitForTimeout(300);
+    const scrollBefore = await page.evaluate(() => window.scrollY);
+
+    await editButton.click();
+    await page.waitForTimeout(500);
+
+    const sheet = page.getByRole('dialog', { name: 'Übung bearbeiten' });
+    await expect(sheet).toBeVisible();
+    // Die Übung steht im Kopf, damit man weiß, was man bearbeitet.
+    await expect(sheet.getByText('Front Squat').first()).toBeVisible();
+
+    // Die Liste darunter wurde nicht bewegt - genau das war der Grund für das
+    // Sheet: schließen bringt einen an dieselbe Stelle zurück.
+    expect(await page.evaluate(() => window.scrollY)).toBe(scrollBefore);
+
+    await sheet.getByRole('button', { name: 'Bearbeiten schließen' }).click();
+    await page.waitForTimeout(400);
+
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    expect(await page.evaluate(() => window.scrollY)).toBe(scrollBefore);
   });
 });
 

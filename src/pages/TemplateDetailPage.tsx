@@ -1,7 +1,17 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { ChevronDown, ChevronUp, Link2, Pencil, Play, Plus, Trash2, Unlink } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronUp,
+  ImageOff,
+  Link2,
+  Pencil,
+  Play,
+  Plus,
+  Trash2,
+  Unlink,
+} from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
 import { Alert } from '@/components/Alert';
 import { Empty } from '@/components/Empty';
@@ -9,6 +19,7 @@ import { Button, IconButton } from '@/components/ui/Button';
 import { CheckboxField } from '@/components/ui/Field';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { NowCard } from '@/components/ui/StatusCard';
+import { Sheet } from '@/components/ui/Sheet';
 import { ExerciseMedia } from '@/components/ExerciseMedia';
 import { ExerciseTargetFields } from '@/components/ExerciseTargetFields';
 import { formatNumber } from '@/lib/format';
@@ -87,15 +98,26 @@ function TemplateExerciseMeta({
   mediaAsset?: MediaAsset;
 }) {
   return (
-    <div className="flex min-w-0 gap-3">
-      <ExerciseMedia
-        mediaAsset={mediaAsset}
-        alt={exerciseName}
-        className="h-16 w-16 shrink-0 rounded-control"
-        imageClassName="h-full w-full"
-      />
-      <div className="min-w-0">
-        <p className="text-sm font-semibold text-content">
+    <div className="flex min-w-0 items-start gap-3">
+      {/*
+        Der Platzhalter liegt außen herum: `ExerciseMedia` rendert ohne Bild
+        `null`, und ohne festen Rahmen sprängen die Zeilen je nachdem, ob eine
+        Übung ein Bild hat.
+      */}
+      <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-control border border-line bg-surface-raised text-content-muted">
+        {mediaAsset ? (
+          <ExerciseMedia
+            mediaAsset={mediaAsset}
+            alt=""
+            className="h-full w-full rounded-none border-0"
+            imageClassName="h-full w-full"
+          />
+        ) : (
+          <ImageOff size={18} aria-hidden="true" />
+        )}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="break-words text-sm font-semibold text-content">
           {item.orderIndex}. {exerciseName}
         </p>
         <p className="mt-1 text-sm text-content-muted">
@@ -106,7 +128,7 @@ function TemplateExerciseMeta({
           {bandName ? ` · ${bandName}` : ''}
           {item.restSeconds ? ` · Pause ${item.restSeconds}s` : ''}
         </p>
-        {item.notes ? <p className="mt-3 text-sm text-content-muted">{item.notes}</p> : null}
+        {item.notes ? <p className="mt-2 text-sm text-content-muted">{item.notes}</p> : null}
       </div>
     </div>
   );
@@ -160,87 +182,89 @@ function TemplateExerciseCard({
   const moveScopeLabel = isSupersetMember ? ' im Supersatz' : '';
 
   return (
-    <div className="rounded-panel border border-line bg-surface p-4 transition hover:border-accent-border hover:bg-surface-sunken">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 flex-1 gap-3">
-          <div className="flex shrink-0 flex-col gap-1">
-            <IconButton
-              label={`${exerciseName}${moveScopeLabel} nach oben`}
-              onClick={() => onMove(item.id, -1)}
-              disabled={isBusy || isFirst}
-            >
-              <ChevronUp size={16} />
-            </IconButton>
-            <IconButton
-              label={`${exerciseName}${moveScopeLabel} nach unten`}
-              onClick={() => onMove(item.id, 1)}
-              disabled={isBusy || isLast}
-            >
-              <ChevronDown size={16} />
-            </IconButton>
-          </div>
-          <TemplateExerciseMeta
-            item={item}
-            exerciseName={exerciseName}
-            bandName={bandName}
-            mediaAsset={mediaAsset}
-          />
-        </div>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => onEdit(item.id)}
-            disabled={isBusy}
-            aria-label={`${exerciseName} bearbeiten`}
-            className="flex h-11 w-11 items-center justify-center rounded-control border border-line text-content-secondary transition hover:bg-surface-raised disabled:cursor-not-allowed disabled:opacity-35"
-          >
-            <Pencil size={16} />
-          </button>
-          <button
-            type="button"
-            onClick={() => onDelete(item.id, exerciseName)}
-            disabled={isBusy}
-            aria-label={`${exerciseName} aus Workout entfernen`}
-            className="flex h-11 w-11 items-center justify-center rounded-control border border-danger-border text-danger transition hover:bg-danger-soft disabled:cursor-not-allowed disabled:opacity-35"
-          >
-            <Trash2 size={16} />
-          </button>
-        </div>
-      </div>
+    <div className="rounded-panel border border-line bg-surface p-3 transition hover:border-accent-border hover:bg-surface-sunken">
+      {/*
+        Bild und Name bekommen die ganze Breite. Vorher standen Sortierpfeile,
+        Bild, Name und zwei Knöpfe in einer Zeile - auf einem Telefon blieben
+        dem Namen rund 120px, also "Nordic Curl" über drei Zeilen, und ein Wort
+        wie "Abduktorenmaschine" lief unter die Knöpfe. Alle Aktionen stehen
+        jetzt in einer eigenen Reihe darunter.
+      */}
+      <TemplateExerciseMeta
+        item={item}
+        exerciseName={exerciseName}
+        bandName={bandName}
+        mediaAsset={mediaAsset}
+      />
 
       {/*
-        Verbinden steht bei den Zweitaktionen, nicht oben neben Bearbeiten und
-        Löschen: dort liegen auf 320px schon zwei Trefferflächen von 44px.
+        Fünf Trefferflächen à 44px messen mit den Lücken 236px, und auf einem
+        320px-Gerät ist die Karte innen 228px breit - eine Reihe geht sich dort
+        nicht aus, ab 390px schon. Deshalb gap-1 statt gap-2 und kein
+        Trennstrich, und die Gruppierung trägt die Position: links alles zur
+        Lage in der Liste, rechts Bearbeiten und Entfernen. Bricht es doch um,
+        hält `ml-auto` die zweite Zeile rechtsbündig unter der ersten.
       */}
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        {/*
-          Der zugängliche Name trägt den Übungsnamen, die Beschriftung nicht:
-          "Mit voriger verbinden" steht auf jeder Zeile und wäre in einer
-          Vorlesereihe nicht auseinanderzuhalten.
-        */}
-        {isSupersetMember ? (
-          <Button
-            variant="ghost"
-            size="md"
-            aria-label={`${exerciseName} aus dem Supersatz lösen`}
-            onClick={() => onUngroup(item.id)}
+      <div className="mt-3 flex flex-wrap items-center gap-1">
+        <div className="flex items-center gap-1">
+          <IconButton
+            label={`${exerciseName}${moveScopeLabel} nach oben`}
+            onClick={() => onMove(item.id, -1)}
+            disabled={isBusy || isFirst}
+          >
+            <ChevronUp size={16} />
+          </IconButton>
+          <IconButton
+            label={`${exerciseName}${moveScopeLabel} nach unten`}
+            onClick={() => onMove(item.id, 1)}
+            disabled={isBusy || isLast}
+          >
+            <ChevronDown size={16} />
+          </IconButton>
+
+          {/*
+            Verbinden steht bei den Pfeilen, weil es dasselbe meint: die Lage
+            in der Liste. Nur das Icon - die Beschriftung stand auf jeder Zeile
+            und war damit das Breiteste an einer Karte, die sonst aus
+            Trefferflächen besteht. Den Namen trägt weiterhin `label`, sonst
+            hießen in einer Vorlesereihe alle Knöpfe gleich.
+          */}
+          {isSupersetMember ? (
+            <IconButton
+              label={`${exerciseName} aus dem Supersatz lösen`}
+              onClick={() => onUngroup(item.id)}
+              disabled={isBusy}
+            >
+              <Unlink size={16} />
+            </IconButton>
+          ) : (
+            <IconButton
+              label={`${exerciseName} mit voriger Übung verbinden`}
+              onClick={() => onGroupWithPrevious(item.id)}
+              disabled={isBusy || !canGroupWithPrevious}
+            >
+              <Link2 size={16} />
+            </IconButton>
+          )}
+        </div>
+
+        <div className="ml-auto flex items-center gap-1">
+          <IconButton
+            label={`${exerciseName} bearbeiten`}
+            onClick={() => onEdit(item.id)}
             disabled={isBusy}
           >
-            <Unlink size={14} />
-            Verbindung lösen
-          </Button>
-        ) : (
-          <Button
-            variant="ghost"
-            size="md"
-            aria-label={`${exerciseName} mit voriger Übung verbinden`}
-            onClick={() => onGroupWithPrevious(item.id)}
-            disabled={isBusy || !canGroupWithPrevious}
+            <Pencil size={16} />
+          </IconButton>
+          <IconButton
+            label={`${exerciseName} aus Workout entfernen`}
+            variant="danger"
+            onClick={() => onDelete(item.id, exerciseName)}
+            disabled={isBusy}
           >
-            <Link2 size={14} />
-            Mit voriger verbinden
-          </Button>
-        )}
+            <Trash2 size={16} />
+          </IconButton>
+        </div>
       </div>
     </div>
   );
@@ -256,10 +280,17 @@ export function TemplateDetailPage() {
   >(null);
   const { templateId = '' } = useParams();
   const navigate = useNavigate();
-  const editExerciseSectionRef = useRef<HTMLDivElement | null>(null);
   const [templateName, setTemplateName] = useState('');
   const [templateNotes, setTemplateNotes] = useState('');
   const [editingTemplateExerciseId, setEditingTemplateExerciseId] = useState<string | null>(null);
+  /*
+   * Die Form lag früher als Abschnitt am Seitenende, und "Bearbeiten" scrollte
+   * dorthin - an den vier Wochen der Progression vorbei, und zurück fand man
+   * die Übung nur durch Suchen. Sie liegt jetzt im Sheet über der Liste, wie
+   * die Übung in der laufenden Einheit: Schließen bringt einen an dieselbe
+   * Stelle zurück, weil die Liste darunter nie bewegt wurde.
+   */
+  const [isExerciseSheetOpen, setIsExerciseSheetOpen] = useState(false);
   const [form, setForm] = useState<TemplateExerciseFormState>(defaultFormState);
   const [isSavingTemplate, setIsSavingTemplate] = useState(false);
   const [isSavingExercise, setIsSavingExercise] = useState(false);
@@ -329,16 +360,23 @@ export function TemplateDetailPage() {
 
   function handleEditTemplateExercise(templateExerciseId: string) {
     setEditingTemplateExerciseId(templateExerciseId);
-    requestAnimationFrame(() => {
-      editExerciseSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
+    setIsExerciseSheetOpen(true);
   }
 
   function handleOpenAddTemplateExercise() {
     setEditingTemplateExerciseId(null);
-    requestAnimationFrame(() => {
-      editExerciseSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
+    setIsExerciseSheetOpen(true);
+  }
+
+  /*
+   * Schließen ist zugleich das Zurücksetzen: die Form füllt sich beim nächsten
+   * Öffnen ohnehin neu aus dem Datensatz. Ein eigener Knopf dafür stand nur
+   * neben dem Speichern und war der leisere von zweien, die gleich aussahen.
+   */
+  function handleCloseExerciseSheet() {
+    setIsExerciseSheetOpen(false);
+    setEditingTemplateExerciseId(null);
+    setMediaError(null);
   }
 
   useEffect(() => {
@@ -449,6 +487,7 @@ export function TemplateDetailPage() {
       });
 
       setEditingTemplateExerciseId(null);
+      setIsExerciseSheetOpen(false);
       setMediaError(null);
     } catch (error) {
       setMediaError(
@@ -602,7 +641,7 @@ export function TemplateDetailPage() {
     await deleteTemplateExercise(templateExerciseId);
 
     if (editingTemplateExerciseId === templateExerciseId) {
-      setEditingTemplateExerciseId(null);
+      handleCloseExerciseSheet();
     }
   }
 
@@ -737,7 +776,7 @@ export function TemplateDetailPage() {
             ) : (
               <Empty
                 title="Noch keine Übungen"
-                description="Füge unten eine Übung aus der Bibliothek hinzu, dann lässt sich das Workout starten."
+                description="Füge über „Hinzufügen“ eine Übung aus der Bibliothek hinzu, dann lässt sich das Workout starten."
               />
             )}
           </div>
@@ -753,136 +792,146 @@ export function TemplateDetailPage() {
           bandLevels={bandLevels}
           activeProgramId={settings?.activeProgramId}
         />
+      </div>
 
-        <div ref={editExerciseSectionRef}>
-          <SectionCard
-            title={editingTemplateExerciseId ? 'Übung bearbeiten' : 'Übung hinzufügen'}
-            subtitle="Übung aus der Bibliothek auswählen."
-            action={
-              <div className="flex h-10 w-10 items-center justify-center rounded-control bg-accent-soft text-accent">
-                <Plus size={18} />
-              </div>
-            }
+      <Sheet
+        open={isExerciseSheetOpen}
+        label={editingTemplateExerciseId ? 'Übung bearbeiten' : 'Übung hinzufügen'}
+        closeLabel="Bearbeiten schließen"
+        onClose={handleCloseExerciseSheet}
+        header={
+          <div className="min-w-0">
+            <h2 className="font-display text-[21px] font-extrabold leading-[1.06] tracking-[-0.04em]">
+              {editingTemplateExerciseId ? 'Übung bearbeiten' : 'Übung hinzufügen'}
+            </h2>
+            <p className="mt-0.5 truncate text-xs font-semibold text-content-muted">
+              {editingTemplateExerciseId
+                ? (selectedExistingExercise?.name ?? 'Übung aus der Bibliothek auswählen.')
+                : 'Übung aus der Bibliothek auswählen.'}
+            </p>
+          </div>
+        }
+        footer={
+          /*
+            Der große Knopf steht im Fuß des Sheets, der am sichtbaren Viewport
+            hängt - sonst schiebt iOS ihn unter die Tastatur, sobald ein
+            Zahlenfeld den Fokus bekommt.
+          */
+          <Button
+            variant="primary"
+            fullWidth
+            onClick={handleSaveTemplateExercise}
+            disabled={isSavingExercise || isUpdatingExerciseMedia || !form.exerciseId}
           >
-          <div className="space-y-4">
-            {sortedExercises.length === 0 ? (
-              <Empty
-                title="Noch keine Übung in der Bibliothek"
-                description="Lege zuerst eine Übung an - hier lassen sich nur bestehende auswählen."
-                action={
-                  <Link
-                    to="/exercises"
-                    className="min-h-touch inline-flex items-center justify-center rounded-control border border-line px-4 py-2 text-sm text-content-secondary transition hover:bg-surface-raised"
-                  >
-                    Jetzt anlegen
-                  </Link>
-                }
-              />
-            ) : (
-              <div className="space-y-3">
-                <select
-                  value={form.exerciseId}
-                  onChange={(event) => setForm((current) => ({ ...current, exerciseId: event.target.value }))}
-                  className="select-control min-h-touch w-full rounded-panel border border-line bg-surface px-4 py-4 text-base text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
+            {editingTemplateExerciseId ? 'Änderung speichern' : 'Übung hinzufügen'}
+          </Button>
+        }
+      >
+        <div className="space-y-4">
+          {sortedExercises.length === 0 ? (
+            <Empty
+              title="Noch keine Übung in der Bibliothek"
+              description="Lege zuerst eine Übung an - hier lassen sich nur bestehende auswählen."
+              action={
+                <Link
+                  to="/exercises"
+                  className="min-h-touch inline-flex items-center justify-center rounded-control border border-line px-4 py-2 text-sm text-content-secondary transition hover:bg-surface-raised"
                 >
-                  {sortedExercises.map((exercise) => (
-                    <option key={exercise.id} value={exercise.id}>
-                      {exercise.name}
-                    </option>
-                  ))}
-                </select>
-
-                {selectedExistingExercise ? (
-                  <div className="rounded-panel bg-surface p-4 text-sm text-content-muted">
-                    <ExerciseMedia
-                      mediaAsset={selectedExistingExerciseMedia}
-                      alt={selectedExistingExercise.name}
-                      className="mb-4 h-40 w-full"
-                      imageClassName="h-full w-full"
-                    />
-                    <p className="font-semibold text-content">{selectedExistingExercise.name}</p>
-                    <p className="mt-2">
-                      Tracking: {selectedExistingExercise.trackingMode} ·{' '}
-                      {selectedExistingExercise.unilateral ? 'unilateral' : 'beidseitig'}
-                    </p>
-                    {selectedExistingExercise.instructions ? (
-                      <p className="mt-2">{selectedExistingExercise.instructions}</p>
-                    ) : null}
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      <label className="min-h-touch inline-flex items-center justify-center rounded-control border border-line px-3 py-2 text-sm text-content-secondary transition hover:bg-surface-raised">
-                        <input
-                          type="file"
-                          accept="image/jpeg,image/png,image/webp,image/gif"
-                          className="hidden"
-                          onChange={(event) => {
-                            const file = event.target.files?.[0];
-                            void handleReplaceExistingExerciseMedia(file);
-                            event.target.value = '';
-                          }}
-                        />
-                        {selectedExistingExerciseMedia ? 'Bild ersetzen' : 'Bild hochladen'}
-                      </label>
-                      {selectedExistingExerciseMedia ? (
-                        <button
-                          type="button"
-                          onClick={handleClearExistingExerciseMedia}
-                          disabled={isUpdatingExerciseMedia}
-                          className="min-h-touch inline-flex items-center justify-center rounded-control border border-danger-border px-3 py-2 text-sm text-danger transition hover:bg-danger-soft disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          Bild entfernen
-                        </button>
-                      ) : null}
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            )}
-
-            <ExerciseTargetFields
-              trackingMode={selectedExistingExercise?.trackingMode}
-              loadKind={selectedExistingExercise?.loadKind}
-              bandLevels={bandLevels}
-              values={form}
-              onChange={(field, value) => setForm((current) => ({ ...current, [field]: value }))}
-              workSetCountHint="Die Reihenfolge änderst du oben mit den Pfeilen."
-              weightLabel="Ziel-Gewicht in kg"
-            />
-
-            <CheckboxField
-              label="Warmup-Satz anlegen"
-              hint="Aus bleibt der Warmup-Satz beim Start der Session komplett weg."
-              checked={form.includeWarmup}
-              onChange={(event) =>
-                setForm((current) => ({ ...current, includeWarmup: event.target.checked }))
+                  Jetzt anlegen
+                </Link>
               }
             />
-
-            <textarea
-              value={form.notes}
-              onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))}
-              aria-label="Template-spezifische Notiz" placeholder="Template-spezifische Notiz"
-              rows={3}
-              className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-base text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
-            />
-
-            <div className="grid grid-cols-2 gap-3">
-              <Button
-                variant="primary"
-                onClick={handleSaveTemplateExercise}
-                disabled={isSavingExercise || isUpdatingExerciseMedia}
+          ) : (
+            <div className="space-y-3">
+              <select
+                value={form.exerciseId}
+                onChange={(event) => setForm((current) => ({ ...current, exerciseId: event.target.value }))}
+                aria-label="Übung aus der Bibliothek"
+                className="select-control min-h-touch w-full rounded-panel border border-line bg-surface px-4 py-4 text-base text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
               >
-                {editingTemplateExerciseId ? 'Änderung speichern' : 'Übung hinzufügen'}
-              </Button>
-              <Button variant="secondary" onClick={() => setEditingTemplateExerciseId(null)}>
-                Zurücksetzen
-              </Button>
-            </div>
+                {sortedExercises.map((exercise) => (
+                  <option key={exercise.id} value={exercise.id}>
+                    {exercise.name}
+                  </option>
+                ))}
+              </select>
 
-            {mediaError ? <Alert>{mediaError}</Alert> : null}
-          </div>
-        </SectionCard>
+              {selectedExistingExercise ? (
+                <div className="rounded-panel bg-surface-raised p-4 text-sm text-content-muted">
+                  <ExerciseMedia
+                    mediaAsset={selectedExistingExerciseMedia}
+                    alt={selectedExistingExercise.name}
+                    className="mb-4 h-40 w-full"
+                    imageClassName="h-full w-full"
+                  />
+                  <p className="font-semibold text-content">{selectedExistingExercise.name}</p>
+                  <p className="mt-2">
+                    Tracking: {selectedExistingExercise.trackingMode} ·{' '}
+                    {selectedExistingExercise.unilateral ? 'unilateral' : 'beidseitig'}
+                  </p>
+                  {selectedExistingExercise.instructions ? (
+                    <p className="mt-2">{selectedExistingExercise.instructions}</p>
+                  ) : null}
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <label className="min-h-touch inline-flex items-center justify-center rounded-control border border-line px-3 py-2 text-sm text-content-secondary transition hover:bg-surface-hover">
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp,image/gif"
+                        className="hidden"
+                        onChange={(event) => {
+                          const file = event.target.files?.[0];
+                          void handleReplaceExistingExerciseMedia(file);
+                          event.target.value = '';
+                        }}
+                      />
+                      {selectedExistingExerciseMedia ? 'Bild ersetzen' : 'Bild hochladen'}
+                    </label>
+                    {selectedExistingExerciseMedia ? (
+                      <button
+                        type="button"
+                        onClick={handleClearExistingExerciseMedia}
+                        disabled={isUpdatingExerciseMedia}
+                        className="min-h-touch inline-flex items-center justify-center rounded-control border border-danger-border px-3 py-2 text-sm text-danger transition hover:bg-danger-soft disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Bild entfernen
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          )}
+
+          <ExerciseTargetFields
+            trackingMode={selectedExistingExercise?.trackingMode}
+            loadKind={selectedExistingExercise?.loadKind}
+            bandLevels={bandLevels}
+            values={form}
+            onChange={(field, value) => setForm((current) => ({ ...current, [field]: value }))}
+            workSetCountHint="Die Reihenfolge änderst du in der Liste mit den Pfeilen."
+            weightLabel="Ziel-Gewicht in kg"
+          />
+
+          <CheckboxField
+            label="Warmup-Satz anlegen"
+            hint="Aus bleibt der Warmup-Satz beim Start der Session komplett weg."
+            checked={form.includeWarmup}
+            onChange={(event) =>
+              setForm((current) => ({ ...current, includeWarmup: event.target.checked }))
+            }
+          />
+
+          <textarea
+            value={form.notes}
+            onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))}
+            aria-label="Template-spezifische Notiz" placeholder="Template-spezifische Notiz"
+            rows={3}
+            className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-base text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
+          />
+
+          {mediaError ? <Alert>{mediaError}</Alert> : null}
         </div>
-      </div>
+      </Sheet>
 
       <ConfirmDialog
         open={pendingDelete !== null}

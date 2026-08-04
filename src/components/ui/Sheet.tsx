@@ -52,6 +52,13 @@ interface SheetProps {
   header?: ReactNode;
   /** Fuß, der über der Tastatur stehen bleibt. */
   footer?: ReactNode;
+  /**
+   * Beschriftung des Schließen-Knopfes.
+   *
+   * Im Training schließt man eine Übung, in der Planung das Bearbeiten - der
+   * zugängliche Name muss sagen, was verschwindet.
+   */
+  closeLabel?: string;
   onClose: () => void;
   children: ReactNode;
 }
@@ -65,7 +72,15 @@ interface SheetProps {
  * man, und eine Geste, die beides bedeuten kann, träfe im Training regelmäßig
  * das Falsche.
  */
-export function Sheet({ open, label, header, footer, onClose, children }: SheetProps) {
+export function Sheet({
+  open,
+  label,
+  header,
+  footer,
+  closeLabel = 'Übung schließen',
+  onClose,
+  children,
+}: SheetProps) {
   const viewport = useVisualViewport();
   const [dragOffset, setDragOffset] = useState(0);
   const dragStartRef = useRef<number | null>(null);
@@ -163,7 +178,7 @@ export function Sheet({ open, label, header, footer, onClose, children }: SheetP
               ref={closeRef}
               type="button"
               onClick={onClose}
-              aria-label="Übung schließen"
+              aria-label={closeLabel}
               className={cn(
                 'flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-surface-raised text-content-secondary transition',
                 'hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',

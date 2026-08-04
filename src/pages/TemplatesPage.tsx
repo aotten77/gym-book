@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Check, ChevronRight, Play, Plus } from 'lucide-react';
+import { Check, ChevronRight, ImageOff, Play, Plus } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AppShell } from '@/components/AppShell';
 import { Alert } from '@/components/Alert';
 import { Empty } from '@/components/Empty';
+import { ExerciseMedia } from '@/components/ExerciseMedia';
 import { SectionCard } from '@/components/SectionCard';
 import { Button } from '@/components/ui/Button';
 import { DoneRow, NowCard } from '@/components/ui/StatusCard';
@@ -28,14 +29,16 @@ export function TemplatesPage() {
   const templateExercises = useLiveQuery(() => db.workoutTemplateExercises.toArray(), []);
   const exercises = useLiveQuery(() => db.exercises.toArray(), []);
   const bandLevels = useLiveQuery(() => db.bandLevels.toArray(), []);
+  const mediaAssets = useLiveQuery(() => db.mediaAssets.toArray(), []);
   const templateRecency = useLiveQuery(() => loadTemplateRecency(), []);
   const weekSummary = useLiveQuery(
     () => loadWeekSummary(startOfCalendarWeek(new Date()).toISOString()),
     [],
   );
 
-  const exerciseNameById = Object.fromEntries((exercises ?? []).map((item) => [item.id, item.name]));
+  const exerciseById = Object.fromEntries((exercises ?? []).map((item) => [item.id, item]));
   const bandNameById = Object.fromEntries((bandLevels ?? []).map((band) => [band.id, band.name]));
+  const mediaAssetById = Object.fromEntries((mediaAssets ?? []).map((asset) => [asset.id, asset]));
 
   const nextTemplate = pickNextTemplate(templates ?? [], templateRecency ?? {});
   const nextTemplateExerciseCount = (templateExercises ?? []).filter(
@@ -152,29 +155,55 @@ export function TemplatesPage() {
             >
               <div className="space-y-3">
                 {items.length > 0 ? (
-                  items.map((item) => (
-                    <Link
-                      key={item.id}
-                      to={`/templates/${template.id}`}
-                      className="flex items-center justify-between rounded-panel border border-line bg-surface px-4 py-4"
-                    >
-                      <div>
-                        <p className="text-sm font-semibold text-content">
-                          {item.orderIndex}.{' '}
-                          {exerciseNameById[item.exerciseId] ?? 'Unbekannte Übung'}
-                        </p>
-                        <p className="mt-1 text-sm text-content-muted">
-                          {item.targetReps ? `${item.workSetCount} x ${item.targetReps} Wdh` : null}
-                          {item.targetReps && item.targetSeconds ? ' · ' : null}
-                          {item.targetSeconds ? `${item.workSetCount} x ${item.targetSeconds}s` : null}
-                          {item.targetWeight ? ` · ${formatNumber(item.targetWeight)} kg` : ''}
-                          {item.targetBandId ? ` · ${bandNameById[item.targetBandId] ?? 'Band'}` : ''}
-                          {supersetExerciseIds.has(item.id) ? ' · Supersatz' : ''}
-                        </p>
-                      </div>
-                      <ChevronRight size={18} className="text-content-muted" />
-                    </Link>
-                  ))
+                  items.map((item) => {
+                    const exercise = exerciseById[item.exerciseId];
+                    const media = exercise?.mediaAssetId
+                      ? mediaAssetById[exercise.mediaAssetId]
+                      : undefined;
+
+                    return (
+                      <Link
+                        key={item.id}
+                        to={`/templates/${template.id}`}
+                        className="flex items-center gap-3 rounded-panel border border-line bg-surface px-3 py-3"
+                      >
+                        {/*
+                          Derselbe Rahmen wie in der Übungsbibliothek:
+                          `ExerciseMedia` rendert ohne Bild `null`, und ohne
+                          festen Platzhalter sprängen die Zeilen je nachdem, ob
+                          eine Übung ein Bild hat.
+                        */}
+                        <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-control border border-line bg-surface-raised text-content-muted">
+                          {media ? (
+                            <ExerciseMedia
+                              mediaAsset={media}
+                              alt=""
+                              className="h-full w-full rounded-none border-0"
+                              imageClassName="h-full w-full"
+                            />
+                          ) : (
+                            <ImageOff size={18} aria-hidden="true" />
+                          )}
+                        </div>
+
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-semibold text-content">
+                            {item.orderIndex}.{' '}
+                            {exercise?.name ?? 'Unbekannte Übung'}
+                          </p>
+                          <p className="mt-1 text-sm text-content-muted">
+                            {item.targetReps ? `${item.workSetCount} x ${item.targetReps} Wdh` : null}
+                            {item.targetReps && item.targetSeconds ? ' · ' : null}
+                            {item.targetSeconds ? `${item.workSetCount} x ${item.targetSeconds}s` : null}
+                            {item.targetWeight ? ` · ${formatNumber(item.targetWeight)} kg` : ''}
+                            {item.targetBandId ? ` · ${bandNameById[item.targetBandId] ?? 'Band'}` : ''}
+                            {supersetExerciseIds.has(item.id) ? ' · Supersatz' : ''}
+                          </p>
+                        </div>
+                        <ChevronRight size={18} className="shrink-0 text-content-muted" />
+                      </Link>
+                    );
+                  })
                 ) : (
                   <Empty
                     title="Noch keine Übungen"
