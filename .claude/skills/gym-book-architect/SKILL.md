@@ -42,7 +42,7 @@ Do not use it for generic framework tutorials or unrelated repositories.
 
 ## Set logging rules
 
-- At most one warmup set per exercise, modelled explicitly (`setKind: 'warmup'`, `setNumber: 0`, `side: 'both'`) — not implied in UI only. A template exercise may switch it off via `includeWarmup: false`.
+- At most one warmup round per exercise, modelled explicitly (`setKind: 'warmup'`, `setNumber: 0`) — not implied in UI only. A template exercise may switch it off via `includeWarmup: false`. The round follows the same side rule as a work set: `side: 'both'` on a bilateral exercise, mirrored `left`/`right` rows on a unilateral one.
 - Work sets are logged separately from the warmup set.
 - Time-based exercises may carry both `seconds` and `weight`.
 - Unilateral exercises capture left/right. Both sides start with the same set count; a running session may drop a single row per side.

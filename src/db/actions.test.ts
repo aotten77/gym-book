@@ -34,6 +34,7 @@ import { clearExerciseMedia, replaceExerciseMedia } from '@/db/media-actions';
 import {
   clearWeekOverride,
   setActiveProgram,
+  setKeepScreenAwakeEnabled,
   setTimerSoundEnabled,
   setWeekOverride,
 } from '@/db/settings-actions';
@@ -48,7 +49,7 @@ import {
 import { REST_TRACK_GRACE_SECONDS } from '@/domain/rest-timer';
 
 describe('addSessionExercise', () => {
-  it('appends an existing unilateral exercise and creates warmup plus mirrored work sets', async () => {
+  it('appends an existing unilateral exercise and mirrors warmup and work sets', async () => {
     await db.exercises.add({
       id: 'exercise-split-squat',
       name: 'Split Squat',
@@ -107,8 +108,13 @@ describe('addSessionExercise', () => {
       restSeconds: 90,
       notes: 'Fokus auf stabile Knieachse',
     });
-    expect(setLogs).toHaveLength(5);
-    expect(setLogs.filter((item) => item.setKind === 'warmup')).toHaveLength(1);
+    expect(setLogs).toHaveLength(6);
+    expect(
+      setLogs
+        .filter((item) => item.setKind === 'warmup')
+        .map((item) => item.side)
+        .sort(),
+    ).toEqual(['left', 'right']);
     expect(setLogs.filter((item) => item.setKind === 'work' && item.side === 'left')).toHaveLength(2);
     expect(setLogs.filter((item) => item.setKind === 'work' && item.side === 'right')).toHaveLength(2);
     expect(await db.exercises.count()).toBe(1);
@@ -560,6 +566,23 @@ describe('settings and program week actions', () => {
 
     const settings = await db.appSettings.get('app-settings');
     expect(settings?.weekOverride).toBe(2);
+  });
+
+  it('stores a switched-off screen wake lock as false and leaves the sound alone', async () => {
+    // Dieselbe additive Regel wie beim Ton, und die beiden Schalter der
+    // Sektion dürfen sich nicht gegenseitig überschreiben.
+    await setTimerSoundEnabled(false);
+    await setKeepScreenAwakeEnabled(false);
+
+    const off = await db.appSettings.get('app-settings');
+    expect(off?.keepScreenAwakeEnabled).toBe(false);
+    expect(off?.timerSoundEnabled).toBe(false);
+
+    await setKeepScreenAwakeEnabled(true);
+
+    const on = await db.appSettings.get('app-settings');
+    expect(on?.keepScreenAwakeEnabled).toBe(true);
+    expect(on?.timerSoundEnabled).toBe(false);
   });
 
   it('sets the active program and clears weekOverride', async () => {

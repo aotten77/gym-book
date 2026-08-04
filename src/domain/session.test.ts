@@ -16,7 +16,7 @@ import type {
 } from '@/domain/models';
 
 describe('materializeSession', () => {
-  it('creates exactly one warmup set and mirrored unilateral work sets', () => {
+  it('mirrors warmup and work sets for a unilateral exercise', () => {
     const template: WorkoutTemplate = {
       id: 'template-1',
       name: 'Einheit A',
@@ -56,7 +56,9 @@ describe('materializeSession', () => {
 
     expect(bundle.session.templateNameSnapshot).toBe('Einheit A');
     expect(bundle.sessionExercises).toHaveLength(1);
-    expect(bundle.setLogs.filter((item) => item.setKind === 'warmup')).toHaveLength(1);
+    expect(
+      bundle.setLogs.filter((item) => item.setKind === 'warmup').map((item) => item.side),
+    ).toEqual(['left', 'right']);
     expect(
       bundle.setLogs.filter((item) => item.setKind === 'work' && item.side === 'left'),
     ).toHaveLength(2);
@@ -103,6 +105,44 @@ describe('materializeSession', () => {
 
     expect(bundle.setLogs.filter((item) => item.setKind === 'warmup')).toHaveLength(0);
     expect(bundle.setLogs).toHaveLength(3);
+  });
+
+  it('keeps a single warmup row for a bilateral exercise', () => {
+    const template: WorkoutTemplate = {
+      id: 'template-1',
+      name: 'Einheit A',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+
+    const bundle = materializeSession({
+      template,
+      templateExercises: [
+        {
+          id: 'template-exercise-1',
+          templateId: template.id,
+          exerciseId: 'squat',
+          orderIndex: 1,
+          workSetCount: 3,
+        },
+      ],
+      exercisesById: {
+        squat: {
+          id: 'squat',
+          name: 'Front Squat',
+          trackingMode: 'reps_weight',
+          unilateral: false,
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+      },
+      resolvedProgramWeek: 1,
+      startedAt: '2026-01-08T09:00:00.000Z',
+    });
+
+    expect(bundle.setLogs.filter((item) => item.setKind === 'warmup')).toEqual([
+      expect.objectContaining({ side: 'both', setNumber: 0 }),
+    ]);
   });
 
   it('overrides template targets from progression rules for the resolved week snapshot', () => {

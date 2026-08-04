@@ -95,22 +95,26 @@ export function materializeSession({
       notes: progressionRule?.notes ?? templateExercise.notes,
     });
 
+    const sides = exercise.unilateral ? (['left', 'right'] as const) : (['both'] as const);
+
     // Der Schalter ist optional: alles außer einem ausdrücklichen `false`
-    // bekommt weiterhin genau einen Warmup-Satz.
+    // bekommt weiterhin genau eine Aufwärmrunde - bei einer einbeinigen Übung
+    // sind das wie beim Arbeitssatz zwei Zeilen, weil auch aufgewärmt wird,
+    // was danach einzeln belastet wird.
     if (templateExercise.includeWarmup !== false) {
-      setLogs.push({
-        id: createId(),
-        sessionExerciseId,
-        setKind: 'warmup',
-        side: 'both',
-        setNumber: 0,
-        completed: false,
-      });
+      for (const side of sides) {
+        setLogs.push({
+          id: createId(),
+          sessionExerciseId,
+          setKind: 'warmup',
+          side,
+          setNumber: 0,
+          completed: false,
+        });
+      }
     }
 
     for (let setNumber = 1; setNumber <= templateExercise.workSetCount; setNumber += 1) {
-      const sides = exercise.unilateral ? (['left', 'right'] as const) : (['both'] as const);
-
       for (const side of sides) {
         setLogs.push({
           id: createId(),

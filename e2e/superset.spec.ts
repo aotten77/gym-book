@@ -100,11 +100,11 @@ test.describe('Supersatz in der laufenden Einheit', () => {
     await openExerciseSheet(page, 'Bulgarian Split Squat');
 
     /*
-     * Beide Seiten werden gezielt ausgewählt. Der Aufwärmsatz bleibt bewusst
-     * offen - er ist beidseitig und legte eine dritte Spur an, die mit der
-     * Frage nach links und rechts nichts zu tun hat. Nachrücken würde er
-     * trotzdem: die nächste offene Zeile ist die *erste* offene, und das ist
-     * er.
+     * Beide Seiten werden gezielt ausgewählt. Die Aufwärmzeilen bleiben bewusst
+     * offen - sie sind bei einer einseitigen Übung selbst nach Seiten geteilt
+     * und würden dieselben zwei Spuren belegen, um die es hier geht. Nachrücken
+     * würden sie trotzdem: die nächste offene Zeile ist die *erste* offene, und
+     * das ist das Aufwärmen.
      */
     await selectSetRow(page, 'Satz 1 · links');
     await completeActiveSet(page);

@@ -89,7 +89,7 @@ The model must preserve a strict separation between plan definition and workout 
 
 ## Set Logging Rules
 
-- Every exercise has at most one warmup set in v1; the template may switch it off via `includeWarmup: false`.
+- Every exercise has at most one warmup round in v1; the template may switch it off via `includeWarmup: false`. A unilateral exercise mirrors that round into a left and a right row, exactly like a work set.
 - Warmup sets must be modeled explicitly, not implied only in UI.
 - Work sets are logged separately from the warmup set.
 - Time-based exercises may include both `seconds` and `weight`.

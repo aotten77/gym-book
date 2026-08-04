@@ -72,24 +72,26 @@ function createSetLogs(
   unilateral: boolean,
   includeWarmup = true,
 ) {
-  // Spiegelt die Regel aus `materializeSession`: höchstens ein Warmup-Satz,
-  // und nur wenn er nicht ausdrücklich abgewählt wurde.
-  const setLogs: WorkoutSetLog[] = includeWarmup
-    ? [
-        {
-          id: createId(),
-          sessionExerciseId,
-          setKind: 'warmup',
-          side: 'both',
-          setNumber: 0,
-          completed: false,
-        },
-      ]
-    : [];
+  const sides = unilateral ? (['left', 'right'] as const) : (['both'] as const);
+  const setLogs: WorkoutSetLog[] = [];
+
+  // Spiegelt die Regel aus `materializeSession`: höchstens eine Aufwärmrunde,
+  // nur wenn sie nicht ausdrücklich abgewählt wurde, und einseitig gespiegelt
+  // wie die Arbeitssätze.
+  if (includeWarmup) {
+    for (const side of sides) {
+      setLogs.push({
+        id: createId(),
+        sessionExerciseId,
+        setKind: 'warmup',
+        side,
+        setNumber: 0,
+        completed: false,
+      });
+    }
+  }
 
   for (let setNumber = 1; setNumber <= workSetCount; setNumber += 1) {
-    const sides = unilateral ? (['left', 'right'] as const) : (['both'] as const);
-
     for (const side of sides) {
       setLogs.push({
         id: createId(),
