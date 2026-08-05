@@ -1214,8 +1214,20 @@ export function SessionPage() {
   function renderSheetFooter() {
     const tracks = [...restTimers].sort(byRestTrackEnd);
 
+    /*
+      Unter dem großen Knopf liegt nur noch Rand.
+      ------------------------------------------
+      Hier stand einmal "Übung auslassen" acht Pixel darunter - über die volle
+      Breite, auf derselben Bahn, auf der der Daumen nach dem Abhaken
+      zurückfedert. Die eine Handlung macht man vierzigmal in einer Einheit,
+      die andere verwirft eine ganze Übung; sie dürfen sich nicht berühren.
+      Das Auslassen entscheidet man ohnehin, *bevor* man die Übung öffnet -
+      man steht vor dem Gerät und es ist besetzt -, und deshalb sitzt es jetzt
+      in der Blockkarte der Liste: siehe [SessionBlockCard]. Der Fuß trägt
+      Pausen-Chips, einen Knopf und ein Polster, sonst nichts.
+    */
     return (
-      <div className="space-y-2">
+      <div className="space-y-2 pb-2">
         <div className="flex items-center gap-2">
           <div className="flex min-w-0 flex-1 gap-1.5 overflow-x-auto">
             {tracks.map((track, index) => {
@@ -1261,27 +1273,20 @@ export function SessionPage() {
             onClick={() => void activeSetAction.run()}
             disabled={activeSetAction.disabled}
             className={cn(
-              'flex min-h-[3.25rem] w-full items-center justify-center rounded-full px-4',
+              /*
+                62px statt 52. Der Knopf wird mit ausgestrecktem Daumen
+                getroffen, oft im letzten Satz einer Serie, und 52px waren
+                gerade eben über dem Mindestmaß - großzügig ist das nicht.
+                Die Zeile "82,5 kg × 5 abhaken" bekommt damit auch den Platz,
+                den sie auf 320px vorher kürzen musste.
+              */
+              'flex min-h-[3.875rem] w-full items-center justify-center rounded-full px-4',
               'bg-accent text-[15px] font-bold text-accent-contrast transition hover:opacity-90',
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface',
               'disabled:cursor-not-allowed disabled:opacity-50',
             )}
           >
             <span className="truncate">{activeSetAction.label}</span>
-          </button>
-        ) : null}
-
-        {/*
-          Auslassen leise darunter: es kommt vor, aber es ist nie das, was man
-          im Sheet sucht.
-        */}
-        {focusedExercise && !isReadOnly ? (
-          <button
-            type="button"
-            onClick={() => void handleToggleSkip(focusedExercise.id)}
-            className="flex min-h-[2rem] w-full items-center justify-center text-[13px] font-semibold text-content-muted transition hover:text-content focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-          >
-            {focusedExercise.wasSkipped ? 'Übung zurückholen' : 'Übung auslassen'}
           </button>
         ) : null}
       </div>
@@ -1627,6 +1632,7 @@ export function SessionPage() {
                 isReadOnly={isReadOnly}
                 isBusy={isReorderingExercises}
                 onOpen={handleOpenExerciseSheet}
+                onToggleSkip={(sessionExerciseId) => void handleToggleSkip(sessionExerciseId)}
               />
             ))}
           </div>

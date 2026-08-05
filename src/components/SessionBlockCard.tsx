@@ -6,6 +6,7 @@ import {
   Clock3,
   Repeat,
   SkipForward,
+  Undo2,
 } from 'lucide-react';
 import { IconButton } from '@/components/ui/Button';
 import { sortSetLogs } from '@/domain/history';
@@ -37,6 +38,8 @@ interface SessionBlockCardProps {
   onOpen: (sessionExerciseId: string) => void;
   /** Verschiebt den ganzen Block; im Supersatz wandern alle Mitglieder mit. */
   onMoveBlock: (sessionExerciseId: string, direction: -1 | 1) => void;
+  /** Lässt eine Übung aus - oder holt sie zurück. Immer eine einzelne, nie den Block. */
+  onToggleSkip: (sessionExerciseId: string) => void;
 }
 
 /** Die Pausen einer Übung, beide Seiten, in der Reihenfolge des Ablaufs. */
@@ -82,6 +85,12 @@ function describeSetPosition(item: SessionExerciseProgress) {
  * stand einmal ein Häkchen, das den nächsten Satz direkt abhakte; es schrieb
  * keine Werte und war neben dem Öffnen der Übung vor allem verwirrend.
  * Anzutippen ist jede Übung, auch eine fertige.
+ *
+ * Das Auslassen ist die eine Ausnahme, und es ist keine: es schreibt keinen
+ * Satz, sondern ändert den *Plan* dieser Einheit - und das ist genau die
+ * Entscheidung, die man in der Liste trifft, bevor man eine Übung öffnet. Im
+ * Fuß des Sheets stand es früher acht Pixel unter dem Abhaken-Knopf, auf
+ * derselben Bahn des Daumens; siehe `renderSheetFooter` in [SessionPage].
  */
 export function SessionBlockCard({
   block,
@@ -94,6 +103,7 @@ export function SessionBlockCard({
   isLastBlock,
   onOpen,
   onMoveBlock,
+  onToggleSkip,
 }: SessionBlockCardProps) {
   const isDone = block.status === 'done';
   const isCurrent = block.status === 'current';
@@ -211,7 +221,9 @@ export function SessionBlockCard({
             restTracks={restTracksForExercise(restTracks, item.exercise.id)}
             now={now}
             hasRunningSetTimer={runningSetTimerExerciseId === item.exercise.id}
+            isReadOnly={isReadOnly}
             onOpen={onOpen}
+            onToggleSkip={onToggleSkip}
           />
         ))}
       </div>
@@ -225,7 +237,42 @@ interface SessionBlockExerciseRowProps {
   restTracks: RestTimerTrack[];
   now: number;
   hasRunningSetTimer: boolean;
+  isReadOnly: boolean;
   onOpen: (sessionExerciseId: string) => void;
+  onToggleSkip: (sessionExerciseId: string) => void;
+}
+
+/**
+ * Auslassen und Zurückholen - derselbe Knopf, beide Richtungen.
+ *
+ * Er steht *neben* der Zeile, nicht in ihr: ein Knopf im Knopf ist ungültig,
+ * und die Zeile selbst öffnet weiterhin nur. Als Icon, weil man ihn in einer
+ * Einheit höchstens einmal braucht; der zugängliche Name trägt den Klartext
+ * samt Übungsnamen, weil in einer Liste sonst nicht zu hören ist, welche
+ * Übung gemeint ist.
+ */
+function SkipToggleButton({
+  exercise,
+  onToggleSkip,
+  className,
+}: {
+  exercise: WorkoutSessionExercise;
+  onToggleSkip: (sessionExerciseId: string) => void;
+  className?: string;
+}) {
+  return (
+    <IconButton
+      label={
+        exercise.wasSkipped
+          ? `${exercise.exerciseNameSnapshot} zurückholen`
+          : `${exercise.exerciseNameSnapshot} auslassen`
+      }
+      onClick={() => onToggleSkip(exercise.id)}
+      className={cn('border-transparent bg-transparent', className)}
+    >
+      {exercise.wasSkipped ? <Undo2 size={17} /> : <SkipForward size={17} />}
+    </IconButton>
+  );
 }
 
 function SessionBlockExerciseRow({
@@ -234,7 +281,9 @@ function SessionBlockExerciseRow({
   restTracks,
   now,
   hasRunningSetTimer,
+  isReadOnly,
   onOpen,
+  onToggleSkip,
 }: SessionBlockExerciseRowProps) {
   const { exercise, nextOpenLog } = item;
   const isDone = status === 'done';
@@ -246,6 +295,12 @@ function SessionBlockExerciseRow({
         logsSummary={summarizeCompletedExercise(item.logs)}
         asymmetryPercent={summarizeExerciseAsymmetry(item.logs)}
         wasSkipped={exercise.wasSkipped}
+        /*
+          Auf der fertigen Karte nur noch der Rückweg: was abgehakt ist, lässt
+          man nicht mehr aus - aber eine ausgelassene Übung muss man
+          zurückholen können, sonst wäre die Entscheidung endgültig.
+        */
+        onToggleSkip={!isReadOnly && exercise.wasSkipped ? onToggleSkip : undefined}
         onOpen={() => onOpen(exercise.id)}
       />
     );
@@ -280,6 +335,14 @@ function SessionBlockExerciseRow({
           </span>
           <ChevronRight size={16} className="shrink-0 text-content-muted" aria-hidden="true" />
         </button>
+        {/*
+          Nur solange an dieser Übung noch etwas offen ist: eine Übung, deren
+          Sätze alle stehen, kann man nicht mehr auslassen - der Knopf hätte
+          nichts zu tun und stünde trotzdem im Weg.
+        */}
+        {!isReadOnly && (nextOpenLog || exercise.wasSkipped) ? (
+          <SkipToggleButton exercise={exercise} onToggleSkip={onToggleSkip} />
+        ) : null}
       </div>
 
       {/*
@@ -326,42 +389,58 @@ function ExerciseSummaryLine({
   logsSummary,
   asymmetryPercent,
   wasSkipped,
+  onToggleSkip,
   onOpen,
 }: {
   exercise: WorkoutSessionExercise;
   logsSummary?: string;
   asymmetryPercent?: number;
   wasSkipped: boolean;
+  onToggleSkip?: (sessionExerciseId: string) => void;
   onOpen: () => void;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      aria-label={`${exercise.exerciseNameSnapshot} öffnen`}
-      className={cn(
-        'flex min-h-touch w-full items-baseline justify-between gap-3 rounded-panel px-2 py-1.5 text-left transition',
-        'hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-highlight',
-      )}
-    >
-      <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">
-        {exercise.exerciseNameSnapshot}
-      </span>
-      <span className="shrink-0 font-display text-[13px] font-bold tabular-nums">
-        {wasSkipped ? (
-          <span className="inline-flex items-center gap-1 opacity-75">
-            <SkipForward size={12} aria-hidden="true" />
-            ausgelassen
-          </span>
-        ) : (
-          <>
-            {logsSummary}
-            {typeof asymmetryPercent === 'number' ? (
-              <span className="ml-2 opacity-75">Δ {formatNumber(asymmetryPercent)} %</span>
-            ) : null}
-          </>
+    <div className="flex items-center gap-1">
+      <button
+        type="button"
+        onClick={onOpen}
+        aria-label={`${exercise.exerciseNameSnapshot} öffnen`}
+        className={cn(
+          'flex min-h-touch min-w-0 flex-1 items-baseline justify-between gap-3 rounded-panel px-2 py-1.5 text-left transition',
+          'hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-highlight',
         )}
-      </span>
-    </button>
+      >
+        <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">
+          {exercise.exerciseNameSnapshot}
+        </span>
+        <span className="shrink-0 font-display text-[13px] font-bold tabular-nums">
+          {wasSkipped ? (
+            <span className="inline-flex items-center gap-1 opacity-75">
+              <SkipForward size={12} aria-hidden="true" />
+              ausgelassen
+            </span>
+          ) : (
+            <>
+              {logsSummary}
+              {typeof asymmetryPercent === 'number' ? (
+                <span className="ml-2 opacity-75">Δ {formatNumber(asymmetryPercent)} %</span>
+              ) : null}
+            </>
+          )}
+        </span>
+      </button>
+      {/*
+        Auf der waldgrünen Karte trägt der Knopf die Farbe der Karte: der
+        Fokusring der App ist Tinte und wäre hier kaum zu sehen, deshalb der
+        limettene Ring wie bei der Zeile daneben.
+      */}
+      {onToggleSkip ? (
+        <SkipToggleButton
+          exercise={exercise}
+          onToggleSkip={onToggleSkip}
+          className="text-success-contrast hover:bg-white/10 focus-visible:ring-highlight focus-visible:ring-offset-0"
+        />
+      ) : null}
+    </div>
   );
 }
