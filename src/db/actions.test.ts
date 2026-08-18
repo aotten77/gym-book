@@ -1361,6 +1361,32 @@ describe('Pausentimer', () => {
     expect(tracks.find((track) => track.sessionExerciseId === 'exercise-c')?.durationSeconds).toBe(60);
   });
 
+  it('verkürzt eine Spur um einen negativen Betrag', async () => {
+    await seedRestSession();
+    await startRestTimerForSetLog('a-1', 60);
+
+    const before = (await restTimers())[0].endsAt;
+
+    await extendRestTimer('session-rest', 'exercise-a', 'both', -15);
+
+    const track = (await restTimers())[0];
+    expect(track.durationSeconds).toBe(45);
+    expect(track.endsAt).toBeLessThanOrEqual(before - 15000);
+  });
+
+  it('kürzt eine Pause nicht über den Nullpunkt hinaus', async () => {
+    await seedRestSession();
+    await startRestTimerForSetLog('a-1', 10);
+
+    const before = (await restTimers())[0];
+
+    // Sonst meldete die Spur im selben Moment einen Ablauf, den niemand
+    // abgewartet hat - samt Ton und Vibration.
+    await extendRestTimer('session-rest', 'exercise-a', 'both', -15);
+
+    expect((await restTimers())[0]).toEqual(before);
+  });
+
   it('bricht wahlweise eine Spur, eine Übung oder alles ab', async () => {
     await seedRestSession();
     await startRestTimerForSetLog('b-1-left', 60);

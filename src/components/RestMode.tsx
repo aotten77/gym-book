@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown } from 'lucide-react';
+import {
+  REST_TIMER_SHORTEN_SECONDS,
+  REST_TIMER_STEP_SECONDS,
+} from '@/domain/rest-timer';
 import { formatTimer } from '@/lib/format';
 import { applyThemeColor } from '@/lib/theme-color';
 import {
@@ -18,6 +22,34 @@ const KEY_STEP = 16;
 /** Bis hierhin war es ein Tipp und kein Zug. */
 const TAP_SLOP = 6;
 
+/**
+ * Bindet die Einheit an ihre Zahl.
+ *
+ * In der Größe, in der die Werte hier stehen, bricht "120 s · 182,5 kg" auf
+ * einem schmalen Gerät um - und zwar irgendwo. "182,5" in der einen Zeile und
+ * "kg" in der nächsten ist aus einem Meter Entfernung keine Auskunft mehr. Die
+ * Trennzeichen dazwischen (· und ×) bleiben umbruchfähig: dort ist ein Umbruch
+ * richtig.
+ */
+function bindUnits(values: string) {
+  // Als Escape geschrieben - ein geschütztes Leerzeichen im Quelltext sieht
+  // aus wie ein gewöhnliches und wird beim nächsten Anfassen wegformatiert.
+  return values.replace(/ (kg|s|Wdh)\b/g, '\u00a0$1');
+}
+
+/**
+ * Die beiden Stellknöpfe der Pause - Umriss auf Tinte, gleiche Breite.
+ *
+ * Sie stellen nur die Zeit, sie beenden nichts; gefüllt ist auf diesem
+ * Bildschirm allein "Weiter".
+ */
+const ADJUST_BUTTON_CLASS = cn(
+  'flex min-h-touch shrink-0 items-center justify-center rounded-full px-4',
+  'border border-accent-contrast/25 text-[15px] font-bold text-accent-contrast/85 transition',
+  'hover:bg-accent-contrast/10 disabled:opacity-35 disabled:hover:bg-transparent',
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-contrast focus-visible:ring-offset-2 focus-visible:ring-offset-accent',
+);
+
 interface RestModeProps {
   /** Verbleibende Sekunden der Pause. 0 blendet alles aus. */
   seconds: number;
@@ -33,6 +65,7 @@ interface RestModeProps {
   onMinimize: () => void;
   onExpand: () => void;
   onExtend: () => void;
+  onShorten: () => void;
   onFinish: () => void;
 }
 
@@ -77,6 +110,7 @@ export function RestMode({
   onMinimize,
   onExpand,
   onExtend,
+  onShorten,
   onFinish,
 }: RestModeProps) {
   const frameRef = useRef<HTMLDivElement>(null);
@@ -322,6 +356,9 @@ export function RestMode({
           <div className="flex flex-1 flex-col items-center justify-center gap-5">
             <p
               aria-hidden="true"
+              // Die Restsekunden im Klartext: der e2e-Test liest sie hier ab,
+              // statt die Zahl aus dem umbruchfreien Zeitformat zu rechnen.
+              data-rest-remaining={seconds}
               className="font-display text-[min(34vw,26vh)] font-extrabold leading-none tabular-nums tracking-tight"
             >
               {label}
@@ -342,29 +379,64 @@ export function RestMode({
               />
             </div>
 
+            {/*
+              Was danach ansteht - und die Werte tragen die Größe, nicht die
+              Überschrift darüber.
+
+              Sie standen hier als Kleingedrucktes unter einem fetten "Danach:
+              Satz 2", und das war die falsche Rangfolge: welcher Satz kommt,
+              weiß man ohnehin, aber wieviel aufgelegt werden muss, ist die
+              eine Auskunft, für die man während der Pause hersieht - und zwar
+              vom Boden aus, wo das Telefon liegt. Die Zeile skaliert mit dem
+              Bild wie die Uhrzeit darüber, damit sie auf schmalen Geräten
+              nicht umbricht.
+            */}
             {nextLabel ? (
               <div className="text-center">
-                <p className="font-display text-lg font-extrabold tracking-tight">
-                  Danach: {nextLabel}
-                </p>
                 {nextValues ? (
-                  <p className="text-sm text-accent-contrast/65">{nextValues}</p>
-                ) : null}
+                  <>
+                    <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-accent-contrast/70">
+                      Danach · {nextLabel}
+                    </p>
+                    <p
+                      data-rest-values=""
+                      className="mt-0.5 break-words font-display text-[min(14.4vw,7.8vh)] font-extrabold leading-tight tabular-nums tracking-tight"
+                    >
+                      {bindUnits(nextValues)}
+                    </p>
+                  </>
+                ) : (
+                  // Ohne Werte trägt die Zeile selbst - eine Überschrift allein
+                  // im Kleingedruckten wäre aus der Entfernung gar nichts.
+                  <p className="font-display text-lg font-extrabold tracking-tight">
+                    Danach: {nextLabel}
+                  </p>
+                )}
               </div>
             ) : null}
           </div>
 
+          {/*
+            Die Handlung in der Mitte, die beiden Stellknöpfe an den Seiten -
+            weniger nach links, mehr nach rechts, wie an den Wertfeldern im
+            Satz. Die Stellknöpfe nehmen nur die Breite ihrer Beschriftung;
+            "Weiter" bekommt den Rest, denn es ist der Knopf, den der Daumen im
+            Halbdunkel trifft.
+          */}
           <div className="flex gap-2">
             <button
               type="button"
-              onClick={onExtend}
-              className={cn(
-                'flex min-h-touch flex-1 items-center justify-center rounded-full px-4',
-                'border border-accent-contrast/25 text-[15px] font-bold text-accent-contrast/85 transition hover:bg-accent-contrast/10',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-contrast focus-visible:ring-offset-2 focus-visible:ring-offset-accent',
-              )}
+              onClick={onShorten}
+              /*
+                Unter einer Stufe Restzeit gäbe es nichts mehr zu kürzen: der
+                Knopf würde die Pause auf null schieben und einen Ablauf melden,
+                den niemand abgewartet hat. Wer dann schon wieder kann, drückt
+                "Weiter" - der Knopf steht daneben.
+              */
+              disabled={seconds <= REST_TIMER_SHORTEN_SECONDS}
+              className={ADJUST_BUTTON_CLASS}
             >
-              +30 s
+              −{REST_TIMER_SHORTEN_SECONDS} s
             </button>
             <button
               type="button"
@@ -377,6 +449,9 @@ export function RestMode({
               )}
             >
               Weiter
+            </button>
+            <button type="button" onClick={onExtend} className={ADJUST_BUTTON_CLASS}>
+              +{REST_TIMER_STEP_SECONDS} s
             </button>
           </div>
         </div>

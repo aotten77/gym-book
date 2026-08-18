@@ -610,6 +610,14 @@ async function writeRestTrack(
   });
 }
 
+/**
+ * Verschiebt das Ende einer Pause - vorwärts wie rückwärts.
+ *
+ * Ein negatives `seconds` verkürzt. Über den Nullpunkt hinaus geht das
+ * bewusst nicht: eine Spur, die im selben Moment abläuft, meldet einen Ablauf,
+ * den niemand abgewartet hat - samt Ton und Vibration. Wer sofort weiter will,
+ * beendet die Pause ([clearRestTimer]), statt sie auf null zu kürzen.
+ */
 export async function extendRestTimer(
   sessionId: string,
   sessionExerciseId: string,
@@ -629,13 +637,20 @@ export async function extendRestTimer(
     // Von der Restlaufzeit aus verlängern, nicht vom ursprünglichen Ende:
     // eine abgelaufene Pause startet damit sauber neu.
     const base = Math.max(current?.endsAt ?? 0, now);
+    const endsAt = base + added * 1000;
+
+    if (endsAt <= now) {
+      return;
+    }
 
     await db.workoutSessions.update(sessionId, {
       restTimers: upsertRestTrack(session.restTimers, {
         sessionExerciseId,
         side,
-        endsAt: base + added * 1000,
-        durationSeconds: (current?.durationSeconds ?? 0) + added,
+        endsAt,
+        // Die gelaufene Zeit bleibt gelaufen: der Balken zeigt weiter
+        // denselben Anteil, nur gegen ein näher gerücktes Ende.
+        durationSeconds: Math.max(1, (current?.durationSeconds ?? 0) + added),
       }),
     });
   });

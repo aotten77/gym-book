@@ -48,6 +48,7 @@ import type {
 import {
   findRestTrack,
   isRestTrackReady,
+  REST_TIMER_SHORTEN_SECONDS,
   REST_TIMER_STEP_SECONDS,
   remainingRestSeconds,
   restTrackKey,
@@ -1777,6 +1778,14 @@ export function SessionPage() {
               activeRestTrack.sessionExerciseId,
               activeRestTrack.side,
               REST_TIMER_STEP_SECONDS,
+            )
+          }
+          onShorten={() =>
+            void extendRestTimer(
+              sessionId,
+              activeRestTrack.sessionExerciseId,
+              activeRestTrack.side,
+              -REST_TIMER_SHORTEN_SECONDS,
             )
           }
           onFinish={() =>

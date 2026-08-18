@@ -32,7 +32,31 @@ test.describe('Ruhemodus', () => {
     // Der Vollbildzustand steht mit allem, was in der Pause zählt.
     const restMode = page.getByRole('dialog', { name: /^Pause · / });
     await expect(restMode).toBeVisible();
-    await expect(restMode.getByText(/^Danach: /)).toBeVisible();
+    await expect(restMode.getByText(/^Danach · /)).toBeVisible();
+
+    /*
+      Und die Werte des kommenden Satzes tragen dabei die Größe, nicht ihre
+      Überschrift: wieviel aufzulegen ist, muss vom Boden aus lesbar sein, wo
+      das Telefon während der Pause liegt. Der Vorgänger stand hier als
+      14px-Kleingedrucktes unter einem fetten "Danach:".
+    */
+    const values = restMode.locator('[data-rest-values]');
+    const sizes = await values.evaluate((element) => ({
+      value: parseFloat(getComputedStyle(element).fontSize),
+      label: parseFloat(getComputedStyle(element.previousElementSibling!).fontSize),
+    }));
+    expect(sizes.value).toBeGreaterThanOrEqual(30);
+    expect(sizes.value).toBeGreaterThan(sizes.label * 2);
+
+    // In dieser Größe bricht eine lange Zeile um - aber nie zwischen Zahl und
+    // Einheit: "182,5" oben und "kg" unten ist keine Auskunft mehr.
+    expect(await values.evaluate((element) => element.textContent)).toMatch(/\u00a0kg/);
+
+    // Auf 320px darf die Zeile dabei nichts über den Rand schieben.
+    const overflow = await restMode.evaluate(
+      (element) => element.scrollWidth - element.clientWidth,
+    );
+    expect(overflow).toBeLessThanOrEqual(0);
 
     // Und er lässt sich weglegen, ohne die Pause zu beenden.
     await page.getByRole('button', { name: 'Pause minimieren' }).click();
@@ -113,6 +137,34 @@ test.describe('Ruhemodus', () => {
 
     // Und beim Zurückgehen in die Übung steht die Pause wieder groß.
     await openExerciseSheet(page, 'Front Squat');
+    await expect(page.getByRole('dialog', { name: /^Pause · / })).toBeVisible();
+  });
+
+  test('stellt die Pause in beide Richtungen', async ({ page }) => {
+    await openExerciseSheet(page, 'Front Squat');
+    await completeActiveSet(page);
+    await page.locator('[data-rest-widget]').click();
+    await page.waitForTimeout(400);
+
+    const remaining = page.locator('[data-rest-remaining]');
+    const seconds = async () => Number(await remaining.getAttribute('data-rest-remaining'));
+
+    const before = await seconds();
+
+    await page.getByRole('button', { name: '−15 s' }).click();
+    await page.waitForTimeout(300);
+    // Die Sekunde kann zwischendurch weiterticken - die Stufe muss stimmen,
+    // nicht die Millisekunde.
+    expect(before - (await seconds())).toBeGreaterThanOrEqual(14);
+    expect(before - (await seconds())).toBeLessThanOrEqual(17);
+
+    const shortened = await seconds();
+
+    await page.getByRole('button', { name: '+30 s' }).click();
+    await page.waitForTimeout(300);
+    expect((await seconds()) - shortened).toBeGreaterThanOrEqual(28);
+
+    // Verkürzen beendet die Pause nicht: der Vollbildzustand steht weiter.
     await expect(page.getByRole('dialog', { name: /^Pause · / })).toBeVisible();
   });
 

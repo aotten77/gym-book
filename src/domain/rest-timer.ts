@@ -7,6 +7,16 @@ export const DEFAULT_REST_SECONDS = 90;
 /** Schrittweite der Verlängern-Taste - grob genug für nasse Finger. */
 export const REST_TIMER_STEP_SECONDS = 30;
 
+/**
+ * Schrittweite der Verkürzen-Taste - halb so groß wie die zum Verlängern.
+ *
+ * Verlängern und Verkürzen sind nicht dasselbe Bedürfnis: verlängert wird,
+ * weil der Satz schwer war, und dann in spürbaren Blöcken. Verkürzt wird,
+ * weil man schon wieder kann - das ist eine Korrektur am Rand der Pause, und
+ * eine zu große Stufe überspringt sie ganz.
+ */
+export const REST_TIMER_SHORTEN_SECONDS = 15;
+
 const MIN_REST_SECONDS = 5;
 /** Eine Stunde reicht für jede Pause und fängt Vertipper wie "9000" ab. */
 const MAX_REST_SECONDS = 3600;
