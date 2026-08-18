@@ -92,6 +92,23 @@ export async function setKeepScreenAwakeEnabled(enabled: boolean) {
 }
 
 /**
+ * Schaltet die Zwischenansagen bei Sätzen auf Zeit.
+ *
+ * Wie die beiden darüber gilt `undefined` als eingeschaltet, also wird auch
+ * hier immer explizit geschrieben.
+ */
+export async function setSetTimerCuesEnabled(enabled: boolean) {
+  const current = await ensureSettings();
+
+  await db.appSettings.put({
+    ...current,
+    id: SETTINGS_ID,
+    setTimerCuesEnabled: enabled,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+/**
  * Merkt sich, dass eine Sicherung geschrieben wurde.
  *
  * Die Erinnerung auf der Startseite zählt abgeschlossene Trainings, die

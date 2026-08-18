@@ -56,6 +56,12 @@ import {
 } from '@/domain/rest-timer';
 import { resolveNextFocus } from '@/domain/session';
 import { elapsedSetTimerSeconds, remainingSetTimerSeconds } from '@/domain/set-timer';
+import {
+  findDueSetTimerCue,
+  setTimerCueKey,
+  setTimerCueSpeech,
+  setTimerCueVibrationPattern,
+} from '@/domain/set-timer-cues';
 import { buildSupersetBlocks, moveSupersetBlock, moveWithinGroup } from '@/domain/superset';
 import {
   buildSessionBlockProgress,
@@ -82,6 +88,7 @@ import {
 } from '@/lib/format';
 import { optionalNumberInput } from '@/lib/number-input';
 import { isChimeFresh, playTimerChime, primeTimerSound } from '@/lib/sound';
+import { primeTimerSpeech, speakTimerAnnouncement } from '@/lib/speech';
 import { cn } from '@/lib/utils';
 import { Sheet } from '@/components/ui/Sheet';
 import { useUiStore } from '@/store/ui-store';
@@ -193,6 +200,13 @@ export function SessionPage() {
   );
   /** Spuren, deren Ablauf schon gemeldet wurde - siehe den Effekt unten. */
   const notifiedRestKeysRef = useRef<Set<string>>(new Set());
+  /**
+   * Zuletzt gemeldete Zwischenansage des Satz-Timers.
+   *
+   * Ein einzelner Schlüssel genügt, anders als bei den Pausen: es gibt höchstens
+   * einen Satz-Timer, und seine Folge ist monoton (Halbzeit, dann Schluss).
+   */
+  const announcedSetTimerCueRef = useRef<string | null>(null);
 
   const session = useLiveQuery(() => db.workoutSessions.get(sessionId), [sessionId]);
   const restTimers = session?.restTimers ?? EMPTY_REST_TIMERS;
@@ -205,6 +219,7 @@ export function SessionPage() {
   const appSettings = useLiveQuery(() => db.appSettings.get('app-settings'), []);
   // Additiv wie includeWarmup: nur ein ausdrückliches Aus schaltet den Ton ab.
   const timerSoundEnabled = appSettings?.timerSoundEnabled !== false;
+  const setTimerCuesEnabled = appSettings?.setTimerCuesEnabled !== false;
   const availableExercises = useLiveQuery(() => db.exercises.orderBy('name').toArray(), []);
   const bandLevels = useLiveQuery(() => db.bandLevels.orderBy('orderIndex').toArray(), []);
   const sessionExercises = useLiveQuery(
@@ -417,6 +432,44 @@ export function SessionPage() {
     // Durchgehalten heißt: die volle gestartete Zeit landet im Satz.
     void finishSetTimer(sessionId, setTimerDurationSeconds);
   }, [now, sessionId, setTimerDurationSeconds, setTimerEndsAt, timerSoundEnabled]);
+
+  /*
+   * Die fällige Zwischenansage und ihr Schlüssel, wie [expiredRestTrackKeys]
+   * darüber als Primitive abgeleitet: nur der String erreicht die
+   * Abhängigkeitsliste, das Timer-Objekt selbst hat bei jedem Emit von
+   * useLiveQuery eine neue Identität. Ein Join wie bei den Pausen braucht es
+   * nicht - es gibt höchstens einen Satz-Timer.
+   */
+  const dueSetTimerCue = findDueSetTimerCue(setTimer, now);
+  const dueSetTimerCueKey =
+    setTimer && dueSetTimerCue ? setTimerCueKey(setTimer, dueSetTimerCue) : null;
+
+  useEffect(() => {
+    if (!setTimerCuesEnabled || !dueSetTimerCue || !dueSetTimerCueKey) {
+      return;
+    }
+
+    if (announcedSetTimerCueRef.current === dueSetTimerCueKey) {
+      return;
+    }
+
+    announcedSetTimerCueRef.current = dueSetTimerCueKey;
+
+    if (typeof navigator.vibrate === 'function') {
+      navigator.vibrate(setTimerCueVibrationPattern(dueSetTimerCue));
+    }
+
+    /*
+     * Ohne Blick aufs Telefon: beim Dead Bug liegt es neben der Matte, und die
+     * Restzeit steht nur auf dem Bildschirm. Safari auf iOS kennt die Vibration
+     * gar nicht - dort ist die Sprache das einzige, was ankommt.
+     *
+     * Nichts wird hier noch einmal gegen `Date.now()` geprüft, anders als beim
+     * Ablauf der Pausen: über die Frische hat [findDueSetTimerCue] einen Frame
+     * vorher mit demselben `now` entschieden.
+     */
+    speakTimerAnnouncement(setTimerCueSpeech(dueSetTimerCue));
+  }, [dueSetTimerCue, dueSetTimerCueKey, setTimerCuesEnabled]);
 
   useEffect(() => {
     if (!availableExercises?.length) {
@@ -927,6 +980,14 @@ export function SessionPage() {
   }
 
   async function handleStartSetTimer(setLogId: string, seconds: number) {
+    /*
+     * Noch in der Geste, vor dem `await`: der Tipp auf "starten" ist die letzte
+     * Berührung vor den Ansagen dieses Satzes.
+     */
+    if (setTimerCuesEnabled) {
+      primeTimerSpeech();
+    }
+
     try {
       await startSetTimer(sessionId, setLogId, seconds);
       setSessionError(null);

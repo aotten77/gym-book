@@ -203,6 +203,7 @@ const appSettingsSchema = z.object({
   lastBackupAt: z.string().optional(),
   timerSoundEnabled: z.boolean().optional(),
   keepScreenAwakeEnabled: z.boolean().optional(),
+  setTimerCuesEnabled: z.boolean().optional(),
   exportSchemaVersion: z.number().int().positive(),
   updatedAt: z.string(),
 });

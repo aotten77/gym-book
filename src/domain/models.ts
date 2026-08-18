@@ -299,6 +299,17 @@ export interface AppSettings {
    * Signalton des Satz-Timers - siehe `lib/wake-lock.ts`.
    */
   keepScreenAwakeEnabled?: boolean;
+  /**
+   * Zwischenansagen bei Sätzen auf Zeit - Halbzeit und die letzten zehn
+   * Sekunden, gesprochen und mit eigenem Vibrationsmuster.
+   *
+   * Additiv wie `timerSoundEnabled`, aber bewusst nicht daran gehängt: der
+   * Chime ist ein Piepser beim Ablauf, die Ansage eine Auskunft mittendrin, und
+   * sie trägt eine Vibration mit - die aus einem mit "Ton" beschrifteten
+   * Schalter abzuschalten wäre gelogen. Nach der Funktion benannt, nicht nach
+   * dem Medium, weil sie beide Kanäle schaltet. Siehe `domain/set-timer-cues.ts`.
+   */
+  setTimerCuesEnabled?: boolean;
   exportSchemaVersion: number;
   updatedAt: string;
 }
