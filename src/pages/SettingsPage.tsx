@@ -13,11 +13,7 @@ import { WeekStepper } from '@/components/WeekStepper';
 import { bootstrapAppData, seedSampleData } from '@/db/bootstrap';
 import { formatDateTime } from '@/lib/format';
 import { playTimerChimeFromGesture, primeTimerSound } from '@/lib/sound';
-import {
-  isTimerSpeechSupported,
-  primeTimerSpeech,
-  speakTimerAnnouncementFromGesture,
-} from '@/lib/speech';
+import { isTimerSpeechSupported, speakTimerAnnouncementFromGesture } from '@/lib/speech';
 import { formatBytes, readStorageStatus, requestPersistentStorage, type StorageStatus } from '@/lib/storage';
 import { isScreenWakeLockSupported } from '@/lib/wake-lock';
 import { db } from '@/db/appDb';
@@ -26,7 +22,6 @@ import {
   clearWeekOverride,
   setActiveProgram,
   setKeepScreenAwakeEnabled,
-  setSetTimerCuesEnabled,
   setTimerSoundEnabled,
   setWeekOverride,
 } from '@/db/settings-actions';
@@ -68,7 +63,6 @@ export function SettingsPage() {
   const [exportMessage, setExportMessage] = useState<string | null>(null);
   const [soundError, setSoundError] = useState<string | null>(null);
   const [screenAwakeError, setScreenAwakeError] = useState<string | null>(null);
-  const [announcementError, setAnnouncementError] = useState<string | null>(null);
 
   const refreshStorageStatus = useCallback(async () => {
     setStorageStatus(await readStorageStatus());
@@ -315,23 +309,6 @@ export function SettingsPage() {
     }
   }
 
-  async function handleToggleSetTimerCues(enabled: boolean) {
-    // Wie beim Ton: noch in der Geste freischalten, nach dem `await` wäre es
-    // für den Browser keine Berührung mehr.
-    if (enabled) {
-      primeTimerSpeech();
-    }
-
-    try {
-      await setSetTimerCuesEnabled(enabled);
-      setAnnouncementError(null);
-    } catch (error) {
-      setAnnouncementError(
-        error instanceof Error ? error.message : 'Einstellung konnte nicht gespeichert werden.',
-      );
-    }
-  }
-
   function handleTestSetTimerCue() {
     // Spüren und hören, was der Satz später tut - deshalb beide Kanäle.
     if (typeof navigator.vibrate === 'function') {
@@ -492,36 +469,28 @@ export function SettingsPage() {
 
             {soundError ? <Alert variant="error">{soundError}</Alert> : null}
 
-            <ToggleField
-              label="Zwischenansagen bei Sätzen auf Zeit"
-              hint="Sagt „Halbzeit“ und „Noch zehn Sekunden“ an, jeweils mit eigenem Vibrationsmuster. Beim Dead Bug liegt das Telefon neben der Matte und wird nicht angesehen."
-              checked={settings?.setTimerCuesEnabled !== false}
-              onCheckedChange={(enabled) => void handleToggleSetTimerCues(enabled)}
-            />
-
+            {/*
+              Hier steht bewusst kein Schalter für die Zwischenansagen: ob
+              gesprochen werden soll, entscheidet sich im Satz, am zweiten
+              Startknopf. Eine Voreinstellung hier änderte still, was der
+              gewöhnliche Startknopf tut. Die Probe bleibt trotzdem, denn "kann
+              dieses Gerät überhaupt vorlesen" fragt man vor dem ersten Satz.
+            */}
             <p className="text-sm text-content-muted">
               {isTimerSpeechSupported()
-                ? `Die Halbzeit wird erst ab ${SET_TIMER_HALF_CUE_MIN_SECONDS} Sekunden angesagt, die letzten zehn ab ${SET_TIMER_FINAL_CUE_MIN_SECONDS} - sonst lägen beide Ansagen fast aufeinander.`
-                : 'Dieses Gerät kann nichts vorlesen - dann bleibt von der Ansage nur die Vibration.'}
+                ? `Sätze auf Zeit lassen sich still starten oder mit gesprochenen Ansagen - dafür steht neben dem Startknopf ein zweiter mit einem Megafon. Angesagt werden die Halbzeit (ab ${SET_TIMER_HALF_CUE_MIN_SECONDS} Sekunden) und die letzten zehn (ab ${SET_TIMER_FINAL_CUE_MIN_SECONDS}) - sonst lägen beide Ansagen fast aufeinander.`
+                : 'Dieses Gerät kann nichts vorlesen - der Knopf für Ansagen bleibt im Satz deshalb abgeblendet.'}
             </p>
 
-            {/*
-              Abweichung von der Bildschirm-Sperre darunter: dort ist der
-              Schalter selbst abgeblendet, wenn die Schnittstelle fehlt, weil
-              sonst nichts bleibt. Hier bleibt die Vibration, also bleibt der
-              Schalter bedienbar - nur die Probe kann wirklich nichts tun.
-            */}
             <Button
               type="button"
               variant="secondary"
               onClick={handleTestSetTimerCue}
-              disabled={settings?.setTimerCuesEnabled === false || !isTimerSpeechSupported()}
+              disabled={!isTimerSpeechSupported()}
             >
               <Megaphone size={18} />
               Ansage testen
             </Button>
-
-            {announcementError ? <Alert variant="error">{announcementError}</Alert> : null}
           </div>
         </SectionCard>
 

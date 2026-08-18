@@ -107,6 +107,15 @@ export interface SetTimerState {
   endsAt: number;
   /** Gestartete Dauer in Sekunden, Grundlage der abgelaufenen Zeit. */
   durationSeconds: number;
+  /**
+   * Ob dieser Lauf Zwischenansagen bekommt.
+   *
+   * Am Timer, nicht in den Einstellungen: ob gesprochen werden soll, entscheidet
+   * sich beim Starten - mit Kopfhörern ja, im vollen Studio nicht. Deshalb gibt
+   * es zwei Startknöpfe und keinen Schalter. Persistiert, damit ein Reload
+   * mitten im Plank die Wahl nicht verliert.
+   */
+  cuesEnabled?: boolean;
 }
 
 /**
@@ -299,17 +308,6 @@ export interface AppSettings {
    * Signalton des Satz-Timers - siehe `lib/wake-lock.ts`.
    */
   keepScreenAwakeEnabled?: boolean;
-  /**
-   * Zwischenansagen bei Sätzen auf Zeit - Halbzeit und die letzten zehn
-   * Sekunden, gesprochen und mit eigenem Vibrationsmuster.
-   *
-   * Additiv wie `timerSoundEnabled`, aber bewusst nicht daran gehängt: der
-   * Chime ist ein Piepser beim Ablauf, die Ansage eine Auskunft mittendrin, und
-   * sie trägt eine Vibration mit - die aus einem mit "Ton" beschrifteten
-   * Schalter abzuschalten wäre gelogen. Nach der Funktion benannt, nicht nach
-   * dem Medium, weil sie beide Kanäle schaltet. Siehe `domain/set-timer-cues.ts`.
-   */
-  setTimerCuesEnabled?: boolean;
   exportSchemaVersion: number;
   updatedAt: string;
 }

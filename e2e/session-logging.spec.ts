@@ -84,9 +84,14 @@ test.describe('Satz-Timer', () => {
     await seedSampleData(page);
   });
 
-  /** Die Start-Taste des ersten Satzes der Zeitübung im Beispielprogramm. */
+  /**
+   * Die stille Start-Taste des ersten Satzes der Zeitübung im Beispielprogramm.
+   *
+   * Der Name ist bewusst eng gefasst: daneben steht der zweite Startknopf, der
+   * mit Ansagen startet und ebenfalls auf "starten" endet.
+   */
   function startButton(page: Page) {
-    return page.getByRole('button', { name: /starten$/ }).first();
+    return page.getByRole('button', { name: /^\d\d:\d\d starten$/ }).first();
   }
 
   test('läuft nach einem Reload weiter und übernimmt die gehaltene Zeit', async ({ page }) => {

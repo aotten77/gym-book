@@ -776,8 +776,17 @@ export async function ungroupSessionExercise(sessionExerciseId: string) {
  * Der Timer hängt an der Session, nicht an der Satzzeile: es läuft immer
  * höchstens einer, und ein Start auf einer anderen Zeile löst den vorigen
  * ohne Rückstand ab.
+ *
+ * `cuesEnabled` kommt vom Knopf, der gedrückt wurde, und ist voreingestellt
+ * aus: der stille Start ist der Normalfall, gesprochen wird nur, wenn man es
+ * ausdrücklich verlangt hat.
  */
-export async function startSetTimer(sessionId: string, setLogId: string, seconds: number) {
+export async function startSetTimer(
+  sessionId: string,
+  setLogId: string,
+  seconds: number,
+  cuesEnabled = false,
+) {
   await db.transaction(
     'rw',
     db.workoutSessions,
@@ -808,6 +817,7 @@ export async function startSetTimer(sessionId: string, setLogId: string, seconds
           setLogId,
           durationSeconds,
           endsAt: Date.now() + durationSeconds * 1000,
+          cuesEnabled,
         },
       });
     },

@@ -69,21 +69,8 @@ test.describe('Zwischenansagen', () => {
     ).toContainEqual([120]);
   });
 
-  test('der Schalter nimmt der Probe den Knopf', async ({ page }) => {
-    await page.goto('./#/settings');
-    await page.waitForTimeout(600);
-
-    await page.getByRole('switch', { name: /Zwischenansagen bei Sätzen auf Zeit/ }).click();
-    await page.waitForTimeout(600);
-
-    await expect(page.getByRole('button', { name: 'Ansage testen' })).toBeDisabled();
-  });
-
-  test('ein Satz auf Zeit meldet die Halbzeit von selbst', async ({ page }) => {
-    // Der Test wartet eine echte halbe Minute ab - anders ist nicht zu zeigen,
-    // dass die Ansage ohne Zutun kommt.
-    test.slow();
-
+  /** Bringt einen 45-Sekunden-Timer bis kurz vor den Start. */
+  async function prepareTimedSet(page: Page) {
     await startSampleSession(page);
     await openExerciseSheet(page, 'Nordic Curl Iso');
 
@@ -91,8 +78,16 @@ test.describe('Zwischenansagen', () => {
     await seconds.fill('45');
     // Der Autosave der Satzzeile läuft mit 600ms Verzögerung.
     await page.waitForTimeout(1200);
+  }
 
-    await page.getByRole('button', { name: /starten$/ }).first().click();
+  test('der Knopf mit dem Megafon meldet die Halbzeit von selbst', async ({ page }) => {
+    // Der Test wartet eine echte halbe Minute ab - anders ist nicht zu zeigen,
+    // dass die Ansage ohne Zutun kommt.
+    test.slow();
+
+    await prepareTimedSet(page);
+
+    await page.getByRole('button', { name: /mit Ansagen starten$/ }).first().click();
     await expect(page.getByRole('timer')).toBeVisible();
 
     // Vor der Halbzeit (22,5s) darf nichts gesagt worden sein.
@@ -102,5 +97,23 @@ test.describe('Zwischenansagen', () => {
     await expect
       .poll(() => readSpokenCues(page), { timeout: 20_000, intervals: [1000] })
       .toEqual(['Halbzeit']);
+  });
+
+  test('der gewöhnliche Startknopf bleibt still', async ({ page }) => {
+    /*
+     * Die eigentliche Zusage der zwei Knöpfe: derselbe Satz, dieselbe Dauer,
+     * dieselbe Halbzeit - und kein Wort. Vorher war das nicht prüfbar, weil
+     * eine Einstellung darüber entschied.
+     */
+    test.slow();
+
+    await prepareTimedSet(page);
+
+    await page.getByRole('button', { name: /^\d\d:\d\d starten$/ }).first().click();
+    await expect(page.getByRole('timer')).toBeVisible();
+
+    // Deutlich über die Halbzeit hinaus, damit ein Versäumnis auffiele.
+    await page.waitForTimeout(28_000);
+    expect(await readSpokenCues(page)).toEqual([]);
   });
 });

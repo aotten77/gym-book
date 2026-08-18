@@ -4,6 +4,7 @@ import {
   ChevronDown,
   ChevronUp,
   Link2,
+  Megaphone,
   Minus,
   Play,
   Plus,
@@ -55,6 +56,7 @@ import {
   supportsWeight,
 } from '@/domain/tracking';
 import { formatSideLabel, formatTimer } from '@/lib/format';
+import { isTimerSpeechSupported } from '@/lib/speech';
 import { parseNumberInput, toInputValue } from '@/lib/number-input';
 import { cn } from '@/lib/utils';
 
@@ -272,7 +274,8 @@ interface ActiveSetEditorProps {
   /** Gesetzt, solange der Satz-Timer genau zu dieser Zeile läuft. */
   setTimer?: SetTimerState;
   timerRemainingSeconds: number;
-  onStartTimer: (setLogId: string, seconds: number) => void;
+  /** `withCues` kommt vom Knopf: still starten oder mit Ansagen. */
+  onStartTimer: (setLogId: string, seconds: number, withCues: boolean) => void;
   /** Stoppt den laufenden Timer und liefert die gehaltene Zeit zurück. */
   onStopTimer: () => Promise<number | undefined>;
   onClearTimer: () => void;
@@ -734,17 +737,37 @@ function ActiveSetEditor({
             steht anschließend, was der Timer gemessen hat.
           */}
           {supportsSeconds(trackingMode) && !disabled ? (
-            <Button
-              variant="secondary"
-              size="lg"
-              className="w-full justify-center"
-              onClick={() => onStartTimer(log.id, timerSeconds)}
-              disabled={hasInvalidInput}
-            >
-              <Play size={16} />
-              <span className="tabular-nums">{formatTimer(timerSeconds)}</span>
-              starten
-            </Button>
+            /*
+             * Zwei Startknöpfe, weil die Ansage keine Einstellung ist: ob
+             * gesprochen werden soll, weiß man erst in dem Moment, in dem man
+             * startet - Kopfhörer im Ohr oder ein volles Studio. Die Spalte ist
+             * dieselbe wie bei den -/+ der Wertefelder darüber, damit bei 320px
+             * nichts umbricht.
+             */
+            <div className="grid grid-cols-[minmax(0,1fr)_3.25rem] gap-2">
+              <Button
+                variant="secondary"
+                size="lg"
+                className="w-full justify-center"
+                onClick={() => onStartTimer(log.id, timerSeconds, false)}
+                disabled={hasInvalidInput}
+              >
+                <Play size={16} />
+                <span className="tabular-nums">{formatTimer(timerSeconds)}</span>
+                starten
+              </Button>
+              <Button
+                variant="secondary"
+                size="lg"
+                aria-label={`${formatTimer(timerSeconds)} mit Ansagen starten`}
+                title="Mit gesprochenen Ansagen: Halbzeit und die letzten zehn Sekunden"
+                className="px-0"
+                onClick={() => onStartTimer(log.id, timerSeconds, true)}
+                disabled={hasInvalidInput || !isTimerSpeechSupported()}
+              >
+                <Megaphone size={16} />
+              </Button>
+            </div>
           ) : null}
         </div>
       )}
@@ -893,7 +916,7 @@ interface SessionExerciseStageProps {
   onGroupWithPrevious: (sessionExerciseId: string) => void;
   onUngroup: (sessionExerciseId: string) => void;
   onSetCompleted: (sessionExerciseId: string, completedSetLog: WorkoutSetLog) => void;
-  onStartSetTimer: (setLogId: string, seconds: number) => void;
+  onStartSetTimer: (setLogId: string, seconds: number, withCues: boolean) => void;
   onStopSetTimer: () => Promise<number | undefined>;
   onClearSetTimer: () => void;
   onRequestDeleteSetLog: (log: WorkoutSetLog, exerciseName: string) => void;

@@ -219,7 +219,6 @@ export function SessionPage() {
   const appSettings = useLiveQuery(() => db.appSettings.get('app-settings'), []);
   // Additiv wie includeWarmup: nur ein ausdrückliches Aus schaltet den Ton ab.
   const timerSoundEnabled = appSettings?.timerSoundEnabled !== false;
-  const setTimerCuesEnabled = appSettings?.setTimerCuesEnabled !== false;
   const availableExercises = useLiveQuery(() => db.exercises.orderBy('name').toArray(), []);
   const bandLevels = useLiveQuery(() => db.bandLevels.orderBy('orderIndex').toArray(), []);
   const sessionExercises = useLiveQuery(
@@ -439,13 +438,16 @@ export function SessionPage() {
    * Abhängigkeitsliste, das Timer-Objekt selbst hat bei jedem Emit von
    * useLiveQuery eine neue Identität. Ein Join wie bei den Pausen braucht es
    * nicht - es gibt höchstens einen Satz-Timer.
+   *
+   * Ob überhaupt angesagt wird, hängt am Timer und nicht an einer Einstellung:
+   * gewählt wurde es beim Starten, über den Knopf mit dem Megafon.
    */
-  const dueSetTimerCue = findDueSetTimerCue(setTimer, now);
+  const dueSetTimerCue = setTimer?.cuesEnabled ? findDueSetTimerCue(setTimer, now) : null;
   const dueSetTimerCueKey =
     setTimer && dueSetTimerCue ? setTimerCueKey(setTimer, dueSetTimerCue) : null;
 
   useEffect(() => {
-    if (!setTimerCuesEnabled || !dueSetTimerCue || !dueSetTimerCueKey) {
+    if (!dueSetTimerCue || !dueSetTimerCueKey) {
       return;
     }
 
@@ -469,7 +471,7 @@ export function SessionPage() {
      * vorher mit demselben `now` entschieden.
      */
     speakTimerAnnouncement(setTimerCueSpeech(dueSetTimerCue));
-  }, [dueSetTimerCue, dueSetTimerCueKey, setTimerCuesEnabled]);
+  }, [dueSetTimerCue, dueSetTimerCueKey]);
 
   useEffect(() => {
     if (!availableExercises?.length) {
@@ -979,17 +981,17 @@ export function SessionPage() {
     }
   }
 
-  async function handleStartSetTimer(setLogId: string, seconds: number) {
+  async function handleStartSetTimer(setLogId: string, seconds: number, withCues: boolean) {
     /*
-     * Noch in der Geste, vor dem `await`: der Tipp auf "starten" ist die letzte
-     * Berührung vor den Ansagen dieses Satzes.
+     * Noch in der Geste, vor dem `await`: der Tipp auf den Ansagen-Knopf ist
+     * die letzte Berührung vor den Ansagen dieses Satzes.
      */
-    if (setTimerCuesEnabled) {
+    if (withCues) {
       primeTimerSpeech();
     }
 
     try {
-      await startSetTimer(sessionId, setLogId, seconds);
+      await startSetTimer(sessionId, setLogId, seconds, withCues);
       setSessionError(null);
     } catch (error) {
       setSessionError(error instanceof Error ? error.message : 'Timer konnte nicht starten.');
