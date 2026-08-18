@@ -182,4 +182,35 @@ test.describe('Supersatz im Template', () => {
     await expect(plannedRow(page, '2. Front Squat')).toBeVisible();
     await expect(plannedRow(page, '3. Bulgarian Split Squat')).toBeVisible();
   });
+
+  /*
+   * Die Übersicht schrieb den Zusammenhang früher als "· Supersatz" ans Ende
+   * der Zieldaten - ein Wort in der einen Zeile sagt aber nicht, mit welcher
+   * anderen sie zusammengehört. Sie trägt jetzt dieselbe Klammer wie die
+   * Bearbeiten-Ansicht.
+   */
+  test('zeigt den Supersatz in der Workout-Übersicht als Block', async ({ page }) => {
+    await page.goto('./#/templates');
+    await page.waitForTimeout(800);
+    await page.getByRole('link', { name: 'Bearbeiten' }).first().click();
+    await page.waitForTimeout(800);
+
+    await linkWithPrevious(page, 'Bulgarian Split Squat');
+    await page.waitForTimeout(600);
+
+    await page.goto('./#/templates');
+    await page.waitForTimeout(900);
+
+    const block = page.getByRole('group', {
+      name: 'Supersatz: Front Squat und Bulgarian Split Squat',
+    });
+
+    await expect(block).toBeVisible();
+    await expect(block.locator('p').filter({ hasText: /^1\. Front Squat$/ })).toBeVisible();
+    await expect(
+      block.locator('p').filter({ hasText: /^2\. Bulgarian Split Squat$/ }),
+    ).toBeVisible();
+    // Die dritte Übung steht daneben, nicht darin.
+    await expect(block.locator('p').filter({ hasText: /^3\. Nordic Curl Iso$/ })).toHaveCount(0);
+  });
 });

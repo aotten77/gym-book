@@ -7,6 +7,7 @@ import { Alert } from '@/components/Alert';
 import { Empty } from '@/components/Empty';
 import { ExerciseMedia } from '@/components/ExerciseMedia';
 import { SectionCard } from '@/components/SectionCard';
+import { SupersetBlock } from '@/components/SupersetBlock';
 import { Button } from '@/components/ui/Button';
 import { DoneRow, NowCard } from '@/components/ui/StatusCard';
 import { db } from '@/db/appDb';
@@ -14,6 +15,7 @@ import { loadTemplateRecency, loadWeekSummary } from '@/db/history-queries';
 import { startSessionFromTemplate } from '@/db/session-actions';
 import { createTemplate } from '@/db/template-actions';
 import { startOfCalendarWeek } from '@/domain/calendar-week';
+import type { WorkoutTemplateExercise } from '@/domain/models';
 import { pickNextTemplate } from '@/domain/next-workout';
 import { buildSupersetBlocks } from '@/domain/superset';
 import { formatDateTime, formatNumber } from '@/lib/format';
@@ -81,6 +83,57 @@ export function TemplatesPage() {
     }
   }
 
+  /**
+   * Eine Übungszeile der Übersicht.
+   *
+   * Als Funktion und nicht inline, weil dieselbe Zeile an zwei Stellen der
+   * Liste steht: allein und als Mitglied eines Supersatz-Blocks.
+   */
+  function renderTemplateExerciseRow(templateId: string, item: WorkoutTemplateExercise) {
+    const exercise = exerciseById[item.exerciseId];
+    const media = exercise?.mediaAssetId ? mediaAssetById[exercise.mediaAssetId] : undefined;
+
+    return (
+      <Link
+        key={item.id}
+        to={`/templates/${templateId}`}
+        className="flex items-center gap-3 rounded-panel border border-line bg-surface px-3 py-3"
+      >
+        {/*
+          Derselbe Rahmen wie in der Übungsbibliothek: `ExerciseMedia` rendert
+          ohne Bild `null`, und ohne festen Platzhalter sprängen die Zeilen je
+          nachdem, ob eine Übung ein Bild hat.
+        */}
+        <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-control border border-line bg-surface-raised text-content-muted">
+          {media ? (
+            <ExerciseMedia
+              mediaAsset={media}
+              alt=""
+              className="h-full w-full rounded-none border-0"
+              imageClassName="h-full w-full"
+            />
+          ) : (
+            <ImageOff size={18} aria-hidden="true" />
+          )}
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-content">
+            {item.orderIndex}. {exercise?.name ?? 'Unbekannte Übung'}
+          </p>
+          <p className="mt-1 text-sm text-content-muted">
+            {item.targetReps ? `${item.workSetCount} x ${item.targetReps} Wdh` : null}
+            {item.targetReps && item.targetSeconds ? ' · ' : null}
+            {item.targetSeconds ? `${item.workSetCount} x ${item.targetSeconds}s` : null}
+            {item.targetWeight ? ` · ${formatNumber(item.targetWeight)} kg` : ''}
+            {item.targetBandId ? ` · ${bandNameById[item.targetBandId] ?? 'Band'}` : ''}
+          </p>
+        </div>
+        <ChevronRight size={18} className="shrink-0 text-content-muted" />
+      </Link>
+    );
+  }
+
   return (
     <AppShell title="Workouts">
       <div className="space-y-4">
@@ -127,17 +180,14 @@ export function TemplatesPage() {
           const items = (templateExercises ?? [])
             .filter((item) => item.templateId === template.id)
             .sort((left, right) => left.orderIndex - right.orderIndex);
-          // Nur der Hinweis, keine Rahmen: die Übersicht listet, sie
-          // bearbeitet nicht.
-          const supersetExerciseIds = new Set<string>();
-
-          for (const block of buildSupersetBlocks(items)) {
-            if (block.kind === 'group') {
-              for (const entry of block.exercises) {
-                supersetExerciseIds.add(entry.id);
-              }
-            }
-          }
+          /*
+           * Dieselbe Klammer wie in der Bearbeiten-Ansicht und im Verlauf.
+           * Vorher stand hier nur „· Supersatz“ am Ende der Zieldaten - der
+           * Zusammenhang ist aber eine Eigenschaft *zwischen* zwei Zeilen, und
+           * als Wort in der einen Zeile war nicht zu sehen, mit welcher
+           * anderen sie zusammengehört.
+           */
+          const blocks = buildSupersetBlocks(items);
 
           return (
             <SectionCard
@@ -155,55 +205,22 @@ export function TemplatesPage() {
             >
               <div className="space-y-3">
                 {items.length > 0 ? (
-                  items.map((item) => {
-                    const exercise = exerciseById[item.exerciseId];
-                    const media = exercise?.mediaAssetId
-                      ? mediaAssetById[exercise.mediaAssetId]
-                      : undefined;
-
-                    return (
-                      <Link
-                        key={item.id}
-                        to={`/templates/${template.id}`}
-                        className="flex items-center gap-3 rounded-panel border border-line bg-surface px-3 py-3"
+                  blocks.map((block) =>
+                    block.kind === 'single' ? (
+                      renderTemplateExerciseRow(template.id, block.exercise)
+                    ) : (
+                      <SupersetBlock
+                        key={block.groupId}
+                        exerciseNames={block.exercises.map(
+                          (entry) => exerciseById[entry.exerciseId]?.name ?? 'Unbekannte Übung',
+                        )}
                       >
-                        {/*
-                          Derselbe Rahmen wie in der Übungsbibliothek:
-                          `ExerciseMedia` rendert ohne Bild `null`, und ohne
-                          festen Platzhalter sprängen die Zeilen je nachdem, ob
-                          eine Übung ein Bild hat.
-                        */}
-                        <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-control border border-line bg-surface-raised text-content-muted">
-                          {media ? (
-                            <ExerciseMedia
-                              mediaAsset={media}
-                              alt=""
-                              className="h-full w-full rounded-none border-0"
-                              imageClassName="h-full w-full"
-                            />
-                          ) : (
-                            <ImageOff size={18} aria-hidden="true" />
-                          )}
-                        </div>
-
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm font-semibold text-content">
-                            {item.orderIndex}.{' '}
-                            {exercise?.name ?? 'Unbekannte Übung'}
-                          </p>
-                          <p className="mt-1 text-sm text-content-muted">
-                            {item.targetReps ? `${item.workSetCount} x ${item.targetReps} Wdh` : null}
-                            {item.targetReps && item.targetSeconds ? ' · ' : null}
-                            {item.targetSeconds ? `${item.workSetCount} x ${item.targetSeconds}s` : null}
-                            {item.targetWeight ? ` · ${formatNumber(item.targetWeight)} kg` : ''}
-                            {item.targetBandId ? ` · ${bandNameById[item.targetBandId] ?? 'Band'}` : ''}
-                            {supersetExerciseIds.has(item.id) ? ' · Supersatz' : ''}
-                          </p>
-                        </div>
-                        <ChevronRight size={18} className="shrink-0 text-content-muted" />
-                      </Link>
-                    );
-                  })
+                        {block.exercises.map((entry) =>
+                          renderTemplateExerciseRow(template.id, entry),
+                        )}
+                      </SupersetBlock>
+                    ),
+                  )
                 ) : (
                   <Empty
                     title="Noch keine Übungen"

@@ -38,7 +38,7 @@ export function SupersetBlock({ exerciseNames, action, children }: SupersetBlock
       aria-label={`Supersatz: ${exerciseNames.join(' und ')}`}
       className="border-l-2 border-accent-border pl-3"
     >
-      <div className="flex items-center justify-between gap-2 pb-1">
+      <div className="flex items-center justify-between gap-2 pb-2">
         <p className="flex min-w-0 items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-accent">
           <Repeat size={14} className="shrink-0" aria-hidden="true" />
           <span className="truncate">Supersatz</span>
@@ -46,12 +46,11 @@ export function SupersetBlock({ exerciseNames, action, children }: SupersetBlock
         {action}
       </div>
       {/*
-        Der Hinweis steht einmal am Block statt auf jeder Karte: dass die
-        Sätze im Wechsel laufen, ist die Eigenschaft der Gruppe.
+        Ohne erklärenden Satz. Er stand unter jeder Kopfzeile und erklärte in
+        zwei Zeilen, was die Klammer daneben schon zeigt - in einer Liste
+        mehrerer Workouts wiederholte er sich Block für Block und schob die
+        Übungen nach unten, um derer willen man hier ist.
       */}
-      <p className="pb-2 text-xs text-content-muted">
-        Sätze im Wechsel - die Pause der einen Übung läuft weiter, während die andere dran ist.
-      </p>
       <div className="space-y-2">{children}</div>
     </div>
   );
