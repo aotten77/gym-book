@@ -17,10 +17,20 @@ const CHIME_TONES = [
 
 const PEAK_GAIN = 0.22;
 
+/**
+ * Wie lange ein `resume()` beim Ablauf höchstens brauchen darf.
+ *
+ * Läuft der Kontext, kehrt es in Millisekunden zurück. Wartet es länger, wartet
+ * es in Wahrheit auf eine Berührung - und die kommt womöglich erst Minuten
+ * später. Der Ton wäre dann derselbe Schreck, den [isChimeFresh] verhindert.
+ */
+const RESUME_GRACE_MS = 1000;
+
 type AudioContextConstructor = typeof AudioContext;
 
 let audioContext: AudioContext | null = null;
 let unlockListenersActive = false;
+let documentListenersActive = false;
 
 function resolveAudioContextConstructor(): AudioContextConstructor | undefined {
   if (typeof window === 'undefined') {
@@ -57,12 +67,54 @@ function ensureAudioContext(): AudioContext | null {
 
   try {
     audioContext = new AudioContextClass();
+    watchAudioContext(audioContext);
   } catch {
     // Kein Audio - kein Grund, den Ablauf des Timers scheitern zu lassen.
     audioContext = null;
   }
 
   return audioContext;
+}
+
+/**
+ * Hängt sich an den Kontext, damit er nach dem Einschlafen wieder aufwacht.
+ *
+ * Das ist der Grund, warum der Ton beim Ablauf lange stumm blieb, während "Ton
+ * testen" klang: iOS legt den Kontext schlafen, sobald das Dokument nicht mehr
+ * sichtbar ist - App-Switcher, Mitteilung, kurzes Sperren genügen. Freigegeben
+ * wurde er aber nur ein einziges Mal, beim Betreten der Session; danach räumten
+ * sich die Listener ab und niemand fragte je wieder nach. Der Testknopf kam
+ * durch, weil er aus einer Geste heraus selbst `resume()` abwartet.
+ *
+ * Zwei Anlässe wecken jetzt: der Zustandswechsel des Kontexts und die Rückkehr
+ * ins Sichtbare. Beim zweiten wird zusätzlich sofort probiert - nach dem
+ * Zurückwechseln lässt WebKit das oft ohne Berührung zu, und wenn nicht, liegen
+ * die Listener bereit.
+ */
+function watchAudioContext(context: AudioContext) {
+  try {
+    context.addEventListener('statechange', () => {
+      if (!isRunning(context)) {
+        armUnlockListeners();
+      }
+    });
+  } catch {
+    // Ohne Ereignis bleibt es beim bisherigen Verhalten.
+  }
+
+  if (documentListenersActive || typeof document === 'undefined') {
+    return;
+  }
+
+  documentListenersActive = true;
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible' || !audioContext || isRunning(audioContext)) {
+      return;
+    }
+
+    armUnlockListeners();
+    void audioContext.resume().catch(() => undefined);
+  });
 }
 
 function removeUnlockListeners() {
@@ -74,6 +126,18 @@ function removeUnlockListeners() {
   document.removeEventListener('touchend', handleUnlockGesture);
   document.removeEventListener('keydown', handleUnlockGesture);
   unlockListenersActive = false;
+}
+
+/** Legt die Freischaltung auf die nächste Berührung. Mehrfach aufrufbar. */
+function armUnlockListeners() {
+  if (unlockListenersActive || typeof document === 'undefined') {
+    return;
+  }
+
+  document.addEventListener('pointerdown', handleUnlockGesture);
+  document.addEventListener('touchend', handleUnlockGesture);
+  document.addEventListener('keydown', handleUnlockGesture);
+  unlockListenersActive = true;
 }
 
 function handleUnlockGesture() {
@@ -137,33 +201,56 @@ export function primeTimerSound() {
 
   handleUnlockGesture();
 
-  if (unlockListenersActive || isRunning(context)) {
+  if (isRunning(context)) {
     return;
   }
 
   // Der Aufruf kam offenbar nicht aus einer Geste heraus (etwa nach einem
   // `await`) - dann übernimmt die nächste Berührung.
-  document.addEventListener('pointerdown', handleUnlockGesture);
-  document.addEventListener('touchend', handleUnlockGesture);
-  document.addEventListener('keydown', handleUnlockGesture);
-  unlockListenersActive = true;
+  armUnlockListeners();
 }
 
 /**
- * Spielt das Ablaufsignal, sofern der Kontext freigegeben ist.
+ * Spielt das Ablaufsignal und weckt den Kontext, falls er eingeschlafen ist.
  *
- * Bleibt still statt zu werfen, wenn Web Audio fehlt oder gesperrt ist: ein
- * Timer, der wegen des Tons in einen Fehler läuft, wäre der schlechtere Tausch.
- * Auf einem stummgeschalteten iPhone spielt WebKit ohnehin nichts ab - deshalb
- * bleibt die Vibration das eigentliche Signal.
+ * Bleibt still statt zu werfen, wenn Web Audio fehlt: ein Timer, der wegen des
+ * Tons in einen Fehler läuft, wäre der schlechtere Tausch. Auf einem
+ * stummgeschalteten iPhone spielt WebKit ohnehin nichts ab - deshalb bleibt die
+ * Vibration das eigentliche Signal, wo es sie gibt.
  */
 export function playTimerChime() {
   const context = ensureAudioContext();
 
-  if (!context || !isRunning(context)) {
+  if (!context) {
     return;
   }
 
+  if (isRunning(context)) {
+    playChimeTones(context);
+    return;
+  }
+
+  /*
+   * Eingeschlafen - dann erst wecken und dann spielen, statt wie früher still
+   * aufzugeben. Die Frist verhindert das Gegenteil des Fehlers: hängt das
+   * `resume()` an der nächsten Berührung, kommt der Ton womöglich Minuten
+   * später, und dann soll er gar nicht mehr kommen.
+   */
+  const requestedAt = Date.now();
+
+  armUnlockListeners();
+
+  void context
+    .resume()
+    .then(() => {
+      if (isRunning(context) && Date.now() - requestedAt <= RESUME_GRACE_MS) {
+        playChimeTones(context);
+      }
+    })
+    .catch(() => undefined);
+}
+
+function playChimeTones(context: AudioContext) {
   try {
     const startedAt = context.currentTime;
 
