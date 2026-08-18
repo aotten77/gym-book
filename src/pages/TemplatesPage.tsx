@@ -125,6 +125,7 @@ export function TemplatesPage() {
             {item.targetReps ? `${item.workSetCount} x ${item.targetReps} Wdh` : null}
             {item.targetReps && item.targetSeconds ? ' · ' : null}
             {item.targetSeconds ? `${item.workSetCount} x ${item.targetSeconds}s` : null}
+            {item.targetHeightCm ? ` · ${formatNumber(item.targetHeightCm)} cm` : ''}
             {item.targetWeight ? ` · ${formatNumber(item.targetWeight)} kg` : ''}
             {item.targetBandId ? ` · ${bandNameById[item.targetBandId] ?? 'Band'}` : ''}
           </p>

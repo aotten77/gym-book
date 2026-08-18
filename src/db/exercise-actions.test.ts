@@ -19,6 +19,28 @@ async function seedExercise(name = 'Front Squat') {
 }
 
 describe('exercise actions', () => {
+  it('speichert den Höhen-Schalter nur, wenn er an ist', async () => {
+    const id = await createExercise({
+      name: 'Step-Down',
+      trackingMode: 'reps_weight',
+      tracksHeight: true,
+      unilateral: true,
+    });
+
+    expect((await db.exercises.get(id))?.tracksHeight).toBe(true);
+
+    await updateExercise(id, {
+      name: 'Step-Down',
+      trackingMode: 'reps_weight',
+      tracksHeight: false,
+      unilateral: true,
+    });
+
+    // Kein `false` in der Datenbank: der fehlende Schlüssel ist der Aus-Zustand,
+    // sonst hätte dasselbe zwei Schreibweisen.
+    expect((await db.exercises.get(id))?.tracksHeight).toBeUndefined();
+  });
+
   it('creates and updates the master data of an exercise', async () => {
     const id = await seedExercise();
 

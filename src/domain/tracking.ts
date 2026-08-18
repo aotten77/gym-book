@@ -25,3 +25,16 @@ export function supportsWeight(trackingMode?: TrackingMode, loadKind?: LoadKind)
 export function supportsBand(trackingMode?: TrackingMode, loadKind?: LoadKind) {
   return supportsLoad(trackingMode) && loadKind === 'band';
 }
+
+/**
+ * Ob die Übung eine Höhe in Zentimetern mitschreibt.
+ *
+ * Als einziges Feld hängt die Höhe *nicht* am Tracking-Modus: sie ist keine
+ * Last, sondern der Weg der Übung, und steht deshalb neben Kilo oder Band
+ * statt an deren Stelle. Ein Step-Down von 25 cm darf Kurzhanteln tragen, ein
+ * Plank über 45 s eine Ablage. `undefined` zählt als aus - so verhalten sich
+ * alle Übungen von vor der Einführung der Höhe.
+ */
+export function supportsHeight(tracksHeight?: boolean) {
+  return tracksHeight === true;
+}

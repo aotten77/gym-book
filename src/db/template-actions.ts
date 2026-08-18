@@ -24,6 +24,7 @@ interface SaveTemplateExerciseInput {
   targetSeconds?: number;
   targetWeight?: number;
   targetBandId?: string;
+  targetHeightCm?: number;
   restSeconds?: number;
   notes?: string;
   exerciseId?: string;
@@ -33,6 +34,8 @@ interface SaveTemplateExerciseInput {
   mediaAssetId?: string;
   trackingMode: TrackingMode;
   loadKind?: LoadKind;
+  /** Nur für neu angelegte Übungen - siehe `Exercise.tracksHeight`. */
+  tracksHeight?: boolean;
   unilateral: boolean;
 }
 
@@ -43,6 +46,7 @@ interface SaveProgressionRuleInput {
   targetSeconds?: number;
   targetWeight?: number;
   targetBandId?: string;
+  targetHeightCm?: number;
   notes?: string;
 }
 
@@ -143,6 +147,7 @@ export async function saveTemplateExercise(input: SaveTemplateExerciseInput) {
           tempo: normalizeOptionalText(input.tempo),
           trackingMode: input.trackingMode,
           loadKind: input.loadKind,
+          tracksHeight: input.tracksHeight,
           unilateral: input.unilateral,
           mediaAssetId: input.mediaAssetId,
           createdAt: now,
@@ -162,6 +167,7 @@ export async function saveTemplateExercise(input: SaveTemplateExerciseInput) {
         targetSeconds: normalizeOptionalNumber(input.targetSeconds),
         targetWeight: normalizeOptionalNumber(input.targetWeight),
         targetBandId: normalizeOptionalText(input.targetBandId),
+        targetHeightCm: normalizeOptionalNumber(input.targetHeightCm),
         restSeconds: normalizeOptionalNumber(input.restSeconds),
         notes: normalizeOptionalText(input.notes),
       };
@@ -293,6 +299,7 @@ export async function saveProgressionRule(input: SaveProgressionRuleInput) {
   const targetSeconds = normalizeOptionalNumber(input.targetSeconds);
   const targetWeight = normalizeOptionalNumber(input.targetWeight);
   const targetBandId = normalizeOptionalText(input.targetBandId);
+  const targetHeightCm = normalizeOptionalNumber(input.targetHeightCm);
   const notes = normalizeOptionalText(input.notes);
 
   const existingRule = await db.progressionRules
@@ -302,13 +309,14 @@ export async function saveProgressionRule(input: SaveProgressionRuleInput) {
     .first();
 
   // Eine Regel ohne jede Vorgabe ist keine Regel - dann verschwindet sie
-  // wieder. Das Ziel-Band zählt dabei mit, sonst überlebte eine reine
-  // Band-Progression das Speichern nicht.
+  // wieder. Ziel-Band und Ziel-Höhe zählen dabei mit, sonst überlebte eine
+  // reine Band- oder Höhen-Progression das Speichern nicht.
   if (
     targetReps === undefined &&
     targetSeconds === undefined &&
     targetWeight === undefined &&
     targetBandId === undefined &&
+    targetHeightCm === undefined &&
     notes === undefined
   ) {
     if (existingRule) {
@@ -324,6 +332,7 @@ export async function saveProgressionRule(input: SaveProgressionRuleInput) {
     targetSeconds,
     targetWeight,
     targetBandId,
+    targetHeightCm,
     notes,
   };
 

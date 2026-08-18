@@ -50,6 +50,7 @@ interface TemplateExerciseFormState {
   targetSeconds: string;
   targetWeight: string;
   targetBandId: string;
+  targetHeightCm: string;
   restSeconds: string;
   notes: string;
 }
@@ -62,6 +63,7 @@ const defaultFormState: TemplateExerciseFormState = {
   targetSeconds: '',
   targetWeight: '',
   targetBandId: '',
+  targetHeightCm: '',
   restSeconds: '',
   notes: '',
 };
@@ -80,6 +82,7 @@ function buildFormState(item?: WorkoutTemplateExercise): TemplateExerciseFormSta
     targetSeconds: toInputValue(item.targetSeconds),
     targetWeight: toInputValue(item.targetWeight),
     targetBandId: item.targetBandId ?? '',
+    targetHeightCm: toInputValue(item.targetHeightCm),
     restSeconds: toInputValue(item.restSeconds),
     notes: item.notes ?? '',
   };
@@ -124,6 +127,7 @@ function TemplateExerciseMeta({
           {item.targetReps ? `${item.workSetCount} x ${item.targetReps} Wdh` : null}
           {item.targetReps && item.targetSeconds ? ' · ' : null}
           {item.targetSeconds ? `${item.workSetCount} x ${item.targetSeconds}s` : null}
+          {item.targetHeightCm ? ` · ${formatNumber(item.targetHeightCm)} cm` : ''}
           {item.targetWeight ? ` · ${formatNumber(item.targetWeight)} kg` : ''}
           {bandName ? ` · ${bandName}` : ''}
           {item.restSeconds ? ` · Pause ${item.restSeconds}s` : ''}
@@ -477,12 +481,14 @@ export function TemplateDetailPage() {
         targetReps: optionalNumberInput(form.targetReps),
         targetSeconds: optionalNumberInput(form.targetSeconds),
         targetWeight: optionalNumberInput(form.targetWeight),
+        targetHeightCm: optionalNumberInput(form.targetHeightCm),
         targetBandId: form.targetBandId,
         restSeconds: optionalNumberInput(form.restSeconds),
         notes: form.notes,
         exerciseId: form.exerciseId,
         trackingMode: selectedExistingExercise?.trackingMode ?? 'reps_weight',
         loadKind: selectedExistingExercise?.loadKind,
+        tracksHeight: selectedExistingExercise?.tracksHeight,
         unilateral: selectedExistingExercise?.unilateral ?? false,
       });
 
@@ -905,6 +911,7 @@ export function TemplateDetailPage() {
           <ExerciseTargetFields
             trackingMode={selectedExistingExercise?.trackingMode}
             loadKind={selectedExistingExercise?.loadKind}
+            tracksHeight={selectedExistingExercise?.tracksHeight}
             bandLevels={bandLevels}
             values={form}
             onChange={(field, value) => setForm((current) => ({ ...current, [field]: value }))}

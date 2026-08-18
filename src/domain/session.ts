@@ -77,6 +77,7 @@ export function materializeSession({
       exerciseNameSnapshot: exercise.name,
       trackingMode: exercise.trackingMode,
       loadKind: exercise.loadKind,
+      tracksHeight: exercise.tracksHeight,
       unilateral: exercise.unilateral,
       sourceTemplateExerciseId: templateExercise.id,
       orderIndex: templateExercise.orderIndex,
@@ -91,6 +92,7 @@ export function materializeSession({
       targetWeight: progressionRule?.targetWeight ?? templateExercise.targetWeight,
       targetBandId,
       targetBandNameSnapshot: targetBandId ? bandLevelsById?.[targetBandId]?.name : undefined,
+      targetHeightCm: progressionRule?.targetHeightCm ?? templateExercise.targetHeightCm,
       restSeconds: templateExercise.restSeconds,
       notes: progressionRule?.notes ?? templateExercise.notes,
     });

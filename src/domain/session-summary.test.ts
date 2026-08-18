@@ -255,6 +255,13 @@ describe('setRowFallback', () => {
       setRowFallback(exercise({ id: 'a', targetReps: 5, targetWeight: 62.5 }), { weight: 60 }),
     ).toEqual({ reps: 5, seconds: undefined, weight: 60, bandNameSnapshot: undefined });
   });
+
+  it('nimmt die Höhe der letzten Ausführung vor die Ziel-Höhe', () => {
+    expect(setRowFallback(exercise({ id: 'a', targetHeightCm: 20 }), { heightCm: 25 }).heightCm).toBe(
+      25,
+    );
+    expect(setRowFallback(exercise({ id: 'a', targetHeightCm: 20 })).heightCm).toBe(20);
+  });
 });
 
 describe('describeSetRowValues', () => {
@@ -288,6 +295,27 @@ describe('describeSetRowValues', () => {
         bandNameSnapshot: 'gelb',
       }),
     ).toBe('grün × 12');
+  });
+
+  it('stellt die Höhe an die Stelle der Last, wenn keine Last da ist', () => {
+    expect(
+      describeSetRowValues(log({ id: '1', sessionExerciseId: 'a', heightCm: 25, reps: 8 }), {}),
+    ).toBe('25 cm × 8');
+  });
+
+  it('stellt die Höhe der Last voran, wenn beides zählt', () => {
+    expect(
+      describeSetRowValues(
+        log({ id: '1', sessionExerciseId: 'a', heightCm: 25, weight: 12.5, reps: 8 }),
+        {},
+      ),
+    ).toBe('25 cm · 12,5 kg × 8');
+  });
+
+  it('nimmt die Ziel-Höhe als Vorgabe, solange der Satz offen ist', () => {
+    expect(
+      describeSetRowValues(log({ id: '1', sessionExerciseId: 'a' }), { heightCm: 20, reps: 8 }),
+    ).toBe('20 cm × 8');
   });
 
   it('stellt bei einem Satz auf Zeit die Zeit voran', () => {

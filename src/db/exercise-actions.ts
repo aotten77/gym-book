@@ -16,6 +16,8 @@ export interface ExerciseInput {
   tempo?: string;
   trackingMode: TrackingMode;
   loadKind?: LoadKind;
+  /** Höhe in Zentimetern mitschreiben - siehe `Exercise.tracksHeight`. */
+  tracksHeight?: boolean;
   unilateral: boolean;
 }
 
@@ -42,6 +44,17 @@ function normalizeLoadKind(
   trackingMode: TrackingMode,
 ): LoadKind | undefined {
   return supportsBand(trackingMode, loadKind) ? 'band' : undefined;
+}
+
+/**
+ * Speichert den Höhen-Schalter nur, wenn er an ist.
+ *
+ * Ein ausdrückliches `false` wäre dasselbe wie kein Schlüssel - und beim
+ * Update löscht Dexie die Property über `undefined` genau dann, wenn der
+ * Schalter ausgeht. So bleibt das Feld additiv wie `loadKind`.
+ */
+function normalizeTracksHeight(tracksHeight?: boolean) {
+  return tracksHeight ? true : undefined;
 }
 
 function assertName(name: string) {
@@ -77,6 +90,7 @@ export async function createExercise(input: ExerciseInput, media?: MediaAssetInp
       tempo: normalizeOptionalText(input.tempo),
       trackingMode: input.trackingMode,
       loadKind: normalizeLoadKind(input.loadKind, input.trackingMode),
+      tracksHeight: normalizeTracksHeight(input.tracksHeight),
       unilateral: input.unilateral,
       mediaAssetId,
       createdAt: now,
@@ -109,6 +123,7 @@ export async function updateExercise(exerciseId: string, input: ExerciseInput) {
       tempo: normalizeOptionalText(input.tempo),
       trackingMode: input.trackingMode,
       loadKind: normalizeLoadKind(input.loadKind, input.trackingMode),
+      tracksHeight: normalizeTracksHeight(input.tracksHeight),
       unilateral: input.unilateral,
       updatedAt: new Date().toISOString(),
     });

@@ -30,6 +30,8 @@ export interface SetLogValuesInput {
   reps?: number;
   seconds?: number;
   weight?: number;
+  /** Erreichte Höhe in Zentimetern - siehe `Exercise.tracksHeight`. */
+  heightCm?: number;
   /** Id aus dem Band-Katalog; den Namen friert die Aktion selbst ein. */
   bandId?: string;
 }
@@ -42,6 +44,7 @@ interface AddSessionExerciseInput {
   targetSeconds?: number;
   targetWeight?: number;
   targetBandId?: string;
+  targetHeightCm?: number;
   restSeconds?: number;
   notes?: string;
   exerciseId?: string;
@@ -50,6 +53,7 @@ interface AddSessionExerciseInput {
   tempo?: string;
   trackingMode: TrackingMode;
   loadKind?: LoadKind;
+  tracksHeight?: boolean;
   unilateral: boolean;
 }
 
@@ -256,7 +260,10 @@ export async function updateSetLogValues(setLogId: string, values: SetLogValuesI
   }
 
   const changes: Partial<
-    Pick<WorkoutSetLog, 'reps' | 'seconds' | 'weight' | 'bandId' | 'bandNameSnapshot'>
+    Pick<
+      WorkoutSetLog,
+      'reps' | 'seconds' | 'weight' | 'heightCm' | 'bandId' | 'bandNameSnapshot'
+    >
   > = {};
 
   if ('reps' in values) {
@@ -269,6 +276,10 @@ export async function updateSetLogValues(setLogId: string, values: SetLogValuesI
 
   if ('weight' in values) {
     changes.weight = normalizeOptionalNumber(values.weight);
+  }
+
+  if ('heightCm' in values) {
+    changes.heightCm = normalizeOptionalNumber(values.heightCm);
   }
 
   if ('bandId' in values) {
@@ -385,6 +396,7 @@ export async function addSessionExercise(input: AddSessionExerciseInput) {
   const exerciseName = existingExercise?.name ?? input.exerciseName?.trim() ?? 'Neue Übung';
   const trackingMode = existingExercise?.trackingMode ?? input.trackingMode;
   const loadKind = existingExercise ? existingExercise.loadKind : input.loadKind;
+  const tracksHeight = existingExercise ? existingExercise.tracksHeight : input.tracksHeight;
   const unilateral = existingExercise?.unilateral ?? input.unilateral;
   const targetBandId = normalizeOptionalText(input.targetBandId);
   const targetBand = targetBandId ? await db.bandLevels.get(targetBandId) : undefined;
@@ -410,6 +422,7 @@ export async function addSessionExercise(input: AddSessionExerciseInput) {
           tempo: normalizeOptionalText(input.tempo),
           trackingMode,
           loadKind,
+          tracksHeight,
           unilateral,
           createdAt: now,
           updatedAt: now,
@@ -423,6 +436,7 @@ export async function addSessionExercise(input: AddSessionExerciseInput) {
         exerciseNameSnapshot: exerciseName,
         trackingMode,
         loadKind,
+        tracksHeight,
         unilateral,
         orderIndex: nextOrderIndex,
         wasSkipped: false,
@@ -433,6 +447,7 @@ export async function addSessionExercise(input: AddSessionExerciseInput) {
         targetWeight: normalizeOptionalNumber(input.targetWeight),
         targetBandId,
         targetBandNameSnapshot: targetBand?.name,
+        targetHeightCm: normalizeOptionalNumber(input.targetHeightCm),
         restSeconds: normalizeOptionalNumber(input.restSeconds),
         notes: normalizeOptionalText(input.notes),
       });

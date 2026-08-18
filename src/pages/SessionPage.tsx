@@ -66,7 +66,13 @@ import {
   summarizeSessionProgress,
   type SessionExerciseProgress,
 } from '@/domain/session-summary';
-import { supportsBand, supportsReps, supportsSeconds, supportsWeight } from '@/domain/tracking';
+import {
+  supportsBand,
+  supportsHeight,
+  supportsReps,
+  supportsSeconds,
+  supportsWeight,
+} from '@/domain/tracking';
 import {
   formatDateTime,
   formatSessionWeekContext,
@@ -88,6 +94,7 @@ interface SessionExerciseFormState {
   targetSeconds: string;
   targetWeight: string;
   targetBandId: string;
+  targetHeightCm: string;
   restSeconds: string;
   notes: string;
 }
@@ -100,6 +107,7 @@ const defaultSessionExerciseFormState: SessionExerciseFormState = {
   targetSeconds: '',
   targetWeight: '',
   targetBandId: '',
+  targetHeightCm: '',
   restSeconds: '',
   notes: '',
 };
@@ -703,6 +711,7 @@ export function SessionPage() {
   );
   const effectiveTrackingMode = selectedExistingExercise?.trackingMode ?? 'reps_weight';
   const effectiveLoadKind = selectedExistingExercise?.loadKind;
+  const effectiveTracksHeight = selectedExistingExercise?.tracksHeight;
   const effectiveUnilateral = selectedExistingExercise?.unilateral ?? false;
 
   /**
@@ -776,11 +785,15 @@ export function SessionPage() {
         targetBandId: supportsBand(effectiveTrackingMode, effectiveLoadKind)
           ? exerciseForm.targetBandId
           : undefined,
+        targetHeightCm: supportsHeight(effectiveTracksHeight)
+          ? optionalNumberInput(exerciseForm.targetHeightCm)
+          : undefined,
         restSeconds: optionalNumberInput(exerciseForm.restSeconds),
         notes: exerciseForm.notes,
         exerciseId: exerciseForm.exerciseId,
         trackingMode: effectiveTrackingMode,
         loadKind: effectiveLoadKind,
+        tracksHeight: effectiveTracksHeight,
         unilateral: effectiveUnilateral,
       });
 
@@ -1453,6 +1466,7 @@ export function SessionPage() {
           <ExerciseTargetFields
             trackingMode={effectiveTrackingMode}
             loadKind={effectiveLoadKind}
+            tracksHeight={effectiveTracksHeight}
             bandLevels={bandLevels}
             values={exerciseForm}
             onChange={(field, value) =>

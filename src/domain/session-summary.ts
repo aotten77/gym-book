@@ -148,6 +148,7 @@ export interface SetRowFallback {
   reps?: number;
   seconds?: number;
   weight?: number;
+  heightCm?: number;
   bandNameSnapshot?: string;
 }
 
@@ -161,14 +162,22 @@ export interface SetRowFallback {
 export function setRowFallback(
   exercise: Pick<
     WorkoutSessionExercise,
-    'targetReps' | 'targetSeconds' | 'targetWeight' | 'targetBandNameSnapshot'
+    | 'targetReps'
+    | 'targetSeconds'
+    | 'targetWeight'
+    | 'targetBandNameSnapshot'
+    | 'targetHeightCm'
   >,
-  lastValues?: Pick<SetRowFallback, 'reps' | 'seconds' | 'weight' | 'bandNameSnapshot'>,
+  lastValues?: Pick<
+    SetRowFallback,
+    'reps' | 'seconds' | 'weight' | 'heightCm' | 'bandNameSnapshot'
+  >,
 ): SetRowFallback {
   return {
     reps: lastValues?.reps ?? exercise.targetReps,
     seconds: lastValues?.seconds ?? exercise.targetSeconds,
     weight: lastValues?.weight ?? exercise.targetWeight,
+    heightCm: lastValues?.heightCm ?? exercise.targetHeightCm,
     bandNameSnapshot: lastValues?.bandNameSnapshot ?? exercise.targetBandNameSnapshot,
   };
 }
@@ -189,20 +198,30 @@ export function describeSetRowValues(log: WorkoutSetLog, fallback: SetRowFallbac
     value ?? (log.completed ? undefined : vorgabe);
   const bandName = log.bandNameSnapshot ?? (log.completed ? undefined : fallback.bandNameSnapshot);
   const weight = take(log.weight, fallback.weight);
-  const load = bandName ?? (typeof weight === 'number' ? `${formatNumber(weight)} kg` : undefined);
+  const height = take(log.heightCm, fallback.heightCm);
+  const heightLabel = typeof height === 'number' ? `${formatNumber(height)} cm` : undefined;
+  const weightLabel = typeof weight === 'number' ? `${formatNumber(weight)} kg` : undefined;
+  /*
+   * Ohne Kilo und ohne Band tritt die Höhe an die Stelle der Last: bei einem
+   * Step-Down ist die Stufe genau das, was die Übung schwer macht, und
+   * "25 cm × 8" liest sich wie "62,5 kg × 5". Steht beides, geht die Höhe
+   * voran - sie ist die Bedingung, unter der die Last bewegt wird.
+   */
+  const load = bandName ?? weightLabel ?? heightLabel;
+  const prefix = (bandName ?? weightLabel) && heightLabel ? `${heightLabel} · ` : '';
   const reps = take(log.reps, fallback.reps);
   const seconds = take(log.seconds, fallback.seconds);
 
   if (typeof seconds === 'number') {
-    return load ? `${seconds} s · ${load}` : `${seconds} s`;
+    return load ? `${prefix}${seconds} s · ${load}` : `${prefix}${seconds} s`;
   }
 
   if (load && typeof reps === 'number') {
-    return `${load} × ${reps}`;
+    return `${prefix}${load} × ${reps}`;
   }
 
   if (load) {
-    return load;
+    return `${prefix}${load}`;
   }
 
   return typeof reps === 'number' ? `${reps} Wdh` : '';
@@ -297,7 +316,9 @@ export function summarizeExerciseAsymmetry(logs: WorkoutSetLog[]): number | unde
  * Das Ziel einer Übung als eine Zeile.
  *
  * Kilo und Band schließen sich aus - welches von beiden gilt, steht schon im
- * Datensatz, hier wird nur genommen, was gefüllt ist.
+ * Datensatz, hier wird nur genommen, was gefüllt ist. Die Höhe steht daneben
+ * statt an deren Stelle und geht voran, weil sie beschreibt, worauf die Last
+ * überhaupt bewegt wird.
  */
 export function describeExerciseTarget(exercise: WorkoutSessionExercise): string {
   const parts: string[] = [];
@@ -314,6 +335,10 @@ export function describeExerciseTarget(exercise: WorkoutSessionExercise): string
     }
 
     parts.push(perSet.length > 0 ? `${exercise.workSetCount} × ${perSet.join(' ')}` : `${exercise.workSetCount} Sätze`);
+  }
+
+  if (typeof exercise.targetHeightCm === 'number') {
+    parts.push(`${formatNumber(exercise.targetHeightCm)} cm`);
   }
 
   if (typeof exercise.targetWeight === 'number') {

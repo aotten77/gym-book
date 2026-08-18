@@ -76,6 +76,11 @@ export function formatLoadLabel(setLog: WorkoutSetLog) {
     parts.push(`${setLog.seconds}s`);
   }
 
+  // Die Höhe vor der Last: sie beschreibt, worauf überhaupt gearbeitet wurde.
+  if (typeof setLog.heightCm === 'number') {
+    parts.push(`${formatNumber(setLog.heightCm)} cm`);
+  }
+
   if (typeof setLog.weight === 'number') {
     parts.push(`${formatNumber(setLog.weight)} kg`);
   }

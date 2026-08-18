@@ -31,6 +31,7 @@ export interface SetValues {
   reps?: number;
   seconds?: number;
   weight?: number;
+  heightCm?: number;
   bandId?: string;
   bandNameSnapshot?: string;
 }
@@ -59,6 +60,7 @@ export function buildLastSetValues(logs: WorkoutSetLog[]) {
       reps: log.reps,
       seconds: log.seconds,
       weight: log.weight,
+      heightCm: log.heightCm,
       bandId: log.bandId,
       bandNameSnapshot: log.bandNameSnapshot,
     };

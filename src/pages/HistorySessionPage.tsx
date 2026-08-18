@@ -141,6 +141,9 @@ export function HistorySessionPage() {
     const targetParts = [
       typeof exercise.targetReps === 'number' ? `${exercise.targetReps} Wdh` : null,
       typeof exercise.targetSeconds === 'number' ? `${exercise.targetSeconds}s` : null,
+      typeof exercise.targetHeightCm === 'number'
+        ? `${formatNumber(exercise.targetHeightCm)} cm`
+        : null,
       typeof exercise.targetWeight === 'number' ? `${formatNumber(exercise.targetWeight)} kg` : null,
       exercise.targetBandNameSnapshot ?? null,
     ].filter(Boolean);

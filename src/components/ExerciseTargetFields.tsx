@@ -1,6 +1,12 @@
 import type { ReactNode } from 'react';
 import type { BandLevel, LoadKind, TrackingMode } from '@/domain/models';
-import { supportsBand, supportsReps, supportsSeconds, supportsWeight } from '@/domain/tracking';
+import {
+  supportsBand,
+  supportsHeight,
+  supportsReps,
+  supportsSeconds,
+  supportsWeight,
+} from '@/domain/tracking';
 import { cn } from '@/lib/utils';
 
 export interface ExerciseTargetFieldsValues {
@@ -9,6 +15,7 @@ export interface ExerciseTargetFieldsValues {
   targetSeconds: string;
   targetWeight: string;
   targetBandId: string;
+  targetHeightCm: string;
   restSeconds: string;
 }
 
@@ -23,6 +30,8 @@ interface ExerciseTargetFieldsProps {
   loadKind?: LoadKind;
   /** Band-Katalog, sortiert von leicht nach schwer. */
   bandLevels?: BandLevel[];
+  /** Ob die Übung eine Höhe mitschreibt - siehe `Exercise.tracksHeight`. */
+  tracksHeight?: boolean;
   values: ExerciseTargetFieldsValues;
   onChange: (field: keyof ExerciseTargetFieldsValues, value: string) => void;
   /**
@@ -36,14 +45,15 @@ interface ExerciseTargetFieldsProps {
 }
 
 /**
- * Arbeitssätze/Ziel-Wdh/Ziel-Sekunden/Ziel-Gewicht/Pause - dieselben fünf
- * Felder mit derselben Tracking-Mode-Sichtbarkeit tauchten identisch im
- * Template- und im Session-Formular auf, nur mit abweichendem Layout.
+ * Arbeitssätze/Ziel-Wdh/Ziel-Sekunden/Ziel-Gewicht/Ziel-Höhe/Pause - dieselben
+ * Felder mit derselben Sichtbarkeit tauchten identisch im Template- und im
+ * Session-Formular auf, nur mit abweichendem Layout.
  */
 export function ExerciseTargetFields({
   trackingMode,
   loadKind,
   bandLevels,
+  tracksHeight,
   values,
   onChange,
   layout = 'stacked',
@@ -114,6 +124,22 @@ export function ExerciseTargetFields({
           inputMode="decimal"
           aria-label={weightLabel}
           placeholder={weightLabel}
+          className={fieldClassName}
+        />
+      ) : null}
+
+      {/*
+        Die Höhe steht neben Kilo und Band, nicht an deren Stelle: ein
+        Step-Down von 25 cm kann Kurzhanteln tragen. Sie hängt deshalb allein
+        am Schalter der Übung, nicht am Tracking-Modus.
+      */}
+      {supportsHeight(tracksHeight) ? (
+        <input
+          value={values.targetHeightCm}
+          onChange={(event) => onChange('targetHeightCm', event.target.value)}
+          inputMode="decimal"
+          aria-label="Ziel-Höhe in cm"
+          placeholder="Ziel-Höhe in cm"
           className={fieldClassName}
         />
       ) : null}

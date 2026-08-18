@@ -35,6 +35,18 @@ export interface Exercise {
   trackingMode: TrackingMode;
   /** Siehe [LoadKind]: `undefined` bedeutet Gewicht in Kilo. */
   loadKind?: LoadKind;
+  /**
+   * Ob die Übung eine Höhe in Zentimetern mitschreibt.
+   *
+   * Bewusst *neben* der Belastung und nicht als dritte [LoadKind]: die Höhe
+   * ist keine Last, sondern der Weg, den die Übung geht - ein Step-Down von
+   * 25 cm kann zusätzlich Kurzhanteln tragen, und beim Absteigen ist die
+   * Stufe genau das, woran der Fortschritt hängt.
+   *
+   * Additiv wie `loadKind`: `undefined` zählt als aus, damit bestehende
+   * Übungen ohne Migration bleiben, was sie sind.
+   */
+  tracksHeight?: boolean;
   unilateral: boolean;
   mediaAssetId?: string;
   createdAt: string;
@@ -75,6 +87,8 @@ export interface WorkoutTemplateExercise {
   targetWeight?: number;
   /** Ziel-Band bei Band-Übungen - die Entsprechung zu `targetWeight`. */
   targetBandId?: string;
+  /** Ziel-Höhe in Zentimetern - siehe `Exercise.tracksHeight`. */
+  targetHeightCm?: number;
   restSeconds?: number;
   progressionRuleId?: string;
   notes?: string;
@@ -149,6 +163,9 @@ export interface WorkoutSessionExercise {
   exerciseNameSnapshot: string;
   trackingMode: TrackingMode;
   loadKind?: LoadKind;
+  /** Snapshot von `Exercise.tracksHeight` - eine spätere Änderung an der
+   * Übung darf die laufende und die vergangene Einheit nicht umschreiben. */
+  tracksHeight?: boolean;
   unilateral: boolean;
   sourceTemplateExerciseId?: string;
   orderIndex: number;
@@ -169,6 +186,8 @@ export interface WorkoutSessionExercise {
   targetBandId?: string;
   /** Name des Ziel-Bands zum Zeitpunkt des Starts - siehe [WorkoutSetLog]. */
   targetBandNameSnapshot?: string;
+  /** Ziel-Höhe in Zentimetern - siehe `Exercise.tracksHeight`. */
+  targetHeightCm?: number;
   restSeconds?: number;
   notes?: string;
 }
@@ -192,6 +211,15 @@ export interface WorkoutSetLog {
    * nur den Punkt im Diagramm, nicht den Eintrag.
    */
   bandNameSnapshot?: string;
+  /**
+   * Erreichte Höhe in Zentimetern.
+   *
+   * Steht neben Gewicht und Band, nicht an deren Stelle: bei einem Step-Down
+   * von einer 25-cm-Stufe können zusätzlich Kurzhanteln in den Händen liegen.
+   * Eine eigene Zahl auch deshalb, weil Zentimeter kein Volumen in Kilo
+   * ergeben und `sumWorkVolume` sie sonst mitrechnen würde.
+   */
+  heightCm?: number;
   completed: boolean;
   completedAt?: string;
 }
@@ -230,6 +258,8 @@ export interface ProgressionRule {
   targetSeconds?: number;
   targetWeight?: number;
   targetBandId?: string;
+  /** Ziel-Höhe in Zentimetern - siehe `Exercise.tracksHeight`. */
+  targetHeightCm?: number;
   notes?: string;
 }
 

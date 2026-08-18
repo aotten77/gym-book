@@ -11,7 +11,13 @@ import type {
   ProgressionRule,
   WorkoutTemplateExercise,
 } from '@/domain/models';
-import { supportsBand, supportsReps, supportsSeconds, supportsWeight } from '@/domain/tracking';
+import {
+  supportsBand,
+  supportsHeight,
+  supportsReps,
+  supportsSeconds,
+  supportsWeight,
+} from '@/domain/tracking';
 import { formatNumber } from '@/lib/format';
 import { optionalNumberInput, toInputValue } from '@/lib/number-input';
 
@@ -20,6 +26,7 @@ interface ProgressionRuleFormState {
   targetSeconds: string;
   targetWeight: string;
   targetBandId: string;
+  targetHeightCm: string;
   notes: string;
 }
 
@@ -28,6 +35,7 @@ const defaultProgressionRuleFormState: ProgressionRuleFormState = {
   targetSeconds: '',
   targetWeight: '',
   targetBandId: '',
+  targetHeightCm: '',
   notes: '',
 };
 
@@ -36,6 +44,7 @@ function buildProgressionRuleFormState(rule?: {
   targetSeconds?: number;
   targetWeight?: number;
   targetBandId?: string;
+  targetHeightCm?: number;
   notes?: string;
 }): ProgressionRuleFormState {
   return {
@@ -43,6 +52,7 @@ function buildProgressionRuleFormState(rule?: {
     targetSeconds: toInputValue(rule?.targetSeconds),
     targetWeight: toInputValue(rule?.targetWeight),
     targetBandId: rule?.targetBandId ?? '',
+    targetHeightCm: toInputValue(rule?.targetHeightCm),
     notes: rule?.notes ?? '',
   };
 }
@@ -54,6 +64,7 @@ function formatPrescriptionLine(
     targetSeconds?: number;
     targetWeight?: number;
     targetBandId?: string;
+    targetHeightCm?: number;
     restSeconds?: number;
   },
   bandNameById: Record<string, string> = {},
@@ -61,6 +72,7 @@ function formatPrescriptionLine(
   const parts = [
     input.targetReps ? `${input.workSetCount} x ${input.targetReps} Wdh` : null,
     input.targetSeconds ? `${input.workSetCount} x ${input.targetSeconds}s` : null,
+    typeof input.targetHeightCm === 'number' ? `${formatNumber(input.targetHeightCm)} cm` : null,
     typeof input.targetWeight === 'number' ? `${formatNumber(input.targetWeight)} kg` : null,
     input.targetBandId ? (bandNameById[input.targetBandId] ?? 'Band') : null,
     typeof input.restSeconds === 'number' ? `Pause ${input.restSeconds}s` : null,
@@ -221,6 +233,9 @@ export function TemplateProgressionSection({
           selectedProgressionExercise?.loadKind,
         )
           ? draft.targetBandId
+          : undefined,
+        targetHeightCm: supportsHeight(selectedProgressionExercise?.tracksHeight)
+          ? optionalNumberInput(draft.targetHeightCm)
           : undefined,
         notes: draft.notes,
       });
@@ -392,6 +407,25 @@ export function TemplateProgressionSection({
                           inputMode="decimal"
                           aria-label="Ziel-Gewicht in kg"
                           placeholder="Ziel-Gewicht in kg"
+                          className="w-full rounded-panel border border-line bg-surface-sunken px-4 py-4 text-base text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
+                        />
+                      ) : null}
+
+                      {supportsHeight(selectedProgressionExercise?.tracksHeight) ? (
+                        <input
+                          value={draft.targetHeightCm}
+                          onChange={(event) =>
+                            setProgressionFormsByWeekId((current) => ({
+                              ...current,
+                              [week.id]: {
+                                ...(current[week.id] ?? defaultProgressionRuleFormState),
+                                targetHeightCm: event.target.value,
+                              },
+                            }))
+                          }
+                          inputMode="decimal"
+                          aria-label="Ziel-Höhe in cm"
+                          placeholder="Ziel-Höhe in cm"
                           className="w-full rounded-panel border border-line bg-surface-sunken px-4 py-4 text-base text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
                         />
                       ) : null}

@@ -40,6 +40,7 @@ const emptyForm: ExerciseInput = {
   tempo: '',
   trackingMode: 'reps_weight',
   loadKind: 'weight',
+  tracksHeight: false,
   unilateral: false,
 };
 
@@ -59,13 +60,20 @@ function ExerciseDetail({ exercise }: { exercise: Exercise }) {
    */
   const bandRankById = new Map((bandLevels ?? []).map((band, index) => [band.id, index + 1]));
   const bandNameByRank = new Map((bandLevels ?? []).map((band, index) => [index + 1, band.name]));
-  const isBandExercise = exercise.loadKind === 'band';
+  // An der Kennzahl, nicht an der Belastungsart: eine Band-Übung, die eine
+  // Höhe mitschreibt, hat cm auf der Achse und keine Bandnamen.
+  const isBandChart = exercise.loadKind === 'band' && exercise.tracksHeight !== true;
 
   const points = buildProgressSeries(executions ?? [], exercise.trackingMode, {
     loadKind: exercise.loadKind,
+    tracksHeight: exercise.tracksHeight,
     bandRank: (bandId) => bandRankById.get(bandId),
   });
-  const metric = progressMetricFor(exercise.trackingMode, exercise.loadKind);
+  const metric = progressMetricFor(
+    exercise.trackingMode,
+    exercise.loadKind,
+    exercise.tracksHeight,
+  );
   const recent = [...(executions ?? [])].reverse().slice(0, 5);
   const recentTests = [...(tests ?? [])].reverse().slice(0, 5);
 
@@ -94,9 +102,7 @@ function ExerciseDetail({ exercise }: { exercise: Exercise }) {
               unit={metric.unit}
               label={metric.label}
               formatValue={
-                isBandExercise
-                  ? (value) => bandNameByRank.get(value) ?? `Stufe ${value}`
-                  : undefined
+                isBandChart ? (value) => bandNameByRank.get(value) ?? `Stufe ${value}` : undefined
               }
             />
           </div>
@@ -201,6 +207,7 @@ export function ExercisesPage() {
         tempo: exercise.tempo ?? '',
         trackingMode: exercise.trackingMode,
         loadKind: exercise.loadKind ?? 'weight',
+        tracksHeight: exercise.tracksHeight === true,
         unilateral: exercise.unilateral,
       });
     }
@@ -401,6 +408,33 @@ export function ExercisesPage() {
                 {form.unilateral ? 'Unilateral: links/rechts getrennt' : 'Beidseitig'}
               </button>
 
+              {/*
+                Die Höhe hängt nicht am Tracking-Modus, sondern nur an diesem
+                Schalter: sie ist keine Last, sondern der Weg der Übung, und
+                kann deshalb neben Kilo oder Band stehen.
+              */}
+              <div>
+                <button
+                  type="button"
+                  aria-pressed={form.tracksHeight === true}
+                  onClick={() =>
+                    setForm((current) => ({ ...current, tracksHeight: !current.tracksHeight }))
+                  }
+                  className={`min-h-touch w-full rounded-panel px-4 py-3 text-sm font-medium transition ${
+                    form.tracksHeight
+                      ? 'bg-accent-soft text-accent'
+                      : 'bg-surface-raised text-content-secondary hover:bg-surface-hover'
+                  }`}
+                >
+                  {form.tracksHeight ? 'Höhe in cm mitschreiben' : 'Ohne Höhe'}
+                </button>
+                <p className="mt-1.5 text-xs text-content-muted">
+                  Für Übungen, bei denen die Stufe den Fortschritt trägt - etwa ein Step-Down von
+                  20 auf 25 cm. Die Höhe steht neben Kilo oder Band, nicht an deren Stelle, und
+                  wird dann zur Kurve im Verlauf.
+                </p>
+              </div>
+
               <div>
                 <p className="mb-1.5 text-xs font-medium text-content-muted">Bild</p>
 
@@ -505,6 +539,7 @@ export function ExercisesPage() {
                   <h2 className="truncate text-sm font-semibold text-content">{exercise.name}</h2>
                   <p className="mt-0.5 text-sm text-content-muted">
                     {TRACKING_MODE_LABELS[exercise.trackingMode]}
+                    {exercise.tracksHeight ? ' · Höhe' : ''}
                     {exercise.unilateral ? ' · links/rechts' : ''}
                   </p>
                   {/*

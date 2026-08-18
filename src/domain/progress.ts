@@ -10,7 +10,7 @@ export interface ProgressPoint {
   setCount: number;
 }
 
-export type ProgressMetricKey = 'weight' | 'seconds' | 'band';
+export type ProgressMetricKey = 'weight' | 'seconds' | 'band' | 'height';
 
 /**
  * Position eines Bands im Katalog, 1-basiert.
@@ -26,8 +26,21 @@ export type BandRank = (bandId: string) => number | undefined;
  * Welche Kennzahl den Fortschritt einer Übung trägt, hängt vom Tracking ab:
  * bei Wiederholungen das Gewicht, bei reinen Zeitübungen die Sekunden - und
  * bei Bändern die Stufe im Katalog.
+ *
+ * Die Höhe sticht alle drei. Sie ist kein Nebenwert, den man mitschreibt,
+ * sondern wird eingeschaltet, *weil* an ihr der Fortschritt hängt: wer den
+ * Step-Down von 20 auf 25 cm bringt, will genau diese Kurve sehen und nicht
+ * die Kurzhanteln, die dabei unverändert in den Händen liegen.
  */
-export function progressMetricFor(trackingMode: TrackingMode, loadKind?: LoadKind) {
+export function progressMetricFor(
+  trackingMode: TrackingMode,
+  loadKind?: LoadKind,
+  tracksHeight?: boolean,
+) {
+  if (tracksHeight) {
+    return { key: 'height' as const, label: 'Höhe', unit: 'cm' };
+  }
+
   if (trackingMode === 'time') {
     return { key: 'seconds' as const, label: 'Sekunden', unit: 's' };
   }
@@ -44,11 +57,16 @@ function valueOf(log: WorkoutSetLog, metric: ProgressMetricKey, bandRank?: BandR
     return log.bandId ? bandRank?.(log.bandId) : undefined;
   }
 
+  if (metric === 'height') {
+    return log.heightCm;
+  }
+
   return metric === 'weight' ? log.weight : log.seconds;
 }
 
 interface ProgressSeriesOptions {
   loadKind?: LoadKind;
+  tracksHeight?: boolean;
   bandRank?: BandRank;
 }
 
@@ -62,9 +80,9 @@ interface ProgressSeriesOptions {
 export function buildProgressSeries(
   executions: Array<{ completedAt: string; workLogs: WorkoutSetLog[] }>,
   trackingMode: TrackingMode,
-  { loadKind, bandRank }: ProgressSeriesOptions = {},
+  { loadKind, tracksHeight, bandRank }: ProgressSeriesOptions = {},
 ): ProgressPoint[] {
-  const metric = progressMetricFor(trackingMode, loadKind).key;
+  const metric = progressMetricFor(trackingMode, loadKind, tracksHeight).key;
 
   return executions
     .map((execution) => {

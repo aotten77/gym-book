@@ -36,6 +36,78 @@ function createSnapshot(overrides: Partial<DatabaseSnapshot> = {}): DatabaseSnap
 }
 
 describe('parseDatabaseSnapshot', () => {
+  it('trägt Höhen-Schalter und Zentimeter durch Export und Import', () => {
+    const snapshot = parseDatabaseSnapshot(
+      JSON.stringify(
+        createSnapshot({
+          exercises: [
+            {
+              id: 'exercise-1',
+              name: 'Step-Down',
+              trackingMode: 'reps_weight',
+              tracksHeight: true,
+              unilateral: true,
+              createdAt: '2026-07-01T08:00:00.000Z',
+              updatedAt: '2026-07-01T08:00:00.000Z',
+            },
+          ],
+          workoutSessions: [
+            {
+              id: 'session-1',
+              templateId: 'template-1',
+              templateNameSnapshot: 'Unterkörper',
+              resolvedProgramWeek: 1,
+              startedAt: '2026-07-01T08:00:00.000Z',
+              status: 'completed',
+            },
+          ],
+          workoutTemplates: [
+            {
+              id: 'template-1',
+              name: 'Unterkörper',
+              createdAt: '2026-07-01T08:00:00.000Z',
+              updatedAt: '2026-07-01T08:00:00.000Z',
+            },
+          ],
+          workoutSessionExercises: [
+            {
+              id: 'session-exercise-1',
+              sessionId: 'session-1',
+              exerciseId: 'exercise-1',
+              exerciseNameSnapshot: 'Step-Down',
+              trackingMode: 'reps_weight',
+              tracksHeight: true,
+              unilateral: true,
+              orderIndex: 1,
+              wasSkipped: false,
+              addedInSession: false,
+              workSetCount: 2,
+              targetHeightCm: 25,
+            },
+          ],
+          workoutSetLogs: [
+            {
+              id: 'set-1',
+              sessionExerciseId: 'session-exercise-1',
+              setKind: 'work',
+              side: 'left',
+              setNumber: 1,
+              reps: 8,
+              heightCm: 25,
+              completed: true,
+              completedAt: '2026-07-01T08:20:00.000Z',
+            },
+          ],
+        }),
+      ),
+    );
+
+    expect(snapshot.exercises[0].tracksHeight).toBe(true);
+    expect(snapshot.workoutSessionExercises[0].targetHeightCm).toBe(25);
+    expect(snapshot.workoutSetLogs[0].heightCm).toBe(25);
+  });
+
+
   it('parses a valid export and returns a compact summary', () => {
     const snapshot = parseDatabaseSnapshot(
       JSON.stringify(

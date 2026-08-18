@@ -47,7 +47,13 @@ import {
   clampSetTimerSeconds,
   resolveSetTimerSeconds,
 } from '@/domain/set-timer';
-import { supportsBand, supportsReps, supportsSeconds, supportsWeight } from '@/domain/tracking';
+import {
+  supportsBand,
+  supportsHeight,
+  supportsReps,
+  supportsSeconds,
+  supportsWeight,
+} from '@/domain/tracking';
 import { formatSideLabel, formatTimer } from '@/lib/format';
 import { parseNumberInput, toInputValue } from '@/lib/number-input';
 import { cn } from '@/lib/utils';
@@ -60,18 +66,25 @@ const AUTOSAVE_DELAY_MS = 600;
  *
  * 2,5 kg, weil die kleinste Scheibe 1,25 wiegt und die Stange zwei davon
  * bekommt. Für Sekunden gilt der Schritt des Satz-Timers - dort verschieben
- * dieselben Knöpfe die Zielzeit, nicht einen eingetragenen Wert.
+ * dieselben Knöpfe die Zielzeit, nicht einen eingetragenen Wert. 5 cm für die
+ * Höhe, weil Stufen, Boxen und Hantelscheiben-Stapel in dieser Teilung
+ * kommen: 20, 25, 30.
  */
 const STEP_BY_FIELD = {
   reps: 1,
   seconds: SET_TIMER_STEP_SECONDS,
   weight: 2.5,
+  heightCm: 5,
 } as const;
+
+/** Die Zahlenfelder eines Satzes - das Band ist eine Auswahl, kein Wert. */
+type SetLogFieldKey = 'reps' | 'seconds' | 'weight' | 'heightCm';
 
 interface SetLogDraft {
   reps: string;
   seconds: string;
   weight: string;
+  heightCm: string;
   /** Leerstring heißt "kein Band gewählt" - `undefined` gibt es im Draft nicht. */
   bandId: string;
 }
@@ -81,6 +94,7 @@ function createSetLogDraft(log: WorkoutSetLog): SetLogDraft {
     reps: toInputValue(log.reps),
     seconds: toInputValue(log.seconds),
     weight: toInputValue(log.weight),
+    heightCm: toInputValue(log.heightCm),
     bandId: log.bandId ?? '',
   };
 }
@@ -92,8 +106,8 @@ function createSetLogDraft(log: WorkoutSetLog): SetLogDraft {
  * daher nicht "ungültig" sein und braucht weder Parser noch Autosave-Pause.
  */
 const SET_LOG_FIELDS: ReadonlyArray<{
-  key: 'reps' | 'seconds' | 'weight';
-  supported: (trackingMode: TrackingMode, loadKind?: LoadKind) => boolean;
+  key: SetLogFieldKey;
+  supported: (trackingMode: TrackingMode, loadKind?: LoadKind, tracksHeight?: boolean) => boolean;
 }> = [
   { key: 'reps', supported: (trackingMode) => supportsReps(trackingMode) },
   {
@@ -101,6 +115,12 @@ const SET_LOG_FIELDS: ReadonlyArray<{
     supported: (trackingMode) => supportsSeconds(trackingMode),
   },
   { key: 'weight', supported: supportsWeight },
+  // Die Höhe hängt allein am Schalter der Übung: sie steht neben Kilo oder
+  // Band, nicht an deren Stelle.
+  {
+    key: 'heightCm',
+    supported: (_trackingMode, _loadKind, tracksHeight) => supportsHeight(tracksHeight),
+  },
 ];
 
 /**
@@ -115,6 +135,7 @@ const SET_LOG_FIELD_UNITS = {
   reps: 'Wdh',
   seconds: 'Sek.',
   weight: 'kg',
+  heightCm: 'cm',
 } as const;
 
 /** Zugänglicher Name des Feldes - "kg" allein sagt in einer Vorleseliste nichts. */
@@ -122,6 +143,7 @@ const SET_LOG_FIELD_LABELS = {
   reps: 'Wdh',
   seconds: 'Sekunden',
   weight: 'Gewicht in kg',
+  heightCm: 'Höhe in cm',
 } as const;
 
 /**
@@ -136,12 +158,13 @@ function collectSetLogChanges(
   log: WorkoutSetLog,
   trackingMode: TrackingMode,
   loadKind?: LoadKind,
+  tracksHeight?: boolean,
 ) {
   const changes: SetLogValuesInput = {};
   let hasChange = false;
 
   for (const { key, supported } of SET_LOG_FIELDS) {
-    if (!supported(trackingMode, loadKind)) {
+    if (!supported(trackingMode, loadKind, tracksHeight)) {
       continue;
     }
 
@@ -175,10 +198,12 @@ function findInvalidSetLogFields(
   draft: SetLogDraft,
   trackingMode: TrackingMode,
   loadKind?: LoadKind,
+  tracksHeight?: boolean,
 ) {
   return SET_LOG_FIELDS.filter(
     ({ key, supported }) =>
-      supported(trackingMode, loadKind) && parseNumberInput(draft[key]).status === 'invalid',
+      supported(trackingMode, loadKind, tracksHeight) &&
+      parseNumberInput(draft[key]).status === 'invalid',
   ).map(({ key }) => key);
 }
 
@@ -194,11 +219,12 @@ function adoptPlaceholders(
   lastValues: SetValues,
   trackingMode: TrackingMode,
   loadKind?: LoadKind,
+  tracksHeight?: boolean,
 ) {
   let next = draft;
 
   for (const { key, supported } of SET_LOG_FIELDS) {
-    if (!supported(trackingMode, loadKind) || draft[key].trim()) {
+    if (!supported(trackingMode, loadKind, tracksHeight) || draft[key].trim()) {
       continue;
     }
 
@@ -285,7 +311,7 @@ function ActiveSetEditor({
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const syncedRef = useRef<SetLogDraft>(createSetLogDraft(log));
-  const { trackingMode, loadKind } = exercise;
+  const { trackingMode, loadKind, tracksHeight } = exercise;
 
   /*
    * Übernimmt Änderungen aus der Datenbank, ohne gerade Getipptes zu
@@ -304,6 +330,8 @@ function ActiveSetEditor({
       reps: current.reps === syncedRef.current.reps ? incoming.reps : current.reps,
       seconds: current.seconds === syncedRef.current.seconds ? incoming.seconds : current.seconds,
       weight: current.weight === syncedRef.current.weight ? incoming.weight : current.weight,
+      heightCm:
+        current.heightCm === syncedRef.current.heightCm ? incoming.heightCm : current.heightCm,
       bandId: current.bandId === syncedRef.current.bandId ? incoming.bandId : current.bandId,
     }));
 
@@ -312,16 +340,24 @@ function ActiveSetEditor({
     // jedem Emit eine neue Objektidentität, der Effekt würde sonst ständig
     // laufen und den Draft ausbremsen.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [log.completed, log.id, log.reps, log.seconds, log.weight, log.bandId]);
+  }, [log.completed, log.id, log.reps, log.seconds, log.weight, log.heightCm, log.bandId]);
 
-  const invalidFields = findInvalidSetLogFields(draft, trackingMode, loadKind);
+  const invalidFields = findInvalidSetLogFields(draft, trackingMode, loadKind, tracksHeight);
   const hasInvalidInput = invalidFields.length > 0;
-  const pendingChanges = disabled ? null : collectSetLogChanges(draft, log, trackingMode, loadKind);
+  const pendingChanges = disabled
+    ? null
+    : collectSetLogChanges(draft, log, trackingMode, loadKind, tracksHeight);
   const dirty = pendingChanges !== null;
 
   const persist = useCallback(
     async (nextDraft?: SetLogDraft) => {
-      const changes = collectSetLogChanges(nextDraft ?? draft, log, trackingMode, loadKind);
+      const changes = collectSetLogChanges(
+        nextDraft ?? draft,
+        log,
+        trackingMode,
+        loadKind,
+        tracksHeight,
+      );
 
       if (!changes || disabled) {
         return;
@@ -340,7 +376,7 @@ function ActiveSetEditor({
         setIsSaving(false);
       }
     },
-    [disabled, draft, loadKind, log, trackingMode],
+    [disabled, draft, loadKind, log, trackingMode, tracksHeight],
   );
 
   // Autosave: getippte Werte müssen einen Reload mitten im Training überleben.
@@ -370,7 +406,7 @@ function ActiveSetEditor({
    * der letzten Woche, sonst das Ziel der Übung. Ein "+" auf einem leeren Feld
    * soll bei dem landen, was ohnehin geplant war, und nicht bei 2,5 kg.
    */
-  function adjustField(key: 'reps' | 'seconds' | 'weight', delta: number) {
+  function adjustField(key: SetLogFieldKey, delta: number) {
     setDraft((current) => {
       const parsed = parseNumberInput(current[key]);
       const fallback =
@@ -378,7 +414,9 @@ function ActiveSetEditor({
           ? (lastValues?.reps ?? exercise.targetReps)
           : key === 'seconds'
             ? (lastValues?.seconds ?? exercise.targetSeconds)
-            : (lastValues?.weight ?? exercise.targetWeight);
+            : key === 'heightCm'
+              ? (lastValues?.heightCm ?? exercise.targetHeightCm)
+              : (lastValues?.weight ?? exercise.targetWeight);
       const base = parsed.status === 'valid' ? parsed.value : (fallback ?? 0);
       const next =
         key === 'seconds'
@@ -404,7 +442,7 @@ function ActiveSetEditor({
      */
     let effectiveDraft =
       willComplete && lastValues
-        ? adoptPlaceholders(draft, lastValues, trackingMode, loadKind)
+        ? adoptPlaceholders(draft, lastValues, trackingMode, loadKind, tracksHeight)
         : draft;
 
     /*
@@ -446,6 +484,7 @@ function ActiveSetEditor({
     onStopTimer,
     persist,
     trackingMode,
+    tracksHeight,
   ]);
 
   /*
@@ -456,7 +495,7 @@ function ActiveSetEditor({
    * eine Schleife schicken.
    */
   const runRef = useRef(handleToggleCompletion);
-  const draftValue = (key: 'reps' | 'seconds' | 'weight') => {
+  const draftValue = (key: SetLogFieldKey) => {
     const parsed = parseNumberInput(draft[key]);
     return parsed.status === 'valid' ? parsed.value : log[key];
   };
@@ -470,6 +509,7 @@ function ActiveSetEditor({
       reps: draftValue('reps'),
       seconds: draftValue('seconds'),
       weight: draftValue('weight'),
+      heightCm: draftValue('heightCm'),
       bandNameSnapshot:
         bandLevels?.find((band) => band.id === draft.bandId)?.name ?? log.bandNameSnapshot,
     },
@@ -503,7 +543,9 @@ function ActiveSetEditor({
   }, [actionLabel, disabled, hasInvalidInput, onActionChange]);
 
   const showBandField = supportsBand(trackingMode, loadKind);
-  const activeFields = SET_LOG_FIELDS.filter(({ supported }) => supported(trackingMode, loadKind));
+  const activeFields = SET_LOG_FIELDS.filter(({ supported }) =>
+    supported(trackingMode, loadKind, tracksHeight),
+  );
   // Das Band der letzten Woche steht in der leeren Option, analog zum
   // Platzhalter der Zahlenfelder.
   const lastBandName = lastValues?.bandNameSnapshot;

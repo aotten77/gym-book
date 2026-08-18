@@ -27,9 +27,57 @@ describe('progressMetricFor', () => {
     // Zeit ohne Last bleibt Zeit, auch wenn irrtümlich ein Band gesetzt ist.
     expect(progressMetricFor('time', 'band').key).toBe('seconds');
   });
+
+  it('lässt die Höhe alle anderen Kennzahlen stechen', () => {
+    const metric = progressMetricFor('reps_weight', 'weight', true);
+
+    expect(metric.key).toBe('height');
+    expect(metric.unit).toBe('cm');
+    // Auch neben Band und reiner Zeit: eingeschaltet wird die Höhe genau
+    // dann, wenn an ihr der Fortschritt hängt.
+    expect(progressMetricFor('reps_weight', 'band', true).key).toBe('height');
+    expect(progressMetricFor('time', undefined, true).key).toBe('height');
+    expect(progressMetricFor('reps_weight', 'weight', false).key).toBe('weight');
+  });
 });
 
 describe('buildProgressSeries', () => {
+  it('zeichnet die Höhe, wenn die Übung sie mitschreibt', () => {
+    const series = buildProgressSeries(
+      [
+        {
+          completedAt: '2026-01-01T10:00:00.000Z',
+          workLogs: [log({ heightCm: 20, weight: 10, reps: 8 })],
+        },
+        {
+          completedAt: '2026-02-01T10:00:00.000Z',
+          workLogs: [log({ heightCm: 25, weight: 10, reps: 8 })],
+        },
+      ],
+      'reps_weight',
+      { tracksHeight: true },
+    );
+
+    expect(series.map((point) => point.topValue)).toEqual([20, 25]);
+    // Die Kurzhanteln zählen weiter als Volumen: anders als beim Band ist
+    // hier echte Last im Spiel.
+    expect(series[0].volume).toBe(80);
+  });
+
+  it('lässt Ausführungen ohne Höhe aus der Höhen-Reihe fallen', () => {
+    const series = buildProgressSeries(
+      [
+        { completedAt: '2026-01-01T10:00:00.000Z', workLogs: [log({ weight: 10, reps: 8 })] },
+        { completedAt: '2026-02-01T10:00:00.000Z', workLogs: [log({ heightCm: 25, reps: 8 })] },
+      ],
+      'reps_weight',
+      { tracksHeight: true },
+    );
+
+    expect(series).toHaveLength(1);
+    expect(series[0].topValue).toBe(25);
+  });
+
   it('uses the best working set per execution and sorts chronologically', () => {
     const series = buildProgressSeries(
       [

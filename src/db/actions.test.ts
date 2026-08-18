@@ -1643,3 +1643,125 @@ describe('Supersätze im Template', () => {
     expect(sessionExercises[2].supersetGroupId).toBeUndefined();
   });
 });
+
+describe('Höhe als Einheit', () => {
+  async function seedHeightExercise() {
+    await db.exercises.add({
+      id: 'exercise-step-down',
+      name: 'Step-Down',
+      trackingMode: 'reps_weight',
+      tracksHeight: true,
+      unilateral: false,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    await db.workoutTemplates.add({
+      id: 'template-height',
+      name: 'Unterkörper',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    await db.workoutTemplateExercises.add({
+      id: 'template-exercise-height',
+      templateId: 'template-height',
+      exerciseId: 'exercise-step-down',
+      orderIndex: 1,
+      workSetCount: 2,
+      includeWarmup: false,
+      targetReps: 8,
+      targetHeightCm: 20,
+    });
+  }
+
+  it('friert Schalter und Ziel-Höhe im Session-Snapshot ein', async () => {
+    await seedHeightExercise();
+
+    const sessionId = await startSessionFromTemplate('template-height');
+    const sessionExercise = await db.workoutSessionExercises
+      .where('sessionId')
+      .equals(sessionId)
+      .first();
+
+    expect(sessionExercise).toMatchObject({ tracksHeight: true, targetHeightCm: 20 });
+  });
+
+  it('lässt die Wochenprogression die Ziel-Höhe überschreiben', async () => {
+    await seedHeightExercise();
+    await db.programs.add({
+      id: 'program-height',
+      name: 'Block Höhe',
+      activeWeek: 2,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    await db.programWeeks.bulkAdd([
+      { id: 'height-week-1', programId: 'program-height', weekNumber: 1 },
+      { id: 'height-week-2', programId: 'program-height', weekNumber: 2 },
+    ]);
+    await db.appSettings.put({
+      id: 'app-settings',
+      activeProgramId: 'program-height',
+      exportSchemaVersion: 1,
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    await saveProgressionRule({
+      templateExerciseId: 'template-exercise-height',
+      programWeekId: 'height-week-2',
+      targetHeightCm: 25,
+    });
+
+    const sessionId = await startSessionFromTemplate('template-height');
+    const sessionExercise = await db.workoutSessionExercises
+      .where('sessionId')
+      .equals(sessionId)
+      .first();
+
+    // Die Höhe allein trägt die Regel: eine Progression, die nur die Stufe
+    // erhöht, darf beim Speichern nicht als "leer" verschwinden.
+    expect(sessionExercise).toMatchObject({ targetHeightCm: 25, targetReps: 8 });
+  });
+
+  it('schreibt die erreichte Höhe in den Satz, ohne andere Werte anzufassen', async () => {
+    await seedHeightExercise();
+
+    const sessionId = await startSessionFromTemplate('template-height');
+    const sessionExercise = await db.workoutSessionExercises
+      .where('sessionId')
+      .equals(sessionId)
+      .first();
+    const setLog = await db.workoutSetLogs
+      .where('sessionExerciseId')
+      .equals(sessionExercise!.id)
+      .first();
+
+    await updateSetLogValues(setLog!.id, { heightCm: 25, reps: 8 });
+    await updateSetLogValues(setLog!.id, { reps: 6 });
+
+    expect(await db.workoutSetLogs.get(setLog!.id)).toMatchObject({ heightCm: 25, reps: 6 });
+
+    // Ein bewusst geleertes Feld verschwindet - anders als ein Feld, das gar
+    // nicht im Input steht.
+    await updateSetLogValues(setLog!.id, { heightCm: undefined });
+
+    expect((await db.workoutSetLogs.get(setLog!.id))?.heightCm).toBeUndefined();
+  });
+
+  it('übernimmt den Höhen-Schalter der Übung beim Ergänzen in der Session', async () => {
+    await seedHeightExercise();
+
+    const sessionId = await startSessionFromTemplate('template-height');
+    const sessionExerciseId = await addSessionExercise({
+      sessionId,
+      workSetCount: 2,
+      exerciseId: 'exercise-step-down',
+      trackingMode: 'reps_weight',
+      unilateral: false,
+      targetHeightCm: 30,
+    });
+
+    expect(await db.workoutSessionExercises.get(sessionExerciseId)).toMatchObject({
+      tracksHeight: true,
+      targetHeightCm: 30,
+    });
+  });
+});
