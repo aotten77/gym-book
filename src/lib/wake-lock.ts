@@ -63,7 +63,7 @@ export function keepScreenAwake(): () => void {
 
       if (stopped) {
         // Zwischen Anforderung und Antwort ist die Einheit beendet worden.
-        void next.release().catch(() => undefined);
+        void next.release().catch(() => {});
         return;
       }
 
@@ -94,7 +94,7 @@ export function keepScreenAwake(): () => void {
 
     if (current) {
       current.removeEventListener('release', handleRelease);
-      void current.release().catch(() => undefined);
+      void current.release().catch(() => {});
     }
   };
 }

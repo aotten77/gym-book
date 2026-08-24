@@ -113,7 +113,7 @@ function watchAudioContext(context: AudioContext) {
     }
 
     armUnlockListeners();
-    void audioContext.resume().catch(() => undefined);
+    void audioContext.resume().catch(() => {});
   });
 }
 
@@ -176,7 +176,7 @@ function handleUnlockGesture() {
         removeUnlockListeners();
       }
     })
-    .catch(() => undefined);
+    .catch(() => {});
 }
 
 /**
@@ -247,7 +247,7 @@ export function playTimerChime() {
         playChimeTones(context);
       }
     })
-    .catch(() => undefined);
+    .catch(() => {});
 }
 
 function playChimeTones(context: AudioContext) {

@@ -17,6 +17,18 @@
     "noEmit": true,
     "jsx": "react-jsx",
     "strict": false,
+    // Die billigen Hälften von `strict` einzeln: alle sind heute schon
+    // erfüllt, sie halten den Zustand nur fest. `strictNullChecks` bleibt
+    // bewusst aus - das ist der teure Teil und kommt schichtweise über
+    // `tsconfig.strict.json`. `strictPropertyInitialization` fehlt deshalb
+    // in dieser Liste: TypeScript lehnt es ohne `strictNullChecks` ab
+    // (TS5052), es kommt zusammen mit ihm.
+    "noImplicitAny": true,
+    "strictFunctionTypes": true,
+    "strictBindCallApply": true,
+    "noImplicitThis": true,
+    "alwaysStrict": true,
+    "useUnknownInCatchVariables": true,
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": false,

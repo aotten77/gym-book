@@ -21,7 +21,7 @@ class FakeAudioContext {
     return {};
   }
 
-  createBufferSource() {
+  createBufferSource(): { buffer: unknown; connect: () => void; start: () => void } {
     return { buffer: null, connect: () => {}, start: () => {} };
   }
 
