@@ -23,20 +23,22 @@ import { db } from '@/db/appDb';
 import {
   abortSession,
   addSessionExercise,
-  clearRestTimer,
-  clearSetTimer,
   completeSession,
   deleteSetLog,
-  extendRestTimer,
-  finishSetTimer,
   groupSessionExerciseWithPrevious,
-  pruneRestTimers,
   reorderSessionExercises,
-  startRestTimerForSetLog,
-  startSetTimer,
   toggleSkipSessionExercise,
   ungroupSessionExercise,
 } from '@/db/session-actions';
+import {
+  clearRestTimer,
+  clearSetTimer,
+  extendRestTimer,
+  finishSetTimer,
+  pruneRestTimers,
+  startRestTimerForSetLog,
+  startSetTimer,
+} from '@/db/session-timer-actions';
 import { loadLastValuesForExercises } from '@/db/history-queries';
 import { sortSetLogs } from '@/domain/history';
 import type {
