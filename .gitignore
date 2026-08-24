@@ -39,3 +39,8 @@ dist-ssr
 /playwright-report/
 /blob-report/
 /playwright/.cache/
+
+# Der Umbauplan ist Arbeitsmaterial, keine Projektdokumentation: er beschreibt
+# einen Zustand des Codes, der mit jedem Schritt daraus veraltet. Was von ihm
+# bleiben soll, steht in CLAUDE.md und in den Commit-Nachrichten.
+REFACTORING.md
