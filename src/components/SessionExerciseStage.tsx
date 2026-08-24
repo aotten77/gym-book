@@ -742,17 +742,19 @@ function ActiveSetEditor({
              * gesprochen werden soll, weiß man erst in dem Moment, in dem man
              * startet - Kopfhörer im Ohr oder ein volles Studio. Die Spalte ist
              * dieselbe wie bei den -/+ der Wertefelder darüber, damit bei 320px
-             * nichts umbricht.
+             * nichts umbricht. Weiß wie die Wertebox und die Schritt-Knöpfe
+             * darüber, nicht `variant="secondary"`: dessen Fläche ist dieselbe
+             * Farbe wie die Bühnenkarte selbst und war darauf unsichtbar.
              */
             <div className="grid grid-cols-[minmax(0,1fr)_3.25rem] gap-2">
               <Button
                 variant="secondary"
                 size="lg"
-                className="w-full justify-center"
+                className="w-full justify-center gap-2 bg-surface text-content hover:bg-surface-hover"
                 onClick={() => onStartTimer(log.id, timerSeconds, false)}
                 disabled={hasInvalidInput}
               >
-                <Play size={16} />
+                <Play size={20} />
                 <span className="tabular-nums">{formatTimer(timerSeconds)}</span>
                 starten
               </Button>
@@ -761,11 +763,11 @@ function ActiveSetEditor({
                 size="lg"
                 aria-label={`${formatTimer(timerSeconds)} mit Ansagen starten`}
                 title="Mit gesprochenen Ansagen: Halbzeit und die letzten zehn Sekunden"
-                className="px-0"
+                className="px-0 bg-surface text-content hover:bg-surface-hover"
                 onClick={() => onStartTimer(log.id, timerSeconds, true)}
                 disabled={hasInvalidInput || !isTimerSpeechSupported()}
               >
-                <Megaphone size={16} />
+                <Megaphone size={20} />
               </Button>
             </div>
           ) : null}
