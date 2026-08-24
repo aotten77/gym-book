@@ -800,22 +800,58 @@ export async function startSetTimer(
  * abgelaufen ist (volle Dauer) oder vorzeitig gestoppt wurde (gehaltene Zeit).
  */
 export async function finishSetTimer(sessionId: string, seconds: number) {
-  const session = await db.workoutSessions.get(sessionId);
-  const timer = session?.setTimer;
+  /*
+   * Zwei Schreibvorgänge, die nur zusammen einen Sinn ergeben: die Zeit in den
+   * Satz und das Wegräumen des Timers. Bricht der zweite ab, steht die Zeit im
+   * Satz, während die Leiste weiter auf ihn zeigt und ihn beim nächsten Ablauf
+   * ein zweites Mal schreibt.
+   *
+   * Der Scope umfasst, was `updateSetLogValues` selbst klammert - Dexie
+   * benutzt eine bestehende Transaktion weiter, solange der innere Scope eine
+   * Teilmenge ist. Fehlte hier `bandLevels`, bräche der innere Aufruf ab.
+   */
+  await db.transaction(
+    'rw',
+    db.workoutSessions,
+    db.workoutSessionExercises,
+    db.workoutSetLogs,
+    db.bandLevels,
+    async () => {
+      const session = await db.workoutSessions.get(sessionId);
+      const timer = session?.setTimer;
 
-  if (!session || session.status !== 'active' || !timer) {
-    return;
-  }
+      if (!session || session.status !== 'active' || !timer) {
+        return;
+      }
 
-  const value = Math.max(0, Math.round(seconds));
+      const value = Math.max(0, Math.round(seconds));
 
-  await updateSetLogValues(timer.setLogId, { seconds: value });
-  await db.workoutSessions.update(sessionId, { setTimer: undefined });
+      await updateSetLogValues(timer.setLogId, { seconds: value });
+      await db.workoutSessions.update(sessionId, { setTimer: undefined });
+    },
+  );
 }
 
-/** Bricht den Satz-Timer ab, ohne einen Wert zu schreiben. */
+/**
+ * Bricht den Satz-Timer ab, ohne einen Wert zu schreiben.
+ *
+ * Als einzige Timer-Aktion hatte sie gar keinen Guard und schrieb blind auf
+ * jede Session. Ein Widerspruch zu `closeSession` entsteht daraus nicht: das
+ * räumt den `setTimer` beim Abschließen ohnehin, hier bliebe also nur ein
+ * `undefined` auf `undefined` zu setzen. Der Guard ist trotzdem richtig, weil
+ * abgeschlossene Sessions unveränderlich sind - und er hält die Aktion mit
+ * `startSetTimer` und `finishSetTimer` auf einer Linie.
+ */
 export async function clearSetTimer(sessionId: string) {
-  await db.workoutSessions.update(sessionId, { setTimer: undefined });
+  await db.transaction('rw', db.workoutSessions, async () => {
+    const session = await db.workoutSessions.get(sessionId);
+
+    if (session?.status !== 'active') {
+      return;
+    }
+
+    await db.workoutSessions.update(sessionId, { setTimer: undefined });
+  });
 }
 
 async function closeSession(sessionId: string, status: 'completed' | 'aborted') {

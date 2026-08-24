@@ -30,6 +30,7 @@ import {
   updateProgram,
   updateProgramWeek,
 } from '@/db/program-actions';
+import { createBandLevel } from '@/db/band-actions';
 import { clearExerciseMedia, replaceExerciseMedia } from '@/db/media-actions';
 import {
   clearWeekOverride,
@@ -1179,6 +1180,63 @@ describe('Satz-Timer', () => {
 
     expect((await db.workoutSetLogs.get('plank-active'))?.seconds).toBe(107);
     expect((await db.workoutSessions.get('session-timer-active'))?.setTimer).toBeUndefined();
+  });
+
+  it('schließt einen bandtragenden Satz ab, ohne am Scope zu scheitern', async () => {
+    /*
+     * Der Nachweis, dass `finishSetTimer`s Transaktion weit genug ist:
+     * `updateSetLogValues` klammert selbst und liest dabei den Band-Katalog.
+     * Dexie benutzt eine bestehende Transaktion nur weiter, wenn der innere
+     * Scope eine Teilmenge ist - fehlte `bandLevels` außen, bräche der innere
+     * Aufruf hier ab, und die Zeit landete nie im Satz.
+     */
+    await seedTimerSession('active');
+
+    const bandId = await createBandLevel('grün');
+    await updateSetLogValues('plank-active', { bandId });
+
+    await startSetTimer('session-timer-active', 'plank-active', 120);
+    await finishSetTimer('session-timer-active', 107);
+
+    expect(await db.workoutSetLogs.get('plank-active')).toMatchObject({
+      seconds: 107,
+      bandId,
+      bandNameSnapshot: 'grün',
+    });
+    expect((await db.workoutSessions.get('session-timer-active'))?.setTimer).toBeUndefined();
+  });
+
+  it('lässt eine unbekannte Band-Id stehen, statt sie zu schreiben', async () => {
+    // Eine Id ohne passendes Band wäre am Satz eine Auswahl, die niemand mehr
+    // benennen kann - der bisherige Wert bleibt deshalb unangetastet.
+    await seedTimerSession('active');
+
+    const bandId = await createBandLevel('grün');
+    await updateSetLogValues('plank-active', { bandId });
+
+    await updateSetLogValues('plank-active', { bandId: 'gibt-es-nicht' });
+
+    expect(await db.workoutSetLogs.get('plank-active')).toMatchObject({
+      bandId,
+      bandNameSnapshot: 'grün',
+    });
+  });
+
+  it('verwirft den Timer nicht mehr auf einer abgeschlossenen Session', async () => {
+    // Als einzige Timer-Aktion hatte `clearSetTimer` gar keinen Guard.
+    await seedTimerSession('completed');
+
+    await db.workoutSessions.update('session-timer-completed', {
+      setTimer: {
+        setLogId: 'plank-completed',
+        durationSeconds: 120,
+        endsAt: Date.now() + 120_000,
+      },
+    });
+
+    await clearSetTimer('session-timer-completed');
+
+    expect((await db.workoutSessions.get('session-timer-completed'))?.setTimer).toBeDefined();
   });
 
   it('verwirft den Timer ohne einen Wert zu schreiben', async () => {
