@@ -263,16 +263,18 @@ export function SessionPage() {
   }, [sessionExerciseOrder, sessionExercises]);
 
   useEffect(() => {
-    if (orderedSessionExercises.length && !activeSessionExerciseId) {
-      setActiveSessionExerciseId(orderedSessionExercises[0].id);
-    }
-  }, [activeSessionExerciseId, orderedSessionExercises, setActiveSessionExerciseId]);
-
-  useEffect(() => {
     if (!orderedSessionExercises.length) {
       return;
     }
 
+    /*
+     * Der Fokus muss auf einer Übung liegen, die es in dieser Session gibt.
+     * Beim ersten Rendern gibt es noch gar keinen, nach dem Löschen oder
+     * Umsortieren kann der bisherige verschwunden sein - das ist dieselbe
+     * Regel und nicht zwei: ein Fokus, den die Liste nicht kennt, fällt auf
+     * die erste Übung zurück. Ein leeres `activeSessionExerciseId` findet
+     * `some` ohnehin nicht.
+     */
     if (!orderedSessionExercises.some((item) => item.id === activeSessionExerciseId)) {
       setActiveSessionExerciseId(orderedSessionExercises[0].id);
     }
