@@ -22,7 +22,7 @@ import { NowCard } from '@/components/ui/StatusCard';
 import { Sheet } from '@/components/ui/Sheet';
 import { ExerciseMedia } from '@/components/ExerciseMedia';
 import { ExerciseTargetFields } from '@/components/ExerciseTargetFields';
-import { formatNumber } from '@/lib/format';
+import { formatNumber, formatTrackingMode } from '@/lib/format';
 import { optionalNumberInput, toInputValue } from '@/lib/number-input';
 import { SectionCard } from '@/components/SectionCard';
 import { SupersetBlock } from '@/components/SupersetBlock';
@@ -868,7 +868,7 @@ export function TemplateDetailPage() {
                   />
                   <p className="font-semibold text-content">{selectedExistingExercise.name}</p>
                   <p className="mt-2">
-                    Tracking: {selectedExistingExercise.trackingMode} ·{' '}
+                    Tracking: {formatTrackingMode(selectedExistingExercise.trackingMode)} ·{' '}
                     {selectedExistingExercise.unilateral ? 'unilateral' : 'beidseitig'}
                   </p>
                   {selectedExistingExercise.instructions ? (
