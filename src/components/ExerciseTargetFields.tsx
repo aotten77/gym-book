@@ -9,7 +9,7 @@ import {
 } from '@/domain/tracking';
 import { cn } from '@/lib/utils';
 
-export interface ExerciseTargetFieldsValues {
+interface ExerciseTargetFieldsValues {
   workSetCount: string;
   targetReps: string;
   targetSeconds: string;

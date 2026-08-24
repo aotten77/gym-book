@@ -28,10 +28,6 @@ export function parseNumberInput(value: string): NumberInputResult {
   return { status: 'valid', value: parsed };
 }
 
-export function isInvalidNumberInput(value: string) {
-  return parseNumberInput(value).status === 'invalid';
-}
-
 /**
  * Für Formulare, die einen Datensatz neu anlegen: leer und ungültig sind
  * beide "kein Wert". Nicht verwenden, wenn ein bereits gespeicherter Wert

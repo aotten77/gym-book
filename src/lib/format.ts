@@ -106,15 +106,6 @@ export function formatSideLabel(side: WorkoutSetLog['side']) {
   return '';
 }
 
-/**
- * Bei unilateralen Übungen ist die Zahl ohne Seitenangabe wertlos - man
- * weiß sonst nicht, ob "50 kg | 45 kg" zwei Sätze oder zwei Seiten sind.
- */
-export function formatSetLogWithSide(log: WorkoutSetLog) {
-  const sideLabel = formatSideLabel(log.side);
-  return sideLabel ? `${formatLoadLabel(log)} (${sideLabel})` : formatLoadLabel(log);
-}
-
 export function formatTimer(seconds: number) {
   const minutes = Math.floor(seconds / 60);
   const restSeconds = seconds % 60;
