@@ -1,34 +1,62 @@
 import { db } from '@/db/appDb';
 import { ensureSettings, SETTINGS_ID } from '@/db/normalize';
+import type { AppSettings } from '@/domain/models';
+
+/**
+ * Read-Modify-Write auf die eine Einstellungszeile, geklammert.
+ *
+ * Alle Setter hier lesen die Zeile, legen ihre Änderung darüber und schreiben
+ * sie ganz zurück. Ungeklammert sehen zwei nebenläufige Setter denselben
+ * Ausgangsstand, und der zweite `put` überschreibt die Änderung des ersten -
+ * auf einer Seite, die den Signalton und das Wachhalten direkt untereinander
+ * anbietet, ist das kein theoretischer Fall. Zum Vergleich: `program-actions.ts`
+ * schreibt dieselbe Tabelle längst innerhalb von Transaktionen.
+ *
+ * `ensureSettings` gehört mit hinein, weil es die Zeile notfalls selbst anlegt
+ * und damit ebenfalls schreibt.
+ */
+async function updateSettings(changes: Partial<AppSettings>) {
+  await db.transaction('rw', db.appSettings, async () => {
+    const current = await ensureSettings();
+
+    await db.appSettings.put({
+      ...current,
+      ...changes,
+      id: SETTINGS_ID,
+      updatedAt: new Date().toISOString(),
+    });
+  });
+}
 
 export async function setActiveProgram(programId: string) {
-  const program = await db.programs.get(programId);
+  // Eigene Klammer statt `updateSettings`: die Prüfung auf das Programm gehört
+  // mit hinein, sonst zeigt die Einstellung auf ein Programm, das zwischen
+  // Prüfen und Schreiben gelöscht wurde.
+  await db.transaction('rw', db.appSettings, db.programs, async () => {
+    const program = await db.programs.get(programId);
 
-  if (!program) {
-    throw new Error('Programm nicht gefunden');
-  }
+    if (!program) {
+      throw new Error('Programm nicht gefunden');
+    }
 
-  const current = await ensureSettings();
-  const now = new Date().toISOString();
+    const current = await ensureSettings();
 
-  await db.appSettings.put({
-    ...current,
-    id: SETTINGS_ID,
-    activeProgramId: programId,
-    weekOverride: undefined,
-    updatedAt: now,
+    await db.appSettings.put({
+      ...current,
+      id: SETTINGS_ID,
+      activeProgramId: programId,
+      // Ein Programmwechsel hebt die von Hand gesetzte Woche auf - sie gehörte
+      // zum vorigen Programm.
+      weekOverride: undefined,
+      updatedAt: new Date().toISOString(),
+    });
   });
 }
 
 export async function setWeekOverride(weekOverride?: number) {
-  const current = await ensureSettings();
-  const now = new Date().toISOString();
-
-  await db.appSettings.put({
-    ...current,
-    id: SETTINGS_ID,
-    weekOverride: typeof weekOverride === 'number' ? Math.max(1, Math.floor(weekOverride)) : undefined,
-    updatedAt: now,
+  await updateSettings({
+    weekOverride:
+      typeof weekOverride === 'number' ? Math.max(1, Math.floor(weekOverride)) : undefined,
   });
 }
 
@@ -44,14 +72,7 @@ export async function clearWeekOverride() {
  * unterscheidbar bleiben.
  */
 export async function setTimerSoundEnabled(enabled: boolean) {
-  const current = await ensureSettings();
-
-  await db.appSettings.put({
-    ...current,
-    id: SETTINGS_ID,
-    timerSoundEnabled: enabled,
-    updatedAt: new Date().toISOString(),
-  });
+  await updateSettings({ timerSoundEnabled: enabled });
 }
 
 /**
@@ -61,14 +82,7 @@ export async function setTimerSoundEnabled(enabled: boolean) {
  * hier immer explizit geschrieben.
  */
 export async function setKeepScreenAwakeEnabled(enabled: boolean) {
-  const current = await ensureSettings();
-
-  await db.appSettings.put({
-    ...current,
-    id: SETTINGS_ID,
-    keepScreenAwakeEnabled: enabled,
-    updatedAt: new Date().toISOString(),
-  });
+  await updateSettings({ keepScreenAwakeEnabled: enabled });
 }
 
 /**
@@ -78,12 +92,5 @@ export async function setKeepScreenAwakeEnabled(enabled: boolean) {
  * jünger sind als dieser Zeitpunkt.
  */
 export async function markBackupCreated(backupAt = new Date().toISOString()) {
-  const current = await ensureSettings();
-
-  await db.appSettings.put({
-    ...current,
-    id: SETTINGS_ID,
-    lastBackupAt: backupAt,
-    updatedAt: new Date().toISOString(),
-  });
+  await updateSettings({ lastBackupAt: backupAt });
 }
