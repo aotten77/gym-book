@@ -21,7 +21,7 @@ npx vitest run src/db/actions.test.ts -t "materializes progression rules"
 npx vitest            # watch mode
 ```
 
-CI ([.github/workflows/pages.yml](.github/workflows/pages.yml)) runs `check` → `test` → `build` on push to `main`, then deploys `dist/` to GitHub Pages. Lint is **not** in CI. `tsconfig.json` has `strict: false`, so the typecheck is permissive — don't rely on it to catch nullability bugs.
+CI ([.github/workflows/pages.yml](.github/workflows/pages.yml)) runs `lint` → `check` → `test` → `build` on push to `main`, then deploys `dist/` to GitHub Pages. `tsconfig.json` has `strict: false`, so the typecheck is permissive — don't rely on it to catch nullability bugs.
 
 ## What this app is
 
