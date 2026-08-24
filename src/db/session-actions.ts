@@ -15,6 +15,7 @@ import {
   removeRestTracksForExercise,
   upsertRestTrack,
 } from '@/domain/rest-timer';
+import type { SetLogValuesInput } from '@/domain/history';
 import { materializeSession } from '@/domain/session';
 import { clampSetTimerSeconds } from '@/domain/set-timer';
 import {
@@ -25,15 +26,9 @@ import {
 } from '@/domain/superset';
 import { createId } from '@/lib/id';
 
-export interface SetLogValuesInput {
-  reps?: number;
-  seconds?: number;
-  weight?: number;
-  /** Erreichte Höhe in Zentimetern - siehe `Exercise.tracksHeight`. */
-  heightCm?: number;
-  /** Id aus dem Band-Katalog; den Namen friert die Aktion selbst ein. */
-  bandId?: string;
-}
+// Weiterhin von hier aus zu haben: der Typ gehört zur Aktion, auch wenn er
+// in `domain` liegen muss, damit reine Module ihn benutzen dürfen.
+export type { SetLogValuesInput };
 
 interface AddSessionExerciseInput {
   sessionId: string;

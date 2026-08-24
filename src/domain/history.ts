@@ -36,6 +36,34 @@ export interface SetValues {
   bandNameSnapshot?: string;
 }
 
+/**
+ * Die Werte, die in eine Satzzeile geschrieben werden sollen.
+ *
+ * Fast wie `SetValues` daneben und doch nicht dasselbe: dort steht, was in
+ * einem Satz *steht*, hier, was hinein soll. Deshalb fehlt
+ * `bandNameSnapshot` - den Namen löst `updateSetLogValues` selbst aus dem
+ * Katalog auf und friert ihn zusammen mit der Id ein, damit die Historie eine
+ * Umbenennung überlebt. Ein Aufrufer, der ihn mitschicken dürfte, könnte die
+ * beiden auseinanderlaufen lassen.
+ *
+ * Ein fehlender Schlüssel heißt "Feld nicht angefasst", ein ausdrückliches
+ * `undefined` heißt "bewusst geleert" - `updateSetLogValues` unterscheidet das
+ * über `'x' in values`, weil Dexies `Table.update` jede Property mit dem Wert
+ * `undefined` löscht.
+ *
+ * Der Typ liegt hier und nicht bei der Aktion, damit reine Module ihn
+ * verwenden können: `domain` darf `db` nicht importieren.
+ */
+export interface SetLogValuesInput {
+  reps?: number;
+  seconds?: number;
+  weight?: number;
+  /** Erreichte Höhe in Zentimetern - siehe `Exercise.tracksHeight`. */
+  heightCm?: number;
+  /** Id aus dem Band-Katalog; den Namen friert die Aktion selbst ein. */
+  bandId?: string;
+}
+
 /** Identifiziert eine Satzzeile innerhalb einer Ausführung. */
 export function setLogKey(log: Pick<WorkoutSetLog, 'setKind' | 'side' | 'setNumber'>) {
   return `${log.setKind}:${log.side}:${log.setNumber}`;
