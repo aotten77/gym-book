@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { ChevronUp, Clock3, Timer } from 'lucide-react';
@@ -7,6 +6,7 @@ import type { WorkoutSession } from '@/domain/models';
 import { remainingRestSeconds, selectPrimaryRestTrack } from '@/domain/rest-timer';
 import { remainingSetTimerSeconds } from '@/domain/set-timer';
 import { summarizeSessionProgress } from '@/domain/session-summary';
+import { useNowTicker } from '@/hooks/useNowTicker';
 import { formatTimer } from '@/lib/format';
 
 interface ActiveSessionBarProps {
@@ -29,7 +29,10 @@ interface ActiveSessionBarProps {
  */
 export function ActiveSessionBar({ session }: ActiveSessionBarProps) {
   const navigate = useNavigate();
-  const [now, setNow] = useState(Date.now());
+  // Immer an, anders als in der Session: die Dauer der Einheit läuft auch dann
+  // weiter, wenn gerade keine Pause und kein Satz-Timer steht. Der Takt kostet
+  // nur diesen Streifen - die Seite darunter hängt nicht an `now`.
+  const now = useNowTicker(true);
 
   const setLogs = useLiveQuery(async () => {
     const exercises = await db.workoutSessionExercises
@@ -46,31 +49,6 @@ export function ActiveSessionBar({ session }: ActiveSessionBarProps) {
       .anyOf(exercises.map((item) => item.id))
       .toArray();
   }, [session.id]);
-
-  useEffect(() => {
-    // Anders als in der Session tickt es hier immer: die Dauer der Einheit
-    // läuft auch dann weiter, wenn gerade keine Pause und kein Satz-Timer
-    // steht. Der Takt kostet nur diesen Streifen - die Seite darunter hängt
-    // nicht an `now`.
-    const timer = window.setInterval(() => {
-      setNow(Date.now());
-    }, 1000);
-
-    // Im Hintergrund tickt kein Intervall; ohne das hier stünde nach dem
-    // Zurückwechseln bis zur nächsten Sekunde eine alte Zahl.
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        setNow(Date.now());
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      window.clearInterval(timer);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, []);
 
   const progress = summarizeSessionProgress(setLogs ?? []);
   const elapsedSeconds = Math.max(

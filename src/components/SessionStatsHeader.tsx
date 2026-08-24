@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import type { WorkoutSession, WorkoutSessionExercise } from '@/domain/models';
 import { estimateRemainingSessionSeconds } from '@/domain/session-estimate';
 import type { SessionProgress, SetLogsByExercise } from '@/domain/session-summary';
 import type { SupersetBlock } from '@/domain/superset';
+import { useNowTicker } from '@/hooks/useNowTicker';
 import { describeRemainingEstimate, formatRemainingEstimate, formatTimer } from '@/lib/format';
 
 interface SessionStatsHeaderProps {
@@ -33,41 +34,16 @@ export function SessionStatsHeader({
   blocks,
   logsByExercise,
 }: SessionStatsHeaderProps) {
-  const [now, setNow] = useState(() => Date.now());
   const isRunning = !session.completedAt;
-
-  useEffect(() => {
-    /*
-     * Anders als der Takt der Seite hängt dieser an keiner Uhr: Dauer und
-     * Restschätzung laufen auch dann weiter, wenn gerade weder eine Pause noch
-     * ein Satz-Timer steht - vorher stand die Dauer in genau diesem Fall still.
-     * Er kostet nur diesen Streifen; `now` der Seite ist Prop jeder Blockkarte,
-     * dort unbedingt zu ticken hieße, die ganze Liste sekündlich neu zu
-     * zeichnen, auch während im Sheet getippt wird.
-     */
-    if (!isRunning) {
-      return undefined;
-    }
-
-    const timer = window.setInterval(() => {
-      setNow(Date.now());
-    }, 1000);
-
-    // Im Hintergrund tickt kein Intervall; ohne das hier stünde nach dem
-    // Zurückwechseln bis zur nächsten Sekunde eine alte Zahl.
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        setNow(Date.now());
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      window.clearInterval(timer);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [isRunning]);
+  /*
+   * An, solange die Einheit läuft, und dann an keiner Uhr hängend: Dauer und
+   * Restschätzung laufen auch weiter, wenn gerade weder eine Pause noch ein
+   * Satz-Timer steht - vorher stand die Dauer in genau diesem Fall still. Er
+   * kostet nur diesen Streifen; `now` der Seite ist Prop jeder Blockkarte,
+   * dort unbedingt zu ticken hieße, die ganze Liste sekündlich neu zu
+   * zeichnen, auch während im Sheet getippt wird.
+   */
+  const now = useNowTicker(isRunning);
 
   /*
    * Bei einer abgeschlossenen Session zählt die Zeit bis zum Abschluss, nicht

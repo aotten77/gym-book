@@ -57,6 +57,7 @@ import {
 import { resolveNextFocus } from '@/domain/session';
 import { elapsedSetTimerSeconds, remainingSetTimerSeconds } from '@/domain/set-timer';
 import { decideTimerNotifications } from '@/domain/timer-notifications';
+import { useNowTicker } from '@/hooks/useNowTicker';
 import { buildSupersetBlocks, moveSupersetBlock, moveWithinGroup } from '@/domain/superset';
 import {
   buildSessionBlockProgress,
@@ -171,7 +172,6 @@ export function SessionPage() {
   const setOpenSessionBlockKey = useUiStore((state) => state.setOpenSessionBlockKey);
   const minimizedRestKey = useUiStore((state) => state.minimizedRestKey);
   const setMinimizedRestKey = useUiStore((state) => state.setMinimizedRestKey);
-  const [now, setNow] = useState(Date.now());
   const [sessionError, setSessionError] = useState<string | null>(null);
   /*
    * Das Formular gehört zu dem Block, über den es geöffnet wurde: sonst
@@ -210,6 +210,14 @@ export function SessionPage() {
   // Primitiven statt des Objekts: useLiveQuery liefert bei jedem Emit eine neue
   // Identität, an der die Effekte unten sonst dauernd neu anspringen würden.
   const setTimerEndsAt = setTimer?.endsAt ?? null;
+  /*
+   * Bedingt, und das ist tragend: `now` ist Prop jeder Blockkarte und der
+   * Bühne. Unbedingt zu ticken hieße, die ganze Liste sekündlich neu zu
+   * zeichnen - auch während im Sheet ein Zahlenfeld den Fokus hat. Ein Takt
+   * für alle Uhren zugleich: es können mehrere Pausen und ein Satz-Timer
+   * laufen, sie brauchen aber dieselbe Sekundenauflösung.
+   */
+  const now = useNowTicker(hasRestTimers || setTimerEndsAt !== null);
   const appSettings = useLiveQuery(() => db.appSettings.get('app-settings'), []);
   // Additiv wie includeWarmup: nur ein ausdrückliches Aus schaltet den Ton ab.
   const timerSoundEnabled = appSettings?.timerSoundEnabled !== false;
@@ -295,33 +303,6 @@ export function SessionPage() {
      */
     primeTimerSound();
   }, [timerSoundEnabled]);
-
-  useEffect(() => {
-    // Ein Takt für alle Uhren: es können mehrere Pausen und ein Satz-Timer
-    // gleichzeitig laufen, sie brauchen aber dieselbe Sekundenauflösung.
-    if (!hasRestTimers && !setTimerEndsAt) {
-      return undefined;
-    }
-
-    const timer = window.setInterval(() => {
-      setNow(Date.now());
-    }, 1000);
-
-    // Nach dem Zurückwechseln aus dem Hintergrund sofort neu rechnen, statt
-    // auf den nächsten - vom Browser gedrosselten - Intervall zu warten.
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        setNow(Date.now());
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      window.clearInterval(timer);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [hasRestTimers, setTimerEndsAt]);
 
   /*
    * Ein Takt, eine Entscheidung: was zu vibrieren, zu klingeln und zu sagen
