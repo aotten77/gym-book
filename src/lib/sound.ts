@@ -6,9 +6,6 @@
  * Oszillator braucht nichts davon und klingt auf jedem Gerät gleich.
  */
 
-/** Ab dieser Verspätung bleibt der Ton aus - siehe [isChimeFresh]. */
-const CHIME_MAX_DELAY_MS = 4000;
-
 /** Zwei kurze Töne, im Rhythmus der Vibration [180, 90, 180]. */
 const CHIME_TONES = [
   { offsetSeconds: 0, durationSeconds: 0.18, frequency: 880 },
@@ -22,7 +19,8 @@ const PEAK_GAIN = 0.22;
  *
  * Läuft der Kontext, kehrt es in Millisekunden zurück. Wartet es länger, wartet
  * es in Wahrheit auf eine Berührung - und die kommt womöglich erst Minuten
- * später. Der Ton wäre dann derselbe Schreck, den [isChimeFresh] verhindert.
+ * später. Der Ton wäre dann derselbe Schreck, den [isChimeFresh] in
+ * [domain/timer-notifications.ts] verhindert.
  */
 const RESUME_GRACE_MS = 1000;
 
@@ -306,16 +304,4 @@ export async function playTimerChimeFromGesture() {
   }
 
   playTimerChime();
-}
-
-/**
- * Ob ein abgelaufener Timer noch einen Ton wert ist.
- *
- * Im Hintergrund tickt keine Uhr: liegt die App eine Viertelstunde im
- * App-Switcher, fällt der Ablauf erst beim Zurückwechseln auf. Ein Ton wäre
- * dort kein Hinweis mehr, sondern ein Schreck. Die Vibration ist davon nicht
- * betroffen - sie meldet auch nachträglich nur, dass die Pause vorbei ist.
- */
-export function isChimeFresh(expiredAt: number, now: number) {
-  return now - expiredAt <= CHIME_MAX_DELAY_MS;
 }

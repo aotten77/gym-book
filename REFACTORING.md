@@ -91,7 +91,7 @@ entscheidet** — und *das* wird getestet.
 
 ## Phase 1 — Freie Gewinne, nur in getesteten Schichten
 
-- [ ] **4. `src/db/normalize.ts` anlegen** mit einem `normalizeOptionalText`,
+- [x] **4. `src/db/normalize.ts` anlegen** mit einem `normalizeOptionalText`,
   `normalizeOptionalNumber`, `assertName`, `ensureSettings`, `SETTINGS_ID`.
   Heute existieren `normalizeOptionalText` **4×**, `normalizeOptionalNumber` 2×,
   `assertName` 2×, `ensureSettings`+`SETTINGS_ID` 2×.
@@ -104,13 +104,13 @@ entscheidet** — und *das* wird getestet.
   [session.ts:27](src/domain/session.ts#L27)) durch `@/lib/id` ersetzen —
   `domain/superset.ts` importiert es bereits, das ist also keine neue Schichtkante.
 
-- [ ] **5. Toten Code löschen** (verifiziert ohne jede Referenz):
+- [x] **5. Toten Code löschen** (verifiziert ohne jede Referenz):
   [StatCard.tsx](src/components/StatCard.tsx) als ganze Datei — abgelöst von
   `ui/StatusCard.tsx`, das alle vier Seiten benutzen —, dazu `formatSetLogWithSide`,
   `isInvalidNumberInput`, `ExerciseTargetFieldsValues`.
   **`listBandLevels` und `listExercises` bleiben stehen** — siehe „Bewusst nicht jetzt".
 
-- [ ] **6. Die zwei unerreichbaren Inline-Anlage-Zweige entfernen.**
+- [x] **6. Die zwei unerreichbaren Inline-Anlage-Zweige entfernen.**
   `addSessionExercise` und `saveTemplateExercise` können jeweils *nebenbei* eine neue
   `Exercise` anlegen — mit schwächerer Validierung als `exercise-actions.ts` (kein
   `assertName`, rohes `loadKind`, rohes `tracksHeight`). Beide Zweige sind vom UI nicht
@@ -120,19 +120,19 @@ entscheidet** — und *das* wird getestet.
   einzige Aufrufer übergibt sie nie.
   Ergebnis: **ein** validierender Schreibweg auf `db.exercises` statt drei.
 
-- [ ] **7. Den rohen Enum reparieren.**
+- [x] **7. Den rohen Enum reparieren.**
   [TemplateDetailPage.tsx:875](src/pages/TemplateDetailPage.tsx#L875) rendert
   `reps_weight` unübersetzt an den Nutzer. `SessionPage.tsx:1509` macht dasselbe korrekt
   über `formatTrackingMode` ([format.ts:15](src/lib/format.ts#L15)), dessen Doc-Kommentar
   genau diese Reparatur beschreibt — sie ist nur in einer der beiden Seiten gelandet.
   Eine Zeile, eigener Commit.
 
-- [ ] **8. Effekte 1+2 in `SessionPage` zusammenlegen** —
+- [x] **8. Effekte 1+2 in `SessionPage` zusammenlegen** —
   [:265](src/pages/SessionPage.tsx#L265) und [:271](src/pages/SessionPage.tsx#L271)
   haben identische Dep-Arrays und dieselbe Wirkung (Fokus auf die erste Übung setzen bzw.
   zurücksetzen). Das ist eine Regel, nicht zwei.
 
-- [ ] **9. Die billigen `strict`-Flags einschalten** in [tsconfig.json](tsconfig.json):
+- [x] **9. Die billigen `strict`-Flags einschalten** in [tsconfig.json](tsconfig.json):
   `noImplicitAny` (es gibt null `any`), `strictFunctionTypes`, `strictBindCallApply`,
   `strictPropertyInitialization` (die Dexie-Tabellen nutzen bereits `!:`),
   `noImplicitThis`, `alwaysStrict`, `useUnknownInCatchVariables` (die 29

@@ -56,12 +56,7 @@ import {
 } from '@/domain/rest-timer';
 import { resolveNextFocus } from '@/domain/session';
 import { elapsedSetTimerSeconds, remainingSetTimerSeconds } from '@/domain/set-timer';
-import {
-  findDueSetTimerCue,
-  setTimerCueKey,
-  setTimerCueSpeech,
-  setTimerCueVibrationPattern,
-} from '@/domain/set-timer-cues';
+import { decideTimerNotifications } from '@/domain/timer-notifications';
 import { buildSupersetBlocks, moveSupersetBlock, moveWithinGroup } from '@/domain/superset';
 import {
   buildSessionBlockProgress,
@@ -87,7 +82,7 @@ import {
   formatTrackingMode,
 } from '@/lib/format';
 import { optionalNumberInput } from '@/lib/number-input';
-import { isChimeFresh, playTimerChime, primeTimerSound } from '@/lib/sound';
+import { playTimerChime, primeTimerSound } from '@/lib/sound';
 import { primeTimerSpeech, speakTimerAnnouncement } from '@/lib/speech';
 import { cn } from '@/lib/utils';
 import { Sheet } from '@/components/ui/Sheet';
@@ -198,15 +193,15 @@ export function SessionPage() {
   const [exerciseForm, setExerciseForm] = useState<SessionExerciseFormState>(
     defaultSessionExerciseFormState,
   );
-  /** Spuren, deren Ablauf schon gemeldet wurde - siehe den Effekt unten. */
-  const notifiedRestKeysRef = useRef<Set<string>>(new Set());
   /**
-   * Zuletzt gemeldete Zwischenansage des Satz-Timers.
+   * Was diese Seite schon gemeldet hat - Abläufe wie Zwischenansagen.
    *
-   * Ein einzelner Schlüssel genügt, anders als bei den Pausen: es gibt höchstens
-   * einen Satz-Timer, und seine Folge ist monoton (Halbzeit, dann Schluss).
+   * Eine Menge und kein einzelner Schlüssel, weil mehrere Pausen gleichzeitig
+   * ablaufen können. Sie gilt nur für das, was gerade noch anliegt: startet
+   * dieselbe Seite eine neue Pause, soll ihr Ablauf wieder melden. Ein Reload
+   * kostet höchstens eine Vibration - der Zustand gehört nicht in die Datenbank.
    */
-  const announcedSetTimerCueRef = useRef<string | null>(null);
+  const notifiedTimerKeysRef = useRef<Set<string>>(new Set());
 
   const session = useLiveQuery(() => db.workoutSessions.get(sessionId), [sessionId]);
   const restTimers = session?.restTimers ?? EMPTY_REST_TIMERS;
@@ -215,7 +210,6 @@ export function SessionPage() {
   // Primitiven statt des Objekts: useLiveQuery liefert bei jedem Emit eine neue
   // Identität, an der die Effekte unten sonst dauernd neu anspringen würden.
   const setTimerEndsAt = setTimer?.endsAt ?? null;
-  const setTimerDurationSeconds = setTimer?.durationSeconds ?? null;
   const appSettings = useLiveQuery(() => db.appSettings.get('app-settings'), []);
   // Additiv wie includeWarmup: nur ein ausdrückliches Aus schaltet den Ton ab.
   const timerSoundEnabled = appSettings?.timerSoundEnabled !== false;
@@ -330,63 +324,51 @@ export function SessionPage() {
   }, [hasRestTimers, setTimerEndsAt]);
 
   /*
-   * Schlüssel der gerade abgelaufenen Pausen, als String stabil vergleichbar.
-   * Die Spuren selbst taugen nicht als Effekt-Abhängigkeit: useLiveQuery
-   * liefert bei jedem Emit ein neues Array.
+   * Ein Takt, eine Entscheidung: was zu vibrieren, zu klingeln und zu sagen
+   * ist, rechnet [decideTimerNotifications] aus - hier wird nur ausgeführt.
    *
-   * Das angehängte Ende trägt den Zeitpunkt mit in den Effekt, ohne dass er
-   * die Spuren selbst braucht - der Ton hängt davon ab, wie lange der Ablauf
-   * her ist. Verlängert [extendRestTimer] eine Spur, ist es ohnehin ein neuer
-   * Ablauf, der wieder gemeldet werden soll.
+   * Vorher lag das in drei Effekten, von denen zwei denselben
+   * Vibrations-und-Ton-Block wortgleich trugen und einer den Ablaufzeitpunkt
+   * aus einem Schlüsselstring zurückparste. Die Entdopplung macht jetzt die
+   * Schlüsselmenge im reinen Modul: sie trägt das jeweilige `endsAt`, also
+   * meldet eine verlängerte oder neu gestartete Uhr wieder.
+   *
+   * Zwei Uhren gehen hinein. `now` ist der getickte Sekundentakt und
+   * entscheidet, *ob* etwas fällig ist; das frische `Date.now()` entscheidet,
+   * ob es noch *aktuell* ist - nach Minuten im Hintergrund wäre ein Ton für
+   * eine längst beendete Pause ein Schreck statt eines Hinweises.
    */
-  const expiredRestTrackKeys = restTimers
-    .filter((track) => isRestTrackReady(track, now))
-    .map((track) => `${restTrackKey(track.sessionExerciseId, track.side)}@${track.endsAt}`)
-    .join('|');
-
   useEffect(() => {
-    const expiredKeys = expiredRestTrackKeys ? expiredRestTrackKeys.split('|') : [];
-
-    /*
-     * Die Erinnerung gilt nur für aktuell abgelaufene Spuren: startet dieselbe
-     * Seite eine neue Pause, soll ihr Ablauf wieder vibrieren. Ein Reload
-     * verliert höchstens eine Vibration - der Zustand gehört nicht in die
-     * Datenbank.
-     */
-    notifiedRestKeysRef.current = new Set(
-      [...notifiedRestKeysRef.current].filter((key) => expiredKeys.includes(key)),
-    );
-
-    const freshKeys = expiredKeys.filter((key) => !notifiedRestKeysRef.current.has(key));
-
-    if (freshKeys.length === 0) {
-      return;
-    }
-
-    for (const key of freshKeys) {
-      notifiedRestKeysRef.current.add(key);
-    }
-
-    // Beim Ablauf spürbar melden - im Gym liegt das Telefon in der Tasche.
-    if (typeof navigator.vibrate === 'function') {
-      navigator.vibrate([180, 90, 180]);
-    }
-
-    /*
-     * Hörbar nur, wenn der Ablauf gerade passiert ist: kommt die App nach
-     * Minuten im Hintergrund zurück, meldet sie lauter Vergangenheit.
-     */
-    const chimeWorthy = freshKeys.some((key) => {
-      const endsAt = Number(key.slice(key.lastIndexOf('@') + 1));
-
-      return Number.isFinite(endsAt) && isChimeFresh(endsAt, Date.now());
+    const notifications = decideTimerNotifications({
+      restTracks: restTimers,
+      setTimer,
+      now,
+      realNow: Date.now(),
+      soundEnabled: timerSoundEnabled,
+      notifiedKeys: notifiedTimerKeysRef.current,
     });
 
-    if (timerSoundEnabled && chimeWorthy) {
+    notifiedTimerKeysRef.current = notifications.notifiedKeys;
+
+    // Im Gym steckt das Telefon in der Tasche. Auf iOS kennt Safari die
+    // Schnittstelle gar nicht - dort trägt der Ton allein.
+    if (notifications.vibrate && typeof navigator.vibrate === 'function') {
+      navigator.vibrate(notifications.vibrate);
+    }
+
+    if (notifications.chime) {
       playTimerChime();
     }
 
-  }, [expiredRestTrackKeys, sessionId, timerSoundEnabled]);
+    if (notifications.speak) {
+      speakTimerAnnouncement(notifications.speak);
+    }
+
+    if (notifications.finishSetTimerSeconds !== null) {
+      // Durchgehalten heißt: die volle gestartete Zeit landet im Satz.
+      void finishSetTimer(sessionId, notifications.finishSetTimerSeconds);
+    }
+  }, [now, restTimers, sessionId, setTimer, timerSoundEnabled]);
 
   /*
    * Abgelaufene Spuren bleiben zunächst stehen und melden "bereit" - genau das
@@ -414,66 +396,6 @@ export function SessionPage() {
 
     return () => window.clearInterval(timer);
   }, [hasRestTimers, sessionId]);
-
-  useEffect(() => {
-    if (!setTimerEndsAt || !setTimerDurationSeconds || setTimerEndsAt > now) {
-      return;
-    }
-
-    // Dasselbe Signal wie am Ende der Pause: beim Plank liegt das Telefon
-    // neben der Matte und wird nicht angesehen.
-    if (typeof navigator.vibrate === 'function') {
-      navigator.vibrate([180, 90, 180]);
-    }
-
-    if (timerSoundEnabled && isChimeFresh(setTimerEndsAt, Date.now())) {
-      playTimerChime();
-    }
-
-    // Durchgehalten heißt: die volle gestartete Zeit landet im Satz.
-    void finishSetTimer(sessionId, setTimerDurationSeconds);
-  }, [now, sessionId, setTimerDurationSeconds, setTimerEndsAt, timerSoundEnabled]);
-
-  /*
-   * Die fällige Zwischenansage und ihr Schlüssel, wie [expiredRestTrackKeys]
-   * darüber als Primitive abgeleitet: nur der String erreicht die
-   * Abhängigkeitsliste, das Timer-Objekt selbst hat bei jedem Emit von
-   * useLiveQuery eine neue Identität. Ein Join wie bei den Pausen braucht es
-   * nicht - es gibt höchstens einen Satz-Timer.
-   *
-   * Ob überhaupt angesagt wird, hängt am Timer und nicht an einer Einstellung:
-   * gewählt wurde es beim Starten, über den Knopf mit dem Megafon.
-   */
-  const dueSetTimerCue = setTimer?.cuesEnabled ? findDueSetTimerCue(setTimer, now) : null;
-  const dueSetTimerCueKey =
-    setTimer && dueSetTimerCue ? setTimerCueKey(setTimer, dueSetTimerCue) : null;
-
-  useEffect(() => {
-    if (!dueSetTimerCue || !dueSetTimerCueKey) {
-      return;
-    }
-
-    if (announcedSetTimerCueRef.current === dueSetTimerCueKey) {
-      return;
-    }
-
-    announcedSetTimerCueRef.current = dueSetTimerCueKey;
-
-    if (typeof navigator.vibrate === 'function') {
-      navigator.vibrate(setTimerCueVibrationPattern(dueSetTimerCue));
-    }
-
-    /*
-     * Ohne Blick aufs Telefon: beim Dead Bug liegt es neben der Matte, und die
-     * Restzeit steht nur auf dem Bildschirm. Safari auf iOS kennt die Vibration
-     * gar nicht - dort ist die Sprache das einzige, was ankommt.
-     *
-     * Nichts wird hier noch einmal gegen `Date.now()` geprüft, anders als beim
-     * Ablauf der Pausen: über die Frische hat [findDueSetTimerCue] einen Frame
-     * vorher mit demselben `now` entschieden.
-     */
-    speakTimerAnnouncement(setTimerCueSpeech(dueSetTimerCue));
-  }, [dueSetTimerCue, dueSetTimerCueKey]);
 
   useEffect(() => {
     if (!availableExercises?.length) {
