@@ -224,57 +224,77 @@ export async function toggleSetCompletion(setLogId: string) {
  * vernichten.
  */
 export async function updateSetLogValues(setLogId: string, values: SetLogValuesInput) {
-  if (!(await isSetLogEditable(setLogId))) {
-    return;
-  }
+  /*
+   * Geklammert wie die direkten Nachbarn `toggleSetCompletion` und
+   * `deleteSetLog`: gelesen werden der Satz, seine Übung, deren Session und
+   * der Band-Katalog, geschrieben wird danach - dazwischen darf sich nichts
+   * ändern. Der Katalog gehört in den Scope, weil der Bandname aus ihm kommt
+   * und zusammen mit der Id geschrieben wird; ein Löschen dazwischen ergäbe
+   * einen Satz mit Id und ohne Namen.
+   *
+   * Alle `await` darin sind Dexies eigene - jedes andere schlösse die
+   * Transaktion.
+   */
+  await db.transaction(
+    'rw',
+    db.workoutSessions,
+    db.workoutSessionExercises,
+    db.workoutSetLogs,
+    db.bandLevels,
+    async () => {
+      if (!(await isSetLogEditable(setLogId))) {
+        return;
+      }
 
-  const current = await db.workoutSetLogs.get(setLogId);
+      const current = await db.workoutSetLogs.get(setLogId);
 
-  if (!current) {
-    return;
-  }
+      if (!current) {
+        return;
+      }
 
-  const changes: Partial<
-    Pick<
-      WorkoutSetLog,
-      'reps' | 'seconds' | 'weight' | 'heightCm' | 'bandId' | 'bandNameSnapshot'
-    >
-  > = {};
+      const changes: Partial<
+        Pick<
+          WorkoutSetLog,
+          'reps' | 'seconds' | 'weight' | 'heightCm' | 'bandId' | 'bandNameSnapshot'
+        >
+      > = {};
 
-  if ('reps' in values) {
-    changes.reps = normalizeOptionalNumber(values.reps);
-  }
+      if ('reps' in values) {
+        changes.reps = normalizeOptionalNumber(values.reps);
+      }
 
-  if ('seconds' in values) {
-    changes.seconds = normalizeOptionalNumber(values.seconds);
-  }
+      if ('seconds' in values) {
+        changes.seconds = normalizeOptionalNumber(values.seconds);
+      }
 
-  if ('weight' in values) {
-    changes.weight = normalizeOptionalNumber(values.weight);
-  }
+      if ('weight' in values) {
+        changes.weight = normalizeOptionalNumber(values.weight);
+      }
 
-  if ('heightCm' in values) {
-    changes.heightCm = normalizeOptionalNumber(values.heightCm);
-  }
+      if ('heightCm' in values) {
+        changes.heightCm = normalizeOptionalNumber(values.heightCm);
+      }
 
-  if ('bandId' in values) {
-    const bandId = normalizeOptionalText(values.bandId);
-    const band = bandId ? await db.bandLevels.get(bandId) : undefined;
+      if ('bandId' in values) {
+        const bandId = normalizeOptionalText(values.bandId);
+        const band = bandId ? await db.bandLevels.get(bandId) : undefined;
 
-    // Eine Id ohne passendes Band im Katalog wird ignoriert statt geschrieben:
-    // sonst stünde am Satz eine Auswahl, die niemand mehr benennen kann.
-    if (!bandId || band) {
-      changes.bandId = bandId;
-      // Id und Name gehören zusammen - beide setzen oder beide leeren.
-      changes.bandNameSnapshot = band?.name;
-    }
-  }
+        // Eine Id ohne passendes Band im Katalog wird ignoriert statt geschrieben:
+        // sonst stünde am Satz eine Auswahl, die niemand mehr benennen kann.
+        if (!bandId || band) {
+          changes.bandId = bandId;
+          // Id und Name gehören zusammen - beide setzen oder beide leeren.
+          changes.bandNameSnapshot = band?.name;
+        }
+      }
 
-  if (Object.keys(changes).length === 0) {
-    return;
-  }
+      if (Object.keys(changes).length === 0) {
+        return;
+      }
 
-  await db.workoutSetLogs.update(setLogId, changes);
+      await db.workoutSetLogs.update(setLogId, changes);
+    },
+  );
 }
 
 /**
