@@ -1,5 +1,6 @@
 import { db } from '@/db/appDb';
 import { createMediaAsset, prepareMediaAsset, type MediaAssetInput } from '@/db/media-actions';
+import { assertName, normalizeOptionalText } from '@/db/normalize';
 import type { Exercise, LoadKind, TrackingMode } from '@/domain/models';
 import { supportsBand } from '@/domain/tracking';
 import { createId } from '@/lib/id';
@@ -28,11 +29,6 @@ export interface ExerciseUsage {
   canDelete: boolean;
 }
 
-function normalizeOptionalText(value?: string) {
-  const trimmed = value?.trim();
-  return trimmed ? trimmed : undefined;
-}
-
 /**
  * Speichert die Belastungsart nur, wenn sie etwas aussagt.
  *
@@ -57,16 +53,6 @@ function normalizeTracksHeight(tracksHeight?: boolean) {
   return tracksHeight ? true : undefined;
 }
 
-function assertName(name: string) {
-  const trimmed = name.trim();
-
-  if (!trimmed) {
-    throw new Error('Die Übung braucht einen Namen.');
-  }
-
-  return trimmed;
-}
-
 /**
  * Legt eine Übung an - auf Wunsch samt Bild.
  *
@@ -75,7 +61,7 @@ function assertName(name: string) {
  * abgebrochener Upload hinterlässt so keine halb angelegte Übung.
  */
 export async function createExercise(input: ExerciseInput, media?: MediaAssetInput) {
-  const name = assertName(input.name);
+  const name = assertName(input.name, 'Die Übung braucht einen Namen.');
   const now = new Date().toISOString();
   const id = createId();
   const preparedMedia = media ? await prepareMediaAsset(media) : undefined;
@@ -108,7 +94,7 @@ export async function createExercise(input: ExerciseInput, media?: MediaAssetInp
  * eigene Snapshots von Name, Tracking-Modus und Unilateral-Flag.
  */
 export async function updateExercise(exerciseId: string, input: ExerciseInput) {
-  const name = assertName(input.name);
+  const name = assertName(input.name, 'Die Übung braucht einen Namen.');
 
   await db.transaction('rw', db.exercises, async () => {
     const existing = await db.exercises.get(exerciseId);

@@ -7,6 +7,7 @@ import {
   planUngroup,
   type SupersetAssignment,
 } from '@/domain/superset';
+import { normalizeOptionalNumber, normalizeOptionalText } from '@/db/normalize';
 import { createId } from '@/lib/id';
 
 interface TemplateInput {
@@ -48,19 +49,6 @@ interface SaveProgressionRuleInput {
   targetBandId?: string;
   targetHeightCm?: number;
   notes?: string;
-}
-
-function normalizeOptionalText(value?: string) {
-  const trimmed = value?.trim();
-  return trimmed ? trimmed : undefined;
-}
-
-function normalizeOptionalNumber(value?: number) {
-  if (typeof value !== 'number' || Number.isNaN(value)) {
-    return undefined;
-  }
-
-  return value >= 0 ? value : undefined;
 }
 
 async function normalizeTemplateExerciseOrder(templateId: string) {

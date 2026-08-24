@@ -9,6 +9,7 @@ import type {
   WorkoutTemplate,
   WorkoutTemplateExercise,
 } from '@/domain/models';
+import { createId } from '@/lib/id';
 
 interface MaterializeSessionInput {
   template: WorkoutTemplate;
@@ -22,10 +23,6 @@ interface MaterializeSessionInput {
   usedWeekOverride?: boolean;
   resolvedProgramWeek: number;
   startedAt: string;
-}
-
-function createId() {
-  return crypto.randomUUID();
 }
 
 export function materializeSession({

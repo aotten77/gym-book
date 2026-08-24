@@ -1,4 +1,5 @@
 import { db } from '@/db/appDb';
+import { normalizeOptionalNumber, normalizeOptionalText } from '@/db/normalize';
 import type {
   LoadKind,
   Side,
@@ -55,19 +56,6 @@ interface AddSessionExerciseInput {
   loadKind?: LoadKind;
   tracksHeight?: boolean;
   unilateral: boolean;
-}
-
-function normalizeOptionalText(value?: string) {
-  const trimmed = value?.trim();
-  return trimmed ? trimmed : undefined;
-}
-
-function normalizeOptionalNumber(value?: number) {
-  if (typeof value !== 'number' || Number.isNaN(value)) {
-    return undefined;
-  }
-
-  return value >= 0 ? value : undefined;
 }
 
 function createSetLogs(

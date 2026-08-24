@@ -1,5 +1,6 @@
 import { db } from '@/db/appDb';
 import type { BandLevel } from '@/domain/models';
+import { assertName } from '@/db/normalize';
 import { createId } from '@/lib/id';
 
 /*
@@ -16,22 +17,12 @@ import { createId } from '@/lib/id';
  */
 export const DEFAULT_BAND_NAMES = ['gelb', 'rot', 'grün', 'blau', 'schwarz', 'silber', 'gold'];
 
-function assertName(name: string) {
-  const trimmed = name.trim();
-
-  if (!trimmed) {
-    throw new Error('Das Band braucht einen Namen.');
-  }
-
-  return trimmed;
-}
-
 export async function listBandLevels(): Promise<BandLevel[]> {
   return db.bandLevels.orderBy('orderIndex').toArray();
 }
 
 export async function createBandLevel(name: string) {
-  const trimmed = assertName(name);
+  const trimmed = assertName(name, 'Das Band braucht einen Namen.');
   const id = createId();
 
   await db.transaction('rw', db.bandLevels, async () => {
@@ -64,7 +55,7 @@ export async function createBandLevel(name: string) {
  * `bandNameSnapshot` fest, was an dem Tag im Katalog stand.
  */
 export async function renameBandLevel(bandId: string, name: string) {
-  const trimmed = assertName(name);
+  const trimmed = assertName(name, 'Das Band braucht einen Namen.');
 
   await db.transaction('rw', db.bandLevels, async () => {
     const existing = await db.bandLevels.get(bandId);

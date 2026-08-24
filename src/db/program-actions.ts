@@ -1,33 +1,7 @@
-import type { AppSettings, Program, ProgramWeek } from '@/domain/models';
+import type { Program, ProgramWeek } from '@/domain/models';
 import { db } from '@/db/appDb';
-
-const SETTINGS_ID: AppSettings['id'] = 'app-settings';
-
-function createId() {
-  return crypto.randomUUID();
-}
-
-function normalizeOptionalText(value: string) {
-  const trimmed = value.trim();
-  return trimmed ? trimmed : undefined;
-}
-
-async function ensureSettings() {
-  const existing = await db.appSettings.get(SETTINGS_ID);
-
-  if (existing) {
-    return existing;
-  }
-
-  const created: AppSettings = {
-    id: SETTINGS_ID,
-    exportSchemaVersion: 1,
-    updatedAt: new Date().toISOString(),
-  };
-
-  await db.appSettings.add(created);
-  return created;
-}
+import { ensureSettings, normalizeOptionalText } from '@/db/normalize';
+import { createId } from '@/lib/id';
 
 async function getProgramWeeks(programId: string) {
   const weeks = await db.programWeeks.where('programId').equals(programId).toArray();

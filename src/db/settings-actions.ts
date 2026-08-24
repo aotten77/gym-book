@@ -1,25 +1,5 @@
 import { db } from '@/db/appDb';
-import type { AppSettings } from '@/domain/models';
-
-const SETTINGS_ID: AppSettings['id'] = 'app-settings';
-
-async function ensureSettings() {
-  const existing = await db.appSettings.get(SETTINGS_ID);
-
-  if (existing) {
-    return existing;
-  }
-
-  const now = new Date().toISOString();
-  const created: AppSettings = {
-    id: SETTINGS_ID,
-    exportSchemaVersion: 1,
-    updatedAt: now,
-  };
-
-  await db.appSettings.add(created);
-  return created;
-}
+import { ensureSettings, SETTINGS_ID } from '@/db/normalize';
 
 export async function setActiveProgram(programId: string) {
   const program = await db.programs.get(programId);

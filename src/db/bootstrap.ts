@@ -9,10 +9,7 @@ import type {
   WorkoutTemplateExercise,
 } from '@/domain/models';
 import { db } from '@/db/appDb';
-
-function createId() {
-  return crypto.randomUUID();
-}
+import { createId } from '@/lib/id';
 
 function isoDaysAgo(days: number) {
   const date = new Date();
