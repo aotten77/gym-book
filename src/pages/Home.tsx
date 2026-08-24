@@ -113,8 +113,20 @@ export default function Home() {
     [templates, nextTemplate?.id],
   );
   const weekControl = resolveWeekControl(settings?.weekOverride, program, programWeeks ?? []);
-  const weekHint = program?.name ?? 'Programm in /programme anlegen';
-  const weekModeHint = weekControl.mode === 'override' ? 'Override aktiv' : 'Programm';
+  const weekHint = program?.name ?? 'Kein Programm gesetzt';
+  /*
+   * Drei Modi, drei Texte. Das Ternär hier kannte nur zwei und faltete 'none'
+   * in "Programm" - ohne aktives Programm stand damit über der Zeile "Kein
+   * Programm gesetzt" das Wort "Programm", als käme die W1 von dort. Sie kommt
+   * aus dem Fallback in resolveWeekControl, und was das praktisch heißt, ist
+   * die einzige Auskunft, die an dieser Stelle jemand braucht.
+   */
+  const weekModeHint =
+    weekControl.mode === 'override'
+      ? 'Override aktiv'
+      : weekControl.mode === 'program'
+        ? 'Programm'
+        : 'Zielwerte kommen aus dem Workout';
 
   function describeExerciseCount(templateId: string) {
     const count = exerciseCountByTemplateId?.[templateId];
