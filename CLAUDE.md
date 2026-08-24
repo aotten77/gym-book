@@ -22,7 +22,7 @@ npx vitest run src/db/actions.test.ts -t "materializes progression rules"
 npx vitest            # watch mode
 ```
 
-CI ([.github/workflows/pages.yml](.github/workflows/pages.yml)) runs `lint` → `check` → `check:strict` → `test` → `build` on push to `main`, then deploys `dist/` to GitHub Pages. `tsconfig.json` has `strict: false` — the cheap halves of `strict` are on individually, but **`strictNullChecks` is not**, so `npm run check` will not catch nullability bugs. `npm run check:strict` runs it against [tsconfig.strict.json](tsconfig.strict.json), whose `include` currently covers `src/domain` and `src/lib`; that list grows a layer at a time until the flag can move into `tsconfig.json` and the extra file disappears.
+CI ([.github/workflows/pages.yml](.github/workflows/pages.yml)) runs `lint` → `check` → `check:strict` → `test` → `build` on push to `main`, then deploys `dist/` to GitHub Pages. `tsconfig.json` has `strict: false` — the cheap halves of `strict` are on individually, but **`strictNullChecks` is not**, so `npm run check` will not catch nullability bugs. `npm run check:strict` runs it against [tsconfig.strict.json](tsconfig.strict.json), whose `include` currently covers `src/domain`, `src/lib`, `src/db` and `src/test`; that list grows a layer at a time until the flag can move into `tsconfig.json` and the extra file disappears.
 
 ## What this app is
 

@@ -147,14 +147,14 @@ am Phasenende. Danach bis Phase 3 keiner mehr.
 
 ## Phase 2 — Herausziehen nach `domain` (die wertvollste Phase)
 
-- [ ] **10. `SetLogValuesInput` nach `src/domain/` verschieben**, aus
+- [x] **10. `SetLogValuesInput` nach `src/domain/` verschieben**, aus
   [session-actions.ts:29](src/db/session-actions.ts#L29) — neben `SetValues` in
   `domain/history.ts` oder als eigenes Modul.
   **Das ist der Blocker für Schritt 11:** `collectSetLogChanges` gibt diesen Typ zurück,
   und `domain` darf `db` nicht importieren. Aus `session-actions.ts` re-exportieren, dann
   ändert sich keine Aufrufstelle.
 
-- [ ] **11. `src/domain/set-log-draft.ts` anlegen.**
+- [x] **11. `src/domain/set-log-draft.ts` anlegen.**
   Aus [SessionExerciseStage.tsx](src/components/SessionExerciseStage.tsx) (Zeilen 75–240)
   wandern `createSetLogDraft`, `collectSetLogChanges`, `findInvalidSetLogFields`,
   `adoptPlaceholders` plus `SET_LOG_FIELDS`, `STEP_BY_FIELD`, `SET_LOG_FIELD_UNITS`,
@@ -173,7 +173,7 @@ am Phasenende. Danach bis Phase 3 keiner mehr.
   Ergebnis: `SessionExerciseStage.tsx` verliert ~180 LOC, und die Hälfte der heikelsten
   Stelle ist erstmals unit-getestet.
 
-- [ ] **12. `src/domain/timer-notifications.ts` anlegen.**
+- [x] **12. `src/domain/timer-notifications.ts` anlegen.**
   Eine reine Entscheidungsfunktion über
   `(restTracks, setTimer, now, realNow, soundEnabled, bereitsGemeldeteKeys)` →
   `{ vibrate?, chime, speak?, neueKeys }`. Die Effekte 6, 8 und 9 in `SessionPage`
@@ -193,7 +193,7 @@ am Phasenende. Danach bis Phase 3 keiner mehr.
   Fenster · eine verlängerte Spur erzeugt einen **neuen** meldbaren Key · der Ablauf
   bleibt ton-only, nie gesprochen.
 
-- [ ] **13. `src/hooks/useNowTicker.ts` anlegen** (neues Verzeichnis).
+- [x] **13. `src/hooks/useNowTicker.ts` anlegen** (neues Verzeichnis).
   Der Ticker (`useState` + `setInterval(1000)` + `visibilitychange` + Cleanup) steht
   dreimal fast wortgleich: [SessionPage.tsx:303](src/pages/SessionPage.tsx#L303),
   [ActiveSessionBar.tsx:50](src/components/ActiveSessionBar.tsx#L50),
@@ -205,7 +205,7 @@ am Phasenende. Danach bis Phase 3 keiner mehr.
   ticken würde die ganze Liste sekündlich neu zeichnen, auch während ein Zahlenfeld den
   Fokus hat. Ohne die Kommentare vereinfacht das der Nächste zu „immer an".
 
-- [ ] **14. `strictNullChecks` für `src/domain` + `src/lib`.**
+- [x] **14. `strictNullChecks` für `src/domain` + `src/lib`.**
   Über ein `tsconfig.strict.json`, das von der Basis erbt und ein eigenes `include` hat,
   plus ein `check:strict`-Script. Das `include` wächst in den späteren Phasen; am Ende
   wandert das Flag in `tsconfig.json` und die Extradatei fällt weg.

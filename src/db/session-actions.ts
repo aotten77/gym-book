@@ -2,6 +2,7 @@ import { db } from '@/db/appDb';
 import { normalizeOptionalNumber, normalizeOptionalText } from '@/db/normalize';
 import { isSessionExerciseEditable, isSetLogEditable } from '@/db/session-guards';
 import type {
+  Exercise,
   WorkoutSession,
   WorkoutSessionExercise,
   WorkoutSetLog,
@@ -123,7 +124,14 @@ export async function startSessionFromTemplate(templateId: string) {
     template,
     templateExercises,
     exercisesById: Object.fromEntries(
-      exercises.filter(Boolean).map((exercise) => [exercise.id, exercise]),
+      // Echtes Typprädikat statt `filter(Boolean)`: `bulkGet` liefert für eine
+      // gelöschte Übung ein `undefined`, und nur so weiß der Compiler, dass
+      // danach keines mehr übrig ist. Am Verhalten ändert sich nichts - eine
+      // fehlende Übung fällt hier heraus und `materializeSession` verweigert
+      // die Session danach mit ihrer Id.
+      exercises
+        .filter((exercise): exercise is Exercise => Boolean(exercise))
+        .map((exercise) => [exercise.id, exercise]),
     ),
     progressionRulesByTemplateExerciseId,
     bandLevelsById: Object.fromEntries(bandLevels.map((band) => [band.id, band])),

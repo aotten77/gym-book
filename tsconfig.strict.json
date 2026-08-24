@@ -23,6 +23,8 @@
   },
   "include": [
     "src/domain",
-    "src/lib"
+    "src/lib",
+    "src/db",
+    "src/test"
   ]
 }
