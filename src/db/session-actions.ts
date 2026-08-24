@@ -1,9 +1,7 @@
 import { db } from '@/db/appDb';
 import { normalizeOptionalNumber, normalizeOptionalText } from '@/db/normalize';
 import type {
-  LoadKind,
   Side,
-  TrackingMode,
   WorkoutSession,
   WorkoutSessionExercise,
   WorkoutSetLog,
@@ -39,6 +37,8 @@ export interface SetLogValuesInput {
 
 interface AddSessionExerciseInput {
   sessionId: string;
+  /** Immer eine bestehende Übung - angelegt wird sie in `exercise-actions.ts`. */
+  exerciseId: string;
   workSetCount: number;
   includeWarmup?: boolean;
   targetReps?: number;
@@ -48,14 +48,6 @@ interface AddSessionExerciseInput {
   targetHeightCm?: number;
   restSeconds?: number;
   notes?: string;
-  exerciseId?: string;
-  exerciseName?: string;
-  instructions?: string;
-  tempo?: string;
-  trackingMode: TrackingMode;
-  loadKind?: LoadKind;
-  tracksHeight?: boolean;
-  unilateral: boolean;
 }
 
 function createSetLogs(
@@ -373,19 +365,13 @@ export async function addSessionExercise(input: AddSessionExerciseInput) {
       ? Math.max(...existingSessionExercises.map((item) => item.orderIndex)) + 1
       : 1;
   const workSetCount = Math.max(1, input.workSetCount);
-  const now = new Date().toISOString();
-  const exerciseId = input.exerciseId ?? createId();
-  const existingExercise = input.exerciseId ? await db.exercises.get(input.exerciseId) : undefined;
+  const exercise = await db.exercises.get(input.exerciseId);
 
-  if (input.exerciseId && !existingExercise) {
+  if (!exercise) {
     throw new Error('Exercise not found');
   }
 
-  const exerciseName = existingExercise?.name ?? input.exerciseName?.trim() ?? 'Neue Übung';
-  const trackingMode = existingExercise?.trackingMode ?? input.trackingMode;
-  const loadKind = existingExercise ? existingExercise.loadKind : input.loadKind;
-  const tracksHeight = existingExercise ? existingExercise.tracksHeight : input.tracksHeight;
-  const unilateral = existingExercise?.unilateral ?? input.unilateral;
+  const { trackingMode, loadKind, tracksHeight, unilateral } = exercise;
   const targetBandId = normalizeOptionalText(input.targetBandId);
   const targetBand = targetBandId ? await db.bandLevels.get(targetBandId) : undefined;
   const sessionExerciseId = createId();
@@ -396,53 +382,32 @@ export async function addSessionExercise(input: AddSessionExerciseInput) {
     input.includeWarmup !== false,
   );
 
-  await db.transaction(
-    'rw',
-    db.exercises,
-    db.workoutSessionExercises,
-    db.workoutSetLogs,
-    async () => {
-      if (!input.exerciseId) {
-        await db.exercises.add({
-          id: exerciseId,
-          name: exerciseName,
-          instructions: normalizeOptionalText(input.instructions),
-          tempo: normalizeOptionalText(input.tempo),
-          trackingMode,
-          loadKind,
-          tracksHeight,
-          unilateral,
-          createdAt: now,
-          updatedAt: now,
-        });
-      }
+  await db.transaction('rw', db.workoutSessionExercises, db.workoutSetLogs, async () => {
+    await db.workoutSessionExercises.add({
+      id: sessionExerciseId,
+      sessionId: input.sessionId,
+      exerciseId: exercise.id,
+      exerciseNameSnapshot: exercise.name,
+      trackingMode,
+      loadKind,
+      tracksHeight,
+      unilateral,
+      orderIndex: nextOrderIndex,
+      wasSkipped: false,
+      addedInSession: true,
+      workSetCount,
+      targetReps: normalizeOptionalNumber(input.targetReps),
+      targetSeconds: normalizeOptionalNumber(input.targetSeconds),
+      targetWeight: normalizeOptionalNumber(input.targetWeight),
+      targetBandId,
+      targetBandNameSnapshot: targetBand?.name,
+      targetHeightCm: normalizeOptionalNumber(input.targetHeightCm),
+      restSeconds: normalizeOptionalNumber(input.restSeconds),
+      notes: normalizeOptionalText(input.notes),
+    });
 
-      await db.workoutSessionExercises.add({
-        id: sessionExerciseId,
-        sessionId: input.sessionId,
-        exerciseId,
-        exerciseNameSnapshot: exerciseName,
-        trackingMode,
-        loadKind,
-        tracksHeight,
-        unilateral,
-        orderIndex: nextOrderIndex,
-        wasSkipped: false,
-        addedInSession: true,
-        workSetCount,
-        targetReps: normalizeOptionalNumber(input.targetReps),
-        targetSeconds: normalizeOptionalNumber(input.targetSeconds),
-        targetWeight: normalizeOptionalNumber(input.targetWeight),
-        targetBandId,
-        targetBandNameSnapshot: targetBand?.name,
-        targetHeightCm: normalizeOptionalNumber(input.targetHeightCm),
-        restSeconds: normalizeOptionalNumber(input.restSeconds),
-        notes: normalizeOptionalText(input.notes),
-      });
-
-      await db.workoutSetLogs.bulkAdd(setLogs);
-    },
-  );
+    await db.workoutSetLogs.bulkAdd(setLogs);
+  });
 
   return sessionExerciseId;
 }

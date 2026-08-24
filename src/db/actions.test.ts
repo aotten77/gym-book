@@ -88,8 +88,6 @@ describe('addSessionExercise', () => {
       targetReps: 8,
       restSeconds: 90,
       notes: '  Fokus auf stabile Knieachse  ',
-      trackingMode: 'time',
-      unilateral: false,
     });
 
     const sessionExercise = await db.workoutSessionExercises.get(sessionExerciseId);
@@ -130,13 +128,20 @@ describe('addSessionExercise', () => {
       status: 'active',
     });
 
-    const sessionExerciseId = await addSessionExercise({
-      sessionId: 'session-ohne-warmup',
-      exerciseName: 'Hip Thrust',
-      workSetCount: 3,
-      includeWarmup: false,
+    await db.exercises.add({
+      id: 'exercise-hip-thrust',
+      name: 'Hip Thrust',
       trackingMode: 'reps_weight',
       unilateral: false,
+      createdAt: '2026-01-08T09:00:00.000Z',
+      updatedAt: '2026-01-08T09:00:00.000Z',
+    });
+
+    const sessionExerciseId = await addSessionExercise({
+      sessionId: 'session-ohne-warmup',
+      exerciseId: 'exercise-hip-thrust',
+      workSetCount: 3,
+      includeWarmup: false,
     });
 
     const setLogs = await db.workoutSetLogs.where('sessionExerciseId').equals(sessionExerciseId).toArray();
@@ -145,7 +150,7 @@ describe('addSessionExercise', () => {
     expect(setLogs.filter((item) => item.setKind === 'warmup')).toHaveLength(0);
   });
 
-  it('creates a new exercise when the session exercise does not reference an existing one', async () => {
+  it('legt keine Übung nebenbei an, sondern verlangt eine bestehende', async () => {
     await db.workoutSessions.add({
       id: 'session-2',
       templateId: 'template-2',
@@ -155,36 +160,22 @@ describe('addSessionExercise', () => {
       status: 'active',
     });
 
-    const sessionExerciseId = await addSessionExercise({
-      sessionId: 'session-2',
-      exerciseName: '  Copenhagen Plank  ',
-      instructions: '  Unteres Bein sauber führen  ',
-      tempo: ' 2-1-2 ',
-      trackingMode: 'time',
-      unilateral: false,
-      workSetCount: 3,
-      targetSeconds: 30,
-      notes: '  Ende Range halten  ',
-    });
+    // Es gibt genau einen validierenden Schreibweg auf `db.exercises`, und der
+    // liegt in `exercise-actions.ts`. Eine unbekannte Id ist hier ein Fehler,
+    // keine Einladung, still eine Übung zu erfinden.
+    await expect(
+      addSessionExercise({
+        sessionId: 'session-2',
+        exerciseId: 'gibt-es-nicht',
+        workSetCount: 3,
+        targetSeconds: 30,
+      }),
+    ).rejects.toThrow(/Exercise not found/);
 
-    const sessionExercise = await db.workoutSessionExercises.get(sessionExerciseId);
-    const createdExercise = sessionExercise
-      ? await db.exercises.get(sessionExercise.exerciseId)
-      : undefined;
-
-    expect(createdExercise).toMatchObject({
-      name: 'Copenhagen Plank',
-      instructions: 'Unteres Bein sauber führen',
-      tempo: '2-1-2',
-      trackingMode: 'time',
-      unilateral: false,
-    });
-    expect(sessionExercise).toMatchObject({
-      orderIndex: 1,
-      addedInSession: true,
-      targetSeconds: 30,
-      notes: 'Ende Range halten',
-    });
+    expect(await db.exercises.count()).toBe(0);
+    expect(
+      await db.workoutSessionExercises.where('sessionId').equals('session-2').count(),
+    ).toBe(0);
   });
 });
 
@@ -1754,8 +1745,6 @@ describe('Höhe als Einheit', () => {
       sessionId,
       workSetCount: 2,
       exerciseId: 'exercise-step-down',
-      trackingMode: 'reps_weight',
-      unilateral: false,
       targetHeightCm: 30,
     });
 

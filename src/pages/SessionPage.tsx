@@ -846,10 +846,6 @@ export function SessionPage() {
         restSeconds: optionalNumberInput(exerciseForm.restSeconds),
         notes: exerciseForm.notes,
         exerciseId: exerciseForm.exerciseId,
-        trackingMode: effectiveTrackingMode,
-        loadKind: effectiveLoadKind,
-        tracksHeight: effectiveTracksHeight,
-        unilateral: effectiveUnilateral,
       });
 
       setActiveSessionExerciseId(sessionExerciseId);

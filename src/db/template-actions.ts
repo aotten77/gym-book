@@ -1,5 +1,5 @@
 import { db } from '@/db/appDb';
-import type { LoadKind, TrackingMode, WorkoutTemplateExercise } from '@/domain/models';
+import type { WorkoutTemplateExercise } from '@/domain/models';
 import {
   areGroupsContiguous,
   planGroupWithPrevious,
@@ -18,6 +18,8 @@ interface TemplateInput {
 interface SaveTemplateExerciseInput {
   id?: string;
   templateId: string;
+  /** Immer eine bestehende Übung - angelegt wird sie in `exercise-actions.ts`. */
+  exerciseId: string;
   orderIndex: number;
   workSetCount: number;
   includeWarmup?: boolean;
@@ -28,16 +30,6 @@ interface SaveTemplateExerciseInput {
   targetHeightCm?: number;
   restSeconds?: number;
   notes?: string;
-  exerciseId?: string;
-  exerciseName?: string;
-  instructions?: string;
-  tempo?: string;
-  mediaAssetId?: string;
-  trackingMode: TrackingMode;
-  loadKind?: LoadKind;
-  /** Nur für neu angelegte Übungen - siehe `Exercise.tracksHeight`. */
-  tracksHeight?: boolean;
-  unilateral: boolean;
 }
 
 interface SaveProgressionRuleInput {
@@ -118,63 +110,44 @@ export async function deleteTemplate(templateId: string) {
 }
 
 export async function saveTemplateExercise(input: SaveTemplateExerciseInput) {
-  const now = new Date().toISOString();
-  const exerciseId = input.exerciseId ?? createId();
   const templateExerciseId = input.id ?? createId();
 
-  await db.transaction(
-    'rw',
-    db.exercises,
-    db.workoutTemplateExercises,
-    async () => {
-      if (!input.exerciseId) {
-        await db.exercises.add({
-          id: exerciseId,
-          name: input.exerciseName?.trim() ?? 'Neue Übung',
-          instructions: normalizeOptionalText(input.instructions),
-          tempo: normalizeOptionalText(input.tempo),
-          trackingMode: input.trackingMode,
-          loadKind: input.loadKind,
-          tracksHeight: input.tracksHeight,
-          unilateral: input.unilateral,
-          mediaAssetId: input.mediaAssetId,
-          createdAt: now,
-          updatedAt: now,
-        });
-      }
+  await db.transaction('rw', db.exercises, db.workoutTemplateExercises, async () => {
+    if (!(await db.exercises.get(input.exerciseId))) {
+      throw new Error('Übung nicht gefunden');
+    }
 
-      const templateExercisePayload = {
-        templateId: input.templateId,
-        exerciseId,
-        orderIndex: Math.max(1, input.orderIndex),
-        workSetCount: Math.max(1, input.workSetCount),
-        // Immer als echter Boolean schreiben: `undefined` würde die Property
-        // über Dexies Update-Semantik löschen statt sie zu setzen.
-        includeWarmup: input.includeWarmup !== false,
-        targetReps: normalizeOptionalNumber(input.targetReps),
-        targetSeconds: normalizeOptionalNumber(input.targetSeconds),
-        targetWeight: normalizeOptionalNumber(input.targetWeight),
-        targetBandId: normalizeOptionalText(input.targetBandId),
-        targetHeightCm: normalizeOptionalNumber(input.targetHeightCm),
-        restSeconds: normalizeOptionalNumber(input.restSeconds),
-        notes: normalizeOptionalText(input.notes),
-      };
+    const templateExercisePayload = {
+      templateId: input.templateId,
+      exerciseId: input.exerciseId,
+      orderIndex: Math.max(1, input.orderIndex),
+      workSetCount: Math.max(1, input.workSetCount),
+      // Immer als echter Boolean schreiben: `undefined` würde die Property
+      // über Dexies Update-Semantik löschen statt sie zu setzen.
+      includeWarmup: input.includeWarmup !== false,
+      targetReps: normalizeOptionalNumber(input.targetReps),
+      targetSeconds: normalizeOptionalNumber(input.targetSeconds),
+      targetWeight: normalizeOptionalNumber(input.targetWeight),
+      targetBandId: normalizeOptionalText(input.targetBandId),
+      targetHeightCm: normalizeOptionalNumber(input.targetHeightCm),
+      restSeconds: normalizeOptionalNumber(input.restSeconds),
+      notes: normalizeOptionalText(input.notes),
+    };
 
-      if (input.id) {
-        await db.workoutTemplateExercises.update(input.id, templateExercisePayload);
-      } else {
-        await db.workoutTemplateExercises.add({
-          id: templateExerciseId,
-          ...templateExercisePayload,
-        });
-      }
-    },
-  );
+    if (input.id) {
+      await db.workoutTemplateExercises.update(input.id, templateExercisePayload);
+    } else {
+      await db.workoutTemplateExercises.add({
+        id: templateExerciseId,
+        ...templateExercisePayload,
+      });
+    }
+  });
 
   await normalizeTemplateExerciseOrder(input.templateId);
 
   return {
-    exerciseId,
+    exerciseId: input.exerciseId,
     templateExerciseId,
   };
 }

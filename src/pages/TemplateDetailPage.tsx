@@ -486,10 +486,6 @@ export function TemplateDetailPage() {
         restSeconds: optionalNumberInput(form.restSeconds),
         notes: form.notes,
         exerciseId: form.exerciseId,
-        trackingMode: selectedExistingExercise?.trackingMode ?? 'reps_weight',
-        loadKind: selectedExistingExercise?.loadKind,
-        tracksHeight: selectedExistingExercise?.tracksHeight,
-        unilateral: selectedExistingExercise?.unilateral ?? false,
       });
 
       setEditingTemplateExerciseId(null);
