@@ -10,6 +10,7 @@ npm run check     # tsc -b --noEmit (typecheck only)
 npm test          # vitest run (jsdom + fake-indexeddb)
 npm run test:e2e  # playwright, WebKit on two iPhone sizes (starts the dev server itself)
 npm run lint      # eslint .
+npm run check:strict  # strictNullChecks, nur für die schon umgestellten Schichten
 npm run build     # tsc -b && vite build
 ```
 
@@ -21,7 +22,7 @@ npx vitest run src/db/actions.test.ts -t "materializes progression rules"
 npx vitest            # watch mode
 ```
 
-CI ([.github/workflows/pages.yml](.github/workflows/pages.yml)) runs `lint` → `check` → `test` → `build` on push to `main`, then deploys `dist/` to GitHub Pages. `tsconfig.json` has `strict: false`, so the typecheck is permissive — don't rely on it to catch nullability bugs.
+CI ([.github/workflows/pages.yml](.github/workflows/pages.yml)) runs `lint` → `check` → `check:strict` → `test` → `build` on push to `main`, then deploys `dist/` to GitHub Pages. `tsconfig.json` has `strict: false` — the cheap halves of `strict` are on individually, but **`strictNullChecks` is not**, so `npm run check` will not catch nullability bugs. `npm run check:strict` runs it against [tsconfig.strict.json](tsconfig.strict.json), whose `include` currently covers `src/domain` and `src/lib`; that list grows a layer at a time until the flag can move into `tsconfig.json` and the extra file disappears.
 
 ## What this app is
 

@@ -1,0 +1,28 @@
+/*
+ * `strictNullChecks`, schichtweise eingeführt.
+ *
+ * Die Basis kann es noch nicht tragen - der Umbau schaltet es dort erst am
+ * Ende ein, wenn `src/db`, `src/pages` und `src/components` nachgezogen sind.
+ * Bis dahin steht hier das `include`, und es wächst mit jeder Schicht, die
+ * fehlerfrei durchläuft. Dann wandert das Flag nach `tsconfig.json` und diese
+ * Datei fällt weg.
+ *
+ * `strictPropertyInitialization` steht mit dabei, weil TypeScript es ohne
+ * `strictNullChecks` gar nicht annimmt (TS5052).
+ *
+ * Über Importe werden mehr Dateien geprüft als hier stehen - `lib/export.ts`
+ * zieht `db/appDb.ts` und dessen Nachbarn mit hinein. Das ist erwünscht: sie
+ * bestehen die Prüfung, und der Nachweis kostet nichts.
+ */
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.strict.tsbuildinfo",
+    "strictNullChecks": true,
+    "strictPropertyInitialization": true
+  },
+  "include": [
+    "src/domain",
+    "src/lib"
+  ]
+}
