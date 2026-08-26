@@ -94,7 +94,13 @@ test.describe('Wochensteuerung', () => {
     await weekPanel.click();
     await page.waitForTimeout(600);
 
-    await page.getByRole('button', { name: 'Woche ändern' }).click();
+    // Der Weg von der Startseite führt in die Wochenansicht - auch die
+    // schreibt nichts, sie zeigt nur.
+    await page.getByRole('button', { name: 'Woche ansehen' }).click();
+    await page.waitForTimeout(900);
+    await expect(page).toHaveURL(/#\/programs$/);
+
+    await page.goto('./#/settings');
     await page.waitForTimeout(900);
 
     await expect(page.getByRole('switch', { name: 'Woche von Hand setzen' })).toHaveAttribute(

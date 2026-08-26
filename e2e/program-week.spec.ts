@@ -1,0 +1,80 @@
+import { expect, test } from '@playwright/test';
+import { collectPageErrors, resetDatabase, seedSampleData } from './helpers';
+
+/*
+ * Die Wochenansicht des Programm-Reiters.
+ *
+ * Die Beispieldaten liefern für den Nordic Curl je Woche eine Regel mit
+ * `targetSeconds = 8 + weekNumber * 2` - also je Woche einen unterscheidbaren
+ * Wert (W2 → 12 s, W5 → 18 s). Daran lässt sich prüfen, dass die Auswahl
+ * wirklich die Woche wechselt und nicht nur den Chip einfärbt.
+ *
+ * Der zweite Test schützt die Fehlerklasse aus Teil 1 vor der Rückkehr durch
+ * die andere Tür: eine Woche *ansehen* darf keinen `weekOverride` schreiben.
+ */
+test.describe('Programm-Wochenansicht', () => {
+  test.beforeEach(async ({ page }) => {
+    await resetDatabase(page);
+    await seedSampleData(page);
+  });
+
+  test('zeigt je Woche die Vorgaben, die der Sessionstart schreiben würde', async ({ page }) => {
+    const errors = collectPageErrors(page);
+
+    await page.goto('./#/programs');
+    await page.waitForTimeout(1200);
+
+    // Das Workout steht da, mit seinen Übungen.
+    await expect(page.getByRole('heading', { name: 'Einheit A' })).toBeVisible();
+    await expect(page.getByText('Nordic Curl Iso').first()).toBeVisible();
+
+    await page.getByRole('tab', { name: 'W2' }).click();
+    await page.waitForTimeout(500);
+    await expect(page.getByText('3 × 12 s', { exact: false }).first()).toBeVisible();
+
+    await page.getByRole('tab', { name: 'W5' }).click();
+    await page.waitForTimeout(500);
+    await expect(page.getByText('3 × 18 s', { exact: false }).first()).toBeVisible();
+    await expect(page.getByText('3 × 12 s', { exact: false })).toHaveCount(0);
+
+    // Die Regel überschreibt die Sekunden - genau dieses Feld ist markiert.
+    await expect(page.getByText('Woche', { exact: true }).first()).toBeVisible();
+
+    expect(errors).toEqual([]);
+  });
+
+  test('schreibt beim Wochenwechsel keinen Override', async ({ page }) => {
+    await page.goto('./#/programs');
+    await page.waitForTimeout(1200);
+
+    await page.getByRole('tab', { name: 'W5' }).click();
+    await page.waitForTimeout(500);
+    await expect(page.getByRole('tab', { name: 'W5' })).toHaveAttribute('aria-selected', 'true');
+
+    /*
+     * Die Limettenfläche hängt an der *wirksamen* Woche, nicht am gewählten
+     * Chip - sie darf beim Blättern nicht mitwandern.
+     */
+    await expect(page.getByText('Diese Woche')).toBeVisible();
+
+    await page.goto('./#/settings');
+    await page.waitForTimeout(900);
+
+    await expect(page.getByRole('switch', { name: 'Woche von Hand setzen' })).toHaveAttribute(
+      'aria-checked',
+      'false',
+    );
+    await expect(page.getByText('Override', { exact: true })).toHaveCount(0);
+  });
+
+  test('führt weiter zur Verwaltung', async ({ page }) => {
+    await page.goto('./#/programs');
+    await page.waitForTimeout(1200);
+
+    await page.getByRole('button', { name: 'Programm verwalten' }).click();
+    await page.waitForTimeout(900);
+
+    await expect(page).toHaveURL(/#\/programs\/manage$/);
+    await expect(page.getByRole('heading', { name: 'Neues Programm' })).toBeVisible();
+  });
+});

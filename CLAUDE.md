@@ -71,6 +71,18 @@ Completed sessions are immutable — `toggleSetCompletion` / `updateSetLogValues
 
 `updateSetLogValues` only writes keys that are present in its input. This matters: Dexie's `Table.update` deletes any property whose value is `undefined`, so passing a failed parse straight through would silently destroy stored values. Parse user input with `parseNumberInput` from [number-input.ts](src/lib/number-input.ts), which distinguishes empty from invalid.
 
+### The program tab answers one question: what is planned in week 3?
+
+`/programs` ([ProgramsPage.tsx](src/pages/ProgramsPage.tsx)) is the **week view**; the CRUD on `Program` and `ProgramWeek` moved to the subroute `/programs/manage` ([ProgramsManagePage.tsx](src/pages/ProgramsManagePage.tsx)) — a subroute rather than a sheet, because that form carries `ConfirmDialog`s and a dialog inside a sheet is two stacked dialogs, exactly the ambiguity `[data-sheet]` was introduced for. `startedOn` stays in Settings: two writers on the field that drives the calendar week was the original bug. The tab bar still points at `/programs`, and `NavLink` without `end` keeps it highlighted on the subroute.
+
+The page reads `buildWeekPlan` ([program-plan.ts](src/domain/program-plan.ts)), so it shows *provably* what the session start would write. Three rules carry it:
+
+- **The week selection is ephemeral `useState`** — never `weekOverride`, never IndexedDB. *Looking at* week 5 must not mean *training* week 5; that is the same class of bug as Home's arrows, which is why both were fixed in one plan. The comment sits on the state declaration, and `program-week.spec.ts` asserts that after switching weeks Settings still shows no override.
+- **Lime lies on the *effective* week, not on the selected chip.** Selection is navigation and therefore ink; "up next" is the week the next session actually starts in — which keeps the one-lime-field rule honest instead of inventing a "now".
+- **No "start workout" here.** `startSessionFromTemplate` resolves the week through `resolveWeekControl`, *not* through the selection, so a start button next to week-5 numbers would silently train week 3.
+
+Without any rules the view is **not empty** — it lists every workout with its base values, unmarked, and that *is* the true answer to "what is planned this week": the same as every other week. The card above it is a plain `Empty` (neither lime nor forest — a filled surface must not claim a state that isn't there). There is deliberately no week→workout link in the data model; all workouts run in every week, and the page says so rather than inventing a running order.
+
 ### Load: kilos or bands
 
 An exercise carries **either** a weight in kg **or** a resistance band, never both — `Exercise.loadKind` (`'weight' | 'band'`, `undefined` counts as `'weight'`, same additive trick as `includeWarmup`). `supportsLoad` in [tracking.ts](src/domain/tracking.ts) says whether the exercise has a load at all; `supportsWeight(trackingMode, loadKind)` and `supportsBand(trackingMode, loadKind)` decide which field the UI shows. Call sites that have a `loadKind` **must** pass it — the one-argument form silently keeps showing kg.

@@ -303,8 +303,13 @@ export default function Home() {
               <p className="mt-2 text-sm text-content-muted">{weekHint}</p>
               <p className="mt-1 text-xs text-content-muted">{weekModeHint}</p>
             </div>
-            <Button variant="ghost" size="md" onClick={() => navigate('/settings')}>
-              Woche ändern
+            {/*
+              Auf den Programm-Reiter, nicht in die Einstellungen: dort steht
+              jetzt, was die Woche überhaupt bedeutet - und von da führt ein
+              Weg weiter zu der einen Stelle, die sie von Hand setzt.
+            */}
+            <Button variant="ghost" size="md" onClick={() => navigate('/programs')}>
+              Woche ansehen
             </Button>
           </div>
         </div>
