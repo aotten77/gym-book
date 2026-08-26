@@ -70,6 +70,13 @@ export async function loadExerciseExecutions(exerciseId: string) {
         sessionExerciseId: item.id,
         completedAt: session.completedAt!,
         templateName: session.templateNameSnapshot,
+        /*
+         * Der Snapshot der Ausführung, nicht der heutige Modus der Übung:
+         * wird eine Übung später umgestellt, ist das hier die einzige Stelle,
+         * an der noch steht, womit damals gemessen wurde. Ohne diesen Wert
+         * fielen die alten Sätze stumm aus der Fortschrittskurve.
+         */
+        trackingMode: item.trackingMode,
         workLogs: sortSetLogs(workLogsBySessionExerciseId.get(item.id) ?? []),
       };
     })

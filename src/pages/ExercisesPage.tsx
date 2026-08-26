@@ -23,16 +23,10 @@ import { clearExerciseMedia, replaceExerciseMedia } from '@/db/media-actions';
 import { loadTestsForExercise } from '@/db/test-actions';
 import { startOfCalendarWeek } from '@/domain/calendar-week';
 import type { Exercise, LoadKind, TrackingMode } from '@/domain/models';
-import { buildProgressSeries, progressMetricFor } from '@/domain/progress';
-import { supportsLoad } from '@/domain/tracking';
+import { buildProgressSeries, isLegacyExecution, progressMetricFor } from '@/domain/progress';
+import { supportsLoad, TRACKING_MODE_LABELS } from '@/domain/tracking';
 import { formatDateTime, formatLoadLabel, formatNumber } from '@/lib/format';
 import { isSupportedMediaType } from '@/lib/media';
-
-const TRACKING_MODE_LABELS: Record<TrackingMode, string> = {
-  reps_weight: 'Wiederholungen + Gewicht',
-  time: 'Zeit',
-  time_weight: 'Zeit + Gewicht',
-};
 
 const emptyForm: ExerciseInput = {
   name: '',
@@ -76,6 +70,15 @@ function ExerciseDetail({ exercise }: { exercise: Exercise }) {
   );
   const recent = [...(executions ?? [])].reverse().slice(0, 5);
   const recentTests = [...(tests ?? [])].reverse().slice(0, 5);
+  /*
+   * Nach einer Umstellung der Erfassung - etwa Nordic Curl von Zeit auf
+   * Wiederholungen - tragen die alten Ausführungen die Zahl nicht mehr, nach
+   * der die Kurve fragt. Sie verschwinden daraus, und ohne diesen Hinweis
+   * sähe das aus, als hätte es sie nie gegeben.
+   */
+  const legacyExecutions = (executions ?? []).filter((execution) =>
+    isLegacyExecution(exercise.trackingMode, execution.trackingMode),
+  );
 
   return (
     <div className="mt-3 space-y-3 border-t border-line pt-3">
@@ -111,6 +114,14 @@ function ExerciseDetail({ exercise }: { exercise: Exercise }) {
             Noch keine abgeschlossene Session mit dieser Übung.
           </p>
         )}
+
+        {legacyExecutions.length > 0 ? (
+          <p className="mt-3 border-t border-line pt-3 text-sm text-content-muted">
+            {legacyExecutions.length === 1 ? 'Eine frühere Ausführung wurde' : `${formatNumber(legacyExecutions.length)} frühere Ausführungen wurden`}{' '}
+            als „{TRACKING_MODE_LABELS[legacyExecutions[0].trackingMode]}" erfasst und {legacyExecutions.length === 1 ? 'steht' : 'stehen'}{' '}
+            deshalb nicht in dieser Kurve. Die Werte bleiben unten in der Liste erhalten.
+          </p>
+        ) : null}
       </div>
 
       {recent.length > 0 ? (
@@ -119,8 +130,20 @@ function ExerciseDetail({ exercise }: { exercise: Exercise }) {
           <ul className="mt-3 space-y-2">
             {recent.map((execution) => (
               <li key={execution.sessionExerciseId} className="text-sm">
-                <p className="text-content-secondary">
-                  {formatDateTime(execution.completedAt)} · {execution.templateName}
+                <p className="flex flex-wrap items-center gap-2 text-content-secondary">
+                  <span>
+                    {formatDateTime(execution.completedAt)} · {execution.templateName}
+                  </span>
+                  {/*
+                    Bewusst neutral und nicht in einer der drei Bedeutungsfarben:
+                    Altdaten sind weder erledigt noch übersprungen noch als
+                    Nächstes dran - sie wurden nur anders gemessen.
+                  */}
+                  {isLegacyExecution(exercise.trackingMode, execution.trackingMode) ? (
+                    <span className="rounded-control border border-line px-2 py-0.5 text-xs text-content-muted">
+                      Altdaten · {TRACKING_MODE_LABELS[execution.trackingMode]}
+                    </span>
+                  ) : null}
                 </p>
                 <p className="mt-0.5 text-content-muted">
                   {execution.workLogs.map((log) => formatLoadLabel(log)).join(' · ') ||

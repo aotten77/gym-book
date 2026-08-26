@@ -248,6 +248,16 @@ export interface Program {
   id: string;
   name: string;
   activeWeek: number;
+  /**
+   * Tag, an dem Woche 1 des Programms begonnen hat (ISO-Datum, `YYYY-MM-DD`).
+   *
+   * Solange er gesetzt ist, läuft die Programmwoche von selbst mit dem
+   * Kalender - `deriveProgramWeek` in [program.ts] zählt die Kalenderwochen
+   * seit diesem Montag. Ohne den Wert bleibt es bei `activeWeek`, das von Hand
+   * weitergeschaltet wird; additiv wie `includeWarmup`, damit bestehende
+   * Programme unverändert weiterlaufen.
+   */
+  startedOn?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -310,6 +320,30 @@ export interface AppSettings {
   keepScreenAwakeEnabled?: boolean;
   exportSchemaVersion: number;
   updatedAt: string;
+}
+
+/**
+ * Was ein Bibliotheks-Import geschrieben hat.
+ *
+ * Der Import legt Übungen, Workouts und Zuordnungen über den *Namen* an oder
+ * ändert sie - danach ist an den Datensätzen selbst nicht mehr zu erkennen,
+ * wann sie hereinkamen und woraus. Diese Zeile ist die einzige Antwort darauf.
+ * `payloadHash` erkennt dieselbe Datei wieder, ohne sie aufzubewahren.
+ */
+export interface LibraryImportLog {
+  id: string;
+  importedAt: string;
+  /** Dateiname oder "Eingefügter Text" - woher die Nutzlast kam. */
+  sourceName?: string;
+  payloadHash: string;
+  createdExercises: number;
+  updatedExercises: number;
+  createdTemplates: number;
+  updatedTemplates: number;
+  createdAssignments: number;
+  updatedAssignments: number;
+  createdBandLevels: number;
+  updatedBandLevels: number;
 }
 
 export interface SessionBundle {

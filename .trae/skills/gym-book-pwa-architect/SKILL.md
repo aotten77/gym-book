@@ -109,10 +109,11 @@ Recommended set log shape:
 ## Progression Rules
 
 - Progression is calendar-week-based, not driven by completed session count.
-- Resolve the active program week when the session starts.
+- Resolve the active program week when the session starts: `weekOverride ?? derived from `Program.startedOn` ?? `activeWeek` ?? 1`.
+- With a start date the program week runs with the calendar on its own; it stops at the last planned week instead of cycling.
 - Persist that resolved week on the session so historical sessions do not change when the current week changes.
 - Do not build deload or reset automation in v1.
-- Allow a manual override of the active week for future flexibility.
+- A manual override of the active week stays possible, but it is an option, not the default.
 
 ## History and "Last Values"
 

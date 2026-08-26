@@ -7,6 +7,7 @@ import type {
   BandLevel,
   Exercise,
   ExerciseTest,
+  LibraryImportLog,
   MediaAsset,
   Program,
   ProgramWeek,
@@ -153,8 +154,30 @@ const programSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   activeWeek: z.number().int().positive(),
+  /* Additiv wie includeWarmup: ohne Startdatum bleibt es bei activeWeek. */
+  startedOn: z.string().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
+});
+
+/*
+ * Das Protokoll der Bibliotheks-Importe gehört mit ins Backup: es ist die
+ * einzige Auskunft darüber, wann welche Nutzlast hereinkam, und ein Restore
+ * ohne diese Zeilen ließe die Bibliothek wie von selbst gewachsen aussehen.
+ */
+const libraryImportLogSchema = z.object({
+  id: z.string().min(1),
+  importedAt: z.string(),
+  sourceName: z.string().optional(),
+  payloadHash: z.string().min(1),
+  createdExercises: z.number().int().nonnegative(),
+  updatedExercises: z.number().int().nonnegative(),
+  createdTemplates: z.number().int().nonnegative(),
+  updatedTemplates: z.number().int().nonnegative(),
+  createdAssignments: z.number().int().nonnegative(),
+  updatedAssignments: z.number().int().nonnegative(),
+  createdBandLevels: z.number().int().nonnegative(),
+  updatedBandLevels: z.number().int().nonnegative(),
 });
 
 const programWeekSchema = z.object({
@@ -225,6 +248,10 @@ const databaseSnapshotSchema = z.object({
   // Ältere Backups kennen die Tabelle nicht - ohne Default käme der Import
   // mit einem Schemafehler zurück statt mit einem leeren Katalog.
   bandLevels: z.array(bandLevelSchema).optional().default([]),
+  // Aus demselben Grund optional wie bandLevels, und aus demselben Grund ohne
+  // Bump von SNAPSHOT_SCHEMA_VERSION: das z.literal würde sonst jedes
+  // bestehende Nutzer-Backup abweisen.
+  libraryImports: z.array(libraryImportLogSchema).optional().default([]),
 });
 
 export interface DatabaseSnapshot {
@@ -243,6 +270,7 @@ export interface DatabaseSnapshot {
   mediaAssets: MediaAsset[];
   appSettings: AppSettings[];
   bandLevels: BandLevel[];
+  libraryImports: LibraryImportLog[];
 }
 
 export interface DatabaseSnapshotSummary {
@@ -271,6 +299,7 @@ async function createDatabaseSnapshot(): Promise<DatabaseSnapshot> {
     mediaAssets: await db.mediaAssets.toArray(),
     appSettings: await db.appSettings.toArray(),
     bandLevels: await db.bandLevels.toArray(),
+    libraryImports: await db.libraryImports.toArray(),
   };
 }
 
@@ -435,6 +464,7 @@ export async function restoreDatabaseSnapshot(snapshot: DatabaseSnapshot) {
       db.mediaAssets,
       db.appSettings,
       db.bandLevels,
+      db.libraryImports,
     ],
     async () => {
       await db.workoutSetLogs.clear();
@@ -450,6 +480,7 @@ export async function restoreDatabaseSnapshot(snapshot: DatabaseSnapshot) {
       await db.mediaAssets.clear();
       await db.appSettings.clear();
       await db.bandLevels.clear();
+      await db.libraryImports.clear();
 
       if (snapshot.exercises.length) {
         await db.exercises.bulkAdd(snapshot.exercises);
@@ -501,6 +532,10 @@ export async function restoreDatabaseSnapshot(snapshot: DatabaseSnapshot) {
 
       if (snapshot.bandLevels?.length) {
         await db.bandLevels.bulkAdd(snapshot.bandLevels);
+      }
+
+      if (snapshot.libraryImports?.length) {
+        await db.libraryImports.bulkAdd(snapshot.libraryImports);
       }
     },
   );

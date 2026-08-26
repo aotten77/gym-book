@@ -4,10 +4,16 @@
  *
  * Der lange Name ist Absicht: "Woche" ist in diesem Repo doppelt belegt.
  * `Program.activeWeek`, `settings.weekOverride` und `resolvedProgramWeek` sind
- * eine **von Hand gestellte Programmwoche** - eine Zahl, die der Nutzer
- * weiterschaltet und die nirgends aus einem Datum abgeleitet wird. Was hier
- * steht, hat damit nichts zu tun und darf nie gegeneinander gerechnet werden:
- * Programmwoche 3 sagt nichts darüber, welcher Montag gerade war.
+ * eine **Programmwoche** - die Nummer der Woche *innerhalb* eines Programms.
+ * Was hier steht, ist die Woche am Kalender und beantwortet eine andere Frage:
+ * Programmwoche 3 sagt für sich genommen nicht, welcher Montag gerade war.
+ *
+ * Eine einzige Brücke gibt es zwischen beiden, und sie führt nur in eine
+ * Richtung: trägt ein Programm ein `startedOn`, zählt `deriveProgramWeek` in
+ * [program.ts] die Kalenderwochen seit diesem Montag - über
+ * `calendarWeeksBetween` hier unten und nirgendwo sonst. Ohne Startdatum
+ * bleibt die Programmwoche das, was sie war: eine Zahl, die von Hand
+ * weitergeschaltet wird.
  */
 
 const DAYS_PER_WEEK = 7;
@@ -26,6 +32,46 @@ export function startOfCalendarWeek(now: Date): Date {
   start.setHours(0, 0, 0, 0);
 
   return start;
+}
+
+/**
+ * Liest ein Datum als **Ortszeit**.
+ *
+ * `new Date('2026-08-24')` ist laut Norm Mitternacht UTC - westlich von
+ * Greenwich landet der Wert damit einen Tag früher und im Zweifel in der
+ * Vorwoche. Ein reines Datum ohne Uhrzeit meint aber den Tag am Ort des
+ * Geräts, deshalb wird es von Hand zerlegt. Zeitstempel mit Uhrzeit gehen
+ * unverändert durch.
+ */
+function parseLocalDate(value: string): Date | undefined {
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  const parsed = dateOnly
+    ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]))
+    : new Date(value);
+
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+}
+
+/**
+ * Volle Kalenderwochen zwischen zwei Zeitpunkten, gezählt von Montag zu Montag.
+ *
+ * Gerechnet wird über die Differenz der beiden Wochenanfänge geteilt durch
+ * sieben Tage - und zwar gerundet, nicht abgeschnitten: zwischen zwei Montagen
+ * liegen an der Zeitumstellung 167 oder 169 Stunden, und eine Division mit
+ * `floor` machte daraus je nach Richtung eine Woche zu wenig. Ein Datum vor
+ * `now` ergibt eine negative Zahl; das Klemmen ist Sache des Aufrufers.
+ */
+export function calendarWeeksBetween(startIso: string, now: Date): number | undefined {
+  const start = parseLocalDate(startIso);
+
+  if (!start) {
+    return undefined;
+  }
+
+  const startWeek = startOfCalendarWeek(start).getTime();
+  const nowWeek = startOfCalendarWeek(now).getTime();
+
+  return Math.round((nowWeek - startWeek) / (DAYS_PER_WEEK * 24 * 60 * 60 * 1000));
 }
 
 /**

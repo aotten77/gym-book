@@ -51,8 +51,9 @@ Do not use it for generic framework tutorials or unrelated repositories.
 ## Progression rules
 
 - Calendar-week based, never driven by completed session count.
-- Resolve the active week at session start (`weekOverride ?? program.activeWeek ?? 1`) and persist it on the session, so historical sessions do not shift when the current week changes.
-- Manual week override must stay possible. No deload or reset automation in v1.
+- Resolve the active week at session start (`weekOverride ?? derived from `Program.startedOn` ?? `program.activeWeek` ?? 1`, all in `resolveWeekControl`) and persist it on the session, so historical sessions do not shift when the current week changes.
+- A program that carries a `startedOn` date derives its week from the calendar and stops at the last planned week — that derivation is the one bridge between calendar week and program week, and it lives in `deriveProgramWeek` alone.
+- Manual week override must stay possible, but as a deliberate choice rather than a side effect of stepping the week. No deload or reset automation in v1.
 
 ## History and "last values"
 

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { buildProgressSeries, progressMetricFor, summarizeTrend } from '@/domain/progress';
+import {
+  buildProgressSeries,
+  isLegacyExecution,
+  progressMetricFor,
+  summarizeTrend,
+} from '@/domain/progress';
 import type { WorkoutSetLog } from '@/domain/models';
 
 function log(overrides: Partial<WorkoutSetLog>): WorkoutSetLog {
@@ -188,5 +193,21 @@ describe('summarizeTrend', () => {
         { completedAt: '2026-01-01T10:00:00.000Z', topValue: 80, volume: 400, setCount: 3 },
       ]),
     ).toBeUndefined();
+  });
+});
+
+describe('isLegacyExecution', () => {
+  it('erkennt eine Ausführung, die anders gemessen wurde als die Übung heute', () => {
+    expect(isLegacyExecution('reps_weight', 'time')).toBe(true);
+  });
+
+  it('lässt gleiche Erfassung in Ruhe', () => {
+    expect(isLegacyExecution('reps_weight', 'reps_weight')).toBe(false);
+  });
+
+  it('hält einen fehlenden Snapshot nicht für eine Abweichung', () => {
+    // Alte Datensätze ohne Snapshot gibt es nicht, aber ein "vielleicht" wäre
+    // hier eine Warnung ohne Grundlage.
+    expect(isLegacyExecution('time')).toBe(false);
   });
 });

@@ -52,6 +52,20 @@ export function progressMetricFor(
   return { key: 'weight' as const, label: 'Gewicht', unit: 'kg' };
 }
 
+/**
+ * Wurde diese Ausführung anders gemessen, als die Übung heute misst?
+ *
+ * Session-Übungen tragen ihren eigenen `trackingMode` - eine Umstellung an der
+ * Übung schreibt die Historie zu Recht nicht um. Für die Fortschrittskurve
+ * heißt das aber: die alten Sätze tragen die Zahl nicht, nach der jetzt
+ * gefragt wird (Sekunden statt Kilo), und `buildProgressSeries` lässt sie
+ * stillschweigend weg. Genau diese Lücke muss die Übungsansicht benennen
+ * können, sonst sieht es aus, als hätte es die Trainings nie gegeben.
+ */
+export function isLegacyExecution(current: TrackingMode, snapshot?: TrackingMode) {
+  return snapshot !== undefined && snapshot !== current;
+}
+
 function valueOf(log: WorkoutSetLog, metric: ProgressMetricKey, bandRank?: BandRank) {
   if (metric === 'band') {
     return log.bandId ? bandRank?.(log.bandId) : undefined;

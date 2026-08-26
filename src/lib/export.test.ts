@@ -24,6 +24,7 @@ function createSnapshot(overrides: Partial<DatabaseSnapshot> = {}): DatabaseSnap
     progressionRules: [],
     mediaAssets: [],
     bandLevels: [],
+    libraryImports: [],
     appSettings: [
       {
         id: 'app-settings',
@@ -250,6 +251,51 @@ describe('parseDatabaseSnapshot', () => {
     delete (legacy as Partial<DatabaseSnapshot>).bandLevels;
 
     expect(parseDatabaseSnapshot(JSON.stringify(legacy)).bandLevels).toEqual([]);
+  });
+
+  it('trägt Import-Protokoll und Programmstart durch und bleibt zu älteren Sicherungen kompatibel', () => {
+    const parsed = parseDatabaseSnapshot(
+      JSON.stringify(
+        createSnapshot({
+          programs: [
+            {
+              id: 'program-1',
+              name: 'Rehab',
+              activeWeek: 1,
+              startedOn: '2026-08-24',
+              createdAt: '2026-08-24T08:00:00.000Z',
+              updatedAt: '2026-08-24T08:00:00.000Z',
+            },
+          ],
+          libraryImports: [
+            {
+              id: 'import-1',
+              importedAt: '2026-08-26T09:00:00.000Z',
+              sourceName: 'bibliothek.json',
+              payloadHash: 'a1b2c3d4',
+              createdExercises: 18,
+              updatedExercises: 0,
+              createdTemplates: 2,
+              updatedTemplates: 0,
+              createdAssignments: 17,
+              updatedAssignments: 0,
+              createdBandLevels: 3,
+              updatedBandLevels: 0,
+            },
+          ],
+        }),
+      ),
+    );
+
+    expect(parsed.programs[0].startedOn).toBe('2026-08-24');
+    expect(parsed.libraryImports[0]).toMatchObject({ payloadHash: 'a1b2c3d4', createdExercises: 18 });
+
+    // Wie beim Band-Katalog: ältere Dateien kennen den Schlüssel nicht und
+    // kommen mit leerer Liste zurück, statt am z.literal zu scheitern.
+    const legacy = createSnapshot();
+    delete (legacy as Partial<DatabaseSnapshot>).libraryImports;
+
+    expect(parseDatabaseSnapshot(JSON.stringify(legacy)).libraryImports).toEqual([]);
   });
 
   it('keeps a switched-off timer sound and accepts backups written before it existed', () => {

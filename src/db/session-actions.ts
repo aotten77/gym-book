@@ -7,6 +7,7 @@ import type {
   WorkoutSessionExercise,
   WorkoutSetLog,
 } from '@/domain/models';
+import { resolveWeekControl } from '@/domain/program';
 import { findRestTrack, removeRestTrack, removeRestTracksForExercise } from '@/domain/rest-timer';
 import type { SetLogValuesInput } from '@/domain/history';
 import { materializeSession } from '@/domain/session';
@@ -99,18 +100,24 @@ export async function startSessionFromTemplate(templateId: string) {
   const program = settings?.activeProgramId
     ? await db.programs.get(settings.activeProgramId)
     : undefined;
-  const resolvedProgramWeek = settings?.weekOverride ?? program?.activeWeek ?? 1;
+  /*
+   * Die Woche wird an genau einer Stelle aufgelöst - `resolveWeekControl` -,
+   * damit Startseite, Einstellungen und der Start einer Einheit nie
+   * auseinanderlaufen. Vorher stand die Rangfolge hier als eigene Zeile, und
+   * das Startdatum des Programms hätte sie nicht erreicht.
+   */
+  const programWeeks = settings?.activeProgramId
+    ? await db.programWeeks.where('programId').equals(settings.activeProgramId).toArray()
+    : [];
+  const resolvedProgramWeek = resolveWeekControl(
+    settings?.weekOverride,
+    program,
+    programWeeks,
+  ).effectiveWeek;
   const usedWeekOverride = typeof settings?.weekOverride === 'number';
-  const programWeek =
-    program && settings?.activeProgramId
-      ? (
-          await db.programWeeks
-            .where('programId')
-            .equals(settings.activeProgramId)
-            .filter((week) => week.weekNumber === resolvedProgramWeek)
-            .first()
-        )
-      : undefined;
+  const programWeek = program
+    ? programWeeks.find((week) => week.weekNumber === resolvedProgramWeek)
+    : undefined;
   const progressionRules =
     programWeek && templateExercises.length > 0
       ? await db.progressionRules.where('programWeekId').equals(programWeek.id).toArray()

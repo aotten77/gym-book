@@ -1,5 +1,18 @@
 import type { LoadKind, TrackingMode } from '@/domain/models';
 
+/**
+ * Wie ein Tracking-Modus heißt, wenn ein Mensch ihn liest.
+ *
+ * Steht hier und nicht im Formular, weil inzwischen zwei Stellen ihn anzeigen:
+ * die Übungsverwaltung und die Vorschau des Bibliotheks-Imports, die für eine
+ * geänderte Erfassung "Zeit → Wiederholungen + Gewicht" schreibt.
+ */
+export const TRACKING_MODE_LABELS: Record<TrackingMode, string> = {
+  reps_weight: 'Wiederholungen + Gewicht',
+  time: 'Zeit',
+  time_weight: 'Zeit + Gewicht',
+};
+
 export function supportsReps(trackingMode?: TrackingMode) {
   return trackingMode === 'reps_weight';
 }

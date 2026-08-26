@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/Button';
 
@@ -10,6 +10,12 @@ interface ConfirmDialogProps {
   cancelLabel?: string;
   destructive?: boolean;
   busy?: boolean;
+  /**
+   * Was die Rückfrage außerdem braucht - etwa das Datum, mit dem bestätigt
+   * wird. Bleibt die Ausnahme: eine Rückfrage mit halbem Formular ist keine
+   * Rückfrage mehr.
+   */
+  children?: ReactNode;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -28,6 +34,7 @@ export function ConfirmDialog({
   cancelLabel = 'Abbrechen',
   destructive = true,
   busy = false,
+  children,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -64,7 +71,9 @@ export function ConfirmDialog({
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-content/45 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur-sm sm:items-center">
       <div
-        role="alertdialog"
+        // Mit Eingabefeld ist es keine Warnmeldung mehr, sondern ein Dialog -
+        // `alertdialog` verspricht Screenreadern eine reine Rückfrage.
+        role={children ? 'dialog' : 'alertdialog'}
         aria-modal="true"
         aria-labelledby="confirm-dialog-title"
         aria-describedby="confirm-dialog-description"
@@ -76,6 +85,7 @@ export function ConfirmDialog({
         <p id="confirm-dialog-description" className="mt-2 text-sm text-content-muted">
           {description}
         </p>
+        {children ? <div className="mt-4">{children}</div> : null}
         <div className="mt-5 grid grid-cols-2 gap-3">
           <Button variant="ghost" onClick={onCancel} disabled={busy}>
             {cancelLabel}

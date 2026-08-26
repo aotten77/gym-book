@@ -1,0 +1,147 @@
+{
+  "schemaVersion": 1,
+  "exercises": [
+    {
+      "name": "Einbeiniges RDL",
+      "instructions": "4 s absenken, Last steigend. Exzentrisch bei LANGER Muskellänge + Beckenkontrolle. Standbein leicht gebeugt, Bewegung aus der Hüfte.",
+      "trackingMode": "reps_weight",
+      "unilateral": true
+    },
+    {
+      "name": "Beinbeuger liegend leicht (Vorwärmen)",
+      "instructions": "2 leichte Sätze ZWINGEND vor dem Nordic. Krampfprophylaxe in derselben Bewegungsrichtung.",
+      "trackingMode": "reps_weight",
+      "unilateral": false
+    },
+    {
+      "name": "Beinbeuger sitzend",
+      "instructions": "Erst ab Woche 5. Mehr Hüftbeugung = mehr Kompression am Sitzbein.",
+      "trackingMode": "reps_weight",
+      "unilateral": false
+    },
+    {
+      "name": "Pallof Press",
+      "instructions": "Ab Woche 5 zusätzlich zum Deadbug. Anti-Rotation, Becken bleibt still.",
+      "trackingMode": "reps_weight",
+      "unilateral": true
+    },
+    {
+      "name": "Step-Downs seitlich vom Kasten",
+      "instructions": "SEITLICH absenken, nicht frontal. 4 s exzentrisch. AM ENDE der Einheit. Knie beobachten – frontale Kontrolle ist der Zweck.",
+      "trackingMode": "reps_weight",
+      "unilateral": true
+    },
+    {
+      "name": "Glute Bridge Voraktivierung",
+      "instructions": "Vor JEDEM Lauf 2 x 10 je Seite. Knie ca. 90 Grad, Fuß nah am Körper. Ansteuerung, nicht Kraft. Abbruch bei Nervengefühl am Sitzhöcker.",
+      "trackingMode": "reps_weight",
+      "unilateral": true
+    },
+
+    {
+      "name": "Knie-zur-Wand",
+      "instructions": "10 x je Seite. Ferse bleibt am Boden. Abstand Zehe-Wand in cm notieren.",
+      "trackingMode": "reps_weight",
+      "unilateral": true
+    },
+    {
+      "name": "90/90-Hüftrotation",
+      "instructions": "8-10 Wechsel, aktiv ohne Handunterstützung.",
+      "trackingMode": "reps_weight",
+      "unilateral": false
+    },
+    {
+      "name": "Half-Kneeling BWS-Rotation",
+      "instructions": "8 x je Seite. Hände am Hinterkopf, Becken bleibt still.",
+      "trackingMode": "reps_weight",
+      "unilateral": true
+    },
+    {
+      "name": "Couch Stretch",
+      "instructions": "90-120 s je Seite. Polster unters hintere Knie (Meniskusvorgeschichte).",
+      "trackingMode": "time",
+      "unilateral": true
+    },
+    {
+      "name": "Standwaage",
+      "instructions": "30 s je Seite, DIREKT nach dem Couch Stretch. Nicht optional.",
+      "trackingMode": "time",
+      "unilateral": true
+    },
+    {
+      "name": "Vierfüßler Beckenaufrichtung",
+      "instructions": "10 langsam. Bewegung isoliert aus dem Becken, nicht aus der BWS.",
+      "trackingMode": "reps_weight",
+      "unilateral": false
+    },
+    {
+      "name": "Aktive Adduktorenmobilisation",
+      "instructions": "8 x je Seite. Seitlage, gestrecktes Bein aktiv anheben und halten.",
+      "trackingMode": "reps_weight",
+      "unilateral": true
+    },
+
+    {
+      "name": "TEST Einbeinige Hamstring-Bridge",
+      "instructions": "Max. Wdh., Ferse auf Bank, Bein gestreckt. Reine Testübung, kein Trainingsinhalt.",
+      "trackingMode": "reps_weight",
+      "unilateral": true
+    },
+    {
+      "name": "TEST Step-Down 4 s",
+      "instructions": "Max. saubere Wdh. Abbruch bei Einknicken des Knies nach innen.",
+      "trackingMode": "reps_weight",
+      "unilateral": true
+    },
+    {
+      "name": "TEST Side Plank mit Hip Hitch",
+      "instructions": "Max. Sekunden bis zum Formverlust.",
+      "trackingMode": "time",
+      "unilateral": true
+    },
+    {
+      "name": "TEST Einbeiniges Wadenheben",
+      "instructions": "Max. Wdh. bis Formverlust. Links/rechts vergleichen.",
+      "trackingMode": "reps_weight",
+      "unilateral": true
+    },
+    {
+      "name": "TEST Knie-zur-Wand",
+      "instructions": "Abstand Zehe-Wand in cm bei am Boden bleibender Ferse. Links/rechts vergleichen - reine Testübung, kein Trainingsinhalt.",
+      "trackingMode": "reps_weight",
+      "unilateral": true
+    }
+  ],
+
+  "templates": [
+    { "name": "Mobility (Mi, 25 min)" },
+    { "name": "Tests (alle 4 Wochen)" }
+  ],
+
+  "templateAssignments": [
+    { "template": "Einheit B",  "exercise": "Beinbeuger liegend leicht (Vorwärmen)", "orderIndex": 8,  "workSetCount": 2, "includeWarmup": false },
+    { "template": "Einheit B",  "exercise": "Einbeiniges RDL",                       "orderIndex": 10, "workSetCount": 3, "includeWarmup": false },
+    { "template": "Einheit A",  "exercise": "Pallof Press",                          "orderIndex": 12, "workSetCount": 3, "includeWarmup": false },
+
+    { "template": "Mobility (Mi, 25 min)", "exercise": "Knie-zur-Wand",                 "orderIndex": 1, "workSetCount": 1, "includeWarmup": false },
+    { "template": "Mobility (Mi, 25 min)", "exercise": "90/90-Hüftrotation",            "orderIndex": 2, "workSetCount": 1, "includeWarmup": false },
+    { "template": "Mobility (Mi, 25 min)", "exercise": "Half-Kneeling BWS-Rotation",    "orderIndex": 3, "workSetCount": 1, "includeWarmup": false },
+    { "template": "Mobility (Mi, 25 min)", "exercise": "Couch Stretch",                 "orderIndex": 4, "workSetCount": 1, "includeWarmup": false },
+    { "template": "Mobility (Mi, 25 min)", "exercise": "Glute Bridge Voraktivierung",   "orderIndex": 5, "workSetCount": 1, "includeWarmup": false },
+    { "template": "Mobility (Mi, 25 min)", "exercise": "Standwaage",                    "orderIndex": 6, "workSetCount": 1, "includeWarmup": false },
+    { "template": "Mobility (Mi, 25 min)", "exercise": "Vierfüßler Beckenaufrichtung",  "orderIndex": 7, "workSetCount": 1, "includeWarmup": false },
+    { "template": "Mobility (Mi, 25 min)", "exercise": "Aktive Adduktorenmobilisation", "orderIndex": 8, "workSetCount": 1, "includeWarmup": false },
+
+    { "template": "Tests (alle 4 Wochen)", "exercise": "TEST Einbeinige Hamstring-Bridge", "orderIndex": 1, "workSetCount": 1, "includeWarmup": false },
+    { "template": "Tests (alle 4 Wochen)", "exercise": "TEST Einbeiniges Wadenheben",      "orderIndex": 2, "workSetCount": 1, "includeWarmup": false },
+    { "template": "Tests (alle 4 Wochen)", "exercise": "TEST Step-Down 4 s",               "orderIndex": 3, "workSetCount": 1, "includeWarmup": false },
+    { "template": "Tests (alle 4 Wochen)", "exercise": "TEST Side Plank mit Hip Hitch",    "orderIndex": 4, "workSetCount": 1, "includeWarmup": false },
+    { "template": "Tests (alle 4 Wochen)", "exercise": "TEST Knie-zur-Wand",               "orderIndex": 5, "workSetCount": 1, "includeWarmup": false }
+  ],
+
+  "bandLevels": [
+    { "name": "Schwarz", "orderIndex": 2 },
+    { "name": "Grün",    "orderIndex": 3 },
+    { "name": "Rot",     "orderIndex": 4 }
+  ]
+}

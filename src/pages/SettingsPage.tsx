@@ -5,19 +5,26 @@ import { Link } from 'react-router-dom';
 import { AppShell } from '@/components/AppShell';
 import { Alert } from '@/components/Alert';
 import { BandLevelsSection } from '@/components/BandLevelsSection';
+import { LibraryImportSection } from '@/components/LibraryImportSection';
 import { Button } from '@/components/ui/Button';
-import { ToggleField } from '@/components/ui/Field';
+import { TextField, ToggleField } from '@/components/ui/Field';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { SectionCard } from '@/components/SectionCard';
 import { WeekStepper } from '@/components/WeekStepper';
 import { bootstrapAppData, seedSampleData } from '@/db/bootstrap';
-import { formatDateTime } from '@/lib/format';
+import { formatDateTime, formatNumber } from '@/lib/format';
 import { playTimerChimeFromGesture, primeTimerSound } from '@/lib/sound';
 import { isTimerSpeechSupported, speakTimerAnnouncementFromGesture } from '@/lib/speech';
 import { formatBytes, readStorageStatus, requestPersistentStorage, type StorageStatus } from '@/lib/storage';
 import { isScreenWakeLockSupported } from '@/lib/wake-lock';
 import { db } from '@/db/appDb';
-import { setProgramActiveWeek } from '@/db/program-actions';
+import {
+  applyNordicCurlTrackingFix,
+  applyProgramWeekFix,
+  describeDataFixes,
+  NORDIC_CURL_NAME,
+} from '@/db/data-fix-actions';
+import { setProgramActiveWeek, setProgramStartDate } from '@/db/program-actions';
 import {
   clearWeekOverride,
   setActiveProgram,
@@ -25,7 +32,7 @@ import {
   setTimerSoundEnabled,
   setWeekOverride,
 } from '@/db/settings-actions';
-import { resolveWeekControl } from '@/domain/program';
+import { resolveWeekControl, suggestProgramStart } from '@/domain/program';
 import {
   SET_TIMER_FINAL_CUE_MIN_SECONDS,
   SET_TIMER_HALF_CUE_MIN_SECONDS,
@@ -63,6 +70,12 @@ export function SettingsPage() {
   const [exportMessage, setExportMessage] = useState<string | null>(null);
   const [soundError, setSoundError] = useState<string | null>(null);
   const [screenAwakeError, setScreenAwakeError] = useState<string | null>(null);
+  const [showNordicFixDialog, setShowNordicFixDialog] = useState(false);
+  const [showWeekFixDialog, setShowWeekFixDialog] = useState(false);
+  const [weekFixDate, setWeekFixDate] = useState('');
+  const [dataFixMessage, setDataFixMessage] = useState<string | null>(null);
+  const [dataFixError, setDataFixError] = useState<string | null>(null);
+  const [isFixing, setIsFixing] = useState(false);
 
   const refreshStorageStatus = useCallback(async () => {
     setStorageStatus(await readStorageStatus());
@@ -171,9 +184,17 @@ export function SettingsPage() {
     tests: await db.exerciseTests.count(),
     mediaAssets: await db.mediaAssets.count(),
   }), []);
+  /*
+   * Der Status der Datenkorrekturen kommt aus dem Bestand, nicht aus einem
+   * gespeicherten Häkchen: nach dem Restore einer alten Sicherung ist eine
+   * Korrektur wieder fällig, und ein "schon erledigt" würde dann lügen. Die
+   * Live-Query hält ihn nebenbei aktuell, sobald eine Korrektur gelaufen ist.
+   */
+  const dataFixes = useLiveQuery(() => describeDataFixes(), []);
   const pendingSummary = pendingImport ? summarizeDatabaseSnapshot(pendingImport.snapshot) : null;
   const weekControl = resolveWeekControl(settings?.weekOverride, activeProgram, programWeeks ?? []);
   const effectiveWeekLabel = `W${weekControl.effectiveWeek}`;
+  const isManualWeek = weekControl.mode === 'override';
 
   async function handleImportFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -290,6 +311,62 @@ export function SettingsPage() {
     }
   }
 
+  async function handleStartDateChange(startedOn: string) {
+    if (!activeProgram) {
+      return;
+    }
+
+    setIsSavingProgram(true);
+
+    try {
+      await setProgramStartDate(activeProgram.id, startedOn);
+      setProgramError(null);
+    } catch (error) {
+      setProgramError(
+        error instanceof Error ? error.message : 'Startdatum konnte nicht gespeichert werden.',
+      );
+    } finally {
+      setIsSavingProgram(false);
+    }
+  }
+
+  /**
+   * Der Schalter zwischen abgeleiteter und von Hand gesetzter Woche.
+   *
+   * Eingeschaltet friert er die gerade wirksame Woche ein - das ist die
+   * einzige Zahl, die der Nutzer in dem Moment gemeint haben kann. Vorher
+   * entstand ein Override als Nebenwirkung jedes Tipps auf die Pfeile, und
+   * genau so blieb er unbemerkt für Wochen stehen.
+   */
+  async function handleToggleManualWeek(manual: boolean) {
+    setIsSavingProgram(true);
+
+    try {
+      await (manual ? setWeekOverride(weekControl.effectiveWeek) : clearWeekOverride());
+      setProgramError(null);
+    } catch (error) {
+      setProgramError(error instanceof Error ? error.message : 'Woche konnte nicht umgestellt werden.');
+    } finally {
+      setIsSavingProgram(false);
+    }
+  }
+
+  async function runDataFix(action: () => Promise<string>) {
+    setIsFixing(true);
+
+    try {
+      setDataFixMessage(await action());
+      setDataFixError(null);
+    } catch (error) {
+      setDataFixMessage(null);
+      setDataFixError(error instanceof Error ? error.message : 'Korrektur fehlgeschlagen.');
+    } finally {
+      setIsFixing(false);
+      setShowNordicFixDialog(false);
+      setShowWeekFixDialog(false);
+    }
+  }
+
   async function handleToggleTimerSound(enabled: boolean) {
     /*
      * Noch innerhalb der Geste freischalten: nach dem `await` unten wäre der
@@ -340,7 +417,11 @@ export function SettingsPage() {
                 {effectiveWeekLabel}
               </p>
               <p className="mt-1 text-sm text-content-muted">
-                {settings?.weekOverride ? 'Override aktiv' : activeProgram?.name ?? 'Kein Programm gesetzt'}
+                {weekControl.mode === 'override'
+                  ? 'Von Hand gesetzt'
+                  : weekControl.mode === 'derived'
+                    ? 'Läuft mit dem Kalender'
+                    : activeProgram?.name ?? 'Kein Programm gesetzt'}
               </p>
             </div>
             <div className="rounded-panel bg-surface p-4">
@@ -393,35 +474,76 @@ export function SettingsPage() {
               </div>
             )}
 
-            <p className="text-sm text-content-muted">
-              Die Programm-Woche läuft kalendarisch mit dem Programm; ein Override
-              überschreibt sie, bis du ihn zurücksetzt.
-            </p>
-
-            <WeekStepper
-              label="Aktive Woche"
-              week={weekControl.effectiveWeek}
+            {/*
+              Das Startdatum ist die eigentliche Antwort auf "welche Woche ist
+              gerade": von hier zählt die Programmwoche mit dem Kalender weiter,
+              ohne dass jemand etwas weiterschalten muss.
+            */}
+            <TextField
+              label="Programmstart"
+              type="date"
               hint={
-                <p className="mt-1 text-sm text-content-muted">
-                  {weekControl.mode === 'override' ? 'Override' : 'Programm'}
-                </p>
+                activeProgram?.startedOn
+                  ? `Woche ${formatNumber(weekControl.derivedWeek ?? 1)} läuft - gezählt ab dem Montag dieser Woche.`
+                  : 'Ohne Startdatum bleibt es bei der Programm-Woche, die du von Hand weiterschaltest.'
               }
-              backLabel="Override-Woche zurück"
-              forwardLabel="Override-Woche vor"
-              onStepBack={() => handleStepActiveWeek(-1)}
-              onStepForward={() => handleStepActiveWeek(1)}
+              value={activeProgram?.startedOn ?? ''}
+              onChange={(event) => void handleStartDateChange(event.target.value)}
               disabled={!activeProgram || isSavingProgram}
-              onReset={handleResetWeekOverride}
-              resetLabel="Wochen-Override zurücksetzen"
-              resetDisabled={!settings?.weekOverride || isSavingProgram}
             />
 
+            <ToggleField
+              label="Woche von Hand setzen"
+              hint="Aus: die Woche läuft mit dem Kalender. An: die eingestellte Woche gilt, bis du sie zurücknimmst."
+              checked={isManualWeek}
+              onCheckedChange={(manual) => void handleToggleManualWeek(manual)}
+              disabled={!activeProgram || isSavingProgram}
+            />
+
+            {isManualWeek ? (
+              <WeekStepper
+                label="Aktive Woche"
+                week={weekControl.effectiveWeek}
+                hint={
+                  <p className="mt-1 text-sm text-content-muted">
+                    Override
+                    {weekControl.derivedWeek
+                      ? ` · nach Kalender wäre es W${weekControl.derivedWeek}`
+                      : ''}
+                  </p>
+                }
+                backLabel="Override-Woche zurück"
+                forwardLabel="Override-Woche vor"
+                onStepBack={() => handleStepActiveWeek(-1)}
+                onStepForward={() => handleStepActiveWeek(1)}
+                disabled={!activeProgram || isSavingProgram}
+                onReset={handleResetWeekOverride}
+                resetLabel="Wochen-Override zurücksetzen"
+                resetDisabled={!settings?.weekOverride || isSavingProgram}
+              />
+            ) : (
+              <div className="rounded-panel border border-line bg-surface p-4">
+                <p className="text-xs uppercase tracking-[0.18em] text-content-muted">Aktive Woche</p>
+                <p className="mt-2 text-2xl font-semibold text-content">{effectiveWeekLabel}</p>
+                <p className="mt-1 text-sm text-content-muted">
+                  {weekControl.mode === 'derived' ? 'Läuft mit dem Kalender' : 'Programm-Woche'}
+                </p>
+              </div>
+            )}
+
+            {/*
+              Bleibt auch mit Startdatum bedienbar: sie ist die Zahl, die ohne
+              Datum gilt, und sie steht in den Programmdaten - nicht in den
+              Einstellungen dieses Geräts.
+            */}
             <WeekStepper
               label="Programm-Woche"
               week={activeProgram?.activeWeek ?? 1}
               hint={
                 <p className="mt-1 text-sm text-content-muted">
-                  Wirkt nur, wenn keine Override-Woche aktiv ist.
+                  {activeProgram?.startedOn
+                    ? 'Wirkt nur ohne Startdatum und ohne Override.'
+                    : 'Wirkt, solange keine Woche von Hand gesetzt ist.'}
                 </p>
               }
               backLabel="Programm-Woche zurück"
@@ -572,6 +694,82 @@ export function SettingsPage() {
         </SectionCard>
 
         <BandLevelsSection />
+
+        <LibraryImportSection />
+
+        {/*
+          Korrekturen an Daten, die schon auf dem Gerät liegen. Bewusst keine
+          Automatik beim Start: beide deuten Trainingsdaten um, und das gehört
+          bestätigt. Erledigt ist erledigt - die Knöpfe blenden sich ab, sobald
+          im Bestand nichts mehr zu tun ist.
+        */}
+        <SectionCard
+          title="Datenkorrekturen"
+          subtitle="Einmalige Eingriffe in vorhandene Daten - jeder mit Rückfrage."
+        >
+          <div className="space-y-4">
+            <div className="rounded-panel border border-line bg-surface p-4">
+              <p className="font-medium text-content">{NORDIC_CURL_NAME} auf Wiederholungen</p>
+              <p className="mt-1 text-sm text-content-muted">
+                Als Zeitübung belohnt die Erfassung statisches Halten - gezählt werden sollen
+                saubere Wiederholungen. Bereits geloggte Sekunden bleiben erhalten und stehen in
+                der Übungsansicht als Altdaten.
+              </p>
+              <p className="mt-2 text-sm text-content-muted">
+                {dataFixes === undefined
+                  ? 'Wird geprüft...'
+                  : dataFixes.nordicCurlOnTime > 0
+                    ? `${formatNumber(dataFixes.nordicCurlOnTime)} Übung wird noch auf Zeit erfasst · ${formatNumber(dataFixes.nordicCurlSecondsLogs)} Sätze mit Sekunden.`
+                    : 'Nichts zu tun - die Übung wird nicht (mehr) auf Zeit erfasst.'}
+              </p>
+              <Button
+                variant="ghost"
+                fullWidth
+                className="mt-3"
+                disabled={isFixing || !dataFixes?.nordicCurlOnTime}
+                onClick={() => setShowNordicFixDialog(true)}
+              >
+                Erfassung umstellen
+              </Button>
+            </div>
+
+            <div className="rounded-panel border border-line bg-surface p-4">
+              <p className="font-medium text-content">Programmwoche aus dem Startdatum</p>
+              <p className="mt-1 text-sm text-content-muted">
+                Eine von Hand gesetzte Woche gilt, bis sie zurückgenommen wird - steht sie auf 1,
+                startet jede Einheit als Woche 1 und die wochenabhängigen Vorgaben greifen nie.
+                Diese Korrektur setzt das Startdatum und nimmt die Übersteuerung zurück.
+              </p>
+              <p className="mt-2 text-sm text-content-muted">
+                {dataFixes === undefined
+                  ? 'Wird geprüft...'
+                  : !dataFixes.activeProgramId
+                    ? 'Kein aktives Programm - erst eines auswählen.'
+                    : dataFixes.hasWeekOverride
+                      ? `Aktuell fest auf W${formatNumber(dataFixes.weekOverride ?? 1)}.`
+                      : 'Nichts zu tun - es ist keine Woche von Hand gesetzt.'}
+              </p>
+              <Button
+                variant="ghost"
+                fullWidth
+                className="mt-3"
+                disabled={isFixing || !dataFixes?.activeProgramId || !dataFixes.hasWeekOverride}
+                onClick={() => {
+                  setWeekFixDate(
+                    dataFixes?.activeProgramStartedOn ??
+                      (activeProgram ? suggestProgramStart(activeProgram) : ''),
+                  );
+                  setShowWeekFixDialog(true);
+                }}
+              >
+                Startdatum setzen
+              </Button>
+            </div>
+
+            {dataFixMessage ? <Alert variant="success">{dataFixMessage}</Alert> : null}
+            {dataFixError ? <Alert variant="error">{dataFixError}</Alert> : null}
+          </div>
+        </SectionCard>
 
         <SectionCard title="Backup" subtitle="Sichern und Wiederherstellen laufen vollständig auf diesem Gerät.">
           <div className="grid gap-3">
@@ -742,6 +940,54 @@ export function SettingsPage() {
           </div>
         </SectionCard>
       </div>
+
+      <ConfirmDialog
+        open={showNordicFixDialog}
+        title={`${NORDIC_CURL_NAME} auf Wiederholungen umstellen?`}
+        description="Die Übung wird künftig mit Wiederholungen und Gewicht erfasst. Bereits geloggte Sekunden bleiben unverändert stehen und werden in der Übungsansicht als Altdaten gekennzeichnet - umgerechnet wird nichts."
+        confirmLabel="Umstellen"
+        destructive={false}
+        busy={isFixing}
+        onConfirm={() =>
+          void runDataFix(async () => {
+            const changed = await applyNordicCurlTrackingFix();
+
+            return changed > 0
+              ? `${NORDIC_CURL_NAME} wird jetzt mit Wiederholungen erfasst.`
+              : `${NORDIC_CURL_NAME} war bereits umgestellt.`;
+          })
+        }
+        onCancel={() => setShowNordicFixDialog(false)}
+      />
+
+      <ConfirmDialog
+        open={showWeekFixDialog}
+        title="Programmwoche aus dem Startdatum?"
+        description="Die von Hand gesetzte Woche wird zurückgenommen. Ab dann zählt die Programmwoche kalendarisch ab dem Montag des Startdatums - übersteuern lässt sie sich weiterhin jederzeit."
+        confirmLabel="Übernehmen"
+        destructive={false}
+        busy={isFixing}
+        onConfirm={() =>
+          void runDataFix(async () => {
+            if (!dataFixes?.activeProgramId) {
+              throw new Error('Kein aktives Programm.');
+            }
+
+            await applyProgramWeekFix(dataFixes.activeProgramId, weekFixDate);
+
+            return 'Startdatum gesetzt, die Woche läuft wieder mit dem Kalender.';
+          })
+        }
+        onCancel={() => setShowWeekFixDialog(false)}
+      >
+        <TextField
+          label="Programmstart"
+          type="date"
+          hint="Vorgeschlagen ist der Montag der Woche, in der das Programm angelegt wurde."
+          value={weekFixDate}
+          onChange={(event) => setWeekFixDate(event.target.value)}
+        />
+      </ConfirmDialog>
 
       <ConfirmDialog
         open={showResetDialog}

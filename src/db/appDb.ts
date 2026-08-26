@@ -4,6 +4,7 @@ import type {
   BandLevel,
   Exercise,
   ExerciseTest,
+  LibraryImportLog,
   MediaAsset,
   Program,
   ProgramWeek,
@@ -29,6 +30,7 @@ class GymBookDatabase extends Dexie {
   mediaAssets!: Table<MediaAsset, string>;
   appSettings!: Table<AppSettings, string>;
   bandLevels!: Table<BandLevel, string>;
+  libraryImports!: Table<LibraryImportLog, string>;
 
   constructor() {
     super('gym-book-db');
@@ -75,6 +77,14 @@ class GymBookDatabase extends Dexie {
     // `loadKind` schlicht Kilo-Übungen.
     this.version(3).stores({
       bandLevels: 'id, orderIndex, name',
+    });
+
+    // v4 bringt das Protokoll der Bibliotheks-Importe. Wieder nur eine neue
+    // Tabelle und kein `upgrade()`: `Program.startedOn` kommt im selben Zug
+    // dazu, braucht aber keinen Index - Dexie speichert das ganze Objekt.
+    // Indiziert ist nur `importedAt`, weil die Anzeige nach Zeit sortiert.
+    this.version(4).stores({
+      libraryImports: 'id, importedAt',
     });
   }
 }

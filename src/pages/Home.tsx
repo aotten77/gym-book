@@ -115,18 +115,24 @@ export default function Home() {
   const weekControl = resolveWeekControl(settings?.weekOverride, program, programWeeks ?? []);
   const weekHint = program?.name ?? 'Kein Programm gesetzt';
   /*
-   * Drei Modi, drei Texte. Das Ternär hier kannte nur zwei und faltete 'none'
-   * in "Programm" - ohne aktives Programm stand damit über der Zeile "Kein
-   * Programm gesetzt" das Wort "Programm", als käme die W1 von dort. Sie kommt
-   * aus dem Fallback in resolveWeekControl, und was das praktisch heißt, ist
-   * die einzige Auskunft, die an dieser Stelle jemand braucht.
+   * Vier Modi, vier Texte. Das Ternär hier kannte einmal nur zwei und faltete
+   * 'none' in "Programm" - ohne aktives Programm stand damit über der Zeile
+   * "Kein Programm gesetzt" das Wort "Programm", als käme die W1 von dort. Sie
+   * kommt aus dem Fallback in resolveWeekControl, und was das praktisch heißt,
+   * ist die einzige Auskunft, die an dieser Stelle jemand braucht.
+   *
+   * 'derived' ist seit dem Startdatum der Normalfall: die Woche läuft von
+   * selbst mit. Ein Tipp auf die Pfeile setzt weiterhin einen Override - und
+   * sagt es dann auch, damit er nicht wochenlang unbemerkt stehen bleibt.
    */
   const weekModeHint =
     weekControl.mode === 'override'
-      ? 'Override aktiv'
-      : weekControl.mode === 'program'
-        ? 'Programm'
-        : 'Zielwerte kommen aus dem Workout';
+      ? 'Von Hand gesetzt - Pfeil zurücksetzen für den Kalender'
+      : weekControl.mode === 'derived'
+        ? 'Läuft mit dem Kalender'
+        : weekControl.mode === 'program'
+          ? 'Programm'
+          : 'Zielwerte kommen aus dem Workout';
 
   function describeExerciseCount(templateId: string) {
     const count = exerciseCountByTemplateId?.[templateId];

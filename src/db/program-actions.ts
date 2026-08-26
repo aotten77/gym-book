@@ -208,6 +208,37 @@ export async function deleteProgramWeek(programWeekId: string) {
   );
 }
 
+/**
+ * Setzt oder entfernt das Startdatum des Programms.
+ *
+ * Solange es steht, läuft die Programmwoche mit dem Kalender
+ * (`deriveProgramWeek`); ohne bleibt es bei `activeWeek`. Erwartet `YYYY-MM-DD`
+ * - das Format des Datumsfelds und zugleich das, was `parseLocalDate` in
+ * [calendar-week.ts] als Tag am Ort des Geräts liest.
+ */
+export async function setProgramStartDate(programId: string, startedOn?: string) {
+  const trimmed = startedOn?.trim();
+
+  if (trimmed && !/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    throw new Error('Das Startdatum braucht die Form JJJJ-MM-TT.');
+  }
+
+  await db.transaction('rw', db.programs, async () => {
+    const program = await db.programs.get(programId);
+
+    if (!program) {
+      throw new Error('Programm nicht gefunden');
+    }
+
+    await db.programs.update(programId, {
+      // `undefined` löscht die Property über Dexies Update-Semantik - beim
+      // Zurücknehmen des Datums ist genau das gemeint.
+      startedOn: trimmed ? trimmed : undefined,
+      updatedAt: new Date().toISOString(),
+    });
+  });
+}
+
 export async function setProgramActiveWeek(programId: string, activeWeek: number) {
   const program = await db.programs.get(programId);
 

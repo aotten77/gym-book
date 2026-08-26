@@ -53,7 +53,11 @@ Set materialization rules, enforced in `materializeSession` and mirrored in `add
 
 ### Progression
 
-Calendar-week based, never session-count based. `startSessionFromTemplate` resolves the week as `settings.weekOverride ?? program.activeWeek ?? 1`, looks up the matching `ProgramWeek`, and folds its `ProgressionRule` targets over the template targets (`progressionRule.targetX ?? templateExercise.targetX`) into the session snapshot. The resolved week is then frozen on the session.
+Calendar-week based, never session-count based. `startSessionFromTemplate` resolves the week through `resolveWeekControl` ([program.ts](src/domain/program.ts)) — the *same* function Home and Settings use, so the three can no longer drift — looks up the matching `ProgramWeek`, and folds its `ProgressionRule` targets over the template targets (`progressionRule.targetX ?? templateExercise.targetX`) into the session snapshot. The resolved week is then frozen on the session.
+
+The ranking is `weekOverride ?? derived from Program.startedOn ?? program.activeWeek ?? 1`. **`startedOn` is what makes the week run by itself**: `deriveProgramWeek` counts calendar weeks (Monday, local time) since that date and stops at the last planned week rather than cycling — a cycle would be automation, and v1 has none. This is the *only* bridge between the calendar week and the program week, and [calendar-week.ts](src/domain/calendar-week.ts) says so at the top; `calendarWeeksBetween` rounds instead of truncating because a week across a DST change is 167 or 169 hours, and `parseLocalDate` reads a bare `YYYY-MM-DD` as the local day (`new Date('2026-08-24')` is UTC midnight and lands a day early west of Greenwich).
+
+The override still exists, but it is now a **decision, not a side effect**: it was pinned to 1 on a real device for weeks because Settings' week stepper wrote one on every tap, and an override outranks everything until it is reset. Settings therefore hides the stepper behind a "Woche von Hand setzen" toggle, and the reset leads back to the derived week.
 
 `startSessionFromTemplate` checks for an existing `active` session **inside** the insert transaction and returns that id instead of starting a second one — the check must stay in the transaction or two fast taps create two active sessions. `abortSession` and `completeSession` both go through `closeSession`, which only acts on active sessions.
 
@@ -154,7 +158,27 @@ The picture belongs to the exercise form, not to a second step afterwards: `crea
 
 ### Export / import
 
-[src/lib/export.ts](src/lib/export.ts) is the backup format: a full versioned snapshot of every table. Import validates three things, all required by the contract: schema version, referential integrity across tables, and supported media types. `SNAPSHOT_SCHEMA_VERSION` is pinned with `z.literal(...)` — a schema change means bumping the version *and* the literal. `restoreDatabaseSnapshot` clears all tables before bulk-inserting (child tables first); the Settings page exports a backup automatically before restoring.
+[src/lib/export.ts](src/lib/export.ts) is the backup format: a full versioned snapshot of every table. Import validates three things, all required by the contract: schema version, referential integrity across tables, and supported media types. `SNAPSHOT_SCHEMA_VERSION` is pinned with `z.literal(...)` — a schema change means bumping the version *and* the literal. `restoreDatabaseSnapshot` clears all tables before bulk-inserting (child tables first); the Settings page exports a backup automatically before restoring. Purely *additive* tables and fields (`bandLevels`, `libraryImports`, `Program.startedOn`) go in as `z.array(...).optional().default([])` / `.optional()` **without** a version bump — the literal would otherwise reject every backup a user already has.
+
+### The library import — a second, much smaller import
+
+The backup restore replaces everything. The **library import** ([domain/library-import.ts](src/domain/library-import.ts) + [db/library-import-actions.ts](src/db/library-import-actions.ts), UI in [LibraryImportSection.tsx](src/components/LibraryImportSection.tsx)) adds to what is there: exercises, workouts, their assignments and band levels, out of a hand-written JSON file. Sessions, set logs, tests and settings are not even in its transaction — what it cannot reach, it cannot damage. A ready payload lives in [docs/import/](docs/import/) (deliberately not in `public/`, which would deploy and precache it).
+
+Five rules carry it, and each one is a bug that a name-based import invites:
+
+- **Matched by name, not by id** — `normalizeImportKey` (trimmed, `toLocaleLowerCase('de')`) is the one place that decides identity. A file written by hand does not know the device's UUIDs, and "Nordic Curl" must not become a second exercise next to "nordic curl".
+- **Only the named fields are written.** A missing key is not a deletion — the same rule as `updateSetLogValues`, for the same reason (`Table.update` treats `undefined` as *delete this property*). Running the same file twice therefore changes nothing, which is what makes the import repeatable.
+- **Nothing is ever deleted**, and existing rows keep their **position**: a target `orderIndex` decides where something *new* is inserted, everything from that index on shifts back, and the block is renumbered densely. An assignment that already exists stays where the arrows in the workout put it, and the preview says so. An insertion that would land inside a superset moves to the end of that run — group members must stay contiguous ([superset.ts](src/domain/superset.ts)).
+- **Validation aborts, it does not warn.** An unknown `trackingMode`, a missing required field, a reference to a workout or exercise that neither exists nor is created by the same file: the import stops with that line named ("Zuordnung 3: Workout ‚Einheit C' gibt es nicht …"). Half an import is worse than none.
+- **Planned twice, written once.** `planLibraryImport` is pure: it takes the payload plus the current state as plain arrays and returns entries carrying both the preview text (`NEU` / `AKTUALISIERT` with *field: old → new* / `UNVERÄNDERT`) and the values to write. `applyLibraryImport` re-plans **inside** its transaction rather than executing the preview — between preview and confirmation an exercise may have been created or renamed, and a plan against a stale state creates twins. Same reasoning as the active-session check inside `startSessionFromTemplate`.
+
+Every run writes a `LibraryImportLog` row (timestamp, source, counts, `payloadHash`) — after the fact nothing on the records themselves says when they arrived or from what. The hash is FNV-1a over a key-sorted serialization, so reformatting the file does not change it; it answers "same file as last time", not "has anyone tampered with this".
+
+### One-off data fixes
+
+[db/data-fix-actions.ts](src/db/data-fix-actions.ts) holds corrections to data that is already on the device — never a Dexie `upgrade()`, because both of them reinterpret training data and that needs a question first. Each sits behind a `ConfirmDialog` in Settings. **"Already done" is derived from the data, not stored**: `describeDataFixes` reads the state and the button disables itself. A stored flag would lie after restoring an older backup.
+
+`applyNordicCurlTrackingFix` switches the exercise from `time` to `reps_weight` — seconds reward a static hold, which is exactly what this exercise must not reward. Logged seconds stay; nothing is converted. Which is why `isLegacyExecution` ([progress.ts](src/domain/progress.ts)) exists: a session exercise carries its own `trackingMode` snapshot, so after such a switch the old executions no longer hold the number the chart asks for and `buildProgressSeries` drops them **silently**. The exercise detail names that gap ("3 frühere Ausführungen wurden als „Zeit" erfasst …") and badges those rows "Altdaten" — in neutral ink, because that state is neither done nor skipped nor up next.
 
 ### Data loss on iOS — why the safeguards exist
 
@@ -168,7 +192,7 @@ A home-screen web app on iOS owns a storage container separate from Safari, and 
 
 ### Schema changes
 
-`appDb.ts` declares `version(1)` and `version(2)`. Adding or changing indexes requires a new `this.version(n).stores({...})` block with an `upgrade()` where data needs reshaping — the DB is on real users' devices and cannot be reset. Also update the matching Zod schema in `export.ts`. Note that IndexedDB rejects booleans as keys, so boolean fields must not be indexed.
+`appDb.ts` declares `version(1)` through `version(4)`. Adding or changing indexes requires a new `this.version(n).stores({...})` block with an `upgrade()` where data needs reshaping — the DB is on real users' devices and cannot be reset. Also update the matching Zod schema in `export.ts`. Note that IndexedDB rejects booleans as keys, so boolean fields must not be indexed.
 
 ## UI layer
 
