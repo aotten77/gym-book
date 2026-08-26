@@ -268,7 +268,7 @@ export function TemplateProgressionSection({
       subtitle="Pro Programmwoche kannst du Zielwerte für dieses Workout überschreiben. Beim Start des Trainings gilt genau die Stufe der aktiven Woche."
       action={
         <Link
-          to="/programs"
+          to="/programs/manage"
           className="min-h-touch inline-flex items-center justify-center rounded-control border border-line px-3 py-2 text-sm text-content-secondary transition hover:bg-surface-raised"
         >
           Programme

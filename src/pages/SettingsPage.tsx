@@ -446,7 +446,7 @@ export function SettingsPage() {
           subtitle="Programm und aktive Woche bestimmen die Zielwerte, mit denen ein Training startet."
           action={
             <Link
-              to="/programs"
+              to="/programs/manage"
               className="min-h-touch inline-flex items-center justify-center rounded-control border border-line px-3 py-2 text-sm text-content-secondary transition hover:bg-surface-raised"
             >
               Verwalten

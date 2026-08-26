@@ -17,7 +17,19 @@ import {
 } from '@/db/program-actions';
 import { setActiveProgram } from '@/db/settings-actions';
 
-export function ProgramsPage() {
+/**
+ * Anlegen, umbenennen, löschen - das reine CRUD auf Programm und Woche.
+ *
+ * Liegt auf der Unterroute `/programs/manage`, weil `/programs` selbst die
+ * Frage beantwortet, für die der Reiter da ist ("was ist in Woche 3
+ * geplant?"). Bewusst keine Sheet-Variante: dieses Formular trägt
+ * `ConfirmDialog`s, und ein Dialog im Sheet sind zwei gestapelte Dialoge -
+ * genau die Mehrdeutigkeit, für die `[data-sheet]` eingeführt wurde.
+ *
+ * Das Startdatum bleibt in den Einstellungen. Zwei Schreiber auf dem Feld,
+ * das die Kalenderwoche treibt, waren der ursprüngliche Fehler.
+ */
+export function ProgramsManagePage() {
   const [newProgramName, setNewProgramName] = useState('');
   const [newProgramWeekCount, setNewProgramWeekCount] = useState('8');
   const [editingProgramId, setEditingProgramId] = useState<string | null>(null);
@@ -158,7 +170,7 @@ export function ProgramsPage() {
   }
 
   return (
-    <AppShell title="Programm">
+    <AppShell title="Programm verwalten">
       <div className="space-y-4">
         <SectionCard
           title="Neues Programm"

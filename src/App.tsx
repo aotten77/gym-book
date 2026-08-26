@@ -7,7 +7,7 @@ import { requestPersistentStorage } from '@/lib/storage';
 import { ExercisesPage } from '@/pages/ExercisesPage';
 import { HistoryPage } from '@/pages/HistoryPage';
 import { HistorySessionPage } from '@/pages/HistorySessionPage';
-import { ProgramsPage } from '@/pages/ProgramsPage';
+import { ProgramsManagePage } from '@/pages/ProgramsManagePage';
 import { SessionPage } from '@/pages/SessionPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { TemplateDetailPage } from '@/pages/TemplateDetailPage';
@@ -69,7 +69,12 @@ export default function App() {
       <HashRouter>
         <Routes>
           <Route path="/" element={<Home />} />
-          <Route path="/programs" element={<ProgramsPage />} />
+          {/*
+            `/programs` gehört der Wochenansicht - bis die steht, führt der
+            Reiter direkt auf die Verwaltung, statt eine leere Seite zu zeigen.
+          */}
+          <Route path="/programs" element={<Navigate to="/programs/manage" replace />} />
+          <Route path="/programs/manage" element={<ProgramsManagePage />} />
           <Route path="/exercises" element={<ExercisesPage />} />
           <Route path="/templates" element={<TemplatesPage />} />
           <Route path="/templates/:templateId" element={<TemplateDetailPage />} />

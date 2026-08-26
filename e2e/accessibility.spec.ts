@@ -4,6 +4,7 @@ import { openExerciseSheet, resetDatabase, seedSampleData, startSampleSession } 
 const ROUTES = [
   ['Heute', './'],
   ['Programm', './#/programs'],
+  ['Programm verwalten', './#/programs/manage'],
   ['Workouts', './#/templates'],
   ['Übungen', './#/exercises'],
   ['Verlauf', './#/history'],
