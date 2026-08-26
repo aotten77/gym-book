@@ -8,10 +8,8 @@ import { Alert } from '@/components/Alert';
 import { Button } from '@/components/ui/Button';
 import { DoneCard, NowCard } from '@/components/ui/StatusCard';
 import { SectionCard } from '@/components/SectionCard';
-import { WeekStepper } from '@/components/WeekStepper';
 import { db } from '@/db/appDb';
 import { loadTemplateRecency, loadWeekSummary } from '@/db/history-queries';
-import { clearWeekOverride, setWeekOverride } from '@/db/settings-actions';
 import { startSessionFromTemplate } from '@/db/session-actions';
 import { evaluateBackupStatus } from '@/domain/backup';
 import { startOfCalendarWeek } from '@/domain/calendar-week';
@@ -22,7 +20,6 @@ import { formatDateTime, formatNumber } from '@/lib/format';
 
 export default function Home() {
   const navigate = useNavigate();
-  const [isUpdatingWeek, setIsUpdatingWeek] = useState(false);
   const [isStartingSession, setIsStartingSession] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
   const [isBackingUp, setIsBackingUp] = useState(false);
@@ -122,12 +119,12 @@ export default function Home() {
    * ist die einzige Auskunft, die an dieser Stelle jemand braucht.
    *
    * 'derived' ist seit dem Startdatum der Normalfall: die Woche läuft von
-   * selbst mit. Ein Tipp auf die Pfeile setzt weiterhin einen Override - und
-   * sagt es dann auch, damit er nicht wochenlang unbemerkt stehen bleibt.
+   * selbst mit. 'override' nennt deshalb den Ort, an dem sie zurückgeht - hier
+   * gibt es keinen Knopf dafür, siehe die Begründung am Panel unten.
    */
   const weekModeHint =
     weekControl.mode === 'override'
-      ? 'Von Hand gesetzt - Pfeil zurücksetzen für den Kalender'
+      ? 'Von Hand gesetzt - in den Einstellungen zurücksetzen'
       : weekControl.mode === 'derived'
         ? 'Läuft mit dem Kalender'
         : weekControl.mode === 'program'
@@ -158,31 +155,6 @@ export default function Home() {
         error instanceof Error ? error.message : 'Session konnte nicht gestartet werden.',
       );
       setIsStartingSession(false);
-    }
-  }
-
-  async function handleStepWeek(direction: -1 | 1) {
-    if (!program) {
-      return;
-    }
-
-    setIsUpdatingWeek(true);
-
-    try {
-      const next = Math.min(weekControl.maxWeek, Math.max(1, weekControl.effectiveWeek + direction));
-      await setWeekOverride(next);
-    } finally {
-      setIsUpdatingWeek(false);
-    }
-  }
-
-  async function handleClearWeek() {
-    setIsUpdatingWeek(true);
-
-    try {
-      await clearWeekOverride();
-    } finally {
-      setIsUpdatingWeek(false);
     }
   }
 
@@ -306,28 +278,36 @@ export default function Home() {
         )}
 
         {/*
-          Die einzige Bedienung für Programmwoche und Override - bleibt
-          deshalb auf der Startseite, jetzt aber als schmale Zeile statt als
-          halbe Kachel neben der wichtigsten Karte.
+          Home zeigt die Woche, Home schreibt sie nicht.
+
+          Hier standen die Pfeile eines WeekStepper, und jeder Tap darauf
+          schrieb einen weekOverride - der schlägt Startdatum und activeWeek,
+          bis ihn jemand zurücknimmt. Genau dieser Fehler stand auf einem
+          echten Gerät wochenlang auf W1, wurde in den Einstellungen behoben
+          (Stepper hinter "Woche von Hand setzen") und hier nie nachgezogen;
+          der alte Kommentar fing ihn nur mit Text ab, und ein Label ist kein
+          Fix.
+
+          Settings' Schalter hier zu spiegeln wäre der zweite Fehler gewesen:
+          zwei Schreiber auf einem Feld sind genau der Grund, warum es
+          unbemerkt blieb. Ein Schreiber, eine Stelle - der Weg dorthin ist
+          der Ghost-Link. Bitte keine Pfeile zurückbauen.
         */}
-        <WeekStepper
-          label="Aktive Woche"
-          week={weekControl.effectiveWeek}
-          hint={
-            <>
+        <div className="rounded-panel border border-line bg-surface p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-xs uppercase tracking-[0.18em] text-content-muted">Aktive Woche</p>
+              <p className="mt-2 text-2xl font-semibold text-content">
+                W{weekControl.effectiveWeek}
+              </p>
               <p className="mt-2 text-sm text-content-muted">{weekHint}</p>
               <p className="mt-1 text-xs text-content-muted">{weekModeHint}</p>
-            </>
-          }
-          backLabel="Eine Woche zurück"
-          forwardLabel="Eine Woche vor"
-          onStepBack={() => handleStepWeek(-1)}
-          onStepForward={() => handleStepWeek(1)}
-          disabled={!program || isUpdatingWeek}
-          onReset={handleClearWeek}
-          resetLabel="Wochen-Override zurücksetzen"
-          resetDisabled={!settings?.weekOverride || isUpdatingWeek}
-        />
+            </div>
+            <Button variant="ghost" size="md" onClick={() => navigate('/settings')}>
+              Woche ändern
+            </Button>
+          </div>
+        </div>
 
         {/*
           Nur, wenn es sie gibt: mit einem einzigen Workout trägt die Karte

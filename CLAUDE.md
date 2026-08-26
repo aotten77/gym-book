@@ -59,6 +59,8 @@ The ranking is `weekOverride ?? derived from Program.startedOn ?? program.active
 
 The override still exists, but it is now a **decision, not a side effect**: it was pinned to 1 on a real device for weeks because Settings' week stepper wrote one on every tap, and an override outranks everything until it is reset. Settings therefore hides the stepper behind a "Woche von Hand setzen" toggle, and the reset leads back to the derived week.
 
+**`weekOverride` has exactly one writer, and it is Settings.** Home carried the same stepper and was never brought along when Settings was fixed — every tap on its arrows wrote an override that then outranked `startedOn` and `activeWeek` until someone noticed. A comment there tried to catch it with wording; a label is not a fix. Home now **reads** the week (`resolveWeekControl`, same call as everywhere) in a static panel — eyebrow, `W{n}`, program name, mode hint — plus a ghost link to Settings. Mirroring Settings' toggle onto Home was deliberately *not* done: two writers on one field are precisely why the bug stayed invisible. Keep it at one, and don't rebuild the arrows.
+
 `startSessionFromTemplate` checks for an existing `active` session **inside** the insert transaction and returns that id instead of starting a second one — the check must stay in the transaction or two fast taps create two active sessions. `abortSession` and `completeSession` both go through `closeSession`, which only acts on active sessions.
 
 Completed sessions are immutable — `toggleSetCompletion` / `updateSetLogValues` bail out via `isSetLogEditable`, and `reorderSessionExercises` no-ops on non-active sessions. Keep new mutations behind the same guard.
