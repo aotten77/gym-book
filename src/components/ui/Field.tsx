@@ -194,17 +194,25 @@ export function ToggleField({
         )}
       >
         <span className="text-base text-content">{label}</span>
+        {/*
+          Der Knopf wechselt die Farbe mit, nicht nur die Seite: `accent` und
+          `content` sind derselbe Ton (die Tinte), ein `bg-content`-Knopf lag
+          auf der eingeschalteten Bahn also unsichtbar auf Schwarz - der
+          Schalter sah an wie eine massive Pille ohne Stellung. Eingeschaltet
+          ist der Knopf deshalb Papier auf Tinte, ausgeschaltet Tinte auf
+          Papier. Kein Limette: "an" ist nicht "jetzt dran".
+        */}
         <span
           aria-hidden
           className={cn(
             'relative h-7 w-12 shrink-0 rounded-full border transition',
-            checked ? 'border-accent-border bg-accent' : 'border-line bg-surface',
+            checked ? 'border-accent-border bg-accent' : 'border-line-strong bg-surface',
           )}
         >
           <span
             className={cn(
-              'absolute top-1/2 h-5 w-5 -translate-y-1/2 rounded-full bg-content transition-all',
-              checked ? 'left-[1.5rem]' : 'left-0.5',
+              'absolute top-1/2 h-5 w-5 -translate-y-1/2 rounded-full transition-all',
+              checked ? 'left-[1.5rem] bg-accent-contrast' : 'left-0.5 bg-content-muted',
             )}
           />
         </span>
