@@ -1314,6 +1314,13 @@ export function SessionPage() {
         mediaAsset={mediaAssetForExercise(exercise)}
         bandLevels={bandLevels}
         lastSetValues={lastValues?.[exercise.exerciseId]?.setValues}
+        /*
+          Dieselbe Abfrage, zwei Schnitte: `setValues` beantwortet "was stand
+          in genau dieser Zeile", `logs` "was stand in allen Arbeitssätzen".
+          Der Vorschlag braucht das zweite und bekommt deshalb keine eigene
+          Query - siehe `loadLastValuesForExercises`.
+        */
+        lastWorkLogs={lastValues?.[exercise.exerciseId]?.logs}
         activeSetLog={activeSetLog}
         onSelectSetLog={setSelectedSetLogId}
         isBusy={isReorderingExercises}

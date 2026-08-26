@@ -158,6 +158,11 @@ export interface SetRowFallback {
  * Die Werte der letzten Ausführung schlagen das Ziel der Übung, weil genau
  * sie beim Abhaken übernommen werden (siehe `adoptPlaceholders`). Der große
  * Knopf verspricht damit das, was er auch schreibt.
+ *
+ * Ein Steigerungsvorschlag gehört deshalb **nicht** hierher: was in diesem
+ * Fallback landet, wird beim Abhaken ungefragt gespeichert. Der Vorschlag ist
+ * eine Meinung und darf nur über einen Tap in den Satz kommen - siehe
+ * `suggestNextProgression`.
  */
 export function setRowFallback(
   exercise: Pick<

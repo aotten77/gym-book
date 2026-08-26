@@ -9,6 +9,7 @@ import {
   Play,
   Plus,
   Trash2,
+  TrendingUp,
   Unlink,
 } from 'lucide-react';
 import { ExerciseMedia } from '@/components/ExerciseMedia';
@@ -29,6 +30,12 @@ import {
   remainingRestSeconds,
   type RestBadge,
 } from '@/domain/rest-timer';
+import {
+  describeProgressionReason,
+  describeProgressionSuggestion,
+  suggestNextProgression,
+  type ProgressionSuggestion,
+} from '@/domain/progression-suggestion';
 import {
   buildSetRounds,
   describeExerciseTarget,
@@ -75,6 +82,17 @@ export interface ActiveSetAction {
   run: () => Promise<void>;
 }
 
+/**
+ * Welches Feld der Vorschlag füllt - und damit auch, welches leer sein muss,
+ * damit er überhaupt erscheint.
+ */
+const SUGGESTION_DRAFT_FIELD: Record<ProgressionSuggestion['kind'], keyof SetLogDraft> = {
+  weight: 'weight',
+  heightCm: 'heightCm',
+  seconds: 'seconds',
+  band: 'bandId',
+};
+
 interface ActiveSetEditorProps {
   log: WorkoutSetLog;
   exercise: WorkoutSessionExercise;
@@ -82,6 +100,12 @@ interface ActiveSetEditorProps {
   bandLevels?: BandLevel[];
   /** Werte derselben Satzzeile aus der letzten abgeschlossenen Ausführung. */
   lastValues?: SetValues;
+  /**
+   * Alle Arbeitssätze der letzten abgeschlossenen Ausführung - Grundlage des
+   * Steigerungsvorschlags. Nicht dasselbe wie `lastValues`: der Vorschlag
+   * fragt nach *jedem* Satz, nicht nach dieser einen Zeile.
+   */
+  lastWorkLogs?: WorkoutSetLog[];
   /** Gesetzt, solange der Satz-Timer genau zu dieser Zeile läuft. */
   setTimer?: SetTimerState;
   timerRemainingSeconds: number;
@@ -111,6 +135,7 @@ function ActiveSetEditor({
   exercise,
   bandLevels,
   lastValues,
+  lastWorkLogs,
   setTimer,
   timerRemainingSeconds,
   onStartTimer,
@@ -243,6 +268,38 @@ function ActiveSetEditor({
     });
   }
 
+  /*
+   * Der Steigerungsvorschlag - eine Entscheidungshilfe im Moment der
+   * Entscheidung, keine Zusammenfassung.
+   *
+   * Er erscheint nur am ersten Arbeitssatz, nur solange das Zielfeld im Draft
+   * leer ist und kein Timer läuft: ab Satz 2 ist die Last des Tages gesetzt,
+   * und wer schon getippt hat, hat entschieden. Er ist ausdrücklich *nicht*
+   * die gelöschte Fußzeile - die wiederholte Zahlen, die die Satzzeile ohnehin
+   * zeigt; hier steht eine Zahl, die sonst nirgends auf dem Bildschirm steht,
+   * als Schlussfolgerung eines Kriteriums.
+   *
+   * Und er schreibt nie von selbst: der einzige Weg in den Satz führt über den
+   * Tap unten. Deshalb darf er weder `setRowFallback` noch `adoptPlaceholders`
+   * erreichen - dort würde er beim Abhaken still übernommen, und aus einem
+   * Vorschlag würde ein Überschreiben.
+   */
+  const suggestion =
+    !disabled && !log.completed && log.setKind === 'work' && log.setNumber === 1 && !isTimerRunning
+      ? suggestNextProgression({ exercise, lastWorkLogs: lastWorkLogs ?? [], bandLevels })
+      : undefined;
+  const suggestionFieldFilled = suggestion
+    ? draft[SUGGESTION_DRAFT_FIELD[suggestion.kind]].trim() !== ''
+    : true;
+
+  /** Der einzige Schreibweg des Vorschlags - danach greift der Autosave. */
+  function applySuggestion(item: ProgressionSuggestion) {
+    const key = SUGGESTION_DRAFT_FIELD[item.kind];
+    const value = item.kind === 'band' ? item.bandId : toInputValue(item.value);
+
+    setDraft((current) => ({ ...current, [key]: value }));
+  }
+
   const handleToggleCompletion = useCallback(async () => {
     if (disabled || hasInvalidInput) {
       return;
@@ -253,6 +310,11 @@ function ActiveSetEditor({
      * Beim Abhaken zählt der Platzhalter als Eingabe: wer dasselbe geschafft
      * hat wie letzte Woche, tippt nichts und tappt nur auf den großen Knopf.
      * Beim Zurücknehmen bleibt der Draft unangetastet.
+     *
+     * Was hier ausdrücklich *nicht* einfließt, ist der Steigerungsvorschlag:
+     * `lastValues` sind gemessene Werte, der Vorschlag ist eine Meinung. Ohne
+     * Tap darauf wird der alte Wert gespeichert - das ist die ganze Zusage
+     * "schreibt nie von selbst", und sie steht und fällt mit dieser Zeile.
      */
     let effectiveDraft =
       willComplete && lastValues
@@ -401,6 +463,34 @@ function ActiveSetEditor({
         />
       ) : (
         <div className="space-y-2">
+          {/*
+            Tinte, nicht Limette: die aktuelle Satzzeile und die Blockkarte
+            sind bereits `bg-highlight`, und pro Bildschirm gibt es genau eine
+            Limettenfläche. Limette ist Fläche, Tinte ist Handlung.
+          */}
+          {suggestion && !suggestionFieldFilled ? (
+            <button
+              type="button"
+              onClick={() => applySuggestion(suggestion)}
+              aria-label={`${describeProgressionSuggestion(suggestion)} übernehmen`}
+              className={cn(
+                'flex min-h-touch w-full items-center justify-between gap-3 rounded-panel',
+                'bg-accent-soft px-3 py-2 text-left text-accent transition hover:bg-surface-hover',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+              )}
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                <TrendingUp size={18} className="shrink-0" aria-hidden="true" />
+                <span className="truncate font-display text-base font-bold">
+                  {describeProgressionSuggestion(suggestion)}
+                </span>
+              </span>
+              <span className="shrink-0 text-xs font-semibold">
+                {describeProgressionReason(suggestion.reason)}
+              </span>
+            </button>
+          ) : null}
+
           {activeFields.map(({ key }) => {
             const isInvalid = invalidFields.includes(key);
             const fieldId = `${log.id}-${key}`;
@@ -708,6 +798,8 @@ interface SessionExerciseStageProps {
   mediaAsset?: MediaAsset;
   bandLevels?: BandLevel[];
   lastSetValues?: LastSetValues;
+  /** Die Arbeitssätze der letzten Ausführung - siehe ActiveSetEditor. */
+  lastWorkLogs?: WorkoutSetLog[];
   /** Der Satz, der gerade groß liegt - siehe SessionPage. */
   activeSetLog?: WorkoutSetLog;
   onSelectSetLog: (setLogId: string) => void;
@@ -751,6 +843,7 @@ export function SessionExerciseStage({
   mediaAsset,
   bandLevels,
   lastSetValues,
+  lastWorkLogs,
   activeSetLog,
   onSelectSetLog,
   isBusy,
@@ -893,6 +986,7 @@ export function SessionExerciseStage({
           exercise={exercise}
           bandLevels={bandLevels}
           lastValues={lastSetValues?.resolve(activeSetLog)}
+          lastWorkLogs={lastWorkLogs}
           setTimer={setTimer?.setLogId === activeSetLog.id ? setTimer : undefined}
           timerRemainingSeconds={timerRemainingSeconds}
           onStartTimer={onStartSetTimer}
