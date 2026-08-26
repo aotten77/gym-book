@@ -230,14 +230,7 @@ export function TemplateProgressionSection({
               */}
               <p className="mt-2">
                 Basis:{' '}
-                {describeWeekPrescription(
-                  {
-                    workSetCount: selectedProgressionTemplateExercise.workSetCount,
-                    effective: baseTargets,
-                    overriddenFields: [],
-                  },
-                  bandNameById,
-                )
+                {describeWeekPrescription({ effective: baseTargets, overriddenFields: [] }, bandNameById)
                   .map((segment) => segment.text)
                   .join(' · ') || 'Keine Zielwerte gesetzt'}
               </p>

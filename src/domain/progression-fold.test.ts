@@ -27,6 +27,7 @@ function rule(overrides: Partial<ProgressionRule> = {}): ProgressionRule {
 describe('foldProgressionRule', () => {
   it('nimmt ohne Regel die Basiswerte unverändert', () => {
     expect(foldProgressionRule(templateExercise)).toEqual({
+      workSetCount: 3,
       targetReps: 8,
       targetRepsMax: undefined,
       targetSeconds: undefined,
@@ -75,6 +76,14 @@ describe('foldProgressionRule', () => {
 
     expect(folded.targetRepsMax).toBe(12);
     expect(folded.targetReps).toBe(8);
+  });
+
+  it('nimmt die Satzzahl aus der Regel - so wird eine Deload-Woche ausdrückbar', () => {
+    const folded = foldProgressionRule(templateExercise, rule({ workSetCount: 2 }));
+
+    expect(folded.workSetCount).toBe(2);
+    // Die Last bleibt: reduziert wird hier der Umfang, nicht das Gewicht.
+    expect(folded.targetWeight).toBe(60);
   });
 
   it('setzt auch Sekunden und Band aus der Regel', () => {

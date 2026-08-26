@@ -132,16 +132,36 @@ export async function addProgramWeek(programId: string) {
   return weekId;
 }
 
-export async function updateProgramWeek(programWeekId: string, input: { label: string }) {
+/**
+ * Beschriftung und Art einer Woche.
+ *
+ * `kind: null` heißt ausdrücklich "wieder eine normale Woche", ein fehlender
+ * Schlüssel dagegen "nicht anfassen". Der Unterschied ist hier nötig, weil
+ * Dexies `Table.update` jede Property mit dem Wert `undefined` **löscht** -
+ * ein durchgereichtes `undefined` würde also stillschweigend die Art einer
+ * Woche entfernen, die nur umbenannt werden sollte.
+ */
+export async function updateProgramWeek(
+  programWeekId: string,
+  input: { label?: string; kind?: ProgramWeek['kind'] | null },
+) {
   const week = await db.programWeeks.get(programWeekId);
 
   if (!week) {
     throw new Error('Programm-Woche nicht gefunden');
   }
 
-  await db.programWeeks.update(programWeekId, {
-    label: normalizeOptionalText(input.label),
-  });
+  const changes: Partial<ProgramWeek> = {};
+
+  if (input.label !== undefined) {
+    changes.label = normalizeOptionalText(input.label);
+  }
+
+  if (input.kind !== undefined) {
+    changes.kind = input.kind ?? undefined;
+  }
+
+  await db.programWeeks.update(programWeekId, changes);
 }
 
 export async function deleteProgramWeek(programWeekId: string) {

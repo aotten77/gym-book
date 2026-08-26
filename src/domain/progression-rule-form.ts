@@ -18,6 +18,7 @@ import { optionalNumberInput, toInputValue } from '@/lib/number-input';
  */
 
 export interface ProgressionRuleFormState {
+  workSetCount: string;
   targetReps: string;
   targetRepsMax: string;
   targetSeconds: string;
@@ -28,6 +29,7 @@ export interface ProgressionRuleFormState {
 }
 
 export const emptyProgressionRuleForm: ProgressionRuleFormState = {
+  workSetCount: '',
   targetReps: '',
   targetRepsMax: '',
   targetSeconds: '',
@@ -39,6 +41,7 @@ export const emptyProgressionRuleForm: ProgressionRuleFormState = {
 
 /** Formularzustand aus einer gespeicherten Regel - leer heißt "keine Regel". */
 export function buildProgressionRuleForm(rule?: {
+  workSetCount?: number;
   targetReps?: number;
   targetRepsMax?: number;
   targetSeconds?: number;
@@ -48,6 +51,7 @@ export function buildProgressionRuleForm(rule?: {
   notes?: string;
 }): ProgressionRuleFormState {
   return {
+    workSetCount: toInputValue(rule?.workSetCount),
     targetReps: toInputValue(rule?.targetReps),
     targetRepsMax: toInputValue(rule?.targetRepsMax),
     targetSeconds: toInputValue(rule?.targetSeconds),
@@ -77,6 +81,8 @@ export function toProgressionRuleInput(
     | undefined,
 ) {
   return {
+    // Die Satzzahl gibt es bei jeder Übung - sie hängt an keinem Modus.
+    workSetCount: optionalNumberInput(form.workSetCount),
     targetReps: supportsReps(exercise?.trackingMode)
       ? optionalNumberInput(form.targetReps)
       : undefined,

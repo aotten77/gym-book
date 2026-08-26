@@ -112,6 +112,40 @@ test.describe('Programm-Wochenansicht', () => {
     expect(errors).toEqual([]);
   });
 
+  test('kennzeichnet eine Deload-Woche und plant weniger Sätze', async ({ page }) => {
+    const errors = collectPageErrors(page);
+
+    await page.goto('./#/programs/manage');
+    await page.waitForTimeout(1200);
+
+    await page.getByRole('button', { name: 'Woche 2 umbenennen' }).click();
+    await page.waitForTimeout(400);
+    await page.getByLabel('Art der Woche').selectOption('deload');
+    await page.getByRole('button', { name: 'Speichern' }).first().click();
+    await page.waitForTimeout(900);
+
+    await page.goto('./#/programs');
+    await page.waitForTimeout(1200);
+    await page.getByRole('tab', { name: 'W2' }).click();
+    await page.waitForTimeout(500);
+
+    // Die Art steht am Wochenkopf - beschreibend, sie ändert keine Zielwerte.
+    await expect(page.getByText('Deload', { exact: false }).first()).toBeVisible();
+    await expect(page.getByText('3 × 5 Wdh', { exact: false }).first()).toBeVisible();
+
+    // Weniger Sätze für genau diese Woche - das ist die Reduktion von Hand.
+    await page.getByRole('button', { name: 'Front Squat für diese Woche planen' }).click();
+    await page.locator('[data-sheet]').waitFor();
+    await page.waitForTimeout(400);
+    await page.locator('[data-sheet]').getByLabel('Arbeitssätze').fill('2');
+    await page.getByRole('button', { name: 'Wochenwerte speichern' }).click();
+    await page.waitForTimeout(1000);
+
+    await expect(page.getByText('2 × 5 Wdh', { exact: false }).first()).toBeVisible();
+
+    expect(errors).toEqual([]);
+  });
+
   test('führt weiter zur Verwaltung', async ({ page }) => {
     await page.goto('./#/programs');
     await page.waitForTimeout(1200);

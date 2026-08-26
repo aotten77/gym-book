@@ -13,6 +13,7 @@ import { clearProgressionRule, saveProgressionRule } from '@/db/template-actions
 import type { ProgramWeek } from '@/domain/models';
 import {
   buildWeekPlan,
+  describeWeekKind,
   describeWeekPrescription,
   type PrescriptionSegment,
   type WeekPlanBlock,
@@ -126,10 +127,11 @@ export function ProgramsPage() {
    * damit ein leeres Feld sichtbar "wie im Workout" heißt. `effective` taugt
    * dafür nicht: darin steckt die Regel schon drin.
    */
-  const editingBaseTargets = editingEntry
-    ? foldProgressionRule(
-        (templateExercises ?? []).find((item) => item.id === editingEntry.templateExerciseId) ?? {},
-      )
+  const editingTemplateExercise = editingEntry
+    ? (templateExercises ?? []).find((item) => item.id === editingEntry.templateExerciseId)
+    : undefined;
+  const editingBaseTargets = editingTemplateExercise
+    ? foldProgressionRule(editingTemplateExercise)
     : undefined;
 
   function handleEditEntry(entry: WeekPlanEntry) {
@@ -262,6 +264,21 @@ export function ProgramsPage() {
                     )}
                   >
                     W{week.weekNumber}
+                    {/*
+                      Die Art als Punkt, nicht als zweite Zeile: der Chip muss
+                      bei 320px sechsmal nebeneinander passen. Neutral gefärbt -
+                      Limette, Waldgrün und Rot haben in dieser App je eine
+                      Bedeutung, und "Deload" ist keine davon.
+                    */}
+                    {week.kind ? (
+                      <span
+                        aria-hidden="true"
+                        className={cn(
+                          'ml-1 inline-block h-1.5 w-1.5 rounded-full align-middle',
+                          isSelected ? 'bg-accent-contrast' : 'bg-content-muted',
+                        )}
+                      />
+                    ) : null}
                   </button>
                 );
               })}
@@ -269,6 +286,12 @@ export function ProgramsPage() {
 
             <p className="mt-3 px-1 text-sm font-semibold text-content">
               {selectedProgramWeek?.label ?? `Woche ${selectedWeek}`}
+              {selectedProgramWeek?.kind ? (
+                <span className="text-content-muted">
+                  {' · '}
+                  {describeWeekKind(selectedProgramWeek.kind)}
+                </span>
+              ) : null}
             </p>
           </div>
         ) : null}

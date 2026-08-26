@@ -285,12 +285,31 @@ export interface ProgramWeek {
   programId: string;
   weekNumber: number;
   label?: string;
+  /**
+   * Was für eine Woche das ist - **rein beschreibend**.
+   *
+   * Nichts darf darauf verzweigen: weder `materializeSession` noch
+   * `resolveWeekControl` noch `startSessionFromTemplate` lesen dieses Feld.
+   * Es färbt den Chip und die Wochenüberschrift, mehr nicht. Die tatsächliche
+   * Reduktion bleibt Handarbeit über Progressionsregeln - genau das hält die
+   * Deload-Woche innerhalb von v1, dessen Vertrag Deload-Automatik
+   * ausschließt. Wer hier eine Automatik anhängt, hat den Vertrag gebrochen.
+   */
+  kind?: 'deload' | 'test';
 }
 
 export interface ProgressionRule {
   id: string;
   templateExerciseId: string;
   programWeekId: string;
+  /**
+   * Zahl der Arbeitssätze für diese Woche.
+   *
+   * Das eine Feld, mit dem sich eine Deload-Woche wirklich ausdrücken lässt:
+   * zwei Sätze statt vier. Wirkt nur auf künftige Materialisierungen - eine
+   * bereits gestartete Session hat ihre Zeilen längst.
+   */
+  workSetCount?: number;
   targetReps?: number;
   /** Obere Wiederholungsspanne für diese Woche - siehe [WorkoutTemplateExercise]. */
   targetRepsMax?: number;

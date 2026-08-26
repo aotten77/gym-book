@@ -189,12 +189,16 @@ const programWeekSchema = z.object({
   programId: z.string().min(1),
   weekNumber: z.number().int().positive(),
   label: z.string().optional(),
+  /* Additiv wie includeWarmup - rein beschreibend, kein Bump. */
+  kind: z.enum(['deload', 'test']).optional(),
 });
 
 const progressionRuleSchema = z.object({
   id: z.string().min(1),
   templateExerciseId: z.string().min(1),
   programWeekId: z.string().min(1),
+  /* Additiv - die Satzzahl der Woche, siehe der Kommentar bei includeWarmup. */
+  workSetCount: z.number().int().positive().optional(),
   targetReps: z.number().nonnegative().optional(),
   /* Additiv wie includeWarmup - obere Wiederholungsspanne, kein Bump. */
   targetRepsMax: z.number().nonnegative().optional(),

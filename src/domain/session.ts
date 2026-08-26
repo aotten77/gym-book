@@ -87,7 +87,9 @@ export function materializeSession({
       supersetGroupId: templateExercise.supersetGroupId,
       wasSkipped: false,
       addedInSession: false,
-      workSetCount: templateExercise.workSetCount,
+      // Auch die Satzzahl kommt aus der Faltung: eine Deload-Woche gibt hier
+      // zwei statt vier vor, und die Zeilen unten müssen dieselbe Zahl sehen.
+      workSetCount: targets.workSetCount,
       targetReps: targets.targetReps,
       targetRepsMax: targets.targetRepsMax,
       targetSeconds: targets.targetSeconds,
@@ -119,7 +121,7 @@ export function materializeSession({
       }
     }
 
-    for (let setNumber = 1; setNumber <= templateExercise.workSetCount; setNumber += 1) {
+    for (let setNumber = 1; setNumber <= targets.workSetCount; setNumber += 1) {
       for (const side of sides) {
         setLogs.push({
           id: createId(),

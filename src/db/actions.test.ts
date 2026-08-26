@@ -670,6 +670,33 @@ describe('settings and program week actions', () => {
     expect(updatedWeek?.label).toBe('Deload');
   });
 
+  it('kennzeichnet eine Woche und verliert die Kennzeichnung beim Umbenennen nicht', async () => {
+    /*
+     * Dexies `Table.update` löscht jede Property mit dem Wert `undefined`.
+     * Ein durchgereichtes `undefined` würde die Art einer Woche also still
+     * entfernen, sobald jemand nur die Beschriftung ändert - deshalb steht
+     * `kind` nur mit ausdrücklichem Wert im Payload, und `null` nimmt sie
+     * bewusst zurück.
+     */
+    const programId = await createProgram({ name: 'Block Kennzeichen', weekCount: 1 });
+    const week = await db.programWeeks.where('programId').equals(programId).first();
+
+    await updateProgramWeek(week!.id, { label: 'Woche 1', kind: 'deload' });
+    expect((await db.programWeeks.get(week!.id))?.kind).toBe('deload');
+
+    await updateProgramWeek(week!.id, { label: 'Ruhige Woche' });
+    const afterRename = await db.programWeeks.get(week!.id);
+
+    expect(afterRename?.label).toBe('Ruhige Woche');
+    expect(afterRename?.kind).toBe('deload');
+
+    await updateProgramWeek(week!.id, { kind: null });
+    const afterClear = await db.programWeeks.get(week!.id);
+
+    expect(afterClear?.kind).toBeUndefined();
+    expect(afterClear?.label).toBe('Ruhige Woche');
+  });
+
   it('adds and renumbers program weeks when a week is deleted', async () => {
     const programId = await createProgram({
       name: 'Block E',
@@ -771,6 +798,23 @@ describe('progression rule actions', () => {
     expect(cleared).toBeUndefined();
   });
 
+  it('keeps a rule whose only content is the work set count', async () => {
+    // Dieselbe Falle wie bei targetRepsMax: die Lösch-Bedingung kennt jedes
+    // Feld einzeln, und ein neues, das sie übergeht, verschwindet still.
+    await saveProgressionRule({
+      templateExerciseId: 'template-exercise-3',
+      programWeekId: 'week-1',
+      workSetCount: 2,
+    });
+
+    const created = await db.progressionRules
+      .where('templateExerciseId')
+      .equals('template-exercise-3')
+      .first();
+
+    expect(created).toMatchObject({ workSetCount: 2 });
+  });
+
   it('keeps a rule whose only content is the upper rep range', async () => {
     /*
      * Die Lösch-Bedingung in `saveProgressionRule` kennt jedes Feld einzeln -
@@ -868,6 +912,74 @@ describe('startSessionFromTemplate', () => {
       targetWeight: 87.5,
       notes: 'Woche 3',
     });
+  });
+
+  it('materializes the work set count of the week rule', async () => {
+    /*
+     * Die Deload-Woche: zwei Sätze statt drei. Geprüft wird die Zahl der
+     * entstandenen Satzzeilen, nicht nur das Feld - die Schleife in
+     * `materializeSession` muss dieselbe Zahl sehen wie der Snapshot.
+     */
+    await db.exercises.add({
+      id: 'exercise-deload',
+      name: 'Back Squat',
+      trackingMode: 'reps_weight',
+      unilateral: false,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    await db.workoutTemplates.add({
+      id: 'template-deload',
+      name: 'Deload A',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    await db.workoutTemplateExercises.add({
+      id: 'template-exercise-deload',
+      templateId: 'template-deload',
+      exerciseId: 'exercise-deload',
+      orderIndex: 1,
+      workSetCount: 4,
+      includeWarmup: false,
+      targetWeight: 100,
+    });
+    await db.programs.add({
+      id: 'program-deload',
+      name: 'Block Deload',
+      activeWeek: 2,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    await db.programWeeks.bulkAdd([
+      { id: 'deload-week-1', programId: 'program-deload', weekNumber: 1 },
+      { id: 'deload-week-2', programId: 'program-deload', weekNumber: 2, kind: 'deload' },
+    ]);
+    await db.appSettings.add({
+      id: 'app-settings',
+      activeProgramId: 'program-deload',
+      exportSchemaVersion: 1,
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    await db.progressionRules.add({
+      id: 'rule-deload',
+      templateExerciseId: 'template-exercise-deload',
+      programWeekId: 'deload-week-2',
+      workSetCount: 2,
+      targetWeight: 70,
+    });
+
+    const sessionId = await startSessionFromTemplate('template-deload');
+    const sessionExercise = await db.workoutSessionExercises
+      .where('sessionId')
+      .equals(sessionId)
+      .first();
+    const setLogs = await db.workoutSetLogs
+      .where('sessionExerciseId')
+      .equals(sessionExercise!.id)
+      .toArray();
+
+    expect(sessionExercise).toMatchObject({ workSetCount: 2, targetWeight: 70 });
+    expect(setLogs.filter((log) => log.setKind === 'work')).toHaveLength(2);
   });
 
   it('marks session snapshots that started from a week override', async () => {

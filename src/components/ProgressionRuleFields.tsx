@@ -64,6 +64,20 @@ export function ProgressionRuleFields({
 
   return (
     <div className="space-y-3">
+      {/*
+        Die Satzzahl steht oben und hängt an keinem Tracking-Modus: sie ist
+        das eine Feld, mit dem sich eine Deload-Woche wirklich ausdrücken
+        lässt (zwei Sätze statt vier), und jede Übung hat sie.
+      */}
+      <TextField
+        label="Arbeitssätze"
+        inputMode="numeric"
+        value={value.workSetCount}
+        placeholder={basePlaceholder(baseTargets?.workSetCount)}
+        onChange={(event) => set('workSetCount', event.target.value)}
+        disabled={disabled}
+      />
+
       {supportsReps(trackingMode) ? (
         <div className="grid grid-cols-2 gap-3">
           <TextField

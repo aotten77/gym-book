@@ -149,11 +149,11 @@ describe('buildWeekPlan', () => {
 
 describe('describeWeekPrescription', () => {
   function entry(
-    effective: FoldedTargets,
+    effective: Omit<FoldedTargets, 'workSetCount'>,
     overriddenFields: FoldableTargetField[] = [],
     workSetCount = 3,
   ) {
-    return { workSetCount, effective, overriddenFields };
+    return { effective: { workSetCount, ...effective }, overriddenFields };
   }
 
   it('schreibt die Spanne als Bereich und das Gewicht daneben', () => {

@@ -36,6 +36,7 @@ interface SaveTemplateExerciseInput {
 interface SaveProgressionRuleInput {
   templateExerciseId: string;
   programWeekId: string;
+  workSetCount?: number;
   targetReps?: number;
   targetRepsMax?: number;
   targetSeconds?: number;
@@ -259,6 +260,12 @@ export async function ungroupTemplateExercise(templateExerciseId: string) {
 }
 
 export async function saveProgressionRule(input: SaveProgressionRuleInput) {
+  // Mindestens ein Satz - eine Woche mit null Arbeitssätzen wäre keine
+  // Reduktion, sondern eine gestrichene Übung, und dafür gibt es das
+  // Auslassen in der laufenden Einheit.
+  const rawWorkSetCount = normalizeOptionalNumber(input.workSetCount);
+  const workSetCount =
+    rawWorkSetCount === undefined ? undefined : Math.max(1, Math.round(rawWorkSetCount));
   const targetReps = normalizeOptionalNumber(input.targetReps);
   const targetRepsMax = normalizeOptionalNumber(input.targetRepsMax);
   const targetSeconds = normalizeOptionalNumber(input.targetSeconds);
@@ -279,6 +286,7 @@ export async function saveProgressionRule(input: SaveProgressionRuleInput) {
   // überlebte das Speichern deshalb nicht. Dasselbe gilt für die obere
   // Wiederholungsspanne, die eine Woche allein vorgeben darf.
   if (
+    workSetCount === undefined &&
     targetReps === undefined &&
     targetRepsMax === undefined &&
     targetSeconds === undefined &&
@@ -296,6 +304,7 @@ export async function saveProgressionRule(input: SaveProgressionRuleInput) {
   const payload = {
     templateExerciseId: input.templateExerciseId,
     programWeekId: input.programWeekId,
+    workSetCount,
     targetReps,
     targetRepsMax,
     targetSeconds,

@@ -319,9 +319,12 @@ describe('parseDatabaseSnapshot', () => {
               templateExerciseId: 'template-exercise-spanne',
               programWeekId: 'week-1',
               targetRepsMax: 12,
+              workSetCount: 2,
             },
           ],
-          programWeeks: [{ id: 'week-1', programId: 'program-1', weekNumber: 1 }],
+          programWeeks: [
+            { id: 'week-1', programId: 'program-1', weekNumber: 1, kind: 'deload' },
+          ],
           programs: [
             {
               id: 'program-1',
@@ -355,6 +358,9 @@ describe('parseDatabaseSnapshot', () => {
 
     expect(parsed.workoutTemplateExercises[0].targetRepsMax).toBe(10);
     expect(parsed.progressionRules[0].targetRepsMax).toBe(12);
+    // Die Deload-Woche: Satzzahl an der Regel, Kennzeichnung an der Woche.
+    expect(parsed.progressionRules[0].workSetCount).toBe(2);
+    expect(parsed.programWeeks[0].kind).toBe('deload');
 
     /*
      * Der Test, der beweist, dass kein Versionssprung nötig war: eine

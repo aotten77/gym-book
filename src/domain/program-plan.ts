@@ -1,5 +1,6 @@
 import type {
   Exercise,
+  ProgramWeek,
   ProgressionRule,
   WorkoutTemplate,
   WorkoutTemplateExercise,
@@ -35,6 +36,19 @@ import { formatNumber } from '@/lib/format';
 /** Der Name, unter dem eine gelöschte Übung weiterhin auftaucht. */
 export const UNKNOWN_EXERCISE_NAME = 'Unbekannte Übung';
 
+/**
+ * Wie die Art einer Woche heißt, wenn ein Mensch sie liest.
+ *
+ * Und mehr tut sie auch nicht: `ProgramWeek.kind` ist **rein beschreibend**.
+ * Niemand verzweigt darauf - nicht `materializeSession`, nicht
+ * `resolveWeekControl`, nicht `startSessionFromTemplate`. Eine Deload-Woche
+ * wird über ihre Progressionsregeln leichter, nicht über dieses Feld; eine
+ * Automatik daran wäre die Deload-Automatik, die der v1-Vertrag ausschließt.
+ */
+export function describeWeekKind(kind: NonNullable<ProgramWeek['kind']>): string {
+  return kind === 'deload' ? 'Deload' : 'Test';
+}
+
 export interface WeekPlanEntry {
   templateExerciseId: string;
   exerciseId: string;
@@ -42,8 +56,10 @@ export interface WeekPlanEntry {
   exerciseName: string;
   orderIndex: number;
   supersetGroupId?: string;
-  workSetCount: number;
-  /** Die Zielwerte nach der Faltung von Wochenregel über Workout. */
+  /**
+   * Die Zielwerte nach der Faltung von Wochenregel über Workout - die Zahl der
+   * Arbeitssätze steht darin, weil auch sie eine Woche vorgeben darf.
+   */
   effective: FoldedTargets;
   /** Welche davon aus der Woche kommen - für die Markierung je Feld. */
   overriddenFields: FoldableTargetField[];
@@ -103,7 +119,6 @@ export function buildWeekPlan({
             exerciseName: exercise?.name ?? UNKNOWN_EXERCISE_NAME,
             orderIndex: item.orderIndex,
             supersetGroupId: item.supersetGroupId,
-            workSetCount: item.workSetCount,
             effective: foldProgressionRule(item, rule),
             overriddenFields: overriddenTargetFields(rule),
             trackingMode: exercise?.trackingMode,
@@ -138,7 +153,7 @@ export interface PrescriptionSegment {
  * wird. Jede Zahl läuft über `formatNumber`.
  */
 export function describeWeekPrescription(
-  entry: Pick<WeekPlanEntry, 'workSetCount' | 'effective' | 'overriddenFields'>,
+  entry: Pick<WeekPlanEntry, 'effective' | 'overriddenFields'>,
   bandNameById?: Record<string, string | undefined>,
 ): PrescriptionSegment[] {
   const { effective, overriddenFields } = entry;
@@ -156,10 +171,13 @@ export function describeWeekPrescription(
     perSet.push(`${formatNumber(effective.targetSeconds)} s`);
   }
 
-  if (entry.workSetCount > 0) {
+  if (effective.workSetCount > 0) {
     segments.push({
-      text: perSet.length > 0 ? `${entry.workSetCount} × ${perSet.join(' ')}` : `${entry.workSetCount} Sätze`,
-      overridden: isOverridden('targetReps', 'targetRepsMax', 'targetSeconds'),
+      text:
+        perSet.length > 0
+          ? `${effective.workSetCount} × ${perSet.join(' ')}`
+          : `${effective.workSetCount} Sätze`,
+      overridden: isOverridden('workSetCount', 'targetReps', 'targetRepsMax', 'targetSeconds'),
     });
   }
 

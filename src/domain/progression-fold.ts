@@ -9,6 +9,7 @@ import type { ProgressionRule, WorkoutTemplateExercise } from '@/domain/models';
  * nicht kennt - die Pause gehört dem Workout, nicht der Woche.
  */
 export const FOLDABLE_TARGET_FIELDS = [
+  'workSetCount',
   'targetReps',
   'targetRepsMax',
   'targetSeconds',
@@ -45,6 +46,7 @@ export function foldProgressionRule(
   rule?: ProgressionRule,
 ): FoldedTargets {
   return {
+    workSetCount: rule?.workSetCount ?? templateExercise.workSetCount,
     targetReps: rule?.targetReps ?? templateExercise.targetReps,
     // Die beiden Ränder fallen einzeln zurück: eine Woche, die nur den unteren
     // Rand anhebt, behält die Decke aus dem Workout.

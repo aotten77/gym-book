@@ -5,6 +5,7 @@ import { AppShell } from '@/components/AppShell';
 import { Alert } from '@/components/Alert';
 import { SectionCard } from '@/components/SectionCard';
 import { Button, IconButton } from '@/components/ui/Button';
+import { SelectField } from '@/components/ui/Field';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { db } from '@/db/appDb';
 import {
@@ -16,6 +17,7 @@ import {
   updateProgramWeek,
 } from '@/db/program-actions';
 import { setActiveProgram } from '@/db/settings-actions';
+import { describeWeekKind } from '@/domain/program-plan';
 
 /**
  * Anlegen, umbenennen, löschen - das reine CRUD auf Programm und Woche.
@@ -36,6 +38,8 @@ export function ProgramsManagePage() {
   const [editingProgramName, setEditingProgramName] = useState('');
   const [editingWeekId, setEditingWeekId] = useState<string | null>(null);
   const [editingWeekLabel, setEditingWeekLabel] = useState('');
+  /** Leerstring heißt "normale Woche" - siehe `updateProgramWeek`. */
+  const [editingWeekKind, setEditingWeekKind] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /*
@@ -145,9 +149,14 @@ export function ProgramsManagePage() {
     setIsSaving(true);
 
     try {
-      await updateProgramWeek(programWeekId, { label: editingWeekLabel });
+      await updateProgramWeek(programWeekId, {
+        label: editingWeekLabel,
+        // `null` nimmt die Art ausdrücklich zurück, statt sie zu übergehen.
+        kind: editingWeekKind === 'deload' || editingWeekKind === 'test' ? editingWeekKind : null,
+      });
       setEditingWeekId(null);
       setEditingWeekLabel('');
+      setEditingWeekKind('');
       setError(null);
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Woche konnte nicht aktualisiert werden.');
@@ -286,21 +295,40 @@ export function ProgramsManagePage() {
                         className="rounded-panel border border-line bg-surface px-4 py-4"
                       >
                         {isEditingWeek ? (
-                          <div className="grid grid-cols-[1fr_auto] gap-3">
+                          <div className="space-y-3">
                             <input
                               value={editingWeekLabel}
                               onChange={(event) => setEditingWeekLabel(event.target.value)}
+                              aria-label={`Beschriftung der Woche ${week.weekNumber}`}
                               placeholder={`Woche ${week.weekNumber}`}
                               className="w-full rounded-panel border border-line bg-surface-sunken px-4 py-4 text-base text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
                             />
-                            <button
-                              type="button"
+                            {/*
+                              Rein beschreibend: die Art färbt Chip und
+                              Wochenkopf und sonst nichts. Die tatsächliche
+                              Reduktion bleibt Handarbeit über
+                              Progressionsregeln - v1 kennt keine
+                              Deload-Automatik.
+                            */}
+                            <SelectField
+                              label="Art der Woche"
+                              hint="Nur zur Kennzeichnung - die Zielwerte ändert sie nicht."
+                              value={editingWeekKind}
+                              onChange={(event) => setEditingWeekKind(event.target.value)}
+                            >
+                              <option value="">Normale Woche</option>
+                              <option value="deload">Deload</option>
+                              <option value="test">Test</option>
+                            </SelectField>
+                            <Button
+                              variant="primary"
+                              size="md"
+                              fullWidth
                               onClick={() => handleSaveWeek(week.id)}
                               disabled={isSaving}
-                              className="rounded-panel bg-accent px-5 py-4 text-sm font-semibold text-accent-contrast transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
                             >
                               Speichern
-                            </button>
+                            </Button>
                           </div>
                         ) : (
                           <div className="flex items-center justify-between gap-3">
@@ -308,6 +336,7 @@ export function ProgramsManagePage() {
                               <p className="text-sm font-semibold text-content">W{week.weekNumber}</p>
                               <p className="mt-1 text-sm text-content-muted">
                                 {week.label ?? `Woche ${week.weekNumber}`}
+                                {week.kind ? ` · ${describeWeekKind(week.kind)}` : ''}
                               </p>
                             </div>
                             <div className="flex gap-2">
@@ -316,6 +345,7 @@ export function ProgramsManagePage() {
                                 onClick={() => {
                                   setEditingWeekId(week.id);
                                   setEditingWeekLabel(week.label ?? '');
+                                  setEditingWeekKind(week.kind ?? '');
                                 }}
                                 disabled={isSaving}
                               >
