@@ -89,6 +89,7 @@ export function materializeSession({
       addedInSession: false,
       workSetCount: templateExercise.workSetCount,
       targetReps: targets.targetReps,
+      targetRepsMax: targets.targetRepsMax,
       targetSeconds: targets.targetSeconds,
       targetWeight: targets.targetWeight,
       targetBandId,

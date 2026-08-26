@@ -313,6 +313,23 @@ export function summarizeExerciseAsymmetry(logs: WorkoutSetLog[]): number | unde
 }
 
 /**
+ * Die geplante Wiederholungsspanne als eine Angabe: `8` oder `8–10`.
+ *
+ * Eine Decke, die nicht über dem unteren Rand liegt, ist keine Spanne - "8–8"
+ * wäre Lärm, und ein kleineres Maximum eine Fehleingabe, die als Bereich
+ * gelesen unsinnig ist. In beiden Fällen bleibt die eine Zahl stehen.
+ *
+ * Eine Funktion, weil dieselbe Angabe im Workout, in der Blockkarte und in der
+ * Wochenansicht steht: zwei Formatierer sind der Weg, auf dem "3 × 8–10" und
+ * "3 x 8 Wdh" auf zwei Bildschirmen landen.
+ */
+export function describeRepRange(targetReps: number, targetRepsMax?: number): string {
+  return typeof targetRepsMax === 'number' && targetRepsMax > targetReps
+    ? `${formatNumber(targetReps)}–${formatNumber(targetRepsMax)}`
+    : formatNumber(targetReps);
+}
+
+/**
  * Das Ziel einer Übung als eine Zeile.
  *
  * Kilo und Band schließen sich aus - welches von beiden gilt, steht schon im
@@ -327,7 +344,7 @@ export function describeExerciseTarget(exercise: WorkoutSessionExercise): string
     const perSet: string[] = [];
 
     if (typeof exercise.targetReps === 'number') {
-      perSet.push(`${exercise.targetReps} Wdh`);
+      perSet.push(`${describeRepRange(exercise.targetReps, exercise.targetRepsMax)} Wdh`);
     }
 
     if (typeof exercise.targetSeconds === 'number') {

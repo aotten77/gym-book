@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils';
 interface ExerciseTargetFieldsValues {
   workSetCount: string;
   targetReps: string;
+  targetRepsMax: string;
   targetSeconds: string;
   targetWeight: string;
   targetBandId: string;
@@ -95,15 +96,32 @@ export function ExerciseTargetFields({
         />
       ) : null}
 
+      {/*
+        Zwei Ränder, zwei Felder: "Ziel-Wdh" ist der untere, "bis" der obere.
+        Das Maximum bleibt leer, solange niemand eine Spanne plant - geraten
+        wird es nirgends, weil eine erratene Decke eine unsichtbare Regel wäre.
+        Im Zweispalten-Layout liegen beide ohnehin nebeneinander, gestapelt
+        stellt sie dieses Raster nebeneinander: "8 bis 10" ist eine Angabe.
+      */}
       {supportsReps(trackingMode) ? (
-        <input
-          value={values.targetReps}
-          onChange={(event) => onChange('targetReps', event.target.value)}
-          inputMode="numeric"
-          aria-label="Ziel-Wdh"
-          placeholder="Ziel-Wdh"
-          className={fieldClassName}
-        />
+        <div className={cn('grid grid-cols-2 gap-2', layout === 'grid' && 'col-span-2')}>
+          <input
+            value={values.targetReps}
+            onChange={(event) => onChange('targetReps', event.target.value)}
+            inputMode="numeric"
+            aria-label="Ziel-Wdh"
+            placeholder="Ziel-Wdh"
+            className={GRID_FIELD_CLASSES}
+          />
+          <input
+            value={values.targetRepsMax}
+            onChange={(event) => onChange('targetRepsMax', event.target.value)}
+            inputMode="numeric"
+            aria-label="Ziel-Wdh bis"
+            placeholder="bis"
+            className={GRID_FIELD_CLASSES}
+          />
+        </div>
       ) : null}
 
       {supportsSeconds(trackingMode) ? (

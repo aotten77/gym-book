@@ -28,6 +28,7 @@ describe('foldProgressionRule', () => {
   it('nimmt ohne Regel die Basiswerte unverändert', () => {
     expect(foldProgressionRule(templateExercise)).toEqual({
       targetReps: 8,
+      targetRepsMax: undefined,
       targetSeconds: undefined,
       targetWeight: 60,
       targetBandId: undefined,
@@ -54,6 +55,26 @@ describe('foldProgressionRule', () => {
     expect(folded.targetReps).toBe(8);
     expect(folded.targetWeight).toBe(60);
     expect(folded.targetHeightCm).toBe(20);
+  });
+
+  it('lässt die Decke stehen, wenn die Woche nur den unteren Rand anhebt', () => {
+    const folded = foldProgressionRule(
+      { ...templateExercise, targetRepsMax: 10 },
+      rule({ targetReps: 9 }),
+    );
+
+    expect(folded.targetReps).toBe(9);
+    expect(folded.targetRepsMax).toBe(10);
+  });
+
+  it('nimmt eine eigene Decke aus der Regel', () => {
+    const folded = foldProgressionRule(
+      { ...templateExercise, targetRepsMax: 10 },
+      rule({ targetRepsMax: 12 }),
+    );
+
+    expect(folded.targetRepsMax).toBe(12);
+    expect(folded.targetReps).toBe(8);
   });
 
   it('setzt auch Sekunden und Band aus der Regel', () => {

@@ -10,6 +10,7 @@ import type { ProgressionRule, WorkoutTemplateExercise } from '@/domain/models';
  */
 export const FOLDABLE_TARGET_FIELDS = [
   'targetReps',
+  'targetRepsMax',
   'targetSeconds',
   'targetWeight',
   'targetBandId',
@@ -45,6 +46,9 @@ export function foldProgressionRule(
 ): FoldedTargets {
   return {
     targetReps: rule?.targetReps ?? templateExercise.targetReps,
+    // Die beiden Ränder fallen einzeln zurück: eine Woche, die nur den unteren
+    // Rand anhebt, behält die Decke aus dem Workout.
+    targetRepsMax: rule?.targetRepsMax ?? templateExercise.targetRepsMax,
     targetSeconds: rule?.targetSeconds ?? templateExercise.targetSeconds,
     targetWeight: rule?.targetWeight ?? templateExercise.targetWeight,
     targetBandId: rule?.targetBandId ?? templateExercise.targetBandId,

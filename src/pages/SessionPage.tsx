@@ -96,6 +96,7 @@ interface SessionExerciseFormState {
   workSetCount: string;
   includeWarmup: boolean;
   targetReps: string;
+  targetRepsMax: string;
   targetSeconds: string;
   targetWeight: string;
   targetBandId: string;
@@ -109,6 +110,7 @@ const defaultSessionExerciseFormState: SessionExerciseFormState = {
   workSetCount: '3',
   includeWarmup: true,
   targetReps: '',
+  targetRepsMax: '',
   targetSeconds: '',
   targetWeight: '',
   targetBandId: '',
@@ -737,6 +739,9 @@ export function SessionPage() {
         includeWarmup: exerciseForm.includeWarmup,
         targetReps: supportsReps(effectiveTrackingMode)
           ? optionalNumberInput(exerciseForm.targetReps)
+          : undefined,
+        targetRepsMax: supportsReps(effectiveTrackingMode)
+          ? optionalNumberInput(exerciseForm.targetRepsMax)
           : undefined,
         targetSeconds: supportsSeconds(effectiveTrackingMode)
           ? optionalNumberInput(exerciseForm.targetSeconds)

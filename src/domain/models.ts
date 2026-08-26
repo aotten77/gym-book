@@ -82,7 +82,23 @@ export interface WorkoutTemplateExercise {
    * ließe sich eine Gruppe weder als Block darstellen noch am Stück bewegen.
    */
   supersetGroupId?: string;
+  /**
+   * Der *untere* Rand der geplanten Wiederholungsspanne.
+   *
+   * Zusammen mit `targetRepsMax` ergibt das "3 × 8-10". Allein gelesen bleibt
+   * es die eine Zielzahl, die es immer war - alle Datensätze ohne Maximum
+   * verhalten sich unverändert.
+   */
   targetReps?: number;
+  /**
+   * Das obere Ende der Wiederholungsspanne - die Decke der Doppelprogression.
+   *
+   * Additiv und optional: fehlt es, gibt es zu dieser Übung keinen
+   * Steigerungsvorschlag, weil "Spanne ausgereizt?" dann keine Antwort hat.
+   * Ein Maximum zu *raten* (etwa `targetReps + 2`) wäre eine unsichtbare, nicht
+   * editierbare Regel - genau die adaptive Progression, die v1 ausschließt.
+   */
+  targetRepsMax?: number;
   targetSeconds?: number;
   targetWeight?: number;
   /** Ziel-Band bei Band-Übungen - die Entsprechung zu `targetWeight`. */
@@ -190,6 +206,8 @@ export interface WorkoutSessionExercise {
   addedInSession: boolean;
   workSetCount: number;
   targetReps?: number;
+  /** Obere Wiederholungsspanne als Snapshot - siehe [WorkoutTemplateExercise]. */
+  targetRepsMax?: number;
   targetSeconds?: number;
   targetWeight?: number;
   targetBandId?: string;
@@ -274,6 +292,8 @@ export interface ProgressionRule {
   templateExerciseId: string;
   programWeekId: string;
   targetReps?: number;
+  /** Obere Wiederholungsspanne für diese Woche - siehe [WorkoutTemplateExercise]. */
+  targetRepsMax?: number;
   targetSeconds?: number;
   targetWeight?: number;
   targetBandId?: string;

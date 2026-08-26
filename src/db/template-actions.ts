@@ -24,6 +24,7 @@ interface SaveTemplateExerciseInput {
   workSetCount: number;
   includeWarmup?: boolean;
   targetReps?: number;
+  targetRepsMax?: number;
   targetSeconds?: number;
   targetWeight?: number;
   targetBandId?: string;
@@ -36,6 +37,7 @@ interface SaveProgressionRuleInput {
   templateExerciseId: string;
   programWeekId: string;
   targetReps?: number;
+  targetRepsMax?: number;
   targetSeconds?: number;
   targetWeight?: number;
   targetBandId?: string;
@@ -126,6 +128,7 @@ export async function saveTemplateExercise(input: SaveTemplateExerciseInput) {
       // über Dexies Update-Semantik löschen statt sie zu setzen.
       includeWarmup: input.includeWarmup !== false,
       targetReps: normalizeOptionalNumber(input.targetReps),
+      targetRepsMax: normalizeOptionalNumber(input.targetRepsMax),
       targetSeconds: normalizeOptionalNumber(input.targetSeconds),
       targetWeight: normalizeOptionalNumber(input.targetWeight),
       targetBandId: normalizeOptionalText(input.targetBandId),
@@ -257,6 +260,7 @@ export async function ungroupTemplateExercise(templateExerciseId: string) {
 
 export async function saveProgressionRule(input: SaveProgressionRuleInput) {
   const targetReps = normalizeOptionalNumber(input.targetReps);
+  const targetRepsMax = normalizeOptionalNumber(input.targetRepsMax);
   const targetSeconds = normalizeOptionalNumber(input.targetSeconds);
   const targetWeight = normalizeOptionalNumber(input.targetWeight);
   const targetBandId = normalizeOptionalText(input.targetBandId);
@@ -270,10 +274,13 @@ export async function saveProgressionRule(input: SaveProgressionRuleInput) {
     .first();
 
   // Eine Regel ohne jede Vorgabe ist keine Regel - dann verschwindet sie
-  // wieder. Ziel-Band und Ziel-Höhe zählen dabei mit, sonst überlebte eine
-  // reine Band- oder Höhen-Progression das Speichern nicht.
+  // wieder. Jedes neue Feld muss hier mitgezählt werden: Ziel-Band und
+  // Ziel-Höhe fehlten einmal, und eine reine Band- oder Höhen-Progression
+  // überlebte das Speichern deshalb nicht. Dasselbe gilt für die obere
+  // Wiederholungsspanne, die eine Woche allein vorgeben darf.
   if (
     targetReps === undefined &&
+    targetRepsMax === undefined &&
     targetSeconds === undefined &&
     targetWeight === undefined &&
     targetBandId === undefined &&
@@ -290,6 +297,7 @@ export async function saveProgressionRule(input: SaveProgressionRuleInput) {
     templateExerciseId: input.templateExerciseId,
     programWeekId: input.programWeekId,
     targetReps,
+    targetRepsMax,
     targetSeconds,
     targetWeight,
     targetBandId,

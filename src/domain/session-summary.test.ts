@@ -211,6 +211,24 @@ describe('describeExerciseTarget', () => {
       describeExerciseTarget(exercise({ id: 'a', workSetCount: 4, targetReps: 5, targetWeight: 62.5 })),
     ).toBe('4 × 5 Wdh · 62,5 kg');
   });
+
+  it('schreibt eine geplante Spanne als Bereich', () => {
+    expect(
+      describeExerciseTarget(
+        exercise({ id: 'a', workSetCount: 3, targetReps: 8, targetRepsMax: 10, targetWeight: 60 }),
+      ),
+    ).toBe('3 × 8–10 Wdh · 60 kg');
+  });
+
+  it('bleibt bei einer Zahl, wenn die Decke keine Spanne aufspannt', () => {
+    // "8–8" wäre Lärm, ein kleineres Maximum als Bereich gelesen unsinnig.
+    expect(
+      describeExerciseTarget(exercise({ id: 'a', workSetCount: 3, targetReps: 8, targetRepsMax: 8 })),
+    ).toBe('3 × 8 Wdh');
+    expect(
+      describeExerciseTarget(exercise({ id: 'a', workSetCount: 3, targetReps: 8, targetRepsMax: 5 })),
+    ).toBe('3 × 8 Wdh');
+  });
 });
 
 describe('buildSetRounds', () => {

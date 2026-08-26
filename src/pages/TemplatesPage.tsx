@@ -17,6 +17,7 @@ import { createTemplate } from '@/db/template-actions';
 import { startOfCalendarWeek } from '@/domain/calendar-week';
 import type { WorkoutTemplateExercise } from '@/domain/models';
 import { pickNextTemplate } from '@/domain/next-workout';
+import { describeRepRange } from '@/domain/session-summary';
 import { buildSupersetBlocks } from '@/domain/superset';
 import { formatDateTime, formatNumber } from '@/lib/format';
 
@@ -122,7 +123,9 @@ export function TemplatesPage() {
             {item.orderIndex}. {exercise?.name ?? 'Unbekannte Übung'}
           </p>
           <p className="mt-1 text-sm text-content-muted">
-            {item.targetReps ? `${item.workSetCount} x ${item.targetReps} Wdh` : null}
+            {item.targetReps
+            ? `${item.workSetCount} x ${describeRepRange(item.targetReps, item.targetRepsMax)} Wdh`
+            : null}
             {item.targetReps && item.targetSeconds ? ' · ' : null}
             {item.targetSeconds ? `${item.workSetCount} x ${item.targetSeconds}s` : null}
             {item.targetHeightCm ? ` · ${formatNumber(item.targetHeightCm)} cm` : ''}

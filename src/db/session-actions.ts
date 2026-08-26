@@ -30,6 +30,7 @@ interface AddSessionExerciseInput {
   workSetCount: number;
   includeWarmup?: boolean;
   targetReps?: number;
+  targetRepsMax?: number;
   targetSeconds?: number;
   targetWeight?: number;
   targetBandId?: string;
@@ -397,6 +398,7 @@ export async function addSessionExercise(input: AddSessionExerciseInput) {
       addedInSession: true,
       workSetCount,
       targetReps: normalizeOptionalNumber(input.targetReps),
+      targetRepsMax: normalizeOptionalNumber(input.targetRepsMax),
       targetSeconds: normalizeOptionalNumber(input.targetSeconds),
       targetWeight: normalizeOptionalNumber(input.targetWeight),
       targetBandId,

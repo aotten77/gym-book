@@ -770,6 +770,26 @@ describe('progression rule actions', () => {
 
     expect(cleared).toBeUndefined();
   });
+
+  it('keeps a rule whose only content is the upper rep range', async () => {
+    /*
+     * Die Lösch-Bedingung in `saveProgressionRule` kennt jedes Feld einzeln -
+     * ein neues, das sie nicht mitzählt, verschwindet beim Speichern still.
+     * Genau das hat Band- und Höhen-Progression schon einmal getroffen.
+     */
+    await saveProgressionRule({
+      templateExerciseId: 'template-exercise-2',
+      programWeekId: 'week-1',
+      targetRepsMax: 12,
+    });
+
+    const created = await db.progressionRules
+      .where('templateExerciseId')
+      .equals('template-exercise-2')
+      .first();
+
+    expect(created).toMatchObject({ targetRepsMax: 12, targetReps: undefined });
+  });
 });
 
 describe('startSessionFromTemplate', () => {
@@ -795,6 +815,7 @@ describe('startSessionFromTemplate', () => {
       orderIndex: 1,
       workSetCount: 3,
       targetReps: 5,
+      targetRepsMax: 8,
       targetWeight: 80,
       notes: 'Basis',
     });
@@ -841,6 +862,9 @@ describe('startSessionFromTemplate', () => {
     });
     expect(sessionExercise).toMatchObject({
       targetReps: 7,
+      // Die Regel gibt nur den unteren Rand vor - die Decke kommt weiter aus
+      // dem Workout, statt mit der Regel zu verschwinden.
+      targetRepsMax: 8,
       targetWeight: 87.5,
       notes: 'Woche 3',
     });

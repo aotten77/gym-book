@@ -40,6 +40,7 @@ import {
   updateTemplate,
 } from '@/db/template-actions';
 import type { MediaAsset, WorkoutTemplateExercise } from '@/domain/models';
+import { describeRepRange } from '@/domain/session-summary';
 import { buildSupersetBlocks, moveSupersetBlock, moveWithinGroup } from '@/domain/superset';
 
 interface TemplateExerciseFormState {
@@ -47,6 +48,7 @@ interface TemplateExerciseFormState {
   workSetCount: string;
   includeWarmup: boolean;
   targetReps: string;
+  targetRepsMax: string;
   targetSeconds: string;
   targetWeight: string;
   targetBandId: string;
@@ -60,6 +62,7 @@ const defaultFormState: TemplateExerciseFormState = {
   workSetCount: '3',
   includeWarmup: true,
   targetReps: '',
+  targetRepsMax: '',
   targetSeconds: '',
   targetWeight: '',
   targetBandId: '',
@@ -79,6 +82,7 @@ function buildFormState(item?: WorkoutTemplateExercise): TemplateExerciseFormSta
     // Altdaten ohne den Schlüssel behalten ihr Warmup.
     includeWarmup: item.includeWarmup !== false,
     targetReps: toInputValue(item.targetReps),
+    targetRepsMax: toInputValue(item.targetRepsMax),
     targetSeconds: toInputValue(item.targetSeconds),
     targetWeight: toInputValue(item.targetWeight),
     targetBandId: item.targetBandId ?? '',
@@ -124,7 +128,9 @@ function TemplateExerciseMeta({
           {item.orderIndex}. {exerciseName}
         </p>
         <p className="mt-1 text-sm text-content-muted">
-          {item.targetReps ? `${item.workSetCount} x ${item.targetReps} Wdh` : null}
+          {item.targetReps
+            ? `${item.workSetCount} x ${describeRepRange(item.targetReps, item.targetRepsMax)} Wdh`
+            : null}
           {item.targetReps && item.targetSeconds ? ' · ' : null}
           {item.targetSeconds ? `${item.workSetCount} x ${item.targetSeconds}s` : null}
           {item.targetHeightCm ? ` · ${formatNumber(item.targetHeightCm)} cm` : ''}
@@ -479,6 +485,7 @@ export function TemplateDetailPage() {
         workSetCount: Number(form.workSetCount) || 1,
         includeWarmup: form.includeWarmup,
         targetReps: optionalNumberInput(form.targetReps),
+        targetRepsMax: optionalNumberInput(form.targetRepsMax),
         targetSeconds: optionalNumberInput(form.targetSeconds),
         targetWeight: optionalNumberInput(form.targetWeight),
         targetHeightCm: optionalNumberInput(form.targetHeightCm),

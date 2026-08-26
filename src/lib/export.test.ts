@@ -298,6 +298,78 @@ describe('parseDatabaseSnapshot', () => {
     expect(parseDatabaseSnapshot(JSON.stringify(legacy)).libraryImports).toEqual([]);
   });
 
+  it('trägt die obere Wiederholungsspanne durch und akzeptiert Sicherungen ohne sie', () => {
+    const parsed = parseDatabaseSnapshot(
+      JSON.stringify(
+        createSnapshot({
+          workoutTemplateExercises: [
+            {
+              id: 'template-exercise-spanne',
+              templateId: 'template-1',
+              exerciseId: 'exercise-1',
+              orderIndex: 1,
+              workSetCount: 3,
+              targetReps: 8,
+              targetRepsMax: 10,
+            },
+          ],
+          progressionRules: [
+            {
+              id: 'rule-spanne',
+              templateExerciseId: 'template-exercise-spanne',
+              programWeekId: 'week-1',
+              targetRepsMax: 12,
+            },
+          ],
+          programWeeks: [{ id: 'week-1', programId: 'program-1', weekNumber: 1 }],
+          programs: [
+            {
+              id: 'program-1',
+              name: 'Block A',
+              activeWeek: 1,
+              createdAt: '2026-08-26T08:00:00.000Z',
+              updatedAt: '2026-08-26T08:00:00.000Z',
+            },
+          ],
+          exercises: [
+            {
+              id: 'exercise-1',
+              name: 'Front Squat',
+              trackingMode: 'reps_weight',
+              unilateral: false,
+              createdAt: '2026-08-26T08:00:00.000Z',
+              updatedAt: '2026-08-26T08:00:00.000Z',
+            },
+          ],
+          workoutTemplates: [
+            {
+              id: 'template-1',
+              name: 'Einheit A',
+              createdAt: '2026-08-26T08:00:00.000Z',
+              updatedAt: '2026-08-26T08:00:00.000Z',
+            },
+          ],
+        }),
+      ),
+    );
+
+    expect(parsed.workoutTemplateExercises[0].targetRepsMax).toBe(10);
+    expect(parsed.progressionRules[0].targetRepsMax).toBe(12);
+
+    /*
+     * Der Test, der beweist, dass kein Versionssprung nötig war: eine
+     * Sicherung ohne den Schlüssel bleibt gültig. Ein Bump von
+     * SNAPSHOT_SCHEMA_VERSION hätte über das z.literal jede bestehende Datei
+     * abgewiesen - additive Felder gehen deshalb nur als .optional() hinein.
+     */
+    const legacy = createSnapshot();
+
+    expect(parseDatabaseSnapshot(JSON.stringify(legacy)).workoutTemplateExercises).toEqual([]);
+    expect(parseDatabaseSnapshot(JSON.stringify(legacy)).schemaVersion).toBe(
+      SNAPSHOT_SCHEMA_VERSION,
+    );
+  });
+
   it('keeps a switched-off timer sound and accepts backups written before it existed', () => {
     // Zod entfernt unbekannte Schlüssel: fehlte das Feld im Schema, käme das
     // Aus des Nutzers beim Import stillschweigend als Ein zurück.
@@ -495,6 +567,7 @@ describe('restoreDatabaseSnapshot', () => {
           orderIndex: 1,
           workSetCount: 3,
           targetReps: 8,
+          targetRepsMax: 10,
         },
       ],
       workoutSessions: [
@@ -521,6 +594,7 @@ describe('restoreDatabaseSnapshot', () => {
           addedInSession: false,
           workSetCount: 3,
           targetReps: 8,
+          targetRepsMax: 10,
         },
       ],
       workoutSetLogs: [
@@ -578,7 +652,12 @@ describe('restoreDatabaseSnapshot', () => {
     });
     expect(await db.workoutSessionExercises.get('session-exercise-new')).toMatchObject({
       targetReps: 8,
+      targetRepsMax: 10,
       exerciseNameSnapshot: 'Bench Press',
+    });
+    expect(await db.workoutTemplateExercises.get('template-exercise-new')).toMatchObject({
+      targetReps: 8,
+      targetRepsMax: 10,
     });
     expect(await db.workoutSetLogs.get('set-log-new')).toMatchObject({
       weight: 80,

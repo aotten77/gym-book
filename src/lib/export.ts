@@ -75,6 +75,8 @@ const workoutTemplateExerciseSchema = z.object({
   /* Additiv wie includeWarmup - siehe der Kommentar darüber. */
   supersetGroupId: z.string().optional(),
   targetReps: z.number().nonnegative().optional(),
+  /* Additiv wie includeWarmup - obere Wiederholungsspanne, kein Bump. */
+  targetRepsMax: z.number().nonnegative().optional(),
   targetSeconds: z.number().nonnegative().optional(),
   targetWeight: z.number().nonnegative().optional(),
   targetBandId: z.string().optional(),
@@ -114,6 +116,8 @@ const workoutSessionExerciseSchema = z.object({
   addedInSession: z.boolean(),
   workSetCount: z.number().int().positive(),
   targetReps: z.number().nonnegative().optional(),
+  /* Additiv wie includeWarmup - obere Wiederholungsspanne, kein Bump. */
+  targetRepsMax: z.number().nonnegative().optional(),
   targetSeconds: z.number().nonnegative().optional(),
   targetWeight: z.number().nonnegative().optional(),
   targetBandId: z.string().optional(),
@@ -192,6 +196,8 @@ const progressionRuleSchema = z.object({
   templateExerciseId: z.string().min(1),
   programWeekId: z.string().min(1),
   targetReps: z.number().nonnegative().optional(),
+  /* Additiv wie includeWarmup - obere Wiederholungsspanne, kein Bump. */
+  targetRepsMax: z.number().nonnegative().optional(),
   targetSeconds: z.number().nonnegative().optional(),
   targetWeight: z.number().nonnegative().optional(),
   targetBandId: z.string().optional(),
