@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { ProgressionRuleFields } from '@/components/ProgressionRuleFields';
 import { SectionCard } from '@/components/SectionCard';
+import { Button } from '@/components/ui/Button';
+import { SelectField } from '@/components/ui/Field';
 import { clearProgressionRule, saveProgressionRule } from '@/db/template-actions';
 import type {
   AppSettings,
@@ -11,75 +14,14 @@ import type {
   ProgressionRule,
   WorkoutTemplateExercise,
 } from '@/domain/models';
+import { describeWeekPrescription } from '@/domain/program-plan';
+import { foldProgressionRule, overriddenTargetFields } from '@/domain/progression-fold';
 import {
-  supportsBand,
-  supportsHeight,
-  supportsReps,
-  supportsSeconds,
-  supportsWeight,
-} from '@/domain/tracking';
-import { formatNumber } from '@/lib/format';
-import { optionalNumberInput, toInputValue } from '@/lib/number-input';
-
-interface ProgressionRuleFormState {
-  targetReps: string;
-  targetSeconds: string;
-  targetWeight: string;
-  targetBandId: string;
-  targetHeightCm: string;
-  notes: string;
-}
-
-const defaultProgressionRuleFormState: ProgressionRuleFormState = {
-  targetReps: '',
-  targetSeconds: '',
-  targetWeight: '',
-  targetBandId: '',
-  targetHeightCm: '',
-  notes: '',
-};
-
-function buildProgressionRuleFormState(rule?: {
-  targetReps?: number;
-  targetSeconds?: number;
-  targetWeight?: number;
-  targetBandId?: string;
-  targetHeightCm?: number;
-  notes?: string;
-}): ProgressionRuleFormState {
-  return {
-    targetReps: toInputValue(rule?.targetReps),
-    targetSeconds: toInputValue(rule?.targetSeconds),
-    targetWeight: toInputValue(rule?.targetWeight),
-    targetBandId: rule?.targetBandId ?? '',
-    targetHeightCm: toInputValue(rule?.targetHeightCm),
-    notes: rule?.notes ?? '',
-  };
-}
-
-function formatPrescriptionLine(
-  input: {
-    workSetCount: number;
-    targetReps?: number;
-    targetSeconds?: number;
-    targetWeight?: number;
-    targetBandId?: string;
-    targetHeightCm?: number;
-    restSeconds?: number;
-  },
-  bandNameById: Record<string, string> = {},
-) {
-  const parts = [
-    input.targetReps ? `${input.workSetCount} x ${input.targetReps} Wdh` : null,
-    input.targetSeconds ? `${input.workSetCount} x ${input.targetSeconds}s` : null,
-    typeof input.targetHeightCm === 'number' ? `${formatNumber(input.targetHeightCm)} cm` : null,
-    typeof input.targetWeight === 'number' ? `${formatNumber(input.targetWeight)} kg` : null,
-    input.targetBandId ? (bandNameById[input.targetBandId] ?? 'Band') : null,
-    typeof input.restSeconds === 'number' ? `Pause ${input.restSeconds}s` : null,
-  ].filter(Boolean);
-
-  return parts.join(' · ') || 'Keine Zielwerte gesetzt';
-}
+  buildProgressionRuleForm,
+  emptyProgressionRuleForm,
+  toProgressionRuleInput,
+  type ProgressionRuleFormState,
+} from '@/domain/progression-rule-form';
 
 interface TemplateProgressionSectionProps {
   programs: Program[] | undefined;
@@ -94,9 +36,16 @@ interface TemplateProgressionSectionProps {
 }
 
 /**
- * Pro Programmwoche Zielwerte für eine Template-Übung überschreiben. Der
- * Block ist bewusst eigenständig - er teilt bis auf Nachschlagetabellen
- * (Übungen, Programme, Wochen) keinen State mit dem Rest der Template-Seite.
+ * Eine Übung über alle Wochen - die transponierte Achse zur Wochenansicht.
+ *
+ * `/programs` zeigt eine Woche über alle Workouts; hier steht eine Übung
+ * über alle Wochen untereinander, und für das *Anlegen* einer Progression
+ * ("Nordic Curl: 12/14/16/18 s") ist das der richtige Schnitt.
+ *
+ * Die Programm-Auswahl ist weg: Regeln gelten für das **aktive** Programm,
+ * und welches das ist, entscheiden die Einstellungen. Ein zweites Auswahlfeld
+ * hier hätte erlaubt, Regeln in ein Programm zu schreiben, das nirgends
+ * wirkt - und genau das ist beim Start eines Trainings nicht mehr zu sehen.
  */
 export function TemplateProgressionSection({
   programs,
@@ -112,7 +61,6 @@ export function TemplateProgressionSection({
     () => Object.fromEntries((bandLevels ?? []).map((band) => [band.id, band.name])),
     [bandLevels],
   );
-  const [selectedProgramId, setSelectedProgramId] = useState('');
   const [selectedProgressionTemplateExerciseId, setSelectedProgressionTemplateExerciseId] =
     useState<string>('');
   const [progressionFormsByWeekId, setProgressionFormsByWeekId] = useState<
@@ -120,6 +68,7 @@ export function TemplateProgressionSection({
   >({});
   const [isSavingProgressionRule, setIsSavingProgressionRule] = useState(false);
 
+  const activeProgram = (programs ?? []).find((program) => program.id === activeProgramId);
   const selectedProgressionTemplateExercise = useMemo(
     () => orderedTemplateExercises.find((item) => item.id === selectedProgressionTemplateExerciseId),
     [orderedTemplateExercises, selectedProgressionTemplateExerciseId],
@@ -130,9 +79,9 @@ export function TemplateProgressionSection({
   const selectedProgramWeeks = useMemo(
     () =>
       [...(programWeeks ?? [])]
-        .filter((week) => week.programId === selectedProgramId)
+        .filter((week) => week.programId === activeProgramId)
         .sort((left, right) => left.weekNumber - right.weekNumber),
-    [programWeeks, selectedProgramId],
+    [programWeeks, activeProgramId],
   );
   const selectedProgressionRulesByWeekId = useMemo(() => {
     if (!selectedProgressionTemplateExerciseId) {
@@ -151,23 +100,6 @@ export function TemplateProgressionSection({
         .map((rule) => [rule.programWeekId, rule]),
     );
   }, [progressionRules, selectedProgramWeeks, selectedProgressionTemplateExerciseId]);
-
-  useEffect(() => {
-    const availableProgramIds = (programs ?? []).map((program) => program.id);
-
-    if (availableProgramIds.length === 0) {
-      if (selectedProgramId) {
-        setSelectedProgramId('');
-      }
-      return;
-    }
-
-    const preferredProgramId = activeProgramId ?? availableProgramIds[0];
-
-    if (!selectedProgramId || !availableProgramIds.includes(selectedProgramId)) {
-      setSelectedProgramId(preferredProgramId);
-    }
-  }, [activeProgramId, programs, selectedProgramId]);
 
   useEffect(() => {
     const availableTemplateExerciseIds = orderedTemplateExercises.map((item) => item.id);
@@ -197,18 +129,23 @@ export function TemplateProgressionSection({
       Object.fromEntries(
         selectedProgramWeeks.map((week) => [
           week.id,
-          buildProgressionRuleFormState(selectedProgressionRulesByWeekId[week.id]),
+          buildProgressionRuleForm(selectedProgressionRulesByWeekId[week.id]),
         ]),
       ),
     );
   }, [selectedProgramWeeks, selectedProgressionRulesByWeekId]);
+
+  /** Die Basiswerte der Übung - Platzhalter in den Feldern und Kopfzeile. */
+  const baseTargets = selectedProgressionTemplateExercise
+    ? foldProgressionRule(selectedProgressionTemplateExercise)
+    : undefined;
 
   async function handleSaveProgressionForWeek(programWeekId: string) {
     if (!selectedProgressionTemplateExercise) {
       return;
     }
 
-    const draft = progressionFormsByWeekId[programWeekId] ?? defaultProgressionRuleFormState;
+    const draft = progressionFormsByWeekId[programWeekId] ?? emptyProgressionRuleForm;
 
     setIsSavingProgressionRule(true);
 
@@ -216,28 +153,7 @@ export function TemplateProgressionSection({
       await saveProgressionRule({
         templateExerciseId: selectedProgressionTemplateExercise.id,
         programWeekId,
-        targetReps: supportsReps(selectedProgressionExercise?.trackingMode)
-          ? optionalNumberInput(draft.targetReps)
-          : undefined,
-        targetSeconds: supportsSeconds(selectedProgressionExercise?.trackingMode)
-          ? optionalNumberInput(draft.targetSeconds)
-          : undefined,
-        targetWeight: supportsWeight(
-          selectedProgressionExercise?.trackingMode,
-          selectedProgressionExercise?.loadKind,
-        )
-          ? optionalNumberInput(draft.targetWeight)
-          : undefined,
-        targetBandId: supportsBand(
-          selectedProgressionExercise?.trackingMode,
-          selectedProgressionExercise?.loadKind,
-        )
-          ? draft.targetBandId
-          : undefined,
-        targetHeightCm: supportsHeight(selectedProgressionExercise?.tracksHeight)
-          ? optionalNumberInput(draft.targetHeightCm)
-          : undefined,
-        notes: draft.notes,
+        ...toProgressionRuleInput(draft, selectedProgressionExercise),
       });
     } finally {
       setIsSavingProgressionRule(false);
@@ -255,7 +171,7 @@ export function TemplateProgressionSection({
       await clearProgressionRule(selectedProgressionTemplateExercise.id, programWeekId);
       setProgressionFormsByWeekId((current) => ({
         ...current,
-        [programWeekId]: defaultProgressionRuleFormState,
+        [programWeekId]: emptyProgressionRuleForm,
       }));
     } finally {
       setIsSavingProgressionRule(false);
@@ -265,62 +181,65 @@ export function TemplateProgressionSection({
   return (
     <SectionCard
       title="Wochenprogression"
-      subtitle="Pro Programmwoche kannst du Zielwerte für dieses Workout überschreiben. Beim Start des Trainings gilt genau die Stufe der aktiven Woche."
+      subtitle={
+        activeProgram
+          ? `Zielwerte je Woche in „${activeProgram.name}“. Beim Start des Trainings gilt genau die Stufe der aktiven Woche.`
+          : 'Pro Programmwoche kannst du Zielwerte für dieses Workout überschreiben.'
+      }
       action={
         <Link
-          to="/programs/manage"
+          to="/programs"
           className="min-h-touch inline-flex items-center justify-center rounded-control border border-line px-3 py-2 text-sm text-content-secondary transition hover:bg-surface-raised"
         >
-          Programme
+          Wochen
         </Link>
       }
     >
-      {(programs?.length ?? 0) === 0 ? (
+      {!activeProgram ? (
         <div className="rounded-panel border border-dashed border-line bg-surface px-4 py-5 text-sm text-content-muted">
-          Lege zuerst ein Programm mit Wochen an, damit du Wochen-Overrides pflegen kannst.
+          Es ist kein Programm aktiv. Lege eines an und wähle es in den Einstellungen aus, damit du
+          Wochenwerte pflegen kannst.
         </div>
       ) : orderedTemplateExercises.length === 0 ? (
         <div className="rounded-panel border border-dashed border-line bg-surface px-4 py-5 text-sm text-content-muted">
-          Füge zuerst eine Template-Übung hinzu. Danach kannst du hier die Progression je Woche editieren.
+          Füge zuerst eine Übung hinzu. Danach kannst du hier die Progression je Woche pflegen.
         </div>
       ) : (
         <div className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <select
-              value={selectedProgramId}
-              onChange={(event) => setSelectedProgramId(event.target.value)}
-              className="select-control w-full rounded-panel border border-line bg-surface px-4 py-4 text-base text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
-            >
-              {(programs ?? []).map((program) => (
-                <option key={program.id} value={program.id}>
-                  {program.name}
-                </option>
-              ))}
-            </select>
-            <select
-              value={selectedProgressionTemplateExerciseId}
-              onChange={(event) => setSelectedProgressionTemplateExerciseId(event.target.value)}
-              className="select-control w-full rounded-panel border border-line bg-surface px-4 py-4 text-base text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
-            >
-              {orderedTemplateExercises.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.orderIndex}. {nameById[item.exerciseId] ?? 'Unbekannte Übung'}
-                </option>
-              ))}
-            </select>
-          </div>
+          <SelectField
+            label="Übung"
+            value={selectedProgressionTemplateExerciseId}
+            onChange={(event) => setSelectedProgressionTemplateExerciseId(event.target.value)}
+          >
+            {orderedTemplateExercises.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.orderIndex}. {nameById[item.exerciseId] ?? 'Unbekannte Übung'}
+              </option>
+            ))}
+          </SelectField>
 
-          {selectedProgressionTemplateExercise ? (
+          {selectedProgressionTemplateExercise && baseTargets ? (
             <div className="rounded-panel bg-surface p-4 text-sm text-content-muted">
               <p className="font-semibold text-content">
                 {nameById[selectedProgressionTemplateExercise.exerciseId] ?? 'Unbekannte Übung'}
               </p>
+              {/*
+                Dieselbe Formatierung wie in der Wochenansicht: zwei
+                Formatierer sind der Weg, auf dem "3 × 8-10" und "3 x 8 Wdh"
+                auf zwei Bildschirmen landen.
+              */}
               <p className="mt-2">
-                Basis: {formatPrescriptionLine(selectedProgressionTemplateExercise, bandNameById)}
-              </p>
-              <p className="mt-1">
-                Tracking: {selectedProgressionExercise?.trackingMode ?? 'reps_weight'} ·{' '}
-                {selectedProgressionExercise?.unilateral ? 'unilateral' : 'beidseitig'}
+                Basis:{' '}
+                {describeWeekPrescription(
+                  {
+                    workSetCount: selectedProgressionTemplateExercise.workSetCount,
+                    effective: baseTargets,
+                    overriddenFields: [],
+                  },
+                  bandNameById,
+                )
+                  .map((segment) => segment.text)
+                  .join(' · ') || 'Keine Zielwerte gesetzt'}
               </p>
             </div>
           ) : null}
@@ -328,8 +247,9 @@ export function TemplateProgressionSection({
           {selectedProgramWeeks.length > 0 ? (
             <div className="space-y-3">
               {selectedProgramWeeks.map((week) => {
-                const draft = progressionFormsByWeekId[week.id] ?? defaultProgressionRuleFormState;
-                const hasSavedRule = Boolean(selectedProgressionRulesByWeekId[week.id]);
+                const draft = progressionFormsByWeekId[week.id] ?? emptyProgressionRuleForm;
+                const savedRule = selectedProgressionRulesByWeekId[week.id];
+                const overriddenCount = overriddenTargetFields(savedRule).length;
 
                 return (
                   <div key={week.id} className="rounded-panel border border-line bg-surface p-4">
@@ -340,160 +260,46 @@ export function TemplateProgressionSection({
                           {week.label ? ` · ${week.label}` : ''}
                         </p>
                         <p className="mt-1 text-xs text-content-muted">
-                          Leer lassen = Basiswerte der Template-Übung verwenden
+                          Leer heißt „wie im Workout“
                         </p>
                       </div>
-                      {hasSavedRule ? (
-                        <span className="min-h-touch inline-flex items-center justify-center rounded-control bg-accent-soft px-3 py-2 text-xs font-medium text-accent">
-                          Override aktiv
+                      {overriddenCount > 0 ? (
+                        <span className="shrink-0 rounded-control border border-line-strong px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-content-secondary">
+                          Woche
                         </span>
                       ) : null}
                     </div>
 
-                    <div className="space-y-3">
-                      {supportsReps(selectedProgressionExercise?.trackingMode) ? (
-                        <input
-                          value={draft.targetReps}
-                          onChange={(event) =>
-                            setProgressionFormsByWeekId((current) => ({
-                              ...current,
-                              [week.id]: {
-                                ...(current[week.id] ?? defaultProgressionRuleFormState),
-                                targetReps: event.target.value,
-                              },
-                            }))
-                          }
-                          inputMode="numeric"
-                          aria-label="Ziel-Wdh"
-                          placeholder="Ziel-Wdh"
-                          className="w-full rounded-panel border border-line bg-surface-sunken px-4 py-4 text-base text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
-                        />
-                      ) : null}
+                    <ProgressionRuleFields
+                      value={draft}
+                      onChange={(next) =>
+                        setProgressionFormsByWeekId((current) => ({ ...current, [week.id]: next }))
+                      }
+                      trackingMode={selectedProgressionExercise?.trackingMode}
+                      loadKind={selectedProgressionExercise?.loadKind}
+                      tracksHeight={selectedProgressionExercise?.tracksHeight}
+                      baseTargets={baseTargets}
+                      bandLevels={bandLevels}
+                      disabled={isSavingProgressionRule}
+                    />
 
-                      {supportsSeconds(selectedProgressionExercise?.trackingMode) ? (
-                        <input
-                          value={draft.targetSeconds}
-                          onChange={(event) =>
-                            setProgressionFormsByWeekId((current) => ({
-                              ...current,
-                              [week.id]: {
-                                ...(current[week.id] ?? defaultProgressionRuleFormState),
-                                targetSeconds: event.target.value,
-                              },
-                            }))
-                          }
-                          inputMode="decimal"
-                          aria-label="Ziel-Sekunden"
-                          placeholder="Ziel-Sekunden"
-                          className="w-full rounded-panel border border-line bg-surface-sunken px-4 py-4 text-base text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
-                        />
-                      ) : null}
-
-                      {supportsWeight(
-                        selectedProgressionExercise?.trackingMode,
-                        selectedProgressionExercise?.loadKind,
-                      ) ? (
-                        <input
-                          value={draft.targetWeight}
-                          onChange={(event) =>
-                            setProgressionFormsByWeekId((current) => ({
-                              ...current,
-                              [week.id]: {
-                                ...(current[week.id] ?? defaultProgressionRuleFormState),
-                                targetWeight: event.target.value,
-                              },
-                            }))
-                          }
-                          inputMode="decimal"
-                          aria-label="Ziel-Gewicht in kg"
-                          placeholder="Ziel-Gewicht in kg"
-                          className="w-full rounded-panel border border-line bg-surface-sunken px-4 py-4 text-base text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
-                        />
-                      ) : null}
-
-                      {supportsHeight(selectedProgressionExercise?.tracksHeight) ? (
-                        <input
-                          value={draft.targetHeightCm}
-                          onChange={(event) =>
-                            setProgressionFormsByWeekId((current) => ({
-                              ...current,
-                              [week.id]: {
-                                ...(current[week.id] ?? defaultProgressionRuleFormState),
-                                targetHeightCm: event.target.value,
-                              },
-                            }))
-                          }
-                          inputMode="decimal"
-                          aria-label="Ziel-Höhe in cm"
-                          placeholder="Ziel-Höhe in cm"
-                          className="w-full rounded-panel border border-line bg-surface-sunken px-4 py-4 text-base text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
-                        />
-                      ) : null}
-
-                      {supportsBand(
-                        selectedProgressionExercise?.trackingMode,
-                        selectedProgressionExercise?.loadKind,
-                      ) ? (
-                        <select
-                          value={draft.targetBandId}
-                          onChange={(event) =>
-                            setProgressionFormsByWeekId((current) => ({
-                              ...current,
-                              [week.id]: {
-                                ...(current[week.id] ?? defaultProgressionRuleFormState),
-                                targetBandId: event.target.value,
-                              },
-                            }))
-                          }
-                          aria-label="Ziel-Band"
-                          className="select-control w-full rounded-panel border border-line bg-surface-sunken px-4 py-4 text-base text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
-                        >
-                          <option value="">
-                            {bandLevels?.length ? 'Ziel-Band' : 'Noch keine Bänder angelegt'}
-                          </option>
-                          {bandLevels?.map((band) => (
-                            <option key={band.id} value={band.id}>
-                              {band.name}
-                            </option>
-                          ))}
-                        </select>
-                      ) : null}
-
-                      <textarea
-                        value={draft.notes}
-                        onChange={(event) =>
-                          setProgressionFormsByWeekId((current) => ({
-                            ...current,
-                            [week.id]: {
-                              ...(current[week.id] ?? defaultProgressionRuleFormState),
-                              notes: event.target.value,
-                            },
-                          }))
-                        }
-                        rows={2}
-                        aria-label="Wochen-spezifische Notiz"
-                        placeholder="Wochen-spezifische Notiz"
-                        className="w-full rounded-panel border border-line bg-surface-sunken px-4 py-4 text-base text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
-                      />
-
-                      <div className="grid grid-cols-2 gap-3">
-                        <button
-                          type="button"
-                          onClick={() => handleSaveProgressionForWeek(week.id)}
-                          disabled={isSavingProgressionRule}
-                          className="rounded-panel bg-accent px-4 py-4 text-sm font-semibold text-accent-contrast transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          Wochenwerte speichern
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleClearProgressionForWeek(week.id)}
-                          disabled={isSavingProgressionRule}
-                          className="rounded-panel bg-surface-raised px-4 py-4 text-sm font-medium text-content-secondary transition hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          Override entfernen
-                        </button>
-                      </div>
+                    <div className="mt-3 grid grid-cols-2 gap-3">
+                      <Button
+                        variant="primary"
+                        size="md"
+                        onClick={() => void handleSaveProgressionForWeek(week.id)}
+                        disabled={isSavingProgressionRule}
+                      >
+                        Wochenwerte speichern
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="md"
+                        onClick={() => void handleClearProgressionForWeek(week.id)}
+                        disabled={isSavingProgressionRule || !savedRule}
+                      >
+                        Auf Basiswerte zurück
+                      </Button>
                     </div>
                   </div>
                 );

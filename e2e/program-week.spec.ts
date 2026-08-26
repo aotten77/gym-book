@@ -67,6 +67,51 @@ test.describe('Programm-Wochenansicht', () => {
     await expect(page.getByText('Override', { exact: true })).toHaveCount(0);
   });
 
+  test('plant eine Zeile für genau eine Woche und nimmt sie wieder zurück', async ({ page }) => {
+    const errors = collectPageErrors(page);
+
+    await page.goto('./#/programs');
+    await page.waitForTimeout(1200);
+
+    await page.getByRole('tab', { name: 'W2' }).click();
+    await page.waitForTimeout(500);
+
+    await page.getByRole('button', { name: 'Front Squat für diese Woche planen' }).click();
+    await page.locator('[data-sheet]').waitFor();
+    await page.waitForTimeout(400);
+
+    const sheet = page.locator('[data-sheet]');
+    // Leer heißt "wie im Workout" - der Basiswert steht als Platzhalter.
+    await expect(sheet.getByLabel('Ziel-Gewicht in kg')).toHaveAttribute('placeholder', '82,5 kg');
+
+    await sheet.getByLabel('Ziel-Gewicht in kg').fill('90');
+    await page.getByRole('button', { name: 'Wochenwerte speichern' }).click();
+    await page.waitForTimeout(1000);
+
+    await expect(page.getByText('90 kg').first()).toBeVisible();
+    await expect(page.getByText('Woche', { exact: true }).first()).toBeVisible();
+
+    // Genau eine Woche: W1 steht unverändert auf dem Basiswert.
+    await page.getByRole('tab', { name: 'W1' }).click();
+    await page.waitForTimeout(500);
+    await expect(page.getByText('82,5 kg').first()).toBeVisible();
+    await expect(page.getByText('90 kg')).toHaveCount(0);
+
+    await page.getByRole('tab', { name: 'W2' }).click();
+    await page.waitForTimeout(500);
+    await page.getByRole('button', { name: 'Front Squat für diese Woche planen' }).click();
+    await page.locator('[data-sheet]').waitFor();
+    await page.waitForTimeout(400);
+
+    await page.getByRole('button', { name: 'Auf Basiswerte zurück' }).click();
+    await page.waitForTimeout(1000);
+
+    await expect(page.getByText('90 kg')).toHaveCount(0);
+    await expect(page.getByText('82,5 kg').first()).toBeVisible();
+
+    expect(errors).toEqual([]);
+  });
+
   test('führt weiter zur Verwaltung', async ({ page }) => {
     await page.goto('./#/programs');
     await page.waitForTimeout(1200);

@@ -3,10 +3,13 @@ import { Link } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { AppShell } from '@/components/AppShell';
 import { Empty } from '@/components/Empty';
+import { ProgressionRuleFields } from '@/components/ProgressionRuleFields';
 import { SupersetBlock } from '@/components/SupersetBlock';
 import { Button } from '@/components/ui/Button';
+import { Sheet } from '@/components/ui/Sheet';
 import { NowCard } from '@/components/ui/StatusCard';
 import { db } from '@/db/appDb';
+import { clearProgressionRule, saveProgressionRule } from '@/db/template-actions';
 import type { ProgramWeek } from '@/domain/models';
 import {
   buildWeekPlan,
@@ -15,6 +18,13 @@ import {
   type WeekPlanBlock,
   type WeekPlanEntry,
 } from '@/domain/program-plan';
+import { foldProgressionRule } from '@/domain/progression-fold';
+import {
+  buildProgressionRuleForm,
+  emptyProgressionRuleForm,
+  toProgressionRuleInput,
+  type ProgressionRuleFormState,
+} from '@/domain/progression-rule-form';
 import { resolveWeekControl } from '@/domain/program';
 import { cn } from '@/lib/utils';
 
@@ -40,6 +50,10 @@ export function ProgramsPage() {
    * den Einstellungen.
    */
   const [selectedWeekNumber, setSelectedWeekNumber] = useState<number | null>(null);
+  /** Die Zeile, die gerade im Sheet bearbeitet wird - ebenfalls ephemer. */
+  const [editingEntry, setEditingEntry] = useState<WeekPlanEntry | null>(null);
+  const [ruleForm, setRuleForm] = useState<ProgressionRuleFormState>(emptyProgressionRuleForm);
+  const [isSavingRule, setIsSavingRule] = useState(false);
 
   const settings = useLiveQuery(() => db.appSettings.get('app-settings'), []);
   const program = useLiveQuery(async () => {
@@ -96,6 +110,82 @@ export function ProgramsPage() {
       count + block.entries.filter((entry) => entry.overriddenFields.length > 0).length,
     0,
   );
+
+  /** Die gespeicherte Regel der offenen Zeile - Grundlage des Formulars. */
+  const editingRule =
+    editingEntry && selectedProgramWeek
+      ? (progressionRules ?? []).find(
+          (rule) =>
+            rule.templateExerciseId === editingEntry.templateExerciseId &&
+            rule.programWeekId === selectedProgramWeek.id,
+        )
+      : undefined;
+
+  /*
+   * Die Basiswerte des Workouts - sie stehen als Platzhalter in den Feldern,
+   * damit ein leeres Feld sichtbar "wie im Workout" heißt. `effective` taugt
+   * dafür nicht: darin steckt die Regel schon drin.
+   */
+  const editingBaseTargets = editingEntry
+    ? foldProgressionRule(
+        (templateExercises ?? []).find((item) => item.id === editingEntry.templateExerciseId) ?? {},
+      )
+    : undefined;
+
+  function handleEditEntry(entry: WeekPlanEntry) {
+    /*
+     * Bearbeitet wird der **Plan**, nie eine laufende Ausführung: von hier
+     * führt kein Weg zu einer `WorkoutSessionExercise`. Deshalb gibt es auf
+     * dieser Seite auch keinen Startknopf - der Start löst die Woche über
+     * `resolveWeekControl` auf und nicht über die Auswahl oben.
+     */
+    if (!selectedProgramWeek) {
+      return;
+    }
+
+    const rule = (progressionRules ?? []).find(
+      (item) =>
+        item.templateExerciseId === entry.templateExerciseId &&
+        item.programWeekId === selectedProgramWeek.id,
+    );
+
+    setRuleForm(buildProgressionRuleForm(rule));
+    setEditingEntry(entry);
+  }
+
+  async function handleSaveRule() {
+    if (!editingEntry || !selectedProgramWeek) {
+      return;
+    }
+
+    setIsSavingRule(true);
+
+    try {
+      await saveProgressionRule({
+        templateExerciseId: editingEntry.templateExerciseId,
+        programWeekId: selectedProgramWeek.id,
+        ...toProgressionRuleInput(ruleForm, editingEntry),
+      });
+      setEditingEntry(null);
+    } finally {
+      setIsSavingRule(false);
+    }
+  }
+
+  async function handleClearRule() {
+    if (!editingEntry || !selectedProgramWeek) {
+      return;
+    }
+
+    setIsSavingRule(true);
+
+    try {
+      await clearProgressionRule(editingEntry.templateExerciseId, selectedProgramWeek.id);
+      setEditingEntry(null);
+    } finally {
+      setIsSavingRule(false);
+    }
+  }
 
   const weekModeHint =
     weekControl.mode === 'override'
@@ -193,7 +283,7 @@ export function ProgramsPage() {
           */
           <Empty
             title="Noch keine Wochen-Vorgaben"
-            description="Jede Woche zeigt gerade die Basiswerte aus dem Workout. Wochenspezifische Zielwerte pflegst du im Workout unter „Wochenprogression“."
+            description="Jede Woche zeigt gerade die Basiswerte aus dem Workout. Tippe eine Zeile an, um genau für diese Woche etwas anderes zu planen."
           />
         ) : null}
 
@@ -211,7 +301,14 @@ export function ProgramsPage() {
             }
           />
         ) : (
-          blocks.map((block) => <WeekPlanBlockCard key={block.templateId} block={block} bandNameById={bandNameById} />)
+          blocks.map((block) => (
+            <WeekPlanBlockCard
+              key={block.templateId}
+              block={block}
+              bandNameById={bandNameById}
+              onEditEntry={selectedProgramWeek ? handleEditEntry : undefined}
+            />
+          ))
         )}
 
         <div className="pt-2">
@@ -222,6 +319,66 @@ export function ProgramsPage() {
           </Link>
         </div>
       </div>
+
+      {/*
+        Bearbeitet wird im Sheet, nicht auf einer eigenen Seite: die Zeile,
+        um die es geht, bleibt dahinter stehen. Der große Knopf sitzt im Fuß,
+        der am sichtbaren Viewport hängt - sonst schiebt iOS ihn unter die
+        Tastatur, sobald ein Zahlenfeld den Fokus bekommt.
+      */}
+      <Sheet
+        open={editingEntry !== null && selectedProgramWeek !== undefined}
+        label={`Woche ${selectedWeek} · ${editingEntry?.exerciseName ?? ''}`}
+        closeLabel="Bearbeiten schließen"
+        onClose={() => setEditingEntry(null)}
+        header={
+          <div className="min-w-0">
+            <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-content-muted">
+              Woche {selectedWeek}
+            </p>
+            <h2 className="mt-0.5 truncate font-display text-[21px] font-extrabold leading-[1.06] tracking-[-0.04em]">
+              {editingEntry?.exerciseName}
+            </h2>
+          </div>
+        }
+        footer={
+          <div className="space-y-2">
+            <Button
+              variant="primary"
+              fullWidth
+              onClick={() => void handleSaveRule()}
+              disabled={isSavingRule}
+            >
+              Wochenwerte speichern
+            </Button>
+            <Button
+              variant="ghost"
+              fullWidth
+              onClick={() => void handleClearRule()}
+              // Ohne gespeicherte Regel gibt es nichts zurückzunehmen.
+              disabled={isSavingRule || !editingRule}
+            >
+              Auf Basiswerte zurück
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-content-muted">
+            Leer heißt „wie im Workout“ - in den Feldern steht der Basiswert als Platzhalter.
+          </p>
+          <ProgressionRuleFields
+            value={ruleForm}
+            onChange={setRuleForm}
+            trackingMode={editingEntry?.trackingMode}
+            loadKind={editingEntry?.loadKind}
+            tracksHeight={editingEntry?.tracksHeight}
+            baseTargets={editingBaseTargets}
+            bandLevels={bandLevels}
+            disabled={isSavingRule}
+          />
+        </div>
+      </Sheet>
     </AppShell>
   );
 }
@@ -229,9 +386,12 @@ export function ProgramsPage() {
 function WeekPlanBlockCard({
   block,
   bandNameById,
+  onEditEntry,
 }: {
   block: WeekPlanBlock;
   bandNameById: Record<string, string>;
+  /** Fehlt, solange das Programm keine Wochen hat - dann gibt es nichts zu planen. */
+  onEditEntry?: (entry: WeekPlanEntry) => void;
 }) {
   /*
    * Supersätze bleiben sichtbar zusammen: `buildWeekPlan` liefert die
@@ -276,7 +436,12 @@ function WeekPlanBlockCard({
                 exerciseNames={group.map((entry) => entry.exerciseName)}
               >
                 {group.map((entry) => (
-                  <WeekPlanRow key={entry.templateExerciseId} entry={entry} bandNameById={bandNameById} />
+                  <WeekPlanRow
+                    key={entry.templateExerciseId}
+                    entry={entry}
+                    bandNameById={bandNameById}
+                    onEdit={onEditEntry}
+                  />
                 ))}
               </SupersetBlock>
             ) : (
@@ -284,6 +449,7 @@ function WeekPlanBlockCard({
                 key={group[0].templateExerciseId}
                 entry={group[0]}
                 bandNameById={bandNameById}
+                onEdit={onEditEntry}
               />
             ),
           )}
@@ -296,14 +462,15 @@ function WeekPlanBlockCard({
 function WeekPlanRow({
   entry,
   bandNameById,
+  onEdit,
 }: {
   entry: WeekPlanEntry;
   bandNameById: Record<string, string>;
+  onEdit?: (entry: WeekPlanEntry) => void;
 }) {
   const segments = describeWeekPrescription(entry, bandNameById);
-
-  return (
-    <div className="rounded-panel border border-line bg-surface-sunken px-3 py-2">
+  const body = (
+    <>
       <div className="flex items-center justify-between gap-2">
         <p className="min-w-0 truncate text-sm font-semibold text-content">{entry.exerciseName}</p>
         {entry.overriddenFields.length > 0 ? (
@@ -322,7 +489,28 @@ function WeekPlanRow({
           <PrescriptionSegmentText key={segment.text} segment={segment} isFirst={index === 0} />
         ))}
       </p>
-    </div>
+    </>
+  );
+
+  const shellClasses = 'w-full rounded-panel border border-line bg-surface-sunken px-3 py-2 text-left';
+
+  if (!onEdit) {
+    return <div className={shellClasses}>{body}</div>;
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => onEdit(entry)}
+      aria-label={`${entry.exerciseName} für diese Woche planen`}
+      className={cn(
+        shellClasses,
+        'min-h-touch transition hover:bg-surface-raised',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+      )}
+    >
+      {body}
+    </button>
   );
 }
 
