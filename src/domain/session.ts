@@ -9,6 +9,7 @@ import type {
   WorkoutTemplate,
   WorkoutTemplateExercise,
 } from '@/domain/models';
+import { foldProgressionRule } from '@/domain/progression-fold';
 import { createId } from '@/lib/id';
 
 interface MaterializeSessionInput {
@@ -65,7 +66,10 @@ export function materializeSession({
     }
 
     const sessionExerciseId = createId();
-    const targetBandId = progressionRule?.targetBandId ?? templateExercise.targetBandId;
+    // Die eine Stelle, an der Wochenvorgabe und Workout zusammenfallen - die
+    // Programm-Seite zeigt dieselbe Funktion an, statt sie nachzubauen.
+    const targets = foldProgressionRule(templateExercise, progressionRule);
+    const targetBandId = targets.targetBandId;
 
     sessionExercises.push({
       id: sessionExerciseId,
@@ -84,14 +88,15 @@ export function materializeSession({
       wasSkipped: false,
       addedInSession: false,
       workSetCount: templateExercise.workSetCount,
-      targetReps: progressionRule?.targetReps ?? templateExercise.targetReps,
-      targetSeconds: progressionRule?.targetSeconds ?? templateExercise.targetSeconds,
-      targetWeight: progressionRule?.targetWeight ?? templateExercise.targetWeight,
+      targetReps: targets.targetReps,
+      targetSeconds: targets.targetSeconds,
+      targetWeight: targets.targetWeight,
       targetBandId,
       targetBandNameSnapshot: targetBandId ? bandLevelsById?.[targetBandId]?.name : undefined,
-      targetHeightCm: progressionRule?.targetHeightCm ?? templateExercise.targetHeightCm,
+      targetHeightCm: targets.targetHeightCm,
+      // Die Pause kennt keine Wochenvorgabe - sie steht nicht in der Regel.
       restSeconds: templateExercise.restSeconds,
-      notes: progressionRule?.notes ?? templateExercise.notes,
+      notes: targets.notes,
     });
 
     const sides = exercise.unilateral ? (['left', 'right'] as const) : (['both'] as const);
