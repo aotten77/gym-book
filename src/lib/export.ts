@@ -1,7 +1,10 @@
 import { z } from 'zod';
 import { db } from '@/db/appDb';
 import { markBackupCreated } from '@/db/settings-actions';
+import { buildAnalysisExport } from '@/domain/analysis-export';
+import { resolveWeekControl, toDateInputValue } from '@/domain/program';
 import { blobToDataUrl, dataUrlToBlob, isSupportedMediaType } from '@/lib/media';
+import { createZipArchive } from '@/lib/zip';
 import type {
   AppSettings,
   BandLevel,
@@ -595,6 +598,40 @@ function downloadSnapshotFile(file: File) {
   window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
+/**
+ * Bringt die Datei nach draußen - Teilen-Menü, sonst Download.
+ *
+ * Steht als eigener Schritt da, weil inzwischen zwei Exporte denselben Weg
+ * gehen: die Sicherung und der Analyse-Export. Was sich unterscheidet, ist
+ * ausschließlich, was danach passiert - nur die Sicherung ist eine Sicherung.
+ */
+async function deliverExportFile(
+  file: File,
+  title: string,
+  options: ExportOptions,
+): Promise<ExportResult> {
+  if (options.preferShare && canShareSnapshot(file)) {
+    try {
+      await navigator.share({ files: [file], title });
+
+      return 'shared';
+    } catch (error) {
+      // Abbruch im Teilen-Menü ist kein Fehler - aber auch keine Sicherung.
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        return 'cancelled';
+      }
+
+      // Teilen kann auch scheitern (kein Ziel, Berechtigung); dann bleibt der
+      // Download der verlässliche Weg.
+      downloadSnapshotFile(file);
+    }
+  } else {
+    downloadSnapshotFile(file);
+  }
+
+  return 'downloaded';
+}
+
 export async function exportDatabaseSnapshot(options: ExportOptions = {}): Promise<ExportResult> {
   const snapshot = await createDatabaseSnapshot();
   const serializableSnapshot = {
@@ -616,30 +653,73 @@ export async function exportDatabaseSnapshot(options: ExportOptions = {}): Promi
     { type: 'application/json' },
   );
 
-  let result: ExportResult = 'downloaded';
+  const result = await deliverExportFile(file, 'Gym Book Sicherung', options);
 
-  if (options.preferShare && canShareSnapshot(file)) {
-    try {
-      await navigator.share({
-        files: [file],
-        title: 'Gym Book Sicherung',
-      });
-      result = 'shared';
-    } catch (error) {
-      // Abbruch im Teilen-Menü ist kein Fehler - aber auch keine Sicherung.
-      if (error instanceof DOMException && error.name === 'AbortError') {
-        return 'cancelled';
-      }
-
-      // Teilen kann auch scheitern (kein Ziel, Berechtigung); dann bleibt der
-      // Download der verlässliche Weg.
-      downloadSnapshotFile(file);
-    }
-  } else {
-    downloadSnapshotFile(file);
+  if (result === 'cancelled') {
+    return 'cancelled';
   }
 
   await markBackupCreated(snapshot.exportedAt);
 
   return result;
+}
+
+/**
+ * Der Analyse-Export: drei kleine Dateien in einem Archiv.
+ *
+ * Ausdrücklich **keine Sicherung** - deshalb fehlt hier das
+ * `markBackupCreated`, das die Sicherung setzt. Das Datum der letzten
+ * Sicherung treibt die Erinnerung auf der Startseite, und ein Export ohne
+ * Bilder, ohne Ids und ohne die verworfenen Sessions könnte einen Verlust
+ * nicht rückgängig machen. Wer ihn als Backup zählte, hätte eine Erinnerung
+ * abgeschaltet, die vor genau diesem Datenverlust warnt.
+ */
+export async function exportAnalysisSnapshot(options: ExportOptions = {}): Promise<ExportResult> {
+  const exportedAt = new Date();
+  const [sessions, sessionExercises, setLogs, bandLevels, programs, programWeeks, settings] =
+    await Promise.all([
+      db.workoutSessions.toArray(),
+      db.workoutSessionExercises.toArray(),
+      db.workoutSetLogs.toArray(),
+      db.bandLevels.toArray(),
+      db.programs.toArray(),
+      db.programWeeks.toArray(),
+      db.appSettings.get('app-settings'),
+    ]);
+
+  const program = settings?.activeProgramId
+    ? programs.find((item) => item.id === settings.activeProgramId)
+    : undefined;
+  const files = buildAnalysisExport({
+    exportedAt,
+    sessions,
+    sessionExercises,
+    setLogs,
+    bandLevels,
+    program,
+    // Dieselbe Auflösung wie Start, Home und Einstellungen - die Rangfolge der
+    // Woche hat genau eine Stelle, und der Export darf keine zweite werden.
+    weekControl: resolveWeekControl(
+      settings?.weekOverride,
+      program,
+      programWeeks.filter((week) => week.programId === program?.id),
+      exportedAt,
+    ),
+  });
+
+  const archive = createZipArchive(
+    [
+      { name: 'sessions.csv', content: files.sessionsCsv },
+      { name: 'progression.csv', content: files.progressionCsv },
+      { name: 'meta.json', content: files.metaJson },
+    ],
+    exportedAt,
+  );
+  const file = new File(
+    [archive],
+    `gym-book-analyse-${toDateInputValue(exportedAt)}.zip`,
+    { type: 'application/zip' },
+  );
+
+  return deliverExportFile(file, 'Gym Book Analyse', options);
 }

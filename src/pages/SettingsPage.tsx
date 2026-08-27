@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Download, HardDrive, Megaphone, Upload, Volume2 } from 'lucide-react';
+import { Download, FileSpreadsheet, HardDrive, Megaphone, Upload, Volume2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { AppShell } from '@/components/AppShell';
 import { Alert } from '@/components/Alert';
@@ -41,6 +41,7 @@ import {
 } from '@/domain/set-timer-cues';
 import {
   type DatabaseSnapshot,
+  exportAnalysisSnapshot,
   exportDatabaseSnapshot,
   parseDatabaseSnapshot,
   restoreDatabaseSnapshot,
@@ -68,6 +69,8 @@ export function SettingsPage() {
   const [isRequestingPersistence, setIsRequestingPersistence] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [exportMessage, setExportMessage] = useState<string | null>(null);
+  const [isExportingAnalysis, setIsExportingAnalysis] = useState(false);
+  const [analysisMessage, setAnalysisMessage] = useState<string | null>(null);
   const [soundError, setSoundError] = useState<string | null>(null);
   const [screenAwakeError, setScreenAwakeError] = useState<string | null>(null);
   const [showNordicFixDialog, setShowNordicFixDialog] = useState(false);
@@ -113,6 +116,30 @@ export function SettingsPage() {
       );
     } finally {
       setIsExporting(false);
+    }
+  }
+
+  /*
+   * Der Analyse-Export ist keine Sicherung: er lässt Bilder, Ids und alles
+   * Unfertige weg. Deshalb fasst er `lastBackupAt` nicht an - und deshalb wird
+   * hier auch nicht der Speicherstatus neu gelesen wie beim Backup.
+   */
+  async function handleAnalysisExport() {
+    setIsExportingAnalysis(true);
+
+    try {
+      const result = await exportAnalysisSnapshot({ preferShare: true });
+      setAnalysisMessage(
+        result === 'cancelled'
+          ? 'Analyse-Export abgebrochen.'
+          : 'Analyse-Export erstellt (sessions.csv, progression.csv, meta.json).',
+      );
+    } catch (error) {
+      setAnalysisMessage(
+        error instanceof Error ? error.message : 'Analyse-Export konnte nicht erstellt werden.',
+      );
+    } finally {
+      setIsExportingAnalysis(false);
     }
   }
 
@@ -801,6 +828,34 @@ export function SettingsPage() {
             {exportMessage ? (
               <div className="rounded-panel border border-line bg-surface px-4 py-3 text-sm text-content-secondary">
                 {exportMessage}
+              </div>
+            ) : null}
+
+            {/* Steht neben der Sicherung und sieht bewusst anders aus: die
+                Sicherung ist die Aktion dieser Karte und behält die eine
+                Akzentfläche. */}
+            <button
+              type="button"
+              onClick={() => void handleAnalysisExport()}
+              disabled={isExportingAnalysis}
+              className="flex items-center justify-between rounded-panel border border-line bg-surface-raised px-4 py-4 text-left transition hover:border-accent-border hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <div>
+                <p className="font-medium text-content-secondary">
+                  {isExportingAnalysis ? 'Analyse-Export läuft...' : 'Analyse-Export'}
+                </p>
+                <p className="mt-1 text-sm text-content-muted">
+                  Ein ZIP mit drei kleinen Dateien zum Auswerten: eine Zeile je Einheit, Übung und
+                  Seite. Ohne Bilder, ohne Ids, ohne leere Sätze - und deshalb{' '}
+                  <span className="font-medium">keine Sicherung</span>.
+                </p>
+              </div>
+              <FileSpreadsheet size={18} className="text-content-muted" />
+            </button>
+
+            {analysisMessage ? (
+              <div className="rounded-panel border border-line bg-surface px-4 py-3 text-sm text-content-secondary">
+                {analysisMessage}
               </div>
             ) : null}
 
