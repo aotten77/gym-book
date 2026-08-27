@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { describeRemainingEstimate, formatNumber, formatRemainingEstimate } from '@/lib/format';
+import {
+  describeRemainingEstimate,
+  formatClockTime,
+  formatNumber,
+  formatRemainingEstimate,
+} from '@/lib/format';
 
 describe('formatNumber', () => {
   it('schreibt Dezimalstellen mit Komma', () => {
@@ -14,6 +19,25 @@ describe('formatNumber', () => {
 
   it('gruppiert ab vier Stellen', () => {
     expect(formatNumber(1250)).toBe('1.250');
+  });
+});
+
+describe('formatClockTime', () => {
+  /*
+   * Aus lokalen Bestandteilen gebaut und nicht aus einem ISO-String: die Uhrzeit
+   * ist die der Halle, in der trainiert wird, und der Test soll in jeder Zone
+   * dasselbe sagen.
+   */
+  it('schreibt die reine Uhrzeit, ohne Datum davor', () => {
+    expect(formatClockTime(new Date(2026, 7, 26, 19, 42).getTime())).toBe('19:42');
+  });
+
+  it('füllt die Stunde auf zwei Stellen auf', () => {
+    expect(formatClockTime(new Date(2026, 7, 26, 7, 5).getTime())).toBe('07:05');
+  });
+
+  it('nimmt auch den ISO-String, mit dem die Datensätze arbeiten', () => {
+    expect(formatClockTime(new Date(2026, 7, 26, 19, 42).toISOString())).toBe('19:42');
   });
 });
 

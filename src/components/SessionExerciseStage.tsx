@@ -15,7 +15,7 @@ import {
 import { ExerciseMedia } from '@/components/ExerciseMedia';
 import { Button, IconButton } from '@/components/ui/Button';
 import { toggleSetCompletion, updateSetLogValues } from '@/db/session-actions';
-import type { LastSetValues, SetValues } from '@/domain/history';
+import { setLogKey, type LastSetValues, type SetValues } from '@/domain/history';
 import type {
   BandLevel,
   MediaAsset,
@@ -31,11 +31,10 @@ import {
   type RestBadge,
 } from '@/domain/rest-timer';
 import {
-  describeProgressionReason,
-  describeProgressionSuggestion,
-  suggestNextProgression,
-  type ProgressionSuggestion,
-} from '@/domain/progression-suggestion';
+  PROGRESSION_HINT_LABEL,
+  PROGRESSION_HINT_SHORT_LABEL,
+  hasProgressionHint,
+} from '@/domain/progression-hint';
 import {
   buildSetRounds,
   describeExerciseTarget,
@@ -82,17 +81,6 @@ export interface ActiveSetAction {
   run: () => Promise<void>;
 }
 
-/**
- * Welches Feld der Vorschlag füllt - und damit auch, welches leer sein muss,
- * damit er überhaupt erscheint.
- */
-const SUGGESTION_DRAFT_FIELD: Record<ProgressionSuggestion['kind'], keyof SetLogDraft> = {
-  weight: 'weight',
-  heightCm: 'heightCm',
-  seconds: 'seconds',
-  band: 'bandId',
-};
-
 interface ActiveSetEditorProps {
   log: WorkoutSetLog;
   exercise: WorkoutSessionExercise;
@@ -100,12 +88,8 @@ interface ActiveSetEditorProps {
   bandLevels?: BandLevel[];
   /** Werte derselben Satzzeile aus der letzten abgeschlossenen Ausführung. */
   lastValues?: SetValues;
-  /**
-   * Alle Arbeitssätze der letzten abgeschlossenen Ausführung - Grundlage des
-   * Steigerungsvorschlags. Nicht dasselbe wie `lastValues`: der Vorschlag
-   * fragt nach *jedem* Satz, nicht nach dieser einen Zeile.
-   */
-  lastWorkLogs?: WorkoutSetLog[];
+  /** Ob an dieser Zeile eine Steigerung möglich ist - siehe [progression-hint.ts]. */
+  hasHint?: boolean;
   /** Gesetzt, solange der Satz-Timer genau zu dieser Zeile läuft. */
   setTimer?: SetTimerState;
   timerRemainingSeconds: number;
@@ -135,7 +119,7 @@ function ActiveSetEditor({
   exercise,
   bandLevels,
   lastValues,
-  lastWorkLogs,
+  hasHint,
   setTimer,
   timerRemainingSeconds,
   onStartTimer,
@@ -231,11 +215,25 @@ function ActiveSetEditor({
     return () => window.clearTimeout(handle);
   }, [dirty, hasInvalidInput, disabled, persist]);
 
+  /*
+   * Die Vorgabe der Zeile - dieselbe, die als Platzhalter im Feld steht und
+   * die der große Knopf beim Abhaken übernimmt. Nur einmal berechnet, damit
+   * Feld, Knopf und Timer nicht drei Quellen haben.
+   */
+  const rowFallback = setRowFallback(exercise, lastValues);
+
   const isTimerRunning = Boolean(setTimer);
   const parsedSeconds = parseNumberInput(draft.seconds);
+  /*
+   * Der Timer läuft über das, was im Feld steht - eingetragen oder als
+   * Platzhalter vorbelegt. Nur `exercise.targetSeconds` zu nehmen war genau
+   * die Stelle, an der die vorbelegte Zeit erneut getippt werden musste,
+   * damit der Countdown sie zeigt: letzte Woche schlägt das Übungsziel, hier
+   * wie in `setRowFallback` und beim Abhaken.
+   */
   const timerSeconds = resolveSetTimerSeconds(
     parsedSeconds.status === 'valid' ? parsedSeconds.value : undefined,
-    exercise.targetSeconds,
+    rowFallback.seconds,
   );
 
   /**
@@ -248,15 +246,7 @@ function ActiveSetEditor({
   function adjustField(key: SetLogFieldKey, delta: number) {
     setDraft((current) => {
       const parsed = parseNumberInput(current[key]);
-      const fallback =
-        key === 'reps'
-          ? (lastValues?.reps ?? exercise.targetReps)
-          : key === 'seconds'
-            ? (lastValues?.seconds ?? exercise.targetSeconds)
-            : key === 'heightCm'
-              ? (lastValues?.heightCm ?? exercise.targetHeightCm)
-              : (lastValues?.weight ?? exercise.targetWeight);
-      const base = parsed.status === 'valid' ? parsed.value : (fallback ?? 0);
+      const base = parsed.status === 'valid' ? parsed.value : (rowFallback[key] ?? 0);
       const next =
         key === 'seconds'
           ? clampSetTimerSeconds(base + delta)
@@ -269,36 +259,12 @@ function ActiveSetEditor({
   }
 
   /*
-   * Der Steigerungsvorschlag - eine Entscheidungshilfe im Moment der
-   * Entscheidung, keine Zusammenfassung.
-   *
-   * Er erscheint nur am ersten Arbeitssatz, nur solange das Zielfeld im Draft
-   * leer ist und kein Timer läuft: ab Satz 2 ist die Last des Tages gesetzt,
-   * und wer schon getippt hat, hat entschieden. Er ist ausdrücklich *nicht*
-   * die gelöschte Fußzeile - die wiederholte Zahlen, die die Satzzeile ohnehin
-   * zeigt; hier steht eine Zahl, die sonst nirgends auf dem Bildschirm steht,
-   * als Schlussfolgerung eines Kriteriums.
-   *
-   * Und er schreibt nie von selbst: der einzige Weg in den Satz führt über den
-   * Tap unten. Deshalb darf er weder `setRowFallback` noch `adoptPlaceholders`
-   * erreichen - dort würde er beim Abhaken still übernommen, und aus einem
-   * Vorschlag würde ein Überschreiben.
+   * Die Marke gilt der Zeile, nicht dem Draft: sie sagt aus, was beim letzten
+   * Mal in genau diesem Satz stand, und das ändert sich nicht, während jemand
+   * tippt. Sie verschwindet nur, solange die Zeit läuft - im Plank ist die
+   * Entscheidung längst gefallen.
    */
-  const suggestion =
-    !disabled && !log.completed && log.setKind === 'work' && log.setNumber === 1 && !isTimerRunning
-      ? suggestNextProgression({ exercise, lastWorkLogs: lastWorkLogs ?? [], bandLevels })
-      : undefined;
-  const suggestionFieldFilled = suggestion
-    ? draft[SUGGESTION_DRAFT_FIELD[suggestion.kind]].trim() !== ''
-    : true;
-
-  /** Der einzige Schreibweg des Vorschlags - danach greift der Autosave. */
-  function applySuggestion(item: ProgressionSuggestion) {
-    const key = SUGGESTION_DRAFT_FIELD[item.kind];
-    const value = item.kind === 'band' ? item.bandId : toInputValue(item.value);
-
-    setDraft((current) => ({ ...current, [key]: value }));
-  }
+  const showHint = Boolean(hasHint) && !isTimerRunning;
 
   const handleToggleCompletion = useCallback(async () => {
     if (disabled || hasInvalidInput) {
@@ -311,10 +277,9 @@ function ActiveSetEditor({
      * hat wie letzte Woche, tippt nichts und tappt nur auf den großen Knopf.
      * Beim Zurücknehmen bleibt der Draft unangetastet.
      *
-     * Was hier ausdrücklich *nicht* einfließt, ist der Steigerungsvorschlag:
-     * `lastValues` sind gemessene Werte, der Vorschlag ist eine Meinung. Ohne
-     * Tap darauf wird der alte Wert gespeichert - das ist die ganze Zusage
-     * "schreibt nie von selbst", und sie steht und fällt mit dieser Zeile.
+     * Die Steigerungs-Marke fließt hier gar nicht erst ein - sie trägt keinen
+     * Wert. Genau deshalb gibt es die Frage "wird das still übernommen?" seit
+     * dem Umbau nicht mehr: übernommen wird, was gemessen wurde.
      */
     let effectiveDraft =
       willComplete && lastValues
@@ -389,7 +354,7 @@ function ActiveSetEditor({
       bandNameSnapshot:
         bandLevels?.find((band) => band.id === draft.bandId)?.name ?? log.bandNameSnapshot,
     },
-    setRowFallback(exercise, lastValues),
+    rowFallback,
   );
   const sideLabel = formatSideLabel(log.side);
   const actionLabel = log.completed
@@ -464,31 +429,26 @@ function ActiveSetEditor({
       ) : (
         <div className="space-y-2">
           {/*
+            Die Marke - eine Feststellung, kein Angebot.
+
+            Deshalb kein Knopf: es gibt nichts anzunehmen. Sie sagt, dass in
+            genau diesem Satz beim letzten Mal die Decke erreicht wurde, und
+            überlässt die Zahl dem, der vor der Stange steht - welcher Sprung
+            dort, an der Kurzhantel oder am Stack möglich ist, weiß die App
+            nicht.
+
             Tinte, nicht Limette: die aktuelle Satzzeile und die Blockkarte
             sind bereits `bg-highlight`, und pro Bildschirm gibt es genau eine
-            Limettenfläche. Limette ist Fläche, Tinte ist Handlung.
+            Limettenfläche.
           */}
-          {suggestion && !suggestionFieldFilled ? (
-            <button
-              type="button"
-              onClick={() => applySuggestion(suggestion)}
-              aria-label={`${describeProgressionSuggestion(suggestion)} übernehmen`}
-              className={cn(
-                'flex min-h-touch w-full items-center justify-between gap-3 rounded-panel',
-                'bg-accent-soft px-3 py-2 text-left text-accent transition hover:bg-surface-hover',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
-              )}
+          {showHint ? (
+            <p
+              data-progression-hint=""
+              className="flex items-center gap-2 rounded-panel bg-accent-soft px-3 py-2 text-accent"
             >
-              <span className="flex min-w-0 items-center gap-2">
-                <TrendingUp size={18} className="shrink-0" aria-hidden="true" />
-                <span className="truncate font-display text-base font-bold">
-                  {describeProgressionSuggestion(suggestion)}
-                </span>
-              </span>
-              <span className="shrink-0 text-xs font-semibold">
-                {describeProgressionReason(suggestion.reason)}
-              </span>
-            </button>
+              <TrendingUp size={18} className="shrink-0" aria-hidden="true" />
+              <span className="font-display text-base font-bold">{PROGRESSION_HINT_LABEL}</span>
+            </p>
           ) : null}
 
           {activeFields.map(({ key }) => {
@@ -798,8 +758,6 @@ interface SessionExerciseStageProps {
   mediaAsset?: MediaAsset;
   bandLevels?: BandLevel[];
   lastSetValues?: LastSetValues;
-  /** Die Arbeitssätze der letzten Ausführung - siehe ActiveSetEditor. */
-  lastWorkLogs?: WorkoutSetLog[];
   /** Der Satz, der gerade groß liegt - siehe SessionPage. */
   activeSetLog?: WorkoutSetLog;
   onSelectSetLog: (setLogId: string) => void;
@@ -825,6 +783,7 @@ interface SessionExerciseStageProps {
   onStopSetTimer: () => Promise<number | undefined>;
   onClearSetTimer: () => void;
   onRequestDeleteSetLog: (log: WorkoutSetLog, exerciseName: string) => void;
+  onAddSetLog: (sessionExerciseId: string) => void;
   onOpenMedia: (mediaAsset: MediaAsset, alt: string) => void;
 }
 
@@ -843,7 +802,6 @@ export function SessionExerciseStage({
   mediaAsset,
   bandLevels,
   lastSetValues,
-  lastWorkLogs,
   activeSetLog,
   onSelectSetLog,
   isBusy,
@@ -865,10 +823,27 @@ export function SessionExerciseStage({
   onStopSetTimer,
   onClearSetTimer,
   onRequestDeleteSetLog,
+  onAddSetLog,
   onOpenMedia,
 }: SessionExerciseStageProps) {
   const rounds = buildSetRounds(exerciseLogs);
   const restBadges = buildRestBadges(exerciseLogs, restTracks, now);
+  /*
+   * Die Marke je Zeile - `byKey` und ausdrücklich nicht `resolve`.
+   *
+   * `resolve` fällt für einen Satz ohne Vorgänger auf den höchsten Satz der
+   * Seite zurück; als Platzhalter im Feld ist das richtig (irgendeine Zahl
+   * schlägt ein leeres Feld), als Grundlage einer Aussage über *diesen* Satz
+   * wäre es geraten. Genau dieser Unterschied macht eine Rampe erstmals
+   * richtig: 10×30 / 10×35 / 10×40 wird satzweise verglichen.
+   */
+  const hintFor = (row: WorkoutSetLog) =>
+    hasProgressionHint({
+      exercise,
+      log: row,
+      lastExact: lastSetValues?.byKey[setLogKey(row)],
+      bandLevels,
+    });
   const activeRound = rounds.find((round) => round.rows.some((row) => row.id === activeSetLog?.id));
   /*
    * Innerhalb einer Gruppe sortieren die Pfeile nur die Gruppe um - der Block
@@ -972,6 +947,7 @@ export function SessionExerciseStage({
               key={row.id}
               log={row}
               fallback={setRowFallback(exercise, lastSetValues?.resolve(row))}
+              hasHint={hintFor(row)}
               isActive={row.id === activeSetLog?.id}
               onSelect={() => onSelectSetLog(row.id)}
             />
@@ -986,7 +962,7 @@ export function SessionExerciseStage({
           exercise={exercise}
           bandLevels={bandLevels}
           lastValues={lastSetValues?.resolve(activeSetLog)}
-          lastWorkLogs={lastWorkLogs}
+          hasHint={hintFor(activeSetLog)}
           setTimer={setTimer?.setLogId === activeSetLog.id ? setTimer : undefined}
           timerRemainingSeconds={timerRemainingSeconds}
           onStartTimer={onStartSetTimer}
@@ -1016,6 +992,7 @@ export function SessionExerciseStage({
                 key={row.id}
                 log={row}
                 fallback={setRowFallback(exercise, lastSetValues?.resolve(row))}
+                hasHint={hintFor(row)}
                 isActive={row.id === activeSetLog?.id}
                 restBadge={restBadges[row.id]}
                 onSelect={() => onSelectSetLog(row.id)}
@@ -1023,6 +1000,32 @@ export function SessionExerciseStage({
             )),
           )}
         </div>
+      ) : null}
+
+      {/*
+        Ein Satz mehr, als der Plan vorsah.
+
+        Der Weg zurück aus einer Entscheidung, die es bisher nur in eine
+        Richtung gab: entfernen konnte man eine Zeile immer, anlegen nie. Er
+        steht unter der Satzliste, weil er zu den Sätzen gehört - und nicht im
+        Fuß, der Pausen-Chips, den Abhak-Knopf und sonst nichts trägt. Blass
+        statt gefüllt: die eine Tinte im Sheet ist das Abhaken, dies hier ist
+        die Ausnahme und nicht der Hauptweg.
+
+        Ganz unten, damit er auch dann noch da ist, wenn keine Zeile mehr
+        steht - dann ist er der einzige Ausgang.
+      */}
+      {!isReadOnly ? (
+        <Button
+          variant="ghost"
+          size="md"
+          fullWidth
+          disabled={isBusy}
+          onClick={() => onAddSetLog(exercise.id)}
+        >
+          <Plus size={16} aria-hidden="true" />
+          Satz hinzufügen
+        </Button>
       ) : null}
 
       {/*
@@ -1040,11 +1043,13 @@ export function SessionExerciseStage({
 function SideCard({
   log,
   fallback,
+  hasHint,
   isActive,
   onSelect,
 }: {
   log: WorkoutSetLog;
   fallback: SetRowFallback;
+  hasHint?: boolean;
   isActive: boolean;
   onSelect: () => void;
 }) {
@@ -1054,7 +1059,13 @@ function SideCard({
     <button
       type="button"
       onClick={onSelect}
-      aria-label={`${describeSetRow(log)} auswählen`}
+      /*
+        Die Marke gehört in den zugänglichen Namen, nicht nur ins Bild: ein
+        Pfeil mit `aria-hidden` wäre für eine Vorlesereihe gar nichts, und
+        gerade bei zwei Seiten nebeneinander ist "links steigern, rechts nicht"
+        die ganze Auskunft.
+      */
+      aria-label={`${describeSetRow(log)} auswählen${hasHint ? `, ${PROGRESSION_HINT_LABEL}` : ''}`}
       aria-current={isActive}
       className={cn(
         'rounded-panel px-3 py-2 text-left transition',
@@ -1066,8 +1077,9 @@ function SideCard({
             : 'bg-surface-sunken text-content',
       )}
     >
-      <span className="block truncate text-[11px] font-bold uppercase tracking-[0.16em] opacity-75">
-        {formatSideLabel(log.side) || 'beidseitig'}
+      <span className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-[0.16em] opacity-75">
+        <span className="truncate">{formatSideLabel(log.side) || 'beidseitig'}</span>
+        {hasHint ? <TrendingUp size={13} className="shrink-0" aria-hidden="true" /> : null}
       </span>
       {/* Auf 320px bleibt für "23,75 kg × 7" keine zweite Zeile - lieber kürzen. */}
       <span className="block truncate font-display text-base font-extrabold tabular-nums tracking-tight">
@@ -1081,12 +1093,14 @@ function SideCard({
 function SetRowButton({
   log,
   fallback,
+  hasHint,
   isActive,
   restBadge,
   onSelect,
 }: {
   log: WorkoutSetLog;
   fallback: SetRowFallback;
+  hasHint?: boolean;
   isActive: boolean;
   restBadge?: RestBadge;
   onSelect: () => void;
@@ -1097,9 +1111,11 @@ function SetRowButton({
     <button
       type="button"
       onClick={onSelect}
-      aria-label={`${describeSetRow(log)} auswählen`}
+      // Die Auskunft steht im Namen der Zeile - siehe [SideCard].
+      aria-label={`${describeSetRow(log)} auswählen${hasHint ? `, ${PROGRESSION_HINT_LABEL}` : ''}`}
       aria-current={isActive}
       data-set-row={log.id}
+      data-progression-hint={hasHint ? '' : undefined}
       className={cn(
         'flex w-full items-center gap-2 rounded-control px-3 py-1.5 text-left text-[13px] transition',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
@@ -1121,6 +1137,24 @@ function SetRowButton({
         {describeSetRow(log)}
       </span>
       <span className="min-w-0 flex-1 truncate font-display font-bold tabular-nums">{values}</span>
+      {/*
+        Kompakt, weil hier bei vier Sätzen vier davon stehen können: Pfeil und
+        ein Wort, in der Farbe der Zeile statt als eigene Fläche. Die große
+        Marke über den Werteboxen gehört dem einen Satz, der gerade dran ist -
+        vier gleich laute Chips wären keine Auskunft mehr, sondern Tapete.
+      */}
+      {hasHint ? (
+        <span
+          aria-hidden="true"
+          className={cn(
+            'flex shrink-0 items-center gap-1 text-[11px] font-bold uppercase tracking-[0.06em]',
+            isActive ? 'opacity-75' : 'text-accent',
+          )}
+        >
+          <TrendingUp size={13} />
+          {PROGRESSION_HINT_SHORT_LABEL}
+        </span>
+      ) : null}
       {/*
         Die Pause steht an der Zeile, die auf sie wartet. Genau hier entsteht
         die Frage "kann ich rechts schon wieder?" - und im Supersatz wie bei

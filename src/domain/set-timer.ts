@@ -28,11 +28,16 @@ export function clampSetTimerSeconds(seconds: number) {
  * Bestimmt, über welche Zeit der Timer läuft.
  *
  * Vorrang hat der Wert, der im Satz steht: er ist die Stelle, an der die Zeit
- * angepasst wird. Erst danach greift die Vorgabe der Übung - und zuletzt ein
+ * angepasst wird. Erst danach greift die Vorgabe der Zeile - und zuletzt ein
  * fester Rückfall, damit die Taste nie ins Leere läuft.
+ *
+ * `plannedSeconds` ist ausdrücklich die Vorgabe, die auch im Feld steht, nicht
+ * zwingend `exercise.targetSeconds`: im Satz-Editor ist das `setRowFallback`
+ * (letzte Woche schlägt Übungsziel), sonst würde der Countdown eine andere
+ * Zahl stellen als der Platzhalter zeigt.
  */
-export function resolveSetTimerSeconds(enteredSeconds?: number, targetSeconds?: number) {
-  const candidate = [enteredSeconds, targetSeconds].find(
+export function resolveSetTimerSeconds(enteredSeconds?: number, plannedSeconds?: number) {
+  const candidate = [enteredSeconds, plannedSeconds].find(
     (value): value is number => typeof value === 'number' && Number.isFinite(value) && value > 0,
   );
 

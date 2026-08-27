@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import {
   collectPageErrors,
   completeActiveSet,
+  minimizeRestMode,
   openExerciseSheet,
   resetDatabase,
   seedSampleData,
@@ -93,6 +94,29 @@ test.describe('Satz-Timer', () => {
   function startButton(page: Page) {
     return page.getByRole('button', { name: /^\d\d:\d\d starten$/ }).first();
   }
+
+  test('startet mit der Zeit, die im Feld vorbelegt ist', async ({ page }) => {
+    await startSampleSession(page);
+    await openExerciseSheet(page, 'Nordic Curl Iso');
+
+    /*
+     * Der Countdown lief über `targetSeconds` der Übung, während im Feld die
+     * Zeit der letzten Woche als Platzhalter stand - dieselbe Zahl musste
+     * also erneut getippt werden, damit der Timer sie stellt. Die Prüfung
+     * liest den Platzhalter statt einer festen Zahl: welche Woche das
+     * Beispielprogramm gerade zeigt, hängt am Datum.
+     */
+    const seconds = page.locator('input[id$="-seconds"]').first();
+    const placeholder = await seconds.getAttribute('placeholder');
+    expect(placeholder).toMatch(/^\d+$/);
+
+    const prefilled = Number(placeholder);
+    const expected = `${String(Math.floor(prefilled / 60)).padStart(2, '0')}:${String(
+      prefilled % 60,
+    ).padStart(2, '0')}`;
+
+    await expect(startButton(page)).toHaveAccessibleName(`${expected} starten`);
+  });
 
   test('läuft nach einem Reload weiter und übernimmt die gehaltene Zeit', async ({ page }) => {
     await startSampleSession(page);
@@ -350,6 +374,59 @@ test.describe('Sätze und Reihenfolge', () => {
     expect(await page.locator('[data-set-row]').count()).toBe(rowsBefore - 1);
   });
 
+  test('ein Satz lässt sich anhängen - bei einer einseitigen Übung beide Seiten', async ({
+    page,
+  }) => {
+    await startSampleSession(page);
+
+    // Bulgarian Split Squat ist einseitig: eine Runde sind zwei Zeilen, und
+    // genau so muss sie auch nachträglich entstehen.
+    await openExerciseSheet(page, 'Bulgarian Split Squat');
+
+    const rowsBefore = await page.locator('[data-set-row]').count();
+
+    await page.getByRole('button', { name: 'Satz hinzufügen' }).click();
+    await page.waitForTimeout(900);
+
+    expect(await page.locator('[data-set-row]').count()).toBe(rowsBefore + 2);
+    await expect(page.getByRole('button', { name: 'Satz 3 · links auswählen' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Satz 3 · rechts auswählen' })).toBeVisible();
+  });
+
+  test('auch eine fertige Übung nimmt noch einen Satz an', async ({ page }) => {
+    await startSampleSession(page);
+    await openExerciseSheet(page, 'Front Squat');
+
+    // Aufwärmsatz plus drei Arbeitssätze - danach schließt sich das Sheet von
+    // selbst, weil der Block keine offene Zeile mehr hat.
+    for (let index = 0; index < 4; index += 1) {
+      await completeActiveSet(page);
+    }
+
+    await expect(page.locator('[data-sheet]')).toHaveCount(0);
+
+    /*
+     * Die waldgrüne Zeile in der Liste öffnet ihr Sheet weiterhin - das ist der
+     * Weg zurück, und dort muss der Knopf stehen. Sonst wäre "noch ein Satz"
+     * genau in dem Moment nicht mehr zu haben, in dem man ihn braucht.
+     */
+    await openExerciseSheet(page, 'Front Squat');
+    /*
+     * Die Pause des letzten Satzes läuft noch, und der Ruhemodus legt sich
+     * beim Wiederöffnen über das Sheet - so ist er gedacht. Weglegen wie im
+     * Training, dann steht der Knopf da.
+     */
+    await minimizeRestMode(page);
+
+    await page.getByRole('button', { name: 'Satz hinzufügen' }).click();
+    await page.waitForTimeout(900);
+
+    await expect(page.getByRole('button', { name: 'Satz 4 auswählen' })).toBeVisible();
+    // Der neue Satz ist die einzige offene Zeile und liegt deshalb groß auf der
+    // Bühne, ohne dass ihn jemand auswählen musste.
+    await expect(page.locator('[data-sheet]').getByRole('button', { name: /abhaken$/ })).toBeVisible();
+  });
+
   test('die Reihenfolge ändert sich nur über die Pfeile', async ({ page }) => {
     await startSampleSession(page);
 
@@ -542,5 +619,41 @@ test.describe('Kopf der Einheit', () => {
     await closeExerciseSheet(page);
 
     await expect(estimate).toContainText(/~\d/);
+  });
+
+  test('nennt neben der Restzeit die Uhrzeit, zu der die Einheit vorbei ist', async ({ page }) => {
+    await startSampleSession(page);
+
+    /*
+     * "Noch 42 Minuten" ist nicht die Zahl, nach der man im Training handelt -
+     * die Frage ist, ob man um 19:42 aus der Halle ist. Die Uhrzeit steht ohne
+     * Tilde da: sie ist die ruhigere der beiden Angaben.
+     */
+    const end = page.locator('[data-session-end]');
+
+    await expect(end).toBeVisible();
+    await expect(end).toContainText('Ende');
+    await expect(end).toContainText(/\d{2}:\d{2}/);
+    await expect(end).toHaveAttribute('data-session-end', 'plan');
+
+    // Der Satzzähler ist der Uhrzeit gewichen; er steht im Kopf des Sheets.
+    await expect(page.locator('[data-session-stats]')).not.toContainText('Sätze');
+  });
+
+  test('trägt Restzeit und Ende auch im Sheet, ohne auf 320px überzulaufen', async ({ page }) => {
+    await startSampleSession(page);
+    await openExerciseSheet(page, 'Front Squat');
+
+    const outlook = page.locator('[data-sheet] [data-session-outlook]');
+
+    await expect(outlook).toBeVisible();
+    await expect(outlook).toContainText(/noch\s*[~<]\d/);
+    await expect(outlook).toContainText(/bis \d{2}:\d{2}/);
+
+    // Der Kopf teilt sich die Breite mit dem 44px-Schließer - links wird gekürzt.
+    const clipped = await page
+      .locator('[data-sheet]')
+      .evaluate((element) => element.scrollWidth > element.clientWidth + 1);
+    expect(clipped).toBe(false);
   });
 });

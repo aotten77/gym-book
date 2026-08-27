@@ -1,6 +1,6 @@
 import { db } from '@/db/appDb';
 import { createMediaAsset, prepareMediaAsset, type MediaAssetInput } from '@/db/media-actions';
-import { assertName, normalizeOptionalText } from '@/db/normalize';
+import { assertName, normalizeOptionalNumber, normalizeOptionalText } from '@/db/normalize';
 import type { Exercise, LoadKind, TrackingMode } from '@/domain/models';
 import { supportsBand } from '@/domain/tracking';
 import { createId } from '@/lib/id';
@@ -19,6 +19,10 @@ export interface ExerciseInput {
   loadKind?: LoadKind;
   /** Höhe in Zentimetern mitschreiben - siehe `Exercise.tracksHeight`. */
   tracksHeight?: boolean;
+  /** Wiederholungsempfehlung - siehe `Exercise.defaultTargetReps`. */
+  defaultTargetReps?: number;
+  /** Steigerung vorschlagen - siehe `Exercise.suggestProgression`. */
+  suggestProgression?: boolean;
   unilateral: boolean;
 }
 
@@ -54,6 +58,19 @@ function normalizeTracksHeight(tracksHeight?: boolean) {
 }
 
 /**
+ * Speichert den Steigerungs-Schalter nur, wenn er *aus* ist.
+ *
+ * Spiegelbild von `normalizeTracksHeight`, weil der Schalter andersherum
+ * voreingestellt ist: `undefined` zählt als an. Ein geschriebenes `true` wäre
+ * dasselbe wie kein Schlüssel und gäbe "an" eine zweite Schreibweise - und
+ * beim Update löscht Dexie die Property über `undefined` genau dann, wenn der
+ * Schalter wieder angeht.
+ */
+function normalizeSuggestProgression(suggestProgression?: boolean) {
+  return suggestProgression === false ? false : undefined;
+}
+
+/**
  * Legt eine Übung an - auf Wunsch samt Bild.
  *
  * Bild und Stammdaten entstehen in derselben Transaktion. Vorher musste man
@@ -77,6 +94,8 @@ export async function createExercise(input: ExerciseInput, media?: MediaAssetInp
       trackingMode: input.trackingMode,
       loadKind: normalizeLoadKind(input.loadKind, input.trackingMode),
       tracksHeight: normalizeTracksHeight(input.tracksHeight),
+      defaultTargetReps: normalizeOptionalNumber(input.defaultTargetReps),
+      suggestProgression: normalizeSuggestProgression(input.suggestProgression),
       unilateral: input.unilateral,
       mediaAssetId,
       createdAt: now,
@@ -110,6 +129,8 @@ export async function updateExercise(exerciseId: string, input: ExerciseInput) {
       trackingMode: input.trackingMode,
       loadKind: normalizeLoadKind(input.loadKind, input.trackingMode),
       tracksHeight: normalizeTracksHeight(input.tracksHeight),
+      defaultTargetReps: normalizeOptionalNumber(input.defaultTargetReps),
+      suggestProgression: normalizeSuggestProgression(input.suggestProgression),
       unilateral: input.unilateral,
       updatedAt: new Date().toISOString(),
     });

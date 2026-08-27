@@ -118,6 +118,27 @@ test.describe('Ruhemodus', () => {
     await expect(page.locator('[role="timer"]')).toHaveCount(1);
   });
 
+  test('nennt in der Übernahme auch Restzeit und Ende der Einheit', async ({ page }) => {
+    await openExerciseSheet(page, 'Front Squat');
+    await page.locator('[data-sheet]').getByRole('button', { name: /abhaken$/ }).click();
+    await page.waitForTimeout(700);
+
+    const restMode = page.getByRole('dialog', { name: /^Pause · / });
+    const outlook = restMode.locator('[data-session-outlook]');
+
+    /*
+      Während der Pause hat man Zeit hinzusehen, und die Übernahme verdeckt
+      sonst jede Stelle, an der die beiden Zahlen sonst stünden.
+    */
+    await expect(outlook).toBeVisible();
+    await expect(outlook).toContainText(/noch\s*[~<]\d/);
+    await expect(outlook).toContainText(/Ende \d{2}:\d{2}/);
+
+    // Der Reiter trägt genau eine Zahl, und das ist die Pause.
+    await minimizeRestMode(page);
+    await expect(page.locator('[data-rest-widget] [data-session-outlook]')).toHaveCount(0);
+  });
+
   test('überlebt keinen Reload, die Pause dagegen schon', async ({ page }) => {
     await openExerciseSheet(page, 'Front Squat');
     await completeActiveSet(page);

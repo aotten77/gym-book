@@ -18,11 +18,13 @@ import {
   SessionPartnerRow,
   type ActiveSetAction,
 } from '@/components/SessionExerciseStage';
+import { SessionOutlook } from '@/components/SessionOutlook';
 import { SessionStatsHeader } from '@/components/SessionStatsHeader';
 import { db } from '@/db/appDb';
 import {
   abortSession,
   addSessionExercise,
+  addSetLog,
   completeSession,
   deleteSetLog,
   groupSessionExerciseWithPrevious,
@@ -40,7 +42,9 @@ import {
   startSetTimer,
 } from '@/db/session-timer-actions';
 import { loadLastValuesForExercises } from '@/db/history-queries';
-import { sortSetLogs } from '@/domain/history';
+import { prefillTargetReps } from '@/domain/exercise-defaults';
+import { setLogKey, sortSetLogs } from '@/domain/history';
+import { hasProgressionHint } from '@/domain/progression-hint';
 import type {
   MediaAsset,
   RestTimerTrack,
@@ -398,6 +402,9 @@ export function SessionPage() {
       return {
         ...current,
         exerciseId: availableExercises[0].id,
+        // Auch die vorausgewählte Übung bringt ihre Empfehlung mit - sonst
+        // hinge die Vorbelegung daran, ob jemand das Auswahlfeld anfasst.
+        targetReps: prefillTargetReps(current.targetReps, availableExercises[0]),
       };
     });
   }, [availableExercises]);
@@ -662,6 +669,21 @@ export function SessionPage() {
           ),
         )
       : undefined;
+  /*
+   * Und ob an dieser Zeile eine Steigerung möglich ist - dieselbe Frage wie im
+   * Sheet, an derselben Zeile gestellt. Hier wie dort `byKey` statt `resolve`:
+   * die Marke gilt genau diesem Satz auf genau dieser Seite.
+   */
+  const nextHint =
+    activeSetLog && activeSetExercise
+      ? hasProgressionHint({
+          exercise: activeSetExercise,
+          log: activeSetLog,
+          lastExact:
+            lastValues?.[activeSetExercise.exerciseId]?.setValues?.byKey[setLogKey(activeSetLog)],
+          bandLevels,
+        })
+      : false;
   const isReadOnly = session?.status !== 'active';
   const selectedExistingExercise = (availableExercises ?? []).find(
     (exercise) => exercise.id === exerciseForm.exerciseId,
@@ -853,6 +875,24 @@ export function SessionPage() {
       );
     } finally {
       setIsDeletingSetLog(false);
+    }
+  }
+
+  /**
+   * Eine Runde mehr an dieser Übung.
+   *
+   * Ohne `setSelectedSetLogId`: die Ableitung oben trifft von selbst das
+   * Richtige. Steht alles auf erledigt, ist die neue Zeile die erste offene und
+   * rückt groß nach; ist davor noch etwas offen, bleibt der Fokus dort und die
+   * neue Zeile hängt sichtbar hinten an. Ein Griff von Hand würde in einer der
+   * beiden Lagen danebenliegen.
+   */
+  async function handleAddSetLog(sessionExerciseId: string) {
+    try {
+      await addSetLog(sessionExerciseId);
+      setSessionError(null);
+    } catch (error) {
+      setSessionError(error instanceof Error ? error.message : 'Satz konnte nicht angelegt werden.');
     }
   }
 
@@ -1313,14 +1353,13 @@ export function SessionPage() {
         exerciseLogs={sortedFocusedLogs}
         mediaAsset={mediaAssetForExercise(exercise)}
         bandLevels={bandLevels}
-        lastSetValues={lastValues?.[exercise.exerciseId]?.setValues}
         /*
-          Dieselbe Abfrage, zwei Schnitte: `setValues` beantwortet "was stand
-          in genau dieser Zeile", `logs` "was stand in allen Arbeitssätzen".
-          Der Vorschlag braucht das zweite und bekommt deshalb keine eigene
-          Query - siehe `loadLastValuesForExercises`.
+          Eine Tabelle, zwei Leser: der Platzhalter im Feld nimmt `resolve`
+          (mit Rückfall auf den letzten Satz der Seite), die Steigerungs-Marke
+          nimmt `byKey` (genau diese Satznummer, sonst nichts). Beides ohne
+          eigene Query - siehe `loadLastValuesForExercises`.
         */
-        lastWorkLogs={lastValues?.[exercise.exerciseId]?.logs}
+        lastSetValues={lastValues?.[exercise.exerciseId]?.setValues}
         activeSetLog={activeSetLog}
         onSelectSetLog={setSelectedSetLogId}
         isBusy={isReorderingExercises}
@@ -1342,6 +1381,7 @@ export function SessionPage() {
         onStopSetTimer={handleStopSetTimer}
         onClearSetTimer={() => void clearSetTimer(sessionId)}
         onRequestDeleteSetLog={handleRequestDeleteSetLog}
+        onAddSetLog={(sessionExerciseId) => void handleAddSetLog(sessionExerciseId)}
         onOpenMedia={(mediaAsset, alt) => setMediaPreview({ mediaAsset, alt })}
       />
     );
@@ -1409,6 +1449,11 @@ export function SessionPage() {
                 setExerciseForm((current) => ({
                   ...current,
                   exerciseId: event.target.value,
+                  // Kopie, kein Fallback - dieselbe Regel wie im Workout.
+                  targetReps: prefillTargetReps(
+                    current.targetReps,
+                    (availableExercises ?? []).find((item) => item.id === event.target.value),
+                  ),
                 }))
               }
             >
@@ -1697,12 +1742,27 @@ export function SessionPage() {
                   {openBlock.isSuperset ? 'Supersatz' : 'Einzelübung'}
                   {roundLabel ? ` · ${roundLabel}` : ''}
                 </p>
-                <p className="mt-0.5 font-display text-2xl font-extrabold leading-none tabular-nums tracking-tight">
-                  Satz {Math.min(sessionProgress.completedCount + 1, sessionProgress.totalCount)}
-                  <span className="ml-1.5 text-sm font-semibold text-content-muted">
-                    von {sessionProgress.totalCount}
-                  </span>
-                </p>
+                {/*
+                  Rechts daneben, wo im Streifen der Liste "Noch" und "Ende"
+                  stehen: im Sheet verdeckt die Liste sonst genau die beiden
+                  Zahlen, und im Sheet steckt man den größten Teil der Einheit.
+                  Links kürzt der Zähler, rechts wird nicht gequetscht - auf
+                  320px teilt sich der Kopf die Breite mit dem Schließer.
+                */}
+                <div className="mt-0.5 flex items-end justify-between gap-3">
+                  <p className="min-w-0 flex-1 truncate font-display text-2xl font-extrabold leading-none tabular-nums tracking-tight">
+                    Satz {Math.min(sessionProgress.completedCount + 1, sessionProgress.totalCount)}
+                    <span className="ml-1.5 text-sm font-semibold text-content-muted">
+                      von {sessionProgress.totalCount}
+                    </span>
+                  </p>
+                  <SessionOutlook
+                    session={session}
+                    blocks={sessionBlocks}
+                    logsByExercise={groupedLogs}
+                    className="shrink-0 text-right"
+                  />
+                </div>
               </div>
               {/*
                 Die Runden als Streifen: er zeigt in einem Blick, wie viel von
@@ -1761,6 +1821,23 @@ export function SessionPage() {
           restLabel={describeRestTrack(activeRestTrack)}
           nextLabel={activeSetLog ? describeSetRow(activeSetLog) : undefined}
           nextValues={nextValues}
+          nextHint={nextHint}
+          /*
+            Auch hier die beiden Zahlen der Einheit - während der Pause hat man
+            Zeit hinzusehen, und die Übernahme verdeckt sonst alles, was sie
+            trüge. Als fertiger Knoten übergeben: [RestMode] bekommt schon
+            `restLabel` und `nextValues` als Fertiges und muss weder Blöcke noch
+            Satzzeilen kennen.
+          */
+          outlook={
+            <SessionOutlook
+              session={session}
+              blocks={sessionBlocks}
+              logsByExercise={groupedLogs}
+              layout="inline"
+              tone="ink"
+            />
+          }
           isMinimized={minimizedRestKey === activeRestKey}
           onMinimize={() => setMinimizedRestKey(activeRestKey)}
           onExpand={() => setMinimizedRestKey(null)}

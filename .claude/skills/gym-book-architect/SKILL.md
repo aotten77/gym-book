@@ -54,6 +54,7 @@ Do not use it for generic framework tutorials or unrelated repositories.
 - Resolve the active week at session start (`weekOverride ?? derived from `Program.startedOn` ?? `program.activeWeek` ?? 1`, all in `resolveWeekControl`) and persist it on the session, so historical sessions do not shift when the current week changes.
 - A program that carries a `startedOn` date derives its week from the calendar and stops at the last planned week — that derivation is the one bridge between calendar week and program week, and it lives in `deriveProgramWeek` alone.
 - Manual week override must stay possible, but as a deliberate choice rather than a side effect of stepping the week. No deload or reset automation in v1.
+- The app may **observe** that a set is ready to progress — per set row and per side, against the exact set number of the last completed execution (`hasProgressionHint`). It must not **prescribe** the step: no number, no step size, no automatic write. Which jump is possible at the bar is the user's knowledge, and inventing it would be the adaptive progression v1 excludes. An exercise may switch the observation off entirely (`Exercise.suggestProgression`).
 
 ## History and "last values"
 

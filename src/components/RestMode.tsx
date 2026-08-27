@@ -1,6 +1,14 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, TrendingUp } from 'lucide-react';
+import { PROGRESSION_HINT_LABEL } from '@/domain/progression-hint';
 import {
   REST_TIMER_SHORTEN_SECONDS,
   REST_TIMER_STEP_SECONDS,
@@ -61,6 +69,21 @@ interface RestModeProps {
   nextLabel?: string;
   /** Und mit welchen Werten: "82,5 kg × 5". */
   nextValues?: string;
+  /**
+   * Ob an diesem kommenden Satz eine Steigerung möglich ist.
+   *
+   * Nur Anzeige - während der Pause wird die Scheibe aufgelegt, nicht getippt.
+   * Die drei Handlungen unten bleiben, was sie sind.
+   */
+  nextHint?: boolean;
+  /**
+   * Restzeit und End-Uhrzeit der Einheit, als fertiger Knoten.
+   *
+   * Als Slot und nicht als Daten: diese Komponente stellt nur dar - sie bekommt
+   * `restLabel` und `nextValues` schon als Zeichenketten und soll weder Blöcke
+   * noch Satzzeilen kennen müssen, um eine Zeile zu setzen.
+   */
+  outlook?: ReactNode;
   isMinimized: boolean;
   onMinimize: () => void;
   onExpand: () => void;
@@ -106,6 +129,8 @@ export function RestMode({
   restLabel,
   nextLabel,
   nextValues,
+  nextHint,
+  outlook,
   isMinimized,
   onMinimize,
   onExpand,
@@ -412,9 +437,34 @@ export function RestMode({
                     Danach: {nextLabel}
                   </p>
                 )}
+                {/*
+                  Die Marke, damit die Scheibe während der Pause aufgelegt
+                  werden kann. Behandelt wie die "Danach ·"-Zeile darüber:
+                  gedämpftes Papier, kein Limette - der Balken bleibt das
+                  einzige auf diesem Bildschirm. `aria-hidden` wie alle Zahlen
+                  hier; die zugängliche Auskunft trägt die Satzzeile im Sheet.
+                */}
+                {nextHint ? (
+                  <p
+                    aria-hidden="true"
+                    data-rest-hint=""
+                    className="mt-1.5 flex items-center justify-center gap-1.5 text-[13px] font-bold text-accent-contrast/70"
+                  >
+                    <TrendingUp size={15} className="shrink-0" />
+                    {PROGRESSION_HINT_LABEL}
+                  </p>
+                ) : null}
               </div>
             ) : null}
           </div>
+
+          {/*
+            Restzeit und Feierabend der Einheit, ruhig über den Knöpfen: sie
+            treten weder gegen die riesige Pausenzahl an noch gegen "Danach",
+            und sie bringen kein zweites Limette auf diesen Bildschirm - der
+            Balken bleibt das einzige.
+          */}
+          {outlook ? <div className="mb-3 text-center">{outlook}</div> : null}
 
           {/*
             Die Handlung in der Mitte, die beiden Stellknöpfe an den Seiten -

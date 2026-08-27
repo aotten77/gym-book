@@ -51,6 +51,21 @@ export function formatNumber(value: number) {
   return numberFormat.format(value);
 }
 
+/*
+ * Die reine Uhrzeit, ohne Datum davor: "19:42".
+ *
+ * `formatDateTime` schleppt Wochentag und Datum mit und beantwortet damit eine
+ * andere Frage - dort geht es um einen Eintrag in der Historie, hier um den
+ * Feierabend der laufenden Einheit. Wie `numberFormat` einmal auf Modulebene
+ * angelegt: ein `Intl`-Formatter pro Sekunde wäre für einen tickenden Kopf
+ * unnötig teuer.
+ */
+const clockFormat = new Intl.DateTimeFormat('de-DE', { hour: '2-digit', minute: '2-digit' });
+
+export function formatClockTime(timestamp: number | string) {
+  return clockFormat.format(typeof timestamp === 'string' ? new Date(timestamp) : timestamp);
+}
+
 export function formatDateTime(value?: string) {
   if (!value) {
     return 'Noch offen';

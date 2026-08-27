@@ -159,10 +159,11 @@ export interface SetRowFallback {
  * sie beim Abhaken übernommen werden (siehe `adoptPlaceholders`). Der große
  * Knopf verspricht damit das, was er auch schreibt.
  *
- * Ein Steigerungsvorschlag gehört deshalb **nicht** hierher: was in diesem
- * Fallback landet, wird beim Abhaken ungefragt gespeichert. Der Vorschlag ist
- * eine Meinung und darf nur über einen Tap in den Satz kommen - siehe
- * `suggestNextProgression`.
+ * Hier stand einmal die Warnung, ein Steigerungs*vorschlag* dürfe nicht in
+ * diesen Fallback geraten, weil er beim Abhaken ungefragt gespeichert würde.
+ * Die Frage stellt sich nicht mehr: `hasProgressionHint` liefert keinen Wert,
+ * sondern nur die Feststellung "Steigerung möglich". Was hier landet, ist
+ * gemessen - und genau deshalb darf es ungefragt gespeichert werden.
  */
 export function setRowFallback(
   exercise: Pick<

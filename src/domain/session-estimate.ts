@@ -89,8 +89,12 @@ interface PlannedRound {
  * Was eine einzelne Zeile an reiner Arbeit kostet.
  *
  * Bei einer Übung auf Zeit gilt dieselbe Rangfolge wie beim Satz-Timer -
- * Eingetragenes schlägt Ziel schlägt Vorgabe -, damit die Schätzung dieselbe
- * Zahl annimmt, die der Timer nachher tatsächlich stellt.
+ * Eingetragenes schlägt Vorgabe schlägt Rückfall -, damit die Schätzung
+ * dieselbe Zahl annimmt, die der Timer nachher tatsächlich stellt.
+ *
+ * Als Vorgabe steht hier das Ziel der Übung, nicht der Platzhalter der
+ * letzten Woche wie im Satz-Editor: die Schätzung fragt bewusst keine
+ * Historie ab. Beide treffen sich, sobald etwas im Satz steht.
  */
 function rowWorkSeconds(exercise: WorkoutSessionExercise, log: WorkoutSetLog) {
   const isTimed =
@@ -322,4 +326,26 @@ export function estimateRemainingSessionSeconds(input: SessionEstimateInput): Se
           ? 'blended'
           : 'measured',
   };
+}
+
+/**
+ * Dieselbe Schätzung als Uhrzeit: wann die Einheit voraussichtlich vorbei ist.
+ *
+ * `null`, sobald keine Zeile mehr offen ist - dann gibt es kein Ende mehr
+ * vorherzusagen, sondern nur noch "fertig".
+ *
+ * Diese Zahl ist die *ruhigere* der beiden, und das ist der Grund, sie
+ * überhaupt anzuzeigen: während einer Pause zieht `estimateRemainingSessionSeconds`
+ * die verstrichene Zeit von der Restdauer ab (siehe dort), also sinkt
+ * `remainingSeconds` im selben Takt, in dem `now` steigt - die Uhrzeit steht
+ * still. Erst wer länger trödelt, als die nächste Zeile kostet, sieht sie nach
+ * hinten wandern, denn genau dort endet der Abzug. Die Restdauer flackert also,
+ * die Uhrzeit sagt etwas.
+ */
+export function estimatedEndAt(estimate: SessionEstimate, now: number): number | null {
+  if (estimate.openRowCount === 0) {
+    return null;
+  }
+
+  return now + estimate.remainingSeconds * 1000;
 }

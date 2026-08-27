@@ -281,6 +281,54 @@ describe('materializeSession', () => {
       targetBandNameSnapshot: 'rot',
     });
   });
+
+  it('friert den Steigerungs-Schalter der Übung im Snapshot ein', () => {
+    const template: WorkoutTemplate = {
+      id: 'template-1',
+      name: 'Einheit A',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+
+    const base: Omit<Exercise, 'id' | 'name' | 'suggestProgression'> = {
+      trackingMode: 'reps_weight',
+      unilateral: false,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+
+    const bundle = materializeSession({
+      template,
+      templateExercises: [
+        {
+          id: 'te-1',
+          templateId: template.id,
+          exerciseId: 'cuff',
+          orderIndex: 1,
+          workSetCount: 2,
+          targetReps: 12,
+        },
+        {
+          id: 'te-2',
+          templateId: template.id,
+          exerciseId: 'squat',
+          orderIndex: 2,
+          workSetCount: 2,
+          targetReps: 5,
+        },
+      ],
+      exercisesById: {
+        cuff: { ...base, id: 'cuff', name: 'Außenrotation', suggestProgression: false },
+        // `undefined` zählt als an und wird deshalb auch nicht geschrieben.
+        squat: { ...base, id: 'squat', name: 'Front Squat' },
+      },
+      resolvedProgramWeek: 1,
+      startedAt: '2026-01-08T09:00:00.000Z',
+    });
+
+    expect(bundle.sessionExercises[0].suggestProgression).toBe(false);
+    expect(bundle.sessionExercises[1].suggestProgression).toBeUndefined();
+  });
 });
 
 describe('findNextOpenExercise', () => {

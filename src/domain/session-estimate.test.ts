@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { WorkoutSessionExercise, WorkoutSetLog } from '@/domain/models';
 import {
   estimateRemainingSessionSeconds,
+  estimatedEndAt,
   MAX_PACE_FACTOR,
   type SessionEstimateInput,
 } from '@/domain/session-estimate';
@@ -356,5 +357,60 @@ describe('estimateRemainingSessionSeconds', () => {
     });
 
     expect(result.remainingSeconds).toBe(330);
+  });
+});
+
+describe('estimatedEndAt', () => {
+  it('legt die Restdauer auf die Uhr', () => {
+    const item = exercise({ id: 'a1' });
+    const result = estimate({
+      blocks: [single(item)],
+      logsByExercise: { a1: workSets('a1', 3) },
+    });
+
+    expect(estimatedEndAt(result, BASE)).toBe(BASE + 330 * 1000);
+  });
+
+  it('gibt ohne offene Zeile kein Ende zurück', () => {
+    const item = exercise({ id: 'a1' });
+    const result = estimate({
+      blocks: [single(item)],
+      logsByExercise: { a1: completeSets(workSets('a1', 3), [0, 140, 280]) },
+    });
+
+    expect(result.openRowCount).toBe(0);
+    // "fertig" ist ein Zustand, keine Uhrzeit - deshalb null und nicht `now`.
+    expect(estimatedEndAt(result, BASE + 400 * 1000)).toBeNull();
+  });
+
+  it('steht während einer Pause still, obwohl die Restdauer sinkt', () => {
+    const item = exercise({ id: 'a1' });
+    const logsByExercise = { a1: completeSets(workSets('a1', 8), [0]) };
+
+    const früh = BASE + 30 * 1000;
+    const später = BASE + 60 * 1000;
+
+    const a = estimate({ blocks: [single(item)], logsByExercise, now: früh });
+    const b = estimate({ blocks: [single(item)], logsByExercise, now: später });
+
+    /*
+     * Genau das ist der Grund, die Uhrzeit überhaupt anzuzeigen: der Abzug der
+     * verstrichenen Pause sinkt im selben Takt, in dem `now` steigt.
+     */
+    expect(b.remainingSeconds).toBeLessThan(a.remainingSeconds);
+    expect(estimatedEndAt(b, später)).toBe(estimatedEndAt(a, früh));
+  });
+
+  it('wandert nach hinten, sobald länger getrödelt wird als die nächste Zeile kostet', () => {
+    const item = exercise({ id: 'a1' });
+    const logsByExercise = { a1: completeSets(workSets('a1', 8), [0]) };
+
+    const früh = BASE + 30 * 1000;
+    const spät = BASE + 900 * 1000;
+
+    const a = estimate({ blocks: [single(item)], logsByExercise, now: früh });
+    const b = estimate({ blocks: [single(item)], logsByExercise, now: spät });
+
+    expect(estimatedEndAt(b, spät)).toBeGreaterThan(estimatedEndAt(a, früh) as number);
   });
 });

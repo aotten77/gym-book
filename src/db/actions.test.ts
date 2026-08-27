@@ -3,6 +3,7 @@ import { db } from '@/db/appDb';
 import {
   abortSession,
   addSessionExercise,
+  addSetLog,
   completeSession,
   deleteSetLog,
   groupSessionExerciseWithPrevious,
@@ -1241,6 +1242,144 @@ describe('deleteSetLog', () => {
     await deleteSetLog('warmup-completed');
 
     expect(await db.workoutSetLogs.get('warmup-completed')).toBeDefined();
+  });
+});
+
+describe('addSetLog', () => {
+  async function seedExercise(options: {
+    id: string;
+    status: 'active' | 'completed';
+    unilateral: boolean;
+    workSetCount: number;
+  }) {
+    const sessionId = `session-add-${options.id}`;
+
+    await db.workoutSessions.add({
+      id: sessionId,
+      templateId: 'template-1',
+      templateNameSnapshot: 'Einheit A',
+      resolvedProgramWeek: 1,
+      startedAt: '2026-01-08T09:00:00.000Z',
+      status: options.status,
+    });
+
+    await db.workoutSessionExercises.add({
+      id: options.id,
+      sessionId,
+      exerciseId: 'exercise-1',
+      exerciseNameSnapshot: 'Split Squat',
+      trackingMode: 'reps_weight',
+      unilateral: options.unilateral,
+      orderIndex: 1,
+      wasSkipped: false,
+      addedInSession: false,
+      workSetCount: options.workSetCount,
+      targetReps: 8,
+    });
+
+    const sides = options.unilateral ? (['left', 'right'] as const) : (['both'] as const);
+
+    await db.workoutSetLogs.bulkAdd([
+      ...sides.map((side) => ({
+        id: `${options.id}-warmup-${side}`,
+        sessionExerciseId: options.id,
+        setKind: 'warmup' as const,
+        side,
+        setNumber: 0,
+        completed: true,
+      })),
+      ...Array.from({ length: options.workSetCount }, (_, index) =>
+        sides.map((side) => ({
+          id: `${options.id}-work-${index + 1}-${side}`,
+          sessionExerciseId: options.id,
+          setKind: 'work' as const,
+          side,
+          setNumber: index + 1,
+          completed: true,
+        })),
+      ).flat(),
+    ]);
+
+    return sessionId;
+  }
+
+  async function workSetNumbers(sessionExerciseId: string) {
+    const logs = await db.workoutSetLogs
+      .where('sessionExerciseId')
+      .equals(sessionExerciseId)
+      .toArray();
+
+    return logs.filter((log) => log.setKind === 'work').map((log) => log.setNumber);
+  }
+
+  it('hängt einen offenen Arbeitssatz mit der nächsten Nummer an', async () => {
+    await seedExercise({ id: 'add-bilateral', status: 'active', unilateral: false, workSetCount: 3 });
+
+    const newSetLogId = await addSetLog('add-bilateral');
+    const created = await db.workoutSetLogs.get(newSetLogId!);
+
+    expect(created).toMatchObject({
+      sessionExerciseId: 'add-bilateral',
+      setKind: 'work',
+      side: 'both',
+      setNumber: 4,
+      completed: false,
+    });
+    expect((await workSetNumbers('add-bilateral')).sort()).toEqual([1, 2, 3, 4]);
+  });
+
+  it('lässt workSetCount unangetastet - der Wert beschreibt den Plan', async () => {
+    await seedExercise({ id: 'add-count', status: 'active', unilateral: false, workSetCount: 3 });
+
+    await addSetLog('add-count');
+
+    expect((await db.workoutSessionExercises.get('add-count'))?.workSetCount).toBe(3);
+  });
+
+  it('legt bei einer einseitigen Übung beide Seiten derselben Runde an', async () => {
+    await seedExercise({ id: 'add-unilateral', status: 'active', unilateral: true, workSetCount: 2 });
+
+    const newSetLogId = await addSetLog('add-unilateral');
+
+    const added = (
+      await db.workoutSetLogs.where('sessionExerciseId').equals('add-unilateral').toArray()
+    ).filter((log) => log.setNumber === 3);
+
+    expect(added.map((log) => log.side).sort()).toEqual(['left', 'right']);
+    // Links vor rechts, wie `SIDE_ORDER` sortiert - die Bühne holt genau diese
+    // Zeile nach vorn.
+    expect(added.find((log) => log.id === newSetLogId)?.side).toBe('left');
+  });
+
+  it('legt nie einen Aufwärmsatz an, auch wenn keiner mehr steht', async () => {
+    await seedExercise({ id: 'add-warmup', status: 'active', unilateral: false, workSetCount: 1 });
+    await deleteSetLog('add-warmup-warmup-both');
+
+    await addSetLog('add-warmup');
+
+    const logs = await db.workoutSetLogs.where('sessionExerciseId').equals('add-warmup').toArray();
+
+    expect(logs.filter((log) => log.setKind === 'warmup')).toHaveLength(0);
+    expect(logs.map((log) => log.setNumber).sort()).toEqual([1, 2]);
+  });
+
+  it('zählt aus den Zeilen, nicht aus workSetCount: nach dem Löschen aller Arbeitssätze beginnt sie wieder bei 1', async () => {
+    await seedExercise({ id: 'add-reset', status: 'active', unilateral: false, workSetCount: 2 });
+    await deleteSetLog('add-reset-work-1-both');
+    await deleteSetLog('add-reset-work-2-both');
+
+    await addSetLog('add-reset');
+
+    expect(await workSetNumbers('add-reset')).toEqual([1]);
+  });
+
+  it('rührt abgeschlossene Sessions nicht an', async () => {
+    await seedExercise({ id: 'add-closed', status: 'completed', unilateral: false, workSetCount: 2 });
+
+    const newSetLogId = await addSetLog('add-closed');
+
+    expect(newSetLogId).toBeUndefined();
+    expect(await workSetNumbers('add-closed')).toEqual([1, 2]);
   });
 });
 

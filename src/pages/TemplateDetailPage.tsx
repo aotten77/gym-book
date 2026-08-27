@@ -39,6 +39,7 @@ import {
   ungroupTemplateExercise,
   updateTemplate,
 } from '@/db/template-actions';
+import { prefillTargetReps } from '@/domain/exercise-defaults';
 import type { MediaAsset, WorkoutTemplateExercise } from '@/domain/models';
 import { describeRepRange } from '@/domain/session-summary';
 import { buildSupersetBlocks, moveSupersetBlock, moveWithinGroup } from '@/domain/superset';
@@ -403,9 +404,14 @@ export function TemplateDetailPage() {
     }
 
     if (!editingTemplateExerciseId) {
+      const preselected = sortedExercises[0];
+
       setForm({
         ...defaultFormState,
-        exerciseId: sortedExercises[0]?.id ?? '',
+        exerciseId: preselected?.id ?? '',
+        // Auch die vorausgewählte Übung bringt ihre Empfehlung mit - sonst
+        // hinge die Vorbelegung daran, ob jemand das Auswahlfeld anfasst.
+        targetReps: prefillTargetReps(defaultFormState.targetReps, preselected),
       });
       return;
     }
@@ -854,7 +860,16 @@ export function TemplateDetailPage() {
             <div className="space-y-3">
               <select
                 value={form.exerciseId}
-                onChange={(event) => setForm((current) => ({ ...current, exerciseId: event.target.value }))}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    exerciseId: event.target.value,
+                    targetReps: prefillTargetReps(
+                      current.targetReps,
+                      sortedExercises.find((item) => item.id === event.target.value),
+                    ),
+                  }))
+                }
                 aria-label="Übung aus der Bibliothek"
                 className="select-control min-h-touch w-full rounded-panel border border-line bg-surface px-4 py-4 text-base text-content outline-none transition focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
               >

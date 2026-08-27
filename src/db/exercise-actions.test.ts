@@ -41,6 +41,47 @@ describe('exercise actions', () => {
     expect((await db.exercises.get(id))?.tracksHeight).toBeUndefined();
   });
 
+  it('speichert den Steigerungs-Schalter nur, wenn er aus ist', async () => {
+    const id = await createExercise({
+      name: 'Außenrotation',
+      trackingMode: 'reps_weight',
+      suggestProgression: false,
+      unilateral: true,
+    });
+
+    expect((await db.exercises.get(id))?.suggestProgression).toBe(false);
+
+    await updateExercise(id, {
+      name: 'Außenrotation',
+      trackingMode: 'reps_weight',
+      suggestProgression: true,
+      unilateral: true,
+    });
+
+    // Spiegelbild von `tracksHeight`: hier ist *an* die Voreinstellung, also
+    // ist der fehlende Schlüssel der An-Zustand.
+    expect((await db.exercises.get(id))?.suggestProgression).toBeUndefined();
+  });
+
+  it('führt die Wiederholungsempfehlung mit und löscht sie, wenn sie geleert wird', async () => {
+    const id = await createExercise({
+      name: 'Bulgarian Split Squat',
+      trackingMode: 'reps_weight',
+      defaultTargetReps: 10,
+      unilateral: true,
+    });
+
+    expect((await db.exercises.get(id))?.defaultTargetReps).toBe(10);
+
+    await updateExercise(id, {
+      name: 'Bulgarian Split Squat',
+      trackingMode: 'reps_weight',
+      unilateral: true,
+    });
+
+    expect((await db.exercises.get(id))?.defaultTargetReps).toBeUndefined();
+  });
+
   it('creates and updates the master data of an exercise', async () => {
     const id = await seedExercise();
 

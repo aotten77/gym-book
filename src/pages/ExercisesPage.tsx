@@ -24,17 +24,34 @@ import { loadTestsForExercise } from '@/db/test-actions';
 import { startOfCalendarWeek } from '@/domain/calendar-week';
 import type { Exercise, LoadKind, TrackingMode } from '@/domain/models';
 import { buildProgressSeries, isLegacyExecution, progressMetricFor } from '@/domain/progress';
-import { supportsLoad, TRACKING_MODE_LABELS } from '@/domain/tracking';
+import { supportsLoad, supportsReps, TRACKING_MODE_LABELS } from '@/domain/tracking';
 import { formatDateTime, formatLoadLabel, formatNumber } from '@/lib/format';
 import { isSupportedMediaType } from '@/lib/media';
+import { optionalNumberInput, toInputValue } from '@/lib/number-input';
 
-const emptyForm: ExerciseInput = {
+/**
+ * Der Formularzustand - wie die Eingabe, nicht wie der Datensatz.
+ *
+ * `defaultTargetReps` steht hier als Zeichenkette: ein Zahlenfeld, das während
+ * des Tippens leer sein darf, ist eine Zeichenkette, und `optionalNumberInput`
+ * liest beim Speichern beide Schreibweisen (Punkt und Komma).
+ */
+type ExerciseFormState = Omit<ExerciseInput, 'defaultTargetReps'> & {
+  defaultTargetReps: string;
+};
+
+/** Die Empfehlung, mit der eine neue Übung startet. */
+const DEFAULT_TARGET_REPS = 10;
+
+const emptyForm: ExerciseFormState = {
   name: '',
   instructions: '',
   tempo: '',
   trackingMode: 'reps_weight',
   loadKind: 'weight',
   tracksHeight: false,
+  defaultTargetReps: toInputValue(DEFAULT_TARGET_REPS),
+  suggestProgression: true,
   unilateral: false,
 };
 
@@ -186,7 +203,7 @@ export function ExercisesPage() {
     [],
   );
   const mediaAssetById = Object.fromEntries((mediaAssets ?? []).map((asset) => [asset.id, asset]));
-  const [form, setForm] = useState<ExerciseInput>(emptyForm);
+  const [form, setForm] = useState<ExerciseFormState>(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -231,6 +248,9 @@ export function ExercisesPage() {
         trackingMode: exercise.trackingMode,
         loadKind: exercise.loadKind ?? 'weight',
         tracksHeight: exercise.tracksHeight === true,
+        defaultTargetReps: toInputValue(exercise.defaultTargetReps),
+        // `undefined` heißt an - nur ein ausdrückliches `false` schaltet ab.
+        suggestProgression: exercise.suggestProgression !== false,
         unilateral: exercise.unilateral,
       });
     }
@@ -270,9 +290,22 @@ export function ExercisesPage() {
   async function handleSubmit() {
     setIsSaving(true);
 
+    /*
+     * Eine Wiederholungsempfehlung an einer reinen Zeitübung wäre eine Zahl,
+     * die nirgends auftaucht und nirgends zu ändern ist - dieselbe Vorsicht
+     * wie in `toProgressionRuleInput`: Felder, die die Übung nicht hat, werden
+     * als `undefined` geschrieben und damit gelöscht.
+     */
+    const input: ExerciseInput = {
+      ...form,
+      defaultTargetReps: supportsReps(form.trackingMode)
+        ? optionalNumberInput(form.defaultTargetReps)
+        : undefined,
+    };
+
     try {
       if (editingId) {
-        await updateExercise(editingId, form);
+        await updateExercise(editingId, input);
 
         if (mediaFile) {
           await replaceExerciseMedia({
@@ -286,7 +319,7 @@ export function ExercisesPage() {
         }
       } else {
         await createExercise(
-          form,
+          input,
           mediaFile
             ? { file: mediaFile, fileName: mediaFile.name, mimeType: mediaFile.type }
             : undefined,
@@ -417,6 +450,55 @@ export function ExercisesPage() {
                   <option value="band">Band</option>
                 </SelectField>
               ) : null}
+
+              {/*
+                Die Wiederholungsempfehlung der Übung - nur da, wo es
+                Wiederholungen gibt. Sie wird beim Zuordnen ins Workout
+                *kopiert* und ist danach dort zu Hause; wer sie hier später
+                ändert, lässt bestehende Workouts in Ruhe.
+              */}
+              {supportsReps(form.trackingMode) ? (
+                <TextField
+                  label="Ziel-Wiederholungen"
+                  value={form.defaultTargetReps}
+                  inputMode="numeric"
+                  hint="Vorbelegung beim Zuordnen ins Workout - dort änderbar. Erreicht ein Satz diese Zahl, merkt die App im nächsten Training „Steigerung möglich“ an."
+                  onChange={(event) =>
+                    setForm((current) => ({ ...current, defaultTargetReps: event.target.value }))
+                  }
+                />
+              ) : null}
+
+              {/*
+                Manches wird nie gesteigert - Rotatorenmanschette, Prehab. Bis
+                hierher ließ sich das nur ausdrücken, indem man die obere
+                Spanne leer ließ, was zufällig wirkte.
+              */}
+              <div>
+                <button
+                  type="button"
+                  aria-pressed={form.suggestProgression !== false}
+                  onClick={() =>
+                    setForm((current) => ({
+                      ...current,
+                      suggestProgression: current.suggestProgression === false,
+                    }))
+                  }
+                  className={`min-h-touch w-full rounded-panel px-4 py-3 text-sm font-medium transition ${
+                    form.suggestProgression !== false
+                      ? 'bg-accent-soft text-accent'
+                      : 'bg-surface-raised text-content-secondary hover:bg-surface-hover'
+                  }`}
+                >
+                  {form.suggestProgression !== false
+                    ? 'Steigerung vorschlagen'
+                    : 'Nicht steigern'}
+                </button>
+                <p className="mt-1.5 text-xs text-content-muted">
+                  Aus bedeutet: keine Marke an den Satzzeilen, egal wie gut die letzte Einheit
+                  lief.
+                </p>
+              </div>
 
               <button
                 type="button"

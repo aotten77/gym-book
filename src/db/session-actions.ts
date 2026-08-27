@@ -350,6 +350,80 @@ export async function deleteSetLog(setLogId: string) {
   );
 }
 
+/**
+ * Hängt einer laufenden Session-Übung eine weitere Arbeitssatz-Runde an.
+ *
+ * Der dritte und letzte Weg, auf dem Satzzeilen entstehen - neben
+ * `materializeSession` beim Start und `createSetLogs` bei einer nachträglich
+ * hinzugefügten Übung. Es gibt ihn, weil der vierte Satz manchmal noch geht,
+ * obwohl drei geplant waren, und weil eine versehentlich gelöschte Zeile sonst
+ * unwiederbringlich wäre.
+ *
+ * Zwei Entscheidungen stecken darin:
+ *
+ * Es entsteht **nie** ein Aufwärmsatz. Höchstens eine Aufwärmrunde je Übung ist
+ * eine Invariante der Materialisierung, und sie bliebe nur noch eine Bitte an
+ * die UI, wenn diese Aktion sie brechen könnte. Einseitige Übungen bekommen
+ * dagegen wie überall zwei Zeilen: ein Bein, das allein belastet wird, wird
+ * auch allein gezählt.
+ *
+ * Und `workSetCount` bleibt unangetastet, genau wie beim Löschen (siehe
+ * [deleteSetLog]): der Wert beschreibt, was der Plan vorgeschrieben hat, die
+ * Zeilen beschreiben, was tatsächlich passiert. Hochzählen beim Anlegen ohne
+ * Herunterzählen beim Löschen wären zwei Richtungen mit zwei Regeln.
+ *
+ * Die nächste Nummer kommt deshalb aus den Zeilen und nicht aus `workSetCount`
+ * - nur so trifft sie auch dann, wenn vorher gelöscht wurde.
+ */
+export async function addSetLog(sessionExerciseId: string) {
+  return db.transaction(
+    'rw',
+    db.workoutSessions,
+    db.workoutSessionExercises,
+    db.workoutSetLogs,
+    async () => {
+      // Stiller Abbruch statt Wurf, wie bei `deleteSetLog`: eine abgeschlossene
+      // Session ist unveränderlich, und das ist kein Fehler des Aufrufers.
+      if (!(await isSessionExerciseEditable(sessionExerciseId))) {
+        return undefined;
+      }
+
+      const sessionExercise = await db.workoutSessionExercises.get(sessionExerciseId);
+
+      if (!sessionExercise) {
+        return undefined;
+      }
+
+      const existing = await db.workoutSetLogs
+        .where('sessionExerciseId')
+        .equals(sessionExerciseId)
+        .toArray();
+
+      const setNumber =
+        existing.reduce(
+          (max, log) => (log.setKind === 'work' ? Math.max(max, log.setNumber) : max),
+          0,
+        ) + 1;
+
+      const sides = sessionExercise.unilateral ? (['left', 'right'] as const) : (['both'] as const);
+      const setLogs: WorkoutSetLog[] = sides.map((side) => ({
+        id: createId(),
+        sessionExerciseId,
+        setKind: 'work',
+        side,
+        setNumber,
+        completed: false,
+      }));
+
+      await db.workoutSetLogs.bulkAdd(setLogs);
+
+      // Die erste Zeile der neuen Runde - links vor rechts, wie `SIDE_ORDER`
+      // sortiert.
+      return setLogs[0].id;
+    },
+  );
+}
+
 export async function addSessionExercise(input: AddSessionExerciseInput) {
   const session = await db.workoutSessions.get(input.sessionId);
 
@@ -372,7 +446,7 @@ export async function addSessionExercise(input: AddSessionExerciseInput) {
     throw new Error('Exercise not found');
   }
 
-  const { trackingMode, loadKind, tracksHeight, unilateral } = exercise;
+  const { trackingMode, loadKind, tracksHeight, suggestProgression, unilateral } = exercise;
   const targetBandId = normalizeOptionalText(input.targetBandId);
   const targetBand = targetBandId ? await db.bandLevels.get(targetBandId) : undefined;
   const sessionExerciseId = createId();
@@ -392,6 +466,9 @@ export async function addSessionExercise(input: AddSessionExerciseInput) {
       trackingMode,
       loadKind,
       tracksHeight,
+      // Derselbe Snapshot wie in `materializeSession` - eine in der Session
+      // ergänzte Übung darf sich nicht anders verhalten als eine geplante.
+      suggestProgression,
       unilateral,
       orderIndex: nextOrderIndex,
       wasSkipped: false,

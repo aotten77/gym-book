@@ -79,6 +79,9 @@ export function materializeSession({
       trackingMode: exercise.trackingMode,
       loadKind: exercise.loadKind,
       tracksHeight: exercise.tracksHeight,
+      // Wie `tracksHeight` ein Snapshot: schaltet jemand die Steigerung an der
+      // Übung später ab, ändert das nichts an einer laufenden Einheit.
+      suggestProgression: exercise.suggestProgression,
       unilateral: exercise.unilateral,
       sourceTemplateExerciseId: templateExercise.id,
       orderIndex: templateExercise.orderIndex,

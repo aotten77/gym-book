@@ -37,6 +37,10 @@ const exerciseSchema = z.object({
   loadKind: loadKindSchema.optional(),
   /* Additiv wie loadKind: ohne den Schlüssel schreibt die Übung keine Höhe. */
   tracksHeight: z.boolean().optional(),
+  /* Additiv wie loadKind: Wiederholungsempfehlung, Vorlage fürs Zuordnen. */
+  defaultTargetReps: z.number().nonnegative().optional(),
+  /* Additiv wie loadKind: fehlt der Schlüssel, schlägt die Übung Steigerung vor. */
+  suggestProgression: z.boolean().optional(),
   unilateral: z.boolean(),
   mediaAssetId: z.string().optional(),
   createdAt: z.string(),
@@ -107,6 +111,8 @@ const workoutSessionExerciseSchema = z.object({
   trackingMode: trackingModeSchema,
   loadKind: loadKindSchema.optional(),
   tracksHeight: z.boolean().optional(),
+  /* Snapshot von Exercise.suggestProgression - additiv, kein Bump. */
+  suggestProgression: z.boolean().optional(),
   unilateral: z.boolean(),
   sourceTemplateExerciseId: z.string().optional(),
   orderIndex: z.number().int().positive(),

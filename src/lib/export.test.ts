@@ -106,6 +106,72 @@ describe('parseDatabaseSnapshot', () => {
     expect(snapshot.exercises[0].tracksHeight).toBe(true);
     expect(snapshot.workoutSessionExercises[0].targetHeightCm).toBe(25);
     expect(snapshot.workoutSetLogs[0].heightCm).toBe(25);
+    /*
+     * Und die beiden Steigerungs-Felder fehlen einfach - das Backup oben ist
+     * eines von vor ihrer Einführung, und die Schemaversion ist bewusst nicht
+     * gestiegen. Ginge das schief, wäre jede vorhandene Sicherung ungültig.
+     */
+    expect(snapshot.exercises[0].defaultTargetReps).toBeUndefined();
+    expect(snapshot.exercises[0].suggestProgression).toBeUndefined();
+    expect(snapshot.workoutSessionExercises[0].suggestProgression).toBeUndefined();
+  });
+
+  it('trägt Wiederholungsempfehlung und Steigerungs-Schalter durch', () => {
+    const snapshot = parseDatabaseSnapshot(
+      JSON.stringify(
+        createSnapshot({
+          exercises: [
+            {
+              id: 'exercise-1',
+              name: 'Außenrotation',
+              trackingMode: 'reps_weight',
+              defaultTargetReps: 12,
+              suggestProgression: false,
+              unilateral: true,
+              createdAt: '2026-07-01T08:00:00.000Z',
+              updatedAt: '2026-07-01T08:00:00.000Z',
+            },
+          ],
+          workoutSessions: [
+            {
+              id: 'session-1',
+              templateId: 'template-1',
+              templateNameSnapshot: 'Prehab',
+              resolvedProgramWeek: 1,
+              startedAt: '2026-07-01T08:00:00.000Z',
+              status: 'completed',
+            },
+          ],
+          workoutTemplates: [
+            {
+              id: 'template-1',
+              name: 'Prehab',
+              createdAt: '2026-07-01T08:00:00.000Z',
+              updatedAt: '2026-07-01T08:00:00.000Z',
+            },
+          ],
+          workoutSessionExercises: [
+            {
+              id: 'session-exercise-1',
+              sessionId: 'session-1',
+              exerciseId: 'exercise-1',
+              exerciseNameSnapshot: 'Außenrotation',
+              trackingMode: 'reps_weight',
+              suggestProgression: false,
+              unilateral: true,
+              orderIndex: 1,
+              wasSkipped: false,
+              addedInSession: false,
+              workSetCount: 2,
+            },
+          ],
+        }),
+      ),
+    );
+
+    expect(snapshot.exercises[0].defaultTargetReps).toBe(12);
+    expect(snapshot.exercises[0].suggestProgression).toBe(false);
+    expect(snapshot.workoutSessionExercises[0].suggestProgression).toBe(false);
   });
 
 

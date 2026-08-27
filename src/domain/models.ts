@@ -47,6 +47,28 @@ export interface Exercise {
    * Übungen ohne Migration bleiben, was sie sind.
    */
   tracksHeight?: boolean;
+  /**
+   * Die Wiederholungsempfehlung dieser Übung.
+   *
+   * **Vorlage, kein Fallback.** Wer die Übung einem Workout zuordnet, bekommt
+   * die Zahl in `targetReps` vorbelegt und kann sie dort ändern; wird der
+   * Default später verstellt, bleiben bestehende Workouts, wie sie sind. Ein
+   * Live-Rückgriff wäre das Gegenteil: eine Zahl, die sich hinter dem Rücken
+   * eines fertig geplanten Workouts ändert.
+   */
+  defaultTargetReps?: number;
+  /**
+   * Ob diese Übung überhaupt eine Steigerung vorschlagen darf.
+   *
+   * Manches wird nie gesteigert - Rotatorenmanschette, Prehab. Bis hierher
+   * ließ sich das nur ausdrücken, indem man `targetRepsMax` leer ließ, was
+   * zufällig wirkte und die Spannen-Anzeige mitkostete.
+   *
+   * Additiv wie `includeWarmup`: `undefined` zählt als `true`, und nur ein
+   * ausdrückliches `false` wird je geschrieben, damit "an" genau eine
+   * Schreibweise hat.
+   */
+  suggestProgression?: boolean;
   unilateral: boolean;
   mediaAssetId?: string;
   createdAt: string;
@@ -93,10 +115,11 @@ export interface WorkoutTemplateExercise {
   /**
    * Das obere Ende der Wiederholungsspanne - die Decke der Doppelprogression.
    *
-   * Additiv und optional: fehlt es, gibt es zu dieser Übung keinen
-   * Steigerungsvorschlag, weil "Spanne ausgereizt?" dann keine Antwort hat.
-   * Ein Maximum zu *raten* (etwa `targetReps + 2`) wäre eine unsichtbare, nicht
-   * editierbare Regel - genau die adaptive Progression, die v1 ausschließt.
+   * Additiv und optional: fehlt es, ist die Decke `targetReps` selbst (siehe
+   * `hasProgressionHint`), denn eine einzelne Zielzahl ist die Zahl, die
+   * erreicht werden soll. Ein Maximum zu *raten* (etwa `targetReps + 2`) wäre
+   * dagegen eine unsichtbare, nicht editierbare Regel - genau die adaptive
+   * Progression, die v1 ausschließt.
    */
   targetRepsMax?: number;
   targetSeconds?: number;
@@ -191,6 +214,14 @@ export interface WorkoutSessionExercise {
   /** Snapshot von `Exercise.tracksHeight` - eine spätere Änderung an der
    * Übung darf die laufende und die vergangene Einheit nicht umschreiben. */
   tracksHeight?: boolean;
+  /**
+   * Snapshot von `Exercise.suggestProgression`.
+   *
+   * Steht hier neben `trackingMode` und `loadKind` aus demselben Grund: die
+   * Bühne beantwortet "Steigerung möglich?" aus der Session-Zeile, ohne die
+   * `exercises`-Tabelle nachzuladen. `undefined` zählt als an.
+   */
+  suggestProgression?: boolean;
   unilateral: boolean;
   sourceTemplateExerciseId?: string;
   orderIndex: number;

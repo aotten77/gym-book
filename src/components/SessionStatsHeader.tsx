@@ -1,29 +1,38 @@
 import { useMemo } from 'react';
 import type { WorkoutSession, WorkoutSessionExercise } from '@/domain/models';
-import { estimateRemainingSessionSeconds } from '@/domain/session-estimate';
+import { estimateRemainingSessionSeconds, estimatedEndAt } from '@/domain/session-estimate';
 import type { SessionProgress, SetLogsByExercise } from '@/domain/session-summary';
 import type { SupersetBlock } from '@/domain/superset';
 import { useNowTicker } from '@/hooks/useNowTicker';
-import { describeRemainingEstimate, formatRemainingEstimate, formatTimer } from '@/lib/format';
+import {
+  describeRemainingEstimate,
+  formatClockTime,
+  formatRemainingEstimate,
+  formatTimer,
+} from '@/lib/format';
 
 interface SessionStatsHeaderProps {
   session: WorkoutSession;
-  /** Kommt von außen: der Kopf des Sheets zeigt denselben Stand. */
+  /** Trägt den Balken unter den Zahlen - der Zählstand selbst steht im Sheet. */
   progress: SessionProgress;
   blocks: SupersetBlock<WorkoutSessionExercise>[];
   logsByExercise: SetLogsByExercise;
 }
 
 /**
- * Der Überblick über die laufende Einheit: Dauer, Sätze, geschätzter Rest.
+ * Der Überblick über die laufende Einheit: Dauer, geschätzter Rest, Feierabend.
  *
  * Die Zahlen standen früher in der Karte der aktiven Übung. Die trug damit
  * zwei Dinge zugleich, wurde tiefer und nahm dem Überblick den Platz. Die
  * aktive Übung erkennt man jetzt an ihrer limettenen Blockkarte; hier steht,
  * wie weit das Training insgesamt ist.
  *
- * Gezählt werden Satzzeilen: eine einbeinige Übung erzeugt pro Satznummer
- * zwei davon, und beide Seiten sind Arbeit.
+ * Der Satzzähler stand hier einmal als zweite Spalte und ist der Uhrzeit
+ * gewichen: er steht im Kopf des Sheets ("Satz 5 von 18"), also genau dort, wo
+ * man ihn abliest, jede Blockkarte trägt ihren eigenen Stand, und den Anteil
+ * zeigt der Balken darunter ohnehin. Die End-Uhrzeit stand dagegen nirgends -
+ * und das ist die Zahl, nach der man im Training handelt: nicht "noch 42
+ * Minuten", sondern ob man um 19:42 aus der Halle ist.
  *
  * Eigene Komponente wegen des Takts: Dauer und Schätzung laufen sekündlich
  * weiter, die Liste darunter braucht das nicht (siehe unten).
@@ -64,6 +73,16 @@ export function SessionStatsHeader({
   );
   const remaining = formatRemainingEstimate(estimate.remainingSeconds);
 
+  /*
+   * Zwei Fälle, eine Spalte. Solange die Einheit läuft, steht dort die
+   * Vorhersage; ist sie abgeschlossen, das tatsächliche Ende - keine Schätzung,
+   * keine Tilde. Nach dem Abschluss liest der Streifen damit "Dauer | Ende" und
+   * nennt zwei Tatsachen, statt mit einer einzigen Zahl dazustehen.
+   */
+  const endsAt = session.completedAt
+    ? Date.parse(session.completedAt)
+    : estimatedEndAt(estimate, now);
+
   return (
     <div className="space-y-2.5 px-1">
       {/*
@@ -80,19 +99,8 @@ export function SessionStatsHeader({
             {formatTimer(elapsedSeconds)}
           </span>
         </p>
-        <p>
-          <span className="block text-[10px] font-bold uppercase tracking-[0.16em] text-content-muted">
-            Sätze
-          </span>
-          <span className="font-display text-[26px] font-extrabold leading-none tabular-nums tracking-tight">
-            {progress.completedCount}
-            <span className="ml-1.5 text-sm font-semibold text-content-muted">
-              von {progress.totalCount}
-            </span>
-          </span>
-        </p>
         {/*
-          Die dritte Zahl ist eine Schätzung, keine Uhr: Planzeit der offenen
+          Die zweite Zahl ist eine Schätzung, keine Uhr: Planzeit der offenen
           Zeilen, umskaliert auf das Tempo dieser Einheit. Daher die Tilde - "42"
           allein läse sich wie eine Zusage. In der Historie steht sie nicht: dort
           beantwortet eine Restzeit nichts mehr.
@@ -122,6 +130,28 @@ export function SessionStatsHeader({
             ) : (
               <span className="block pb-0.5 text-sm font-semibold text-content-muted">fertig</span>
             )}
+          </p>
+        ) : null}
+        {/*
+          Und die Uhrzeit, auf die es hinausläuft. Sie ist die ruhigere der
+          beiden Zahlen - warum, steht bei `estimatedEndAt` -, und sie steht
+          ohne Einheit da: "19:42" braucht keine.
+        */}
+        {endsAt !== null ? (
+          <p
+            data-session-end={session.completedAt ? 'actual' : estimate.quality}
+            aria-label={
+              session.completedAt
+                ? `Beendet um ${formatClockTime(endsAt)} Uhr`
+                : `Voraussichtliches Ende gegen ${formatClockTime(endsAt)} Uhr`
+            }
+          >
+            <span className="block text-[10px] font-bold uppercase tracking-[0.16em] text-content-muted">
+              Ende
+            </span>
+            <span className="font-display text-[26px] font-extrabold leading-none tabular-nums tracking-tight">
+              {formatClockTime(endsAt)}
+            </span>
           </p>
         ) : null}
       </div>
