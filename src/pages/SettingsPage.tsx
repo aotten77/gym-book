@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Download, FileSpreadsheet, HardDrive, Megaphone, Upload, Volume2 } from 'lucide-react';
+import {
+  ClipboardCopy,
+  Download,
+  FileSpreadsheet,
+  HardDrive,
+  Megaphone,
+  Upload,
+  Volume2,
+} from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { AppShell } from '@/components/AppShell';
 import { Alert } from '@/components/Alert';
@@ -40,6 +48,7 @@ import {
   setTimerCueVibrationPattern,
 } from '@/domain/set-timer-cues';
 import {
+  copyAnalysisSnapshot,
   type DatabaseSnapshot,
   exportAnalysisSnapshot,
   exportDatabaseSnapshot,
@@ -70,6 +79,7 @@ export function SettingsPage() {
   const [isExporting, setIsExporting] = useState(false);
   const [exportMessage, setExportMessage] = useState<string | null>(null);
   const [isExportingAnalysis, setIsExportingAnalysis] = useState(false);
+  const [isCopyingAnalysis, setIsCopyingAnalysis] = useState(false);
   const [analysisMessage, setAnalysisMessage] = useState<string | null>(null);
   const [soundError, setSoundError] = useState<string | null>(null);
   const [screenAwakeError, setScreenAwakeError] = useState<string | null>(null);
@@ -132,7 +142,7 @@ export function SettingsPage() {
       setAnalysisMessage(
         result === 'cancelled'
           ? 'Analyse-Export abgebrochen.'
-          : 'Analyse-Export erstellt (sessions.csv, progression.csv, meta.json).',
+          : 'Analyse-Export erstellt (sessions.csv, progression.csv, tests.csv, meta.json).',
       );
     } catch (error) {
       setAnalysisMessage(
@@ -141,6 +151,31 @@ export function SettingsPage() {
     } finally {
       setIsExportingAnalysis(false);
     }
+  }
+
+  /*
+   * Bewusst ohne `async`/`await` vor dem Aufruf: WebKit gibt die
+   * Zwischenablage nur innerhalb der Nutzergeste frei, und ein `await` davor
+   * beendet sie. Die ausführliche Begründung steht an `copyAnalysisSnapshot`.
+   * Das `setIsCopyingAnalysis(true)` ist synchron und deshalb unkritisch.
+   */
+  function handleCopyAnalysis() {
+    setIsCopyingAnalysis(true);
+
+    copyAnalysisSnapshot()
+      .then(() => {
+        setAnalysisMessage('Analyse kopiert - jetzt im Gespräch einfügen.');
+      })
+      .catch((error: unknown) => {
+        setAnalysisMessage(
+          error instanceof Error
+            ? error.message
+            : 'Kopieren in die Zwischenablage fehlgeschlagen.',
+        );
+      })
+      .finally(() => {
+        setIsCopyingAnalysis(false);
+      });
   }
 
   async function handleSeedSampleData() {
@@ -845,12 +880,35 @@ export function SettingsPage() {
                   {isExportingAnalysis ? 'Analyse-Export läuft...' : 'Analyse-Export'}
                 </p>
                 <p className="mt-1 text-sm text-content-muted">
-                  Ein ZIP mit drei kleinen Dateien zum Auswerten: eine Zeile je Einheit, Übung und
-                  Seite. Ohne Bilder, ohne Ids, ohne leere Sätze - und deshalb{' '}
+                  Ein ZIP mit vier kleinen Dateien zum Auswerten: eine Zeile je Einheit, Übung und
+                  Seite, dazu die Tests. Ohne Bilder, ohne Ids, ohne leere Sätze - und deshalb{' '}
                   <span className="font-medium">keine Sicherung</span>.
                 </p>
               </div>
               <FileSpreadsheet size={18} className="text-content-muted" />
+            </button>
+
+            {/* Derselbe Inhalt, kürzerer Weg. Auf dem Telefon ist das Archiv
+                der Umweg - sichern, App wechseln, Anhang suchen -, und ein ZIP
+                wird am anderen Ende oft nicht ausgepackt. Das Gegenstück sitzt
+                im Bibliotheks-Import, der neben dem Dateipicker längst ein
+                Textfeld hat. */}
+            <button
+              type="button"
+              onClick={handleCopyAnalysis}
+              disabled={isCopyingAnalysis}
+              className="flex items-center justify-between rounded-panel border border-line bg-surface-raised px-4 py-4 text-left transition hover:border-accent-border hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <div>
+                <p className="font-medium text-content-secondary">
+                  {isCopyingAnalysis ? 'Wird kopiert...' : 'Analyse kopieren'}
+                </p>
+                <p className="mt-1 text-sm text-content-muted">
+                  Dieselben vier Dateien als Text in der Zwischenablage - zum Einfügen in ein
+                  Gespräch, ohne Datei und ohne Anhang.
+                </p>
+              </div>
+              <ClipboardCopy size={18} className="text-content-muted" />
             </button>
 
             {analysisMessage ? (

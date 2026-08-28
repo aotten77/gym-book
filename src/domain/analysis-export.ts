@@ -1,6 +1,7 @@
 import { sortSetLogs } from '@/domain/history';
 import type {
   BandLevel,
+  ExerciseTest,
   Program,
   Side,
   TrackingMode,
@@ -89,6 +90,14 @@ export interface AnalysisExportInput {
    * Rangfolge Override → Startdatum → activeWeek hat genau eine Stelle.
    */
   weekControl: WeekControl;
+  /**
+   * Die Seitenvergleichs-Tests - unabhängig vom Training erhoben.
+   *
+   * Sie hängen an keiner Session und werden deshalb auch nicht mit einer
+   * verworfen: ein Test vom Sonntag zählt, auch wenn an dem Tag keine Einheit
+   * lief. Siehe `buildTestsCsv` dazu, warum sie eine eigene Datei bekommen.
+   */
+  tests: ExerciseTest[];
   /** Siehe [DEFAULT_REFERENCE_TEMPLATE_NAME]. */
   referenceTemplateName?: string;
 }
@@ -97,6 +106,7 @@ export interface AnalysisExportFiles {
   sessionsCsv: string;
   metaJson: string;
   progressionCsv: string;
+  testsCsv: string;
 }
 
 /** Was den Export einer Session verhindert hat - eine Zeile in `meta.json`. */
@@ -496,6 +506,7 @@ export function buildAnalysisExport(input: AnalysisExportInput): AnalysisExportF
   return {
     sessionsCsv: buildSessionsCsv(rows),
     progressionCsv: buildProgressionCsv(rows),
+    testsCsv: buildTestsCsv(input.tests),
     metaJson: buildMetaJson(input, {
       rows,
       discarded,
@@ -590,6 +601,55 @@ function buildProgressionCsv(rows: AnalysisRow[]): string {
   return `${lines.join('\n')}\n`;
 }
 
+const TEST_COLUMNS = ['datum', 'uebung', 'links', 'rechts', 'asymmetrie_prozent', 'notiz'];
+
+/**
+ * Die Seitenvergleichs-Tests, zeitlich absteigend - der neueste Wert oben.
+ *
+ * **Warum eine vierte Datei und kein Block in `meta.json`.** Das Argument für
+ * `meta.json` lautet: wenige Zeilen, anderes Korn als Session × Übung × Seite,
+ * und ein Anhang weniger. Zwei Drittel davon halten nicht.
+ *
+ * Das Korn ist kein Gegenargument, sondern der Grund: `progression.csv` hat
+ * schon ein anderes als `sessions.csv`, und genau dafür gibt es dort eine
+ * zweite Datei statt einer breiteren ersten. Der Anhang kostet ebenfalls
+ * nichts - `createZipArchive` packt ohnehin alles in *ein* Archiv, das ist
+ * sein einziger Zweck. Bleibt "wenige Zeilen", und das ist eine Aussage über
+ * heute: eine Messreihe, die zwölf Wochen läuft, ist eine Tabelle.
+ *
+ * Dagegen steht, was `meta.json` ist: die Auskunft *über* den Export - was
+ * drin ist, was fehlt, was verworfen wurde. Messwerte sind keine Herkunft.
+ * Ausgerechnet Hüft-Innenrotation und Knie-zur-Wand-Seitendifferenz, die
+ * Zielgrößen, an denen der Fortschritt hängt, stünden dann als Anhang in der
+ * Beschreibung der Datei statt in ihr.
+ *
+ * Der Übungsname kommt aus `exerciseNameSnapshot` und wird **nicht** über
+ * `exerciseId` nachgeschlagen - dafür gibt es den Snapshot: eine gelöschte
+ * oder umbenannte Übung kostet sonst eine Messung, die tatsächlich
+ * stattgefunden hat.
+ */
+function buildTestsCsv(tests: ExerciseTest[]): string {
+  const lines = [TEST_COLUMNS.join(CSV_SEPARATOR)];
+  const sorted = [...tests].sort(
+    (left, right) => new Date(right.recordedAt).getTime() - new Date(left.recordedAt).getTime(),
+  );
+
+  for (const test of sorted) {
+    lines.push(
+      csvLine([
+        localDate(test.recordedAt),
+        test.exerciseNameSnapshot,
+        test.leftValue,
+        test.rightValue,
+        test.asymmetryPercent,
+        test.notes,
+      ]),
+    );
+  }
+
+  return `${lines.join('\n')}\n`;
+}
+
 interface MetaContext {
   rows: AnalysisRow[];
   discarded: DiscardedSession[];
@@ -627,4 +687,53 @@ function buildMetaJson(input: AnalysisExportInput, context: MetaContext): string
     null,
     2,
   )}\n`;
+}
+
+/**
+ * Dieselben vier Dateien als ein Text zum Einfügen.
+ *
+ * Das ZIP ist auf dem Telefon der längere Weg: sichern, App wechseln, Anhang
+ * suchen - und ein Archiv wird am anderen Ende oft gar nicht ausgepackt. Über
+ * die Zwischenablage geht derselbe Inhalt direkt in ein Gespräch. Der Import
+ * hat neben dem Dateipicker aus genau diesem Grund längst ein Textfeld; das
+ * hier ist die fehlende Hälfte davon.
+ *
+ * `meta.json` steht bewusst **zuerst**. Dort stehen Zeitraum, Programm, die
+ * wirksame Woche samt `weekOverrideAktiv` und die Übungen mit ihrem
+ * `trackingMode` - ohne das liest man die Tabelle darunter falsch und addiert
+ * Sekunden zu Wiederholungen. Die verworfenen Sessions stehen aus demselben
+ * Grund dort und nicht am Ende: was gefiltert wurde, gehört vor die Zahlen.
+ */
+export function buildAnalysisPasteText(
+  files: AnalysisExportFiles,
+  exportedAt: Date,
+): string {
+  return [
+    `# Gym Book Analyse-Export ${toDateInputValue(exportedAt)}`,
+    '',
+    '## meta.json',
+    '',
+    '```json',
+    files.metaJson.trimEnd(),
+    '```',
+    '',
+    '## sessions.csv',
+    '',
+    '```csv',
+    files.sessionsCsv.trimEnd(),
+    '```',
+    '',
+    '## progression.csv',
+    '',
+    '```csv',
+    files.progressionCsv.trimEnd(),
+    '```',
+    '',
+    '## tests.csv',
+    '',
+    '```csv',
+    files.testsCsv.trimEnd(),
+    '```',
+    '',
+  ].join('\n');
 }

@@ -1,7 +1,11 @@
 import { z } from 'zod';
 import { db } from '@/db/appDb';
 import { markBackupCreated } from '@/db/settings-actions';
-import { buildAnalysisExport } from '@/domain/analysis-export';
+import {
+  buildAnalysisExport,
+  buildAnalysisPasteText,
+  type AnalysisExportFiles,
+} from '@/domain/analysis-export';
 import { resolveWeekControl, toDateInputValue } from '@/domain/program';
 import { blobToDataUrl, dataUrlToBlob, isSupportedMediaType } from '@/lib/media';
 import { createZipArchive } from '@/lib/zip';
@@ -665,23 +669,25 @@ export async function exportDatabaseSnapshot(options: ExportOptions = {}): Promi
 }
 
 /**
- * Der Analyse-Export: drei kleine Dateien in einem Archiv.
+ * Die vier Dateien und ihr Zeitstempel - gemeinsame Grundlage beider Wege
+ * nach draußen (Archiv und Zwischenablage).
  *
- * Ausdrücklich **keine Sicherung** - deshalb fehlt hier das
+ * Ausdrücklich **keine Sicherung**, und das gilt für beide: hier fehlt
  * `markBackupCreated`, das die Sicherung setzt. Das Datum der letzten
  * Sicherung treibt die Erinnerung auf der Startseite, und ein Export ohne
  * Bilder, ohne Ids und ohne die verworfenen Sessions könnte einen Verlust
  * nicht rückgängig machen. Wer ihn als Backup zählte, hätte eine Erinnerung
  * abgeschaltet, die vor genau diesem Datenverlust warnt.
  */
-export async function exportAnalysisSnapshot(options: ExportOptions = {}): Promise<ExportResult> {
+async function loadAnalysisFiles(): Promise<{ files: AnalysisExportFiles; exportedAt: Date }> {
   const exportedAt = new Date();
-  const [sessions, sessionExercises, setLogs, bandLevels, programs, programWeeks, settings] =
+  const [sessions, sessionExercises, setLogs, bandLevels, tests, programs, programWeeks, settings] =
     await Promise.all([
       db.workoutSessions.toArray(),
       db.workoutSessionExercises.toArray(),
       db.workoutSetLogs.toArray(),
       db.bandLevels.toArray(),
+      db.exerciseTests.toArray(),
       db.programs.toArray(),
       db.programWeeks.toArray(),
       db.appSettings.get('app-settings'),
@@ -696,6 +702,7 @@ export async function exportAnalysisSnapshot(options: ExportOptions = {}): Promi
     sessionExercises,
     setLogs,
     bandLevels,
+    tests,
     program,
     // Dieselbe Auflösung wie Start, Home und Einstellungen - die Rangfolge der
     // Woche hat genau eine Stelle, und der Export darf keine zweite werden.
@@ -707,10 +714,18 @@ export async function exportAnalysisSnapshot(options: ExportOptions = {}): Promi
     ),
   });
 
+  return { files, exportedAt };
+}
+
+/** Der Analyse-Export als Archiv - vier Dateien, ein Teilen-Vorgang. */
+export async function exportAnalysisSnapshot(options: ExportOptions = {}): Promise<ExportResult> {
+  const { files, exportedAt } = await loadAnalysisFiles();
+
   const archive = createZipArchive(
     [
       { name: 'sessions.csv', content: files.sessionsCsv },
       { name: 'progression.csv', content: files.progressionCsv },
+      { name: 'tests.csv', content: files.testsCsv },
       { name: 'meta.json', content: files.metaJson },
     ],
     exportedAt,
@@ -722,4 +737,38 @@ export async function exportAnalysisSnapshot(options: ExportOptions = {}): Promi
   );
 
   return deliverExportFile(file, 'Gym Book Analyse', options);
+}
+
+/**
+ * Derselbe Inhalt als Text in der Zwischenablage.
+ *
+ * Diese Funktion ist bewusst **nicht `async`**, und das ist die ganze Pointe:
+ * WebKit gibt den Schreibzugriff auf die Zwischenablage nur innerhalb der
+ * Nutzergeste frei, und ein `await` davor beendet die Geste.
+ * `navigator.clipboard.writeText(await ...)` scheitert auf dem iPhone still,
+ * während es im Desktop-Chrome funktioniert - dieselbe Klasse Fehler wie bei
+ * `prepareMediaAsset`, wo der File vor der Dexie-Transaktion gelesen werden
+ * muss, weil ein `await` sie schließt.
+ *
+ * Der Ausweg ist `ClipboardItem` mit einem **Promise** als Wert: der Aufruf
+ * passiert synchron in der Geste, die Daten dürfen nachkommen - Safari
+ * unterstützt Promises genau an dieser Stelle. Wer das hier zu einer
+ * `async`-Funktion mit `await` davor "vereinfacht", nimmt dem iPhone die
+ * Funktion, ohne dass ein Test es merkt.
+ */
+export function copyAnalysisSnapshot(): Promise<void> {
+  const text = loadAnalysisFiles().then(({ files, exportedAt }) =>
+    buildAnalysisPasteText(files, exportedAt),
+  );
+
+  if (typeof ClipboardItem === 'function') {
+    return navigator.clipboard.write([
+      new ClipboardItem({
+        'text/plain': text.then((value) => new Blob([value], { type: 'text/plain' })),
+      }),
+    ]);
+  }
+
+  // Ohne `ClipboardItem` gibt es die Geste-Einschränkung auch nicht.
+  return text.then((value) => navigator.clipboard.writeText(value));
 }

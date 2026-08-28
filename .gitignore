@@ -44,3 +44,10 @@ dist-ssr
 # einen Zustand des Codes, der mit jedem Schritt daraus veraltet. Was von ihm
 # bleiben soll, steht in CLAUDE.md und in den Commit-Nachrichten.
 REFACTORING.md
+
+# Vollexporte sind Sicherungen, kein Quelltext: je rund 5 MB, davon die Hälfte
+# Bilder als Data-URLs, und sie enthalten Trainingsdaten. Einmal committet
+# blieben sie für immer in der Historie. Die handgeschriebenen
+# Import-Nutzlasten daneben (docs/import/JJJJ-MM-TT-*.json) sind klein und
+# gehören ausdrücklich ins Repo.
+docs/import/gym-book-export-*.json

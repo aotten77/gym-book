@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { buildAnalysisExport, type AnalysisExportInput } from '@/domain/analysis-export';
+import {
+  buildAnalysisExport,
+  buildAnalysisPasteText,
+  type AnalysisExportInput,
+} from '@/domain/analysis-export';
 import type {
+  ExerciseTest,
   Side,
   TrackingMode,
   WorkoutSession,
@@ -51,6 +56,18 @@ function setLog(
   };
 }
 
+function exerciseTest(overrides: Partial<ExerciseTest> & { id: string }): ExerciseTest {
+  return {
+    exerciseId: 'exercise-9',
+    exerciseNameSnapshot: 'Hüft-Innenrotation (Grad)',
+    recordedAt: '2026-08-25T09:00:00',
+    leftValue: 10,
+    rightValue: 12,
+    asymmetryPercent: 16.7,
+    ...overrides,
+  };
+}
+
 function build(input: Partial<AnalysisExportInput>) {
   return buildAnalysisExport({
     exportedAt: new Date('2026-08-26T09:00:00'),
@@ -58,6 +75,7 @@ function build(input: Partial<AnalysisExportInput>) {
     sessionExercises: [],
     setLogs: [],
     bandLevels: [],
+    tests: [],
     weekControl,
     ...input,
   });
@@ -458,12 +476,74 @@ describe('buildAnalysisExport', () => {
     ]);
   });
 
+  it('schreibt die Tests zeitlich absteigend, den neuesten oben', () => {
+    const files = build({
+      tests: [
+        exerciseTest({ id: 't1', recordedAt: '2026-07-01T09:00:00', leftValue: 8, rightValue: 11 }),
+        exerciseTest({ id: 't3', recordedAt: '2026-08-25T09:00:00', leftValue: 10, rightValue: 12 }),
+        exerciseTest({ id: 't2', recordedAt: '2026-08-02T09:00:00', leftValue: 9, rightValue: 12 }),
+      ],
+    });
+    const { columns, rows } = parseCsv(files.testsCsv);
+
+    expect(columns).toEqual(['datum', 'uebung', 'links', 'rechts', 'asymmetrie_prozent', 'notiz']);
+    expect(rows.map((row) => row[0])).toEqual(['2026-08-25', '2026-08-02', '2026-07-01']);
+    expect(rows[0].slice(1, 5)).toEqual(['Hüft-Innenrotation (Grad)', '10', '12', '16.7']);
+  });
+
+  it('nimmt einen Test auf, der zu keiner exportierten Session gehört', () => {
+    /*
+     * Tests werden unabhängig vom Training erhoben - am Sonntag auf dem
+     * Wohnzimmerboden, ohne Einheit. Hingen sie an einer Session, verlöre man
+     * ausgerechnet die Messreihe, an der der Fortschritt hängt.
+     */
+    const files = build({ tests: [exerciseTest({ id: 't1' })] });
+
+    expect(files.sessionsCsv.trimEnd().split('\n')).toHaveLength(1);
+    expect(parseCsv(files.testsCsv).rows).toHaveLength(1);
+  });
+
+  it('schreibt die Testzahlen mit Dezimalpunkt und den Snapshot-Namen', () => {
+    const files = build({
+      tests: [
+        exerciseTest({
+          id: 't1',
+          exerciseId: 'gelöschte-übung',
+          exerciseNameSnapshot: 'Knie-zur-Wand (cm)',
+          leftValue: 10.5,
+          rightValue: 12,
+          asymmetryPercent: 13.043,
+        }),
+      ],
+    });
+
+    // Punkt, nicht Komma: in einer kommagetrennten Datei wäre das Komma ein
+    // Trennzeichen - dieselbe Regel wie in sessions.csv.
+    expect(parseCsv(files.testsCsv).rows[0]).toEqual([
+      '2026-08-25',
+      'Knie-zur-Wand (cm)',
+      '10.5',
+      '12',
+      '13.043',
+      '',
+    ]);
+  });
+
+  it('setzt eine Notiz mit Komma in Anführungszeichen', () => {
+    const files = build({
+      tests: [exerciseTest({ id: 't1', notes: 'morgens, vor dem Lauf' })],
+    });
+
+    expect(files.testsCsv).toContain('"morgens, vor dem Lauf"');
+  });
+
   it('bleibt ohne Daten eine gültige, leere Datei', () => {
     const files = build({});
     const meta = JSON.parse(files.metaJson);
 
     expect(files.sessionsCsv.trimEnd().split('\n')).toHaveLength(1);
     expect(files.progressionCsv.trimEnd()).toBe('uebung,seite');
+    expect(files.testsCsv.trimEnd().split('\n')).toHaveLength(1);
     expect(meta.zeitraum).toEqual({ von: null, bis: null });
     expect(meta.programm).toBeNull();
   });
@@ -482,10 +562,61 @@ describe('buildAnalysisExport', () => {
           reps: 6,
         }),
       ],
+      tests: [
+        exerciseTest({
+          id: 'a4f0c2de-0000-4000-8000-000000000004',
+          exerciseId: 'a4f0c2de-0000-4000-8000-000000000005',
+        }),
+      ],
     });
 
-    for (const content of [files.sessionsCsv, files.progressionCsv, files.metaJson]) {
+    for (const content of [
+      files.sessionsCsv,
+      files.progressionCsv,
+      files.testsCsv,
+      files.metaJson,
+    ]) {
       expect(content).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+    }
+  });
+});
+
+describe('buildAnalysisPasteText', () => {
+  it('stellt meta.json vor die Zahlen', () => {
+    const files = build({
+      sessions: [session({ id: 's1' })],
+      sessionExercises: [sessionExercise({ id: 'e1', sessionId: 's1' })],
+      setLogs: [setLog({ id: 'l1', sessionExerciseId: 'e1', reps: 5, weight: 60 })],
+    });
+    const text = buildAnalysisPasteText(files, new Date('2026-08-28T09:00:00'));
+
+    // Ohne trackingMode und weekOverrideAktiv liest man die Tabelle falsch -
+    // deshalb steht meta.json oben, nicht als Anhang unten.
+    expect(text.indexOf('## meta.json')).toBeLessThan(text.indexOf('## sessions.csv'));
+    expect(text.indexOf('## sessions.csv')).toBeLessThan(text.indexOf('## progression.csv'));
+    expect(text.indexOf('## progression.csv')).toBeLessThan(text.indexOf('## tests.csv'));
+  });
+
+  it('nennt das Exportdatum und rahmt jede Datei ein', () => {
+    const text = buildAnalysisPasteText(build({}), new Date('2026-08-28T09:00:00'));
+
+    expect(text.startsWith('# Gym Book Analyse-Export 2026-08-28')).toBe(true);
+    expect(text).toContain('```json');
+    // Dreimal csv-Rahmen: sessions, progression und tests.
+    expect(text.match(/```csv/g)).toHaveLength(3);
+  });
+
+  it('trägt den Inhalt aller vier Dateien', () => {
+    const files = build({
+      sessions: [session({ id: 's1' })],
+      sessionExercises: [sessionExercise({ id: 'e1', sessionId: 's1' })],
+      setLogs: [setLog({ id: 'l1', sessionExerciseId: 'e1', reps: 5, weight: 60 })],
+      tests: [exerciseTest({ id: 't1' })],
+    });
+    const text = buildAnalysisPasteText(files, new Date('2026-08-28T09:00:00'));
+
+    for (const content of [files.sessionsCsv, files.progressionCsv, files.testsCsv, files.metaJson]) {
+      expect(text).toContain(content.trimEnd());
     }
   });
 });
