@@ -1,0 +1,232 @@
+{
+  "schemaVersion": 1,
+  "exercises": [
+    {
+      "name": "Einbeiniges RDL",
+      "trackingMode": "reps_weight",
+      "unilateral": true
+    },
+    {
+      "name": "Beinbeuger liegend leicht (Vorwärmen)",
+      "trackingMode": "reps_weight",
+      "unilateral": false
+    },
+    {
+      "name": "Beinbeuger sitzend",
+      "trackingMode": "reps_weight",
+      "unilateral": false
+    },
+    {
+      "name": "Pallof Press",
+      "trackingMode": "reps_weight",
+      "unilateral": true
+    },
+    {
+      "name": "Step-Downs seitlich vom Kasten",
+      "trackingMode": "reps_weight",
+      "unilateral": true
+    },
+    {
+      "name": "Glute Bridge Voraktivierung",
+      "trackingMode": "reps_weight",
+      "unilateral": true
+    },
+    {
+      "name": "Knie-zur-Wand",
+      "trackingMode": "reps_weight",
+      "unilateral": true
+    },
+    {
+      "name": "90/90-Hüftrotation",
+      "trackingMode": "reps_weight",
+      "unilateral": false
+    },
+    {
+      "name": "Half-Kneeling BWS-Rotation",
+      "trackingMode": "reps_weight",
+      "unilateral": true
+    },
+    {
+      "name": "Couch Stretch",
+      "trackingMode": "time",
+      "unilateral": true
+    },
+    {
+      "name": "Standwaage",
+      "trackingMode": "time",
+      "unilateral": true
+    },
+    {
+      "name": "Vierfüßler Beckenaufrichtung",
+      "trackingMode": "reps_weight",
+      "unilateral": false
+    },
+    {
+      "name": "Aktive Adduktorenmobilisation",
+      "trackingMode": "reps_weight",
+      "unilateral": true
+    },
+    {
+      "name": "TEST Einbeinige Hamstring-Bridge",
+      "trackingMode": "reps_weight",
+      "unilateral": true
+    },
+    {
+      "name": "TEST Step-Down 4 s",
+      "trackingMode": "reps_weight",
+      "unilateral": true
+    },
+    {
+      "name": "TEST Side Plank mit Hip Hitch",
+      "trackingMode": "time",
+      "unilateral": true
+    },
+    {
+      "name": "TEST Einbeiniges Wadenheben",
+      "trackingMode": "reps_weight",
+      "unilateral": true
+    },
+    {
+      "name": "TEST Knie-zur-Wand",
+      "trackingMode": "reps_weight",
+      "unilateral": true
+    }
+  ],
+  "templates": [
+    {
+      "name": "Mobility (Mi, 25 min)"
+    },
+    {
+      "name": "Tests (alle 4 Wochen)"
+    }
+  ],
+  "templateAssignments": [
+    {
+      "template": "Einheit B",
+      "exercise": "Beinbeuger liegend leicht (Vorwärmen)",
+      "orderIndex": 8,
+      "workSetCount": 2,
+      "includeWarmup": false
+    },
+    {
+      "template": "Einheit B",
+      "exercise": "Einbeiniges RDL",
+      "orderIndex": 10,
+      "workSetCount": 3,
+      "includeWarmup": false
+    },
+    {
+      "template": "Einheit A",
+      "exercise": "Pallof Press",
+      "orderIndex": 12,
+      "workSetCount": 3,
+      "includeWarmup": false
+    },
+    {
+      "template": "Mobility (Mi, 25 min)",
+      "exercise": "Knie-zur-Wand",
+      "orderIndex": 1,
+      "workSetCount": 1,
+      "includeWarmup": false
+    },
+    {
+      "template": "Mobility (Mi, 25 min)",
+      "exercise": "90/90-Hüftrotation",
+      "orderIndex": 2,
+      "workSetCount": 1,
+      "includeWarmup": false
+    },
+    {
+      "template": "Mobility (Mi, 25 min)",
+      "exercise": "Half-Kneeling BWS-Rotation",
+      "orderIndex": 3,
+      "workSetCount": 1,
+      "includeWarmup": false
+    },
+    {
+      "template": "Mobility (Mi, 25 min)",
+      "exercise": "Couch Stretch",
+      "orderIndex": 4,
+      "workSetCount": 1,
+      "includeWarmup": false
+    },
+    {
+      "template": "Mobility (Mi, 25 min)",
+      "exercise": "Glute Bridge Voraktivierung",
+      "orderIndex": 5,
+      "workSetCount": 1,
+      "includeWarmup": false
+    },
+    {
+      "template": "Mobility (Mi, 25 min)",
+      "exercise": "Standwaage",
+      "orderIndex": 6,
+      "workSetCount": 1,
+      "includeWarmup": false
+    },
+    {
+      "template": "Mobility (Mi, 25 min)",
+      "exercise": "Vierfüßler Beckenaufrichtung",
+      "orderIndex": 7,
+      "workSetCount": 1,
+      "includeWarmup": false
+    },
+    {
+      "template": "Mobility (Mi, 25 min)",
+      "exercise": "Aktive Adduktorenmobilisation",
+      "orderIndex": 8,
+      "workSetCount": 1,
+      "includeWarmup": false
+    },
+    {
+      "template": "Tests (alle 4 Wochen)",
+      "exercise": "TEST Einbeinige Hamstring-Bridge",
+      "orderIndex": 1,
+      "workSetCount": 1,
+      "includeWarmup": false
+    },
+    {
+      "template": "Tests (alle 4 Wochen)",
+      "exercise": "TEST Einbeiniges Wadenheben",
+      "orderIndex": 2,
+      "workSetCount": 1,
+      "includeWarmup": false
+    },
+    {
+      "template": "Tests (alle 4 Wochen)",
+      "exercise": "TEST Step-Down 4 s",
+      "orderIndex": 3,
+      "workSetCount": 1,
+      "includeWarmup": false
+    },
+    {
+      "template": "Tests (alle 4 Wochen)",
+      "exercise": "TEST Side Plank mit Hip Hitch",
+      "orderIndex": 4,
+      "workSetCount": 1,
+      "includeWarmup": false
+    },
+    {
+      "template": "Tests (alle 4 Wochen)",
+      "exercise": "TEST Knie-zur-Wand",
+      "orderIndex": 5,
+      "workSetCount": 1,
+      "includeWarmup": false
+    }
+  ],
+  "bandLevels": [
+    {
+      "name": "Schwarz",
+      "orderIndex": 2
+    },
+    {
+      "name": "Grün",
+      "orderIndex": 3
+    },
+    {
+      "name": "Rot",
+      "orderIndex": 4
+    }
+  ],
+  "_hinweis": "Testdatei. Aus der echten Bibliotheks-Nutzlast erzeugt, aber ohne instructions und notes - die trugen medizinische Begruendungen und gehoeren nicht in ein oeffentliches Repo. Struktur und Zaehlwerte sind unveraendert, damit der Import-Rauchtest sie weiter prueft."
+}

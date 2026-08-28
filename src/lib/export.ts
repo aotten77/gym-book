@@ -681,8 +681,19 @@ export async function exportDatabaseSnapshot(options: ExportOptions = {}): Promi
  */
 async function loadAnalysisFiles(): Promise<{ files: AnalysisExportFiles; exportedAt: Date }> {
   const exportedAt = new Date();
-  const [sessions, sessionExercises, setLogs, bandLevels, tests, programs, programWeeks, settings] =
+  const [
+    exercises,
+    sessions,
+    sessionExercises,
+    setLogs,
+    bandLevels,
+    tests,
+    programs,
+    programWeeks,
+    settings,
+  ] =
     await Promise.all([
+      db.exercises.toArray(),
       db.workoutSessions.toArray(),
       db.workoutSessionExercises.toArray(),
       db.workoutSetLogs.toArray(),
@@ -698,6 +709,7 @@ async function loadAnalysisFiles(): Promise<{ files: AnalysisExportFiles; export
     : undefined;
   const files = buildAnalysisExport({
     exportedAt,
+    exercises,
     sessions,
     sessionExercises,
     setLogs,

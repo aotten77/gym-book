@@ -45,16 +45,15 @@ dist-ssr
 # bleiben soll, steht in CLAUDE.md und in den Commit-Nachrichten.
 REFACTORING.md
 
-# Dieses Repo ist öffentlich. Alles unter docs/import/ und der fachliche
-# Kontext daneben tragen Gesundheitsdaten - Verletzungsgeschichte,
+# Dieses Repo ist öffentlich. Import-Nutzlasten, Vollexporte und der fachliche
+# Kontext der Auswertung tragen Gesundheitsdaten - Verletzungsgeschichte,
 # Beschwerdebild, Übungsanweisungen mit medizinischer Begründung - und dürfen
-# deshalb nicht hinein. Die Dateien bleiben lokal liegen und werden gebraucht;
-# sie gehören nur nicht nach GitHub. Der fachliche Kontext für die Auswertung
-# lebt stattdessen im Projektwissen auf claude.ai.
+# hier nicht hinein.
 #
-# Die Vollexporte wären auch ohne das nichts fürs Repo: je rund 5 MB, zur
-# Hälfte Bilder als Data-URLs, und einmal committet blieben sie für immer in
-# der Historie.
+# Sie liegen deshalb **außerhalb** des Repos, unter ~/Documents/gym-book-daten/.
+# Der Dateipicker des Bibliotheks-Imports liest sie von dort genauso. Die
+# Regeln unten bleiben trotzdem stehen: sie sind die Stolperdrähte, falls
+# jemand die Verzeichnisse hier neu anlegt.
 docs/import/
 docs/kontext-trainingsanalyse.md
 docs/claude-integration.md

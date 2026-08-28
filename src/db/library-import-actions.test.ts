@@ -231,11 +231,20 @@ describe('Bibliotheks-Import', () => {
   });
 
   /*
-   * Die mitgelieferte Nutzlast ist kein Beispiel, sondern die Datei, die
-   * eingespielt werden soll. Ein Tippfehler darin - eine Übung, die nur in den
-   * Zuordnungen vorkommt - fällt sonst erst am Telefon auf.
+   * Eine Nutzlast in voller Größe, nicht das Minimalbeispiel der übrigen
+   * Tests: 18 Übungen, zwei Workouts, 16 Zuordnungen, drei Bänder. Sie fängt,
+   * was ein handgeschriebenes Minimalbeispiel nicht fängt - eine Übung, die
+   * nur in den Zuordnungen vorkommt, eine Lücke in der Reihenfolge, ein
+   * zweiter Lauf, der doch etwas schreibt.
+   *
+   * Die Datei ist aus der echten Nutzlast erzeugt, aber ohne `instructions`
+   * und `notes`: die trugen medizinische Begründungen, und dieses Repo ist
+   * öffentlich. Damit ist eines aufgegeben, das der Test vorher mitleistete -
+   * er prüft **nicht mehr die Datei, die der Nutzer wirklich einspielt**. Ein
+   * Tippfehler in der echten Nutzlast fällt jetzt erst in der Vorschau am
+   * Telefon auf; die schreibt allerdings noch nichts und benennt die Zeile.
    */
-  it('spielt die mitgelieferte Bibliotheks-Datei vollständig ein', async () => {
+  it('spielt eine vollständige Bibliotheks-Nutzlast ein', async () => {
     await seedLibrary();
     await db.workoutTemplates.add({
       id: 't2',
@@ -245,10 +254,13 @@ describe('Bibliotheks-Import', () => {
     });
 
     const payload = parseLibraryImportPayload(
-      readFileSync(resolve(process.cwd(), 'docs/import/2026-08-26-bibliothek.json'), 'utf8'),
+      readFileSync(
+        resolve(process.cwd(), 'src/test/fixtures/library-import-beispiel.json'),
+        'utf8',
+      ),
     );
 
-    const { plan } = await applyLibraryImport(payload, '2026-08-26-bibliothek.json');
+    const { plan } = await applyLibraryImport(payload, 'library-import-beispiel.json');
 
     expect(plan.summary).toMatchObject({
       createdExercises: 18,

@@ -1,6 +1,7 @@
 import { sortSetLogs } from '@/domain/history';
 import type {
   BandLevel,
+  Exercise,
   ExerciseTest,
   Program,
   Side,
@@ -77,6 +78,12 @@ export const DEFAULT_REFERENCE_TEMPLATE_NAME = 'Einheit B';
 
 export interface AnalysisExportInput {
   exportedAt: Date;
+  /**
+   * Die Übungsbibliothek - ausschließlich für den aktuellen `trackingMode` in
+   * `meta.uebungen`. Siehe `describeTrackingMode`: ohne sie beschreibt der
+   * Export die Vergangenheit und liest sich wie eine Aussage über heute.
+   */
+  exercises: Exercise[];
   sessions: WorkoutSession[];
   sessionExercises: WorkoutSessionExercise[];
   setLogs: WorkoutSetLog[];
@@ -362,7 +369,7 @@ export function buildAnalysisExport(input: AnalysisExportInput): AnalysisExportF
   const discarded: DiscardedSession[] = [];
   const trainedExercises = new Map<
     string,
-    { name: string; trackingMode: TrackingMode; unilateral: boolean }
+    { name: string; unilateral: boolean; snapshotModes: Set<TrackingMode> }
   >();
   let exportedCount = 0;
   let previousEnd: string | undefined;
@@ -445,11 +452,24 @@ export function buildAnalysisExport(input: AnalysisExportInput): AnalysisExportF
         continue;
       }
 
-      trainedExercises.set(normalizeName(exercise.exerciseNameSnapshot), {
-        name: exercise.exerciseNameSnapshot,
-        trackingMode: exercise.trackingMode,
-        unilateral: exercise.unilateral,
-      });
+      /*
+       * Die Modi werden **gesammelt**, nicht überschrieben. Eine Übung, deren
+       * Erfassung einmal umgestellt wurde, trägt in alten Sessions den alten
+       * Snapshot - und wer hier den letzten gewinnen ließe, machte aus der
+       * Vergangenheit eine Aussage über heute. Siehe `buildMetaJson`.
+       */
+      const key = normalizeName(exercise.exerciseNameSnapshot);
+      const seen = trainedExercises.get(key);
+
+      if (seen) {
+        seen.snapshotModes.add(exercise.trackingMode);
+      } else {
+        trainedExercises.set(key, {
+          name: exercise.exerciseNameSnapshot,
+          unilateral: exercise.unilateral,
+          snapshotModes: new Set([exercise.trackingMode]),
+        });
+      }
 
       const expectedSides: Side[] = exercise.unilateral ? ['left', 'right'] : ['both'];
       const sides = [...new Set([...expectedSides, ...completed.map((log) => log.side)])].sort(
@@ -655,11 +675,48 @@ interface MetaContext {
   discarded: DiscardedSession[];
   exportedCount: number;
   totalSessions: number;
-  exercises: { name: string; trackingMode: TrackingMode; unilateral: boolean }[];
+  exercises: { name: string; unilateral: boolean; snapshotModes: Set<TrackingMode> }[];
+}
+
+/**
+ * Der Tracking-Modus einer Übung - aktueller Stand zuerst, Vergangenheit
+ * daneben.
+ *
+ * `meta.uebungen` sah aus wie eine Auskunft über die Bibliothek und war eine
+ * über die Sessions: der Modus kam aus dem Snapshot der Session-Übung. Wer den
+ * Nordic Curl von `time` auf `reps_weight` umstellt, hat danach 27 alte
+ * Snapshots mit `time` und zwei neue mit `reps_weight` - und der Export meldete
+ * die Mehrheit, also die Vergangenheit. Eine Auswertung schloss daraus
+ * prompt, die Umstellung sei nie angekommen, und empfahl sie ein zweites Mal.
+ *
+ * Deshalb steht hier jetzt der **Bibliothekswert** unter `trackingMode`, und
+ * abweichende Snapshots stehen als `trackingModeHistorisch` daneben - das ist
+ * dieselbe Unterscheidung, die `isLegacyExecution` in [progress.ts] intern
+ * schon trifft, wenn der Verlauf alte Ausführungen still fallen lässt.
+ *
+ * Der Abgleich läuft über den **Namen**, wie überall im Import: der Export
+ * trägt keine Ids. Findet sich die Übung nicht in der Bibliothek - umbenannt
+ * oder gelöscht -, bleibt der Snapshot die bestmögliche Auskunft.
+ */
+function describeTrackingMode(
+  name: string,
+  snapshotModes: Set<TrackingMode>,
+  library: Map<string, TrackingMode>,
+): { trackingMode: TrackingMode; trackingModeHistorisch?: TrackingMode[] } {
+  const snapshots = [...snapshotModes];
+  const current = library.get(normalizeName(name)) ?? snapshots[snapshots.length - 1];
+  const historic = snapshots.filter((mode) => mode !== current).sort();
+
+  return historic.length > 0
+    ? { trackingMode: current, trackingModeHistorisch: historic }
+    : { trackingMode: current };
 }
 
 function buildMetaJson(input: AnalysisExportInput, context: MetaContext): string {
   const dates = [...new Set(context.rows.map((row) => row.datum))].sort();
+  const library = new Map(
+    input.exercises.map((exercise) => [normalizeName(exercise.name), exercise.trackingMode]),
+  );
 
   return `${JSON.stringify(
     {
@@ -678,7 +735,12 @@ function buildMetaJson(input: AnalysisExportInput, context: MetaContext): string
       },
       uebungen: context.exercises
         .slice()
-        .sort((left, right) => left.name.localeCompare(right.name, 'de')),
+        .sort((left, right) => left.name.localeCompare(right.name, 'de'))
+        .map((exercise) => ({
+          name: exercise.name,
+          ...describeTrackingMode(exercise.name, exercise.snapshotModes, library),
+          unilateral: exercise.unilateral,
+        })),
       bandLevels: [...input.bandLevels]
         .sort((left, right) => left.orderIndex - right.orderIndex)
         .map((band) => band.name),

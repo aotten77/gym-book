@@ -5,6 +5,7 @@ import {
   type AnalysisExportInput,
 } from '@/domain/analysis-export';
 import type {
+  Exercise,
   ExerciseTest,
   Side,
   TrackingMode,
@@ -71,6 +72,7 @@ function exerciseTest(overrides: Partial<ExerciseTest> & { id: string }): Exerci
 function build(input: Partial<AnalysisExportInput>) {
   return buildAnalysisExport({
     exportedAt: new Date('2026-08-26T09:00:00'),
+    exercises: [],
     sessions: [],
     sessionExercises: [],
     setLogs: [],
@@ -618,5 +620,86 @@ describe('buildAnalysisPasteText', () => {
     for (const content of [files.sessionsCsv, files.progressionCsv, files.testsCsv, files.metaJson]) {
       expect(text).toContain(content.trimEnd());
     }
+  });
+});
+
+function libraryExercise(
+  overrides: Partial<Exercise> & { id: string; name: string },
+): Exercise {
+  return {
+    trackingMode: 'reps_weight' as TrackingMode,
+    unilateral: false,
+    createdAt: '2026-07-01T09:00:00',
+    updatedAt: '2026-07-01T09:00:00',
+    ...overrides,
+  };
+}
+
+describe('meta.uebungen: Tracking-Modus', () => {
+  it('nennt den Bibliothekswert, nicht den haeufigsten Snapshot', () => {
+    // Der Fall aus der Praxis: Nordic Curl von 'time' auf 'reps_weight'
+    // umgestellt. Alte Sessions tragen den alten Snapshot in der Ueberzahl -
+    // frueher meldete der Export deshalb 'time' und eine Auswertung schloss
+    // daraus, die Umstellung sei nie angekommen.
+    const files = build({
+      exercises: [libraryExercise({ id: 'x1', name: 'Nordic Curl', trackingMode: 'reps_weight' })],
+      sessions: [session({ id: 's1' }), session({ id: 's2', startedAt: '2026-08-26T17:00:00' })],
+      sessionExercises: [
+        sessionExercise({
+          id: 'e1',
+          sessionId: 's1',
+          exerciseNameSnapshot: 'Nordic Curl',
+          trackingMode: 'time' as TrackingMode,
+        }),
+        sessionExercise({
+          id: 'e2',
+          sessionId: 's2',
+          exerciseNameSnapshot: 'Nordic Curl',
+          trackingMode: 'reps_weight' as TrackingMode,
+        }),
+      ],
+      setLogs: [
+        setLog({ id: 'l1', sessionExerciseId: 'e1', seconds: 37 }),
+        setLog({ id: 'l2', sessionExerciseId: 'e2', reps: 3 }),
+      ],
+    });
+    const [uebung] = JSON.parse(files.metaJson).uebungen;
+
+    expect(uebung.trackingMode).toBe('reps_weight');
+    expect(uebung.trackingModeHistorisch).toEqual(['time']);
+  });
+
+  it('laesst die historische Angabe weg, wenn nichts abweicht', () => {
+    const files = build({
+      exercises: [libraryExercise({ id: 'x1', name: 'Front Squat LH' })],
+      sessions: [session({ id: 's1' })],
+      sessionExercises: [sessionExercise({ id: 'e1', sessionId: 's1' })],
+      setLogs: [setLog({ id: 'l1', sessionExerciseId: 'e1', reps: 5, weight: 60 })],
+    });
+    const [uebung] = JSON.parse(files.metaJson).uebungen;
+
+    expect(uebung.trackingMode).toBe('reps_weight');
+    expect(uebung).not.toHaveProperty('trackingModeHistorisch');
+  });
+
+  it('faellt auf den Snapshot zurueck, wenn die Uebung nicht mehr in der Bibliothek steht', () => {
+    // Umbenannt oder geloescht: der Snapshot ist dann die bestmoegliche Auskunft.
+    const files = build({
+      exercises: [],
+      sessions: [session({ id: 's1' })],
+      sessionExercises: [
+        sessionExercise({
+          id: 'e1',
+          sessionId: 's1',
+          exerciseNameSnapshot: 'Plank alt',
+          trackingMode: 'time' as TrackingMode,
+        }),
+      ],
+      setLogs: [setLog({ id: 'l1', sessionExerciseId: 'e1', seconds: 60 })],
+    });
+    const [uebung] = JSON.parse(files.metaJson).uebungen;
+
+    expect(uebung.trackingMode).toBe('time');
+    expect(uebung).not.toHaveProperty('trackingModeHistorisch');
   });
 });
