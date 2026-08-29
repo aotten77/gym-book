@@ -138,6 +138,8 @@ export async function seedSampleData() {
       name: 'Einheit A',
       notes:
         'Unterkörper Fokus mit unilateraler Assistenz und Posterior-Chain-Arbeit.',
+      // Montag und Donnerstag, damit der Trainingskalender etwas zu zeigen hat.
+      scheduledWeekdays: [1, 4],
       createdAt: now,
       updatedAt: now,
     };

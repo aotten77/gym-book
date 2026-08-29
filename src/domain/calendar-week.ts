@@ -8,12 +8,17 @@
  * Was hier steht, ist die Woche am Kalender und beantwortet eine andere Frage:
  * Programmwoche 3 sagt für sich genommen nicht, welcher Montag gerade war.
  *
- * Eine einzige Brücke gibt es zwischen beiden, und sie führt nur in eine
- * Richtung: trägt ein Programm ein `startedOn`, zählt `deriveProgramWeek` in
- * [program.ts] die Kalenderwochen seit diesem Montag - über
- * `calendarWeeksBetween` hier unten und nirgendwo sonst. Ohne Startdatum
- * bleibt die Programmwoche das, was sie war: eine Zahl, die von Hand
- * weitergeschaltet wird.
+ * Eine einzige Brücke gibt es zwischen beiden: trägt ein Programm ein
+ * `startedOn`, zählt `deriveProgramWeek` in [program.ts] die Kalenderwochen
+ * seit diesem Montag - über `calendarWeeksBetween` hier unten und nirgendwo
+ * sonst. Ohne Startdatum bleibt die Programmwoche das, was sie war: eine Zahl,
+ * die von Hand weitergeschaltet wird.
+ *
+ * Dieselbe Brücke gibt es einmal rückwärts, und auch nur einmal:
+ * `programWeekStart` in [training-calendar.ts] rechnet von der Programmwoche
+ * auf ihren Montag zurück, damit der Kalender Termine anzeigen kann. Beide
+ * Richtungen müssen zueinander passen, deshalb rechnen beide über
+ * `startOfCalendarWeek` und über ganze Tage - nie über 7 x 24 Stunden.
  */
 
 const DAYS_PER_WEEK = 7;
@@ -43,7 +48,7 @@ export function startOfCalendarWeek(now: Date): Date {
  * Geräts, deshalb wird es von Hand zerlegt. Zeitstempel mit Uhrzeit gehen
  * unverändert durch.
  */
-function parseLocalDate(value: string): Date | undefined {
+export function parseLocalDate(value: string): Date | undefined {
   const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
   const parsed = dateOnly
     ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]))

@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { db } from '@/db/appDb';
 import {
+  loadCompletedSessionsBetween,
   loadExercisesTrainedSince,
   loadTemplateRecency,
+  loadTestDatesBetween,
   loadWeekSummary,
 } from '@/db/history-queries';
 import type { SessionStatus } from '@/domain/models';
@@ -254,5 +256,94 @@ describe('loadExercisesTrainedSince', () => {
     await addSessionExercise({ id: 'se-2', sessionId: 'session-old', exerciseId: 'press' });
 
     await expect(loadExercisesTrainedSince('2026-08-03T00:00:00.000Z')).resolves.toEqual(new Set());
+  });
+});
+
+describe('loadCompletedSessionsBetween', () => {
+  it('grenzt beidseitig ein und lässt abgebrochene Einheiten weg', async () => {
+    await addSession({
+      id: 'before',
+      templateId: 'template-a',
+      status: 'completed',
+      completedAt: '2026-08-02T23:59:59.000Z',
+    });
+    await addSession({
+      id: 'inside',
+      templateId: 'template-a',
+      status: 'completed',
+      completedAt: '2026-08-04T10:00:00.000Z',
+      templateName: 'Einheit A',
+    });
+    await addSession({
+      id: 'aborted',
+      templateId: 'template-b',
+      status: 'aborted',
+      completedAt: '2026-08-05T10:00:00.000Z',
+    });
+    await addSession({
+      id: 'after',
+      templateId: 'template-a',
+      status: 'completed',
+      completedAt: '2026-08-11T00:00:01.000Z',
+    });
+
+    const sessions = await loadCompletedSessionsBetween(
+      '2026-08-03T00:00:00.000Z',
+      '2026-08-11T00:00:00.000Z',
+    );
+
+    expect(sessions.map((session) => session.id)).toEqual(['inside']);
+    expect(sessions[0].templateName).toBe('Einheit A');
+  });
+
+  it('gibt die Einheiten aufsteigend zurück', async () => {
+    await addSession({
+      id: 'second',
+      templateId: 'template-a',
+      status: 'completed',
+      completedAt: '2026-08-06T10:00:00.000Z',
+    });
+    await addSession({
+      id: 'first',
+      templateId: 'template-a',
+      status: 'completed',
+      completedAt: '2026-08-04T10:00:00.000Z',
+    });
+
+    const sessions = await loadCompletedSessionsBetween(
+      '2026-08-01T00:00:00.000Z',
+      '2026-08-10T00:00:00.000Z',
+    );
+
+    expect(sessions.map((session) => session.id)).toEqual(['first', 'second']);
+  });
+});
+
+describe('loadTestDatesBetween', () => {
+  it('liefert nur die Messzeitpunkte im Zeitraum', async () => {
+    await db.exerciseTests.bulkAdd([
+      {
+        id: 'test-old',
+        exerciseId: 'hip',
+        exerciseNameSnapshot: 'Hüfte',
+        recordedAt: '2026-07-30T10:00:00.000Z',
+        leftValue: 30,
+        rightValue: 28,
+        asymmetryPercent: 6.7,
+      },
+      {
+        id: 'test-inside',
+        exerciseId: 'hip',
+        exerciseNameSnapshot: 'Hüfte',
+        recordedAt: '2026-08-05T10:00:00.000Z',
+        leftValue: 32,
+        rightValue: 31,
+        asymmetryPercent: 3.1,
+      },
+    ]);
+
+    await expect(
+      loadTestDatesBetween('2026-08-01T00:00:00.000Z', '2026-08-10T00:00:00.000Z'),
+    ).resolves.toEqual(['2026-08-05T10:00:00.000Z']);
   });
 });

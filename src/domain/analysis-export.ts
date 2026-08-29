@@ -12,6 +12,7 @@ import type {
 } from '@/domain/models';
 import { toDateInputValue, type WeekControl } from '@/domain/program';
 import { supportsReps } from '@/domain/tracking';
+import { isoWeekday, weekdayShortLabel } from '@/domain/training-calendar';
 import { sumWorkVolume } from '@/domain/volume';
 
 /**
@@ -44,15 +45,6 @@ const CSV_SEPARATOR = ',';
  * sie jede Aussage über Volumen und Abstände.
  */
 const MINIMUM_COMPLETION_RATIO = 0.2;
-
-/**
- * Wochentage in Ortszeit, indiziert über `Date.getDay()` (0 = Sonntag).
- *
- * Von Hand und nicht über `Intl`: `de-DE` liefert "Mo." mit Punkt, und die
- * Spalte soll zweistellig sein. Außerdem bleibt der Export damit unabhängig
- * von der ICU-Datenlage des Geräts.
- */
-const WEEKDAY_LABELS = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
 
 const SIDE_LABELS: Record<Side, string> = {
   both: 'beide',
@@ -178,8 +170,17 @@ function localIsoWithOffset(date: Date): string {
   return `${toDateInputValue(date)}T${time}${sign}${offsetHours}:${offsetRest}`;
 }
 
+/**
+ * Der Wochentag in Ortszeit, zweistellig.
+ *
+ * Die Kürzel kommen aus [training-calendar.ts] - dort stehen sie ohnehin für
+ * das Wochenraster, und zwei Listen derselben sieben Wörter driften
+ * auseinander.
+ */
 function weekdayLabel(iso: string): string {
-  return WEEKDAY_LABELS[new Date(iso).getDay()] ?? '';
+  const date = new Date(iso);
+
+  return Number.isNaN(date.getTime()) ? '' : weekdayShortLabel(isoWeekday(date));
 }
 
 /**

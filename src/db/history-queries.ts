@@ -175,6 +175,47 @@ export async function loadWeekSummary(sinceIso: string): Promise<WeekSummary> {
 }
 
 /**
+ * Die abgeschlossenen Einheiten eines Zeitraums, älteste zuerst.
+ *
+ * Für den Trainingskalender: er braucht je Tag nur, *was* abgeschlossen wurde,
+ * kein Volumen. `loadWeekSummary` zöge dafür alle Satzzeilen des Zeitraums, und
+ * über acht Programmwochen wäre das teuer und ungenutzt.
+ *
+ * Läuft über den `completedAt`-Index und filtert `status === 'completed'`: eine
+ * **abgebrochene** Einheit trägt ebenfalls ein `completedAt`, weil
+ * `closeSession` es für beide Ausgänge setzt - abgebrochen heißt aber nicht
+ * trainiert, und ein waldgrüner Tag behauptete genau das.
+ */
+export async function loadCompletedSessionsBetween(
+  fromIso: string,
+  toIso: string,
+): Promise<WeekSummarySession[]> {
+  const sessions = await db.workoutSessions.where('completedAt').between(fromIso, toIso, true, true).toArray();
+
+  return sessions
+    .filter((session) => session.status === 'completed' && session.completedAt)
+    .map((session) => ({
+      id: session.id,
+      templateId: session.templateId,
+      templateName: session.templateNameSnapshot,
+      completedAt: session.completedAt!,
+    }))
+    .sort((left, right) => left.completedAt.localeCompare(right.completedAt));
+}
+
+/**
+ * Wann in einem Zeitraum Seitenvergleiche gemessen wurden.
+ *
+ * Mehr als der Zeitpunkt interessiert den Kalender nicht: er beantwortet nur,
+ * ob die Testwoche erledigt ist. Über den `recordedAt`-Index.
+ */
+export async function loadTestDatesBetween(fromIso: string, toIso: string): Promise<string[]> {
+  const tests = await db.exerciseTests.where('recordedAt').between(fromIso, toIso, true, true).toArray();
+
+  return tests.map((test) => test.recordedAt);
+}
+
+/**
  * Welche Übungen seit `sinceIso` trainiert wurden.
  *
  * Ausgelassene Übungen zählen nicht: das waldgrüne Abzeichen behauptet

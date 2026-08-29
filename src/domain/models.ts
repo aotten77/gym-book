@@ -79,6 +79,20 @@ export interface WorkoutTemplate {
   id: string;
   name: string;
   notes?: string;
+  /**
+   * Die Wochentage, an denen dieses Workout ansteht - ISO, 1 = Montag bis
+   * 7 = Sonntag.
+   *
+   * Additiv wie `includeWarmup`: `undefined` und `[]` heißen beide "kein
+   * fester Tag", und ein Workout ohne Tage verschwindet nirgends - es steht
+   * weiter im Wochenplan und im Kalender unter "Ohne festen Tag".
+   *
+   * Der Plan wiederholt sich in *jeder* Programmwoche gleich. Ein eigener Plan
+   * je Woche wären acht Pläne zu pflegen und die zweite Stelle, an der eine
+   * Deload-Woche ausgedrückt wird - dafür gibt es Progressionsregeln und
+   * `ProgramWeek.kind`.
+   */
+  scheduledWeekdays?: number[];
   createdAt: string;
   updatedAt: string;
 }

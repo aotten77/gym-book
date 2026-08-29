@@ -66,6 +66,12 @@ const workoutTemplateSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   notes: z.string().optional(),
+  /*
+   * Additiv wie includeWarmup - siehe workoutTemplateExerciseSchema unten:
+   * kein Bump von SNAPSHOT_SCHEMA_VERSION, sonst wiese das z.literal jedes
+   * bestehende Nutzer-Backup ab.
+   */
+  scheduledWeekdays: z.array(z.number().int().min(1).max(7)).optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });

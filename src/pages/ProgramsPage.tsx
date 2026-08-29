@@ -5,11 +5,19 @@ import { AppShell } from '@/components/AppShell';
 import { Empty } from '@/components/Empty';
 import { ProgressionRuleFields } from '@/components/ProgressionRuleFields';
 import { SupersetBlock } from '@/components/SupersetBlock';
+import { TrainingCalendar } from '@/components/TrainingCalendar';
 import { Button } from '@/components/ui/Button';
 import { Sheet } from '@/components/ui/Sheet';
-import { NowCard } from '@/components/ui/StatusCard';
+import { DoneRow, NowCard } from '@/components/ui/StatusCard';
 import { db } from '@/db/appDb';
+import { loadCompletedSessionsBetween, loadTestDatesBetween } from '@/db/history-queries';
 import { clearProgressionRule, saveProgressionRule } from '@/db/template-actions';
+import {
+  buildTrainingCalendar,
+  isoWeekday,
+  programWeekStart,
+  templatesOnWeekday,
+} from '@/domain/training-calendar';
 import type { ProgramWeek } from '@/domain/models';
 import {
   buildWeekPlan,
@@ -83,6 +91,70 @@ export function ProgramsPage() {
   const weekControl = resolveWeekControl(settings?.weekOverride, program, weeks ?? []);
   const selectedWeek = selectedWeekNumber ?? weekControl.effectiveWeek;
   const selectedProgramWeek = (weeks ?? []).find((week) => week.weekNumber === selectedWeek);
+
+  /*
+   * Der Zeitraum, über den der Kalender Erledigtes sucht: vom Montag der
+   * ersten bis zum Ende der letzten Programmwoche. Ohne Startdatum gibt es
+   * keinen - dann kennt der Kalender keine Termine und färbt auch nichts.
+   */
+  const calendarRange = useMemo(() => {
+    const weekNumbers = (weeks ?? []).map((week) => week.weekNumber);
+
+    if (!program?.startedOn || weekNumbers.length === 0) {
+      return undefined;
+    }
+
+    const start = programWeekStart(program.startedOn, 1);
+    const lastStart = programWeekStart(program.startedOn, Math.max(...weekNumbers));
+
+    if (!start || !lastStart) {
+      return undefined;
+    }
+
+    const until = new Date(lastStart.getTime());
+
+    until.setDate(until.getDate() + 7);
+
+    return { fromIso: start.toISOString(), toIso: until.toISOString() };
+  }, [program?.startedOn, weeks]);
+
+  const completedSessions = useLiveQuery(
+    () =>
+      calendarRange
+        ? loadCompletedSessionsBetween(calendarRange.fromIso, calendarRange.toIso)
+        : Promise.resolve([]),
+    [calendarRange?.fromIso, calendarRange?.toIso],
+  );
+  const testDates = useLiveQuery(
+    () =>
+      calendarRange
+        ? loadTestDatesBetween(calendarRange.fromIso, calendarRange.toIso)
+        : Promise.resolve([]),
+    [calendarRange?.fromIso, calendarRange?.toIso],
+  );
+
+  const calendarRows = useMemo(
+    () =>
+      buildTrainingCalendar({
+        weeks: weeks ?? [],
+        templates: templates ?? [],
+        startedOn: program?.startedOn,
+        effectiveWeek: weekControl.effectiveWeek,
+        completedSessions: completedSessions ?? [],
+        testDates: testDates ?? [],
+        now: new Date(),
+      }),
+    [
+      weeks,
+      templates,
+      program?.startedOn,
+      weekControl.effectiveWeek,
+      completedSessions,
+      testDates,
+    ],
+  );
+  const selectedCalendarWeek = calendarRows.find((row) => row.weekNumber === selectedWeek);
+  const todaysTemplates = templatesOnWeekday(templates ?? [], isoWeekday(new Date()));
 
   const bandNameById = useMemo(
     () =>
@@ -222,69 +294,60 @@ export function ProgramsPage() {
       <div className="space-y-4">
         {/*
           Die eine Limettenfläche dieser Seite liegt auf der *wirksamen*
-          Woche, nicht auf dem gewählten Chip: "jetzt dran" ist die Woche, in
-          der die nächste Einheit tatsächlich startet. Die Auswahl darunter
-          ist Navigation und deshalb Tinte.
+          Woche, nicht auf der gewählten Zeile: "jetzt dran" ist die Woche, in
+          der die nächste Einheit tatsächlich startet. Das Raster darunter ist
+          Navigation und deshalb Tinte.
         */}
         <NowCard
           eyebrow="Diese Woche"
           title={`W${weekControl.effectiveWeek}`}
-          subtitle={weekModeHint}
+          subtitle={
+            <>
+              <span className="block">{weekModeHint}</span>
+              {/*
+                Die eine Limettenfläche der Seite beantwortet ab hier auch die
+                Frage, für die es den Kalender gibt: was ist *heute* dran.
+              */}
+              <span className="block font-semibold">
+                Heute ·{' '}
+                {todaysTemplates.length === 0
+                  ? 'frei'
+                  : todaysTemplates.map((template) => template.name).join(', ')}
+              </span>
+            </>
+          }
         />
 
         {(weeks?.length ?? 0) > 0 ? (
-          <div>
+          <div className="space-y-3">
+            <TrainingCalendar
+              rows={calendarRows}
+              templates={templates ?? []}
+              selectedWeek={selectedWeek}
+              onSelectWeek={setSelectedWeekNumber}
+            />
+
             {/*
-              Waagerecht scrollend statt umbrechend: jeder Chip muss 44px
-              halten, und bei 320px passen etwa sechs davon nebeneinander.
-              `-mx-4 px-4` lässt den Streifen bis an den Bildschirmrand
-              laufen, damit sichtbar ist, dass es weitergeht.
+              Ohne Startdatum kann keine Programmwoche auf einen Montag
+              zurückgerechnet werden - das Raster zeigt dann den Plan und
+              keine Termine, und sagt das, statt Daten zu erfinden.
             */}
-            <div
-              role="tablist"
-              aria-label="Programmwoche wählen"
-              className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1"
-            >
-              {(weeks ?? []).map((week) => {
-                const isSelected = week.weekNumber === selectedWeek;
-
-                return (
-                  <button
-                    key={week.id}
-                    type="button"
-                    role="tab"
-                    aria-selected={isSelected}
-                    onClick={() => setSelectedWeekNumber(week.weekNumber)}
-                    className={cn(
-                      'min-h-touch min-w-touch shrink-0 rounded-control border px-3 font-display text-sm font-bold tabular-nums transition',
-                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
-                      isSelected
-                        ? 'border-transparent bg-accent text-accent-contrast'
-                        : 'border-line bg-surface text-content-secondary hover:bg-surface-raised',
-                    )}
+            {!program.startedOn ? (
+              <Empty
+                title="Noch kein Startdatum"
+                description="Ohne Startdatum weiß der Kalender nicht, welcher Montag zu Woche 1 gehört - er zeigt den Plan, aber keine Termine."
+                action={
+                  <Link
+                    to="/settings"
+                    className="min-h-touch inline-flex items-center justify-center rounded-control border border-line px-4 py-2 text-sm text-content-secondary transition hover:bg-surface-raised"
                   >
-                    W{week.weekNumber}
-                    {/*
-                      Die Art als Punkt, nicht als zweite Zeile: der Chip muss
-                      bei 320px sechsmal nebeneinander passen. Neutral gefärbt -
-                      Limette, Waldgrün und Rot haben in dieser App je eine
-                      Bedeutung, und "Deload" ist keine davon.
-                    */}
-                    {week.kind ? (
-                      <span
-                        aria-hidden="true"
-                        className={cn(
-                          'ml-1 inline-block h-1.5 w-1.5 rounded-full align-middle',
-                          isSelected ? 'bg-accent-contrast' : 'bg-content-muted',
-                        )}
-                      />
-                    ) : null}
-                  </button>
-                );
-              })}
-            </div>
+                    Startdatum setzen
+                  </Link>
+                }
+              />
+            ) : null}
 
-            <p className="mt-3 px-1 text-sm font-semibold text-content">
+            <p className="px-1 text-sm font-semibold text-content">
               {selectedProgramWeek?.label ?? `Woche ${selectedWeek}`}
               {selectedProgramWeek?.kind ? (
                 <span className="text-content-muted">
@@ -293,6 +356,27 @@ export function ProgramsPage() {
                 </span>
               ) : null}
             </p>
+
+            {/*
+              Der Testtermin steht nur in der *gewählten* Woche, nicht als
+              achte Marke im Raster: `ProgramWeek.kind` bleibt beschreibend,
+              und der Hinweis führt zu den Tests, statt selbst etwas zu
+              schreiben.
+            */}
+            {selectedCalendarWeek?.hasTestAppointment ? (
+              <Link to="/tests" className="block rounded-panel">
+                {selectedCalendarWeek.testDone ? (
+                  <DoneRow title="Seitenvergleich gemessen" meta="Zu den Tests" />
+                ) : (
+                  <div className="min-h-touch flex items-center justify-between gap-3 rounded-panel border border-line bg-surface px-4 py-3">
+                    <span className="text-sm font-semibold text-content">
+                      Seitenvergleich messen
+                    </span>
+                    <span className="shrink-0 text-xs text-content-muted">Zu den Tests</span>
+                  </div>
+                )}
+              </Link>
+            ) : null}
           </div>
         ) : null}
 

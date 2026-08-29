@@ -27,6 +27,7 @@ import { optionalNumberInput, toInputValue } from '@/lib/number-input';
 import { SectionCard } from '@/components/SectionCard';
 import { SupersetBlock } from '@/components/SupersetBlock';
 import { TemplateProgressionSection } from '@/components/TemplateProgressionSection';
+import { WeekdayPicker } from '@/components/WeekdayPicker';
 import { db } from '@/db/appDb';
 import { clearExerciseMedia, replaceExerciseMedia } from '@/db/media-actions';
 import { startSessionFromTemplate } from '@/db/session-actions';
@@ -293,6 +294,7 @@ export function TemplateDetailPage() {
   const navigate = useNavigate();
   const [templateName, setTemplateName] = useState('');
   const [templateNotes, setTemplateNotes] = useState('');
+  const [templateWeekdays, setTemplateWeekdays] = useState<number[]>([]);
   const [editingTemplateExerciseId, setEditingTemplateExerciseId] = useState<string | null>(null);
   /*
    * Die Form lag früher als Abschnitt am Seitenende, und "Bearbeiten" scrollte
@@ -364,10 +366,19 @@ export function TemplateDetailPage() {
   const selectedExistingExercise = sortedExercises.find((item) => item.id === form.exerciseId);
   const selectedExistingExerciseMedia =
     selectedExistingExercise?.mediaAssetId ? mediaAssetById[selectedExistingExercise.mediaAssetId] : undefined;
+  /*
+   * Die Tage als Zeichenkette in die Abhängigkeiten: `useLiveQuery` liefert
+   * bei jedem Schreibvorgang ein frisches Array, und eine Identitätsprüfung
+   * darauf setzte das Formular zurück, während jemand es ausfüllt.
+   */
+  const templateWeekdayKey = (template?.scheduledWeekdays ?? []).join(',');
   useEffect(() => {
     setTemplateName(template?.name ?? '');
     setTemplateNotes(template?.notes ?? '');
-  }, [template?.id, template?.name, template?.notes]);
+    setTemplateWeekdays(
+      templateWeekdayKey === '' ? [] : templateWeekdayKey.split(',').map(Number),
+    );
+  }, [template?.id, template?.name, template?.notes, templateWeekdayKey]);
 
   function handleEditTemplateExercise(templateExerciseId: string) {
     setEditingTemplateExerciseId(templateExerciseId);
@@ -433,6 +444,12 @@ export function TemplateDetailPage() {
       await updateTemplate(template.id, {
         name: templateName,
         notes: templateNotes,
+        /*
+         * Immer mitgeschickt, nie weggelassen: `undefined` hieße "nicht
+         * anfassen", und dann ließen sich die Tage nicht mehr leeren. Die
+         * leere Liste ist die bewusste Löschung.
+         */
+        scheduledWeekdays: templateWeekdays,
       });
     } finally {
       setIsSavingTemplate(false);
@@ -711,6 +728,16 @@ export function TemplateDetailPage() {
               aria-label="Notizen zur Einheit" placeholder="Notizen zur Einheit"
               rows={3}
               className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-base text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
+            />
+            {/*
+              Die Trainingstage stehen hier und nicht im Programm: sie sind
+              eine Eigenschaft des Workouts wie sein Name, und der Kalender
+              unter "Programm" liest sie nur.
+            */}
+            <WeekdayPicker
+              value={templateWeekdays}
+              onChange={setTemplateWeekdays}
+              disabled={isSavingTemplate}
             />
             <Button
               variant="primary"
