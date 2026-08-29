@@ -55,7 +55,11 @@ import {
   type SetLogDraft,
   type SetLogFieldKey,
 } from '@/domain/set-log-draft';
-import { clampSetTimerSeconds, resolveSetTimerSeconds } from '@/domain/set-timer';
+import {
+  clampSetTimerSeconds,
+  formatSetTimerClock,
+  resolveSetTimerSeconds,
+} from '@/domain/set-timer';
 import { supportsBand, supportsSeconds } from '@/domain/tracking';
 import { formatSideLabel, formatTimer } from '@/lib/format';
 import { isTimerSpeechSupported } from '@/lib/speech';
@@ -93,6 +97,8 @@ interface ActiveSetEditorProps {
   /** Gesetzt, solange der Satz-Timer genau zu dieser Zeile läuft. */
   setTimer?: SetTimerState;
   timerRemainingSeconds: number;
+  /** Sekunden über der Vorgabe - vor dem Ablauf 0. */
+  timerOvertimeSeconds: number;
   /** `withCues` kommt vom Knopf: still starten oder mit Ansagen. */
   onStartTimer: (setLogId: string, seconds: number, withCues: boolean) => void;
   /** Stoppt den laufenden Timer und liefert die gehaltene Zeit zurück. */
@@ -122,6 +128,7 @@ function ActiveSetEditor({
   hasHint,
   setTimer,
   timerRemainingSeconds,
+  timerOvertimeSeconds,
   onStartTimer,
   onStopTimer,
   onClearTimer,
@@ -340,6 +347,16 @@ function ActiveSetEditor({
     const parsed = parseNumberInput(draft[key]);
     return parsed.status === 'valid' ? parsed.value : log[key];
   };
+  /*
+   * Läuft die Zeit, gilt für die Beschriftung die Uhr und nicht das Feld:
+   * [handleToggleCompletion] überschreibt den Draft beim Abhaken ohnehin mit
+   * der gestoppten Zeit. Stünde hier weiter die Vorgabe, verspräche der Knopf
+   * "45s abhaken", während er bei +00:12 tatsächlich 57 schreibt - und seit die
+   * Uhr über die Vorgabe hinaus zählt, wächst diese Lüge mit jeder Sekunde.
+   */
+  const heldSeconds = setTimer
+    ? setTimer.durationSeconds - timerRemainingSeconds + timerOvertimeSeconds
+    : undefined;
   const previewValues = describeSetRowValues(
     {
       ...log,
@@ -348,7 +365,7 @@ function ActiveSetEditor({
       // genau die wird beim Abhaken übernommen.
       completed: false,
       reps: draftValue('reps'),
-      seconds: draftValue('seconds'),
+      seconds: heldSeconds ?? draftValue('seconds'),
       weight: draftValue('weight'),
       heightCm: draftValue('heightCm'),
       bandNameSnapshot:
@@ -422,6 +439,7 @@ function ActiveSetEditor({
       {isTimerRunning && setTimer ? (
         <StageSetTimer
           remainingSeconds={timerRemainingSeconds}
+          overtimeSeconds={timerOvertimeSeconds}
           durationSeconds={setTimer.durationSeconds}
           onStop={() => void onStopTimer()}
           onDiscard={onClearTimer}
@@ -686,28 +704,36 @@ function StepButton({
  *
  * Sie trägt das einzige `role="timer"` im Dokument, solange sie steht - die
  * Leiste am unteren Rand wird währenddessen nicht gerendert.
+ *
+ * Bei 0 ist sie nicht zu Ende: die Uhr zählt die Überzeit weiter, weil sonst
+ * jeder Zeit-Satz exakt seine Vorgabe im Log stehen hätte und ein längerer Halt
+ * nirgends auftauchte. Die Fläche bleibt dabei grün - die Vorgabe *ist*
+ * geschafft -, nur die Kopfzeile sagt es.
  */
 function StageSetTimer({
   remainingSeconds,
+  overtimeSeconds,
   durationSeconds,
   onStop,
   onDiscard,
 }: {
   remainingSeconds: number;
+  overtimeSeconds: number;
   durationSeconds: number;
   onStop: () => void;
   onDiscard: () => void;
 }) {
+  const isOvertime = overtimeSeconds > 0;
   const elapsedPercent =
-    durationSeconds > 0
-      ? Math.min(100, Math.max(0, ((durationSeconds - remainingSeconds) / durationSeconds) * 100))
-      : 0;
+    isOvertime || durationSeconds <= 0
+      ? 100
+      : Math.min(100, Math.max(0, ((durationSeconds - remainingSeconds) / durationSeconds) * 100));
 
   return (
     <div className="space-y-3 rounded-panel bg-success p-4 text-success-contrast">
       <div className="flex items-baseline justify-between gap-3">
         <span className="text-[11px] font-bold uppercase tracking-[0.16em] opacity-75">
-          Satz läuft
+          {isOvertime ? 'Über der Vorgabe' : 'Satz läuft'}
         </span>
         <span className="text-xs font-bold tabular-nums opacity-75">
           von {formatTimer(durationSeconds)}
@@ -718,7 +744,7 @@ function StageSetTimer({
         aria-live="off"
         className="font-display text-[44px] font-extrabold leading-none tabular-nums tracking-tight"
       >
-        {formatTimer(remainingSeconds)}
+        {formatSetTimerClock(remainingSeconds, overtimeSeconds)}
       </p>
       <div className="h-1.5 overflow-hidden rounded-full bg-black/20">
         <div className="h-full rounded-full bg-highlight" style={{ width: `${elapsedPercent}%` }} />
@@ -771,6 +797,8 @@ interface SessionExerciseStageProps {
   canGroupWithPrevious: boolean;
   setTimer?: SetTimerState;
   timerRemainingSeconds: number;
+  /** Sekunden über der Vorgabe - vor dem Ablauf 0. */
+  timerOvertimeSeconds: number;
   /** Laufende Pausen dieser Übung - eine je Seite. */
   restTracks?: RestTimerTrack[];
   now: number;
@@ -812,6 +840,7 @@ export function SessionExerciseStage({
   canGroupWithPrevious,
   setTimer,
   timerRemainingSeconds,
+  timerOvertimeSeconds,
   restTracks,
   now,
   onActionChange,
@@ -965,6 +994,7 @@ export function SessionExerciseStage({
           hasHint={hintFor(activeSetLog)}
           setTimer={setTimer?.setLogId === activeSetLog.id ? setTimer : undefined}
           timerRemainingSeconds={timerRemainingSeconds}
+          timerOvertimeSeconds={timerOvertimeSeconds}
           onStartTimer={onStartSetTimer}
           onStopTimer={onStopSetTimer}
           onClearTimer={onClearSetTimer}

@@ -4,7 +4,12 @@ import { ChevronUp, Clock3, Timer } from 'lucide-react';
 import { db } from '@/db/appDb';
 import type { WorkoutSession } from '@/domain/models';
 import { remainingRestSeconds, selectPrimaryRestTrack } from '@/domain/rest-timer';
-import { remainingSetTimerSeconds } from '@/domain/set-timer';
+import {
+  formatSetTimerClock,
+  isSetTimerActive,
+  overtimeSetTimerSeconds,
+  remainingSetTimerSeconds,
+} from '@/domain/set-timer';
 import { summarizeSessionProgress } from '@/domain/session-summary';
 import { useNowTicker } from '@/hooks/useNowTicker';
 import { formatTimer } from '@/lib/format';
@@ -55,7 +60,11 @@ export function ActiveSessionBar({ session }: ActiveSessionBarProps) {
     0,
     Math.round((now - Date.parse(session.startedAt)) / 1000),
   );
-  const setTimerRemainingSeconds = remainingSetTimerSeconds(session.setTimer, now);
+  /*
+   * Die Existenz des Timers, nicht seine Restzeit: über der Vorgabe zählt die
+   * Uhr weiter, und die Restzeit steht dabei auf 0.
+   */
+  const hasRunningSetTimer = isSetTimerActive(session.setTimer);
   /*
    * Ohne fokussierte Übung entscheidet allein der nächste Ablauf - welche
    * Übung außerhalb der Session den Fokus hat, ist keine Frage, die sich hier
@@ -64,19 +73,14 @@ export function ActiveSessionBar({ session }: ActiveSessionBarProps) {
   const primaryRestTrack = selectPrimaryRestTrack(session.restTimers, undefined, undefined, now);
   const restRemainingSeconds = remainingRestSeconds(primaryRestTrack, now);
 
-  const timerLabel =
-    setTimerRemainingSeconds > 0
-      ? 'Satz'
-      : restRemainingSeconds > 0
-        ? 'Pause'
-        : 'Dauer';
-  const timerSeconds =
-    setTimerRemainingSeconds > 0
-      ? setTimerRemainingSeconds
-      : restRemainingSeconds > 0
-        ? restRemainingSeconds
-        : elapsedSeconds;
-  const TimerIcon = setTimerRemainingSeconds > 0 ? Timer : Clock3;
+  const timerLabel = hasRunningSetTimer ? 'Satz' : restRemainingSeconds > 0 ? 'Pause' : 'Dauer';
+  const timerText = hasRunningSetTimer
+    ? formatSetTimerClock(
+        remainingSetTimerSeconds(session.setTimer, now),
+        overtimeSetTimerSeconds(session.setTimer, now),
+      )
+    : formatTimer(restRemainingSeconds > 0 ? restRemainingSeconds : elapsedSeconds);
+  const TimerIcon = hasRunningSetTimer ? Timer : Clock3;
 
   return (
     <button
@@ -104,11 +108,11 @@ export function ActiveSessionBar({ session }: ActiveSessionBarProps) {
       <div
         role="timer"
         aria-live="off"
-        aria-label={`${timerLabel} ${formatTimer(timerSeconds)}`}
+        aria-label={`${timerLabel} ${timerText}`}
         className="flex shrink-0 items-center gap-1.5 font-display text-lg font-extrabold tabular-nums leading-none"
       >
         <TimerIcon size={15} aria-hidden />
-        {formatTimer(timerSeconds)}
+        {timerText}
       </div>
       {/*
         Gezählt werden Satzzeilen, wie überall sonst - "0/13" ist dieselbe

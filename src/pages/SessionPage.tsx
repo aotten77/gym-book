@@ -61,7 +61,13 @@ import {
   selectPrimaryRestTrack,
 } from '@/domain/rest-timer';
 import { resolveNextFocus } from '@/domain/session';
-import { elapsedSetTimerSeconds, remainingSetTimerSeconds } from '@/domain/set-timer';
+import {
+  elapsedSetTimerSeconds,
+  formatSetTimerClock,
+  isSetTimerActive,
+  overtimeSetTimerSeconds,
+  remainingSetTimerSeconds,
+} from '@/domain/set-timer';
 import { decideTimerNotifications } from '@/domain/timer-notifications';
 import { useNowTicker } from '@/hooks/useNowTicker';
 import { buildSupersetBlocks, moveSupersetBlock, moveWithinGroup } from '@/domain/superset';
@@ -600,6 +606,15 @@ export function SessionPage() {
   }
 
   const setTimerRemainingSeconds = remainingSetTimerSeconds(setTimer, now);
+  const setTimerOvertimeSeconds = overtimeSetTimerSeconds(setTimer, now);
+  /*
+   * Ob die Uhr läuft, entscheidet die Existenz des Timers und nicht seine
+   * Restzeit: über der Vorgabe steht die Restzeit auf 0, während weitergezählt
+   * wird. Hinge die Rangfolge weiter an der Zahl, verschwände die Uhr genau in
+   * dem Moment aus der Leiste, in dem es interessant wird - und die Regel
+   * "genau ein `role=timer` im Dokument" kippte in beide Richtungen.
+   */
+  const hasRunningSetTimer = isSetTimerActive(setTimer);
   /*
    * Die Übung, auf deren Satz gerade die Zeit läuft.
    *
@@ -1064,13 +1079,13 @@ export function SessionPage() {
             Der Name über der Zahl: sobald mehrere Pausen laufen, ist "1:12"
             allein zweideutig - im Supersatz wie bei links und rechts.
           */}
-        {setTimerRemainingSeconds === 0 && primaryRestTrack ? (
+        {!hasRunningSetTimer && primaryRestTrack ? (
           <p className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-content-muted">
             Pause · {describeRestTrack(primaryRestTrack)}
           </p>
         ) : null}
         <div className="flex items-center gap-2">
-          {setTimerRemainingSeconds > 0 ? (
+          {hasRunningSetTimer ? (
             /*
                 Der Satz-Timer verdrängt die Pause: er läuft *während* der
                 Übung, und wer im Plank liegt, sieht nur diese eine Zahl. Die
@@ -1084,7 +1099,7 @@ export function SessionPage() {
                 className="flex min-h-touch flex-1 items-center justify-center gap-2 rounded-control bg-accent-soft px-3 text-2xl font-semibold tabular-nums text-accent"
               >
                 <Timer size={18} />
-                {formatTimer(setTimerRemainingSeconds)}
+                {formatSetTimerClock(setTimerRemainingSeconds, setTimerOvertimeSeconds)}
               </div>
               <Button
                 variant="ghost"
@@ -1280,7 +1295,7 @@ export function SessionPage() {
                   <Clock3 size={12} aria-hidden="true" />
                   <span className="max-w-[8rem] truncate">{description}</span>
                   <span
-                    {...(index === 0 && setTimerRemainingSeconds === 0
+                    {...(index === 0 && !hasRunningSetTimer
                       ? { role: 'timer', 'aria-live': 'off' as const }
                       : {})}
                   >
@@ -1370,6 +1385,7 @@ export function SessionPage() {
         canGroupWithPrevious={orderedSessionExercises[0]?.id !== exercise.id}
         setTimer={setTimer}
         timerRemainingSeconds={setTimerRemainingSeconds}
+        timerOvertimeSeconds={setTimerOvertimeSeconds}
         restTracks={restTracksByExerciseId[exercise.id]}
         now={now}
         onActionChange={handleActiveSetActionChange}

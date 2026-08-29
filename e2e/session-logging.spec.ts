@@ -151,6 +151,36 @@ test.describe('Satz-Timer', () => {
     await expect(target).not.toHaveValue('90');
   });
 
+  test('zählt über die Vorgabe hinaus weiter und schreibt die längere Zeit', async ({ page }) => {
+    /*
+     * Der Grund für die ganze Überzeit: die Uhr endete bei 0 und trug die
+     * Vorgabe ein. Damit stand in jedem Zeit-Satz exakt die geplante Zahl, und
+     * wer länger hielt, sah davon nichts - die Sekundenkurve war eine
+     * Waagerechte.
+     */
+    await startSampleSession(page);
+    await openExerciseSheet(page, 'Nordic Curl Iso');
+
+    // 5s ist die kürzeste Zeit, die [clampSetTimerSeconds] zulässt - der Test
+    // wartet damit nur wenige Sekunden auf den Ablauf.
+    const seconds = page.locator('input[id$="-seconds"]').first();
+    await seconds.fill('5');
+    await page.waitForTimeout(1200);
+
+    await expect(startButton(page)).toHaveAccessibleName('00:05 starten');
+    await startButton(page).click();
+
+    // Nach dem Ablauf steht die Uhr nicht still und verschwindet auch nicht:
+    // sie zählt mit Pluszeichen weiter, bis jemand stoppt.
+    await expect(page.getByRole('timer')).toHaveText(/^\+00:0[2-9]$/, { timeout: 12_000 });
+
+    await page.getByRole('button', { name: /Zeit stoppen/ }).click();
+    await page.waitForTimeout(800);
+
+    await expect(page.getByRole('timer')).toBeHidden();
+    expect(Number(await seconds.inputValue())).toBeGreaterThan(5);
+  });
+
   test('verwerfen lässt den bereits eingetragenen Wert stehen', async ({ page }) => {
     await startSampleSession(page);
     await openExerciseSheet(page, 'Nordic Curl Iso');

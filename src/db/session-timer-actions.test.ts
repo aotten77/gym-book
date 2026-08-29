@@ -91,6 +91,17 @@ describe('Satz-Timer', () => {
     expect((await db.workoutSessions.get('session-timer-active'))?.setTimer).toBeUndefined();
   });
 
+  it('schreibt auch eine Zeit über der Vorgabe', async () => {
+    // Der ganze Zweck der Überzeit: wer länger hält, hat es nachher im Satz
+    // stehen - sonst zeigt die Sekundenkurve für immer die Vorgabe.
+    await seedTimerSession('active');
+    await startSetTimer('session-timer-active', 'plank-active', 120);
+
+    await finishSetTimer('session-timer-active', 142);
+
+    expect((await db.workoutSetLogs.get('plank-active'))?.seconds).toBe(142);
+  });
+
   it('schließt einen bandtragenden Satz ab, ohne am Scope zu scheitern', async () => {
     /*
      * Der Nachweis, dass `finishSetTimer`s Transaktion weit genug ist:

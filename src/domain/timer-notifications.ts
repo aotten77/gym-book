@@ -19,6 +19,7 @@ import {
   setTimerCueSpeech,
   setTimerCueVibrationPattern,
 } from '@/domain/set-timer-cues';
+import { SET_TIMER_MAX_OVERTIME_SECONDS } from '@/domain/set-timer';
 
 /**
  * Ab dieser Verspätung bleibt der Ton aus.
@@ -73,8 +74,13 @@ export interface TimerNotifications {
   /** Der Ansagetext, oder nichts. Der Ablauf sagt nie etwas. */
   speak: string | null;
   /**
-   * Gesetzt, wenn der Satz-Timer durchgelaufen ist: die volle Dauer gehört in
-   * den Satz.
+   * Gesetzt, wenn der Satz-Timer seine Überzeit ausgeschöpft hat: Vorgabe plus
+   * Deckel gehören in den Satz.
+   *
+   * Ausdrücklich *nicht* beim Ablauf. Dort wird gemeldet, nicht geschrieben -
+   * die Uhr zählt über die Vorgabe hinaus, und wer noch hält, soll das
+   * mitgezählt bekommen. Erst am Deckel schließt der Timer von selbst ab; das
+   * ist der Notausgang für einen vergessenen Timer, nicht der Normalfall.
    */
   finishSetTimerSeconds: number | null;
   /** Ersetzt die bisherige Menge - der Aufrufer schreibt sie zurück. */
@@ -88,6 +94,22 @@ function expiredRestKey(track: RestTimerTrack) {
 
 function expiredSetTimerKey(timer: SetTimerState) {
   return `set-timer:${timer.setLogId}@${timer.endsAt}`;
+}
+
+/**
+ * Eigener Schlüssel für den Abschluss am Deckel.
+ *
+ * Der Abschluss ist keine Meldung, braucht aber dieselbe Entdopplung: bis der
+ * Schreibvorgang durch ist und den Timer löscht, laufen weitere Takte durch
+ * diese Funktion.
+ */
+function overtimeSetTimerKey(timer: SetTimerState) {
+  return `set-timer-overtime:${timer.setLogId}@${timer.endsAt}`;
+}
+
+/** Wann die Überzeit ausgeschöpft ist. */
+function setTimerOvertimeCapAt(timer: SetTimerState) {
+  return timer.endsAt + SET_TIMER_MAX_OVERTIME_SECONDS * 1000;
 }
 
 /**
@@ -136,16 +158,31 @@ export function decideTimerNotifications({
   const cue = setTimer?.cuesEnabled ? findDueSetTimerCue(setTimer, now) : null;
   const cueKey = setTimer && cue ? setTimerCueKey(setTimer, cue) : null;
 
+  /*
+   * Der Abschluss hängt am Deckel, nicht am Ablauf: bis dahin zählt die Uhr
+   * über die Vorgabe hinaus, und was gehalten wurde, entscheidet erst das
+   * Stoppen.
+   */
+  const overtimeCapReached = Boolean(
+    setTimer && setTimer.durationSeconds && now >= setTimerOvertimeCapAt(setTimer),
+  );
+  const overtimeKey = setTimer && overtimeCapReached ? overtimeSetTimerKey(setTimer) : null;
+
   const liveKeys = new Set(expiries.map((entry) => entry.key));
 
   if (cueKey) {
     liveKeys.add(cueKey);
   }
 
+  if (overtimeKey) {
+    liveKeys.add(overtimeKey);
+  }
+
   const nextNotifiedKeys = new Set([...notifiedKeys].filter((key) => liveKeys.has(key)));
 
   const freshExpiries = expiries.filter((entry) => !nextNotifiedKeys.has(entry.key));
   const freshCue = cueKey && !nextNotifiedKeys.has(cueKey) ? cue : null;
+  const freshOvertimeCap = Boolean(overtimeKey && !nextNotifiedKeys.has(overtimeKey));
 
   for (const key of liveKeys) {
     nextNotifiedKeys.add(key);
@@ -169,13 +206,16 @@ export function decideTimerNotifications({
     // Moment sind genau die Kombination, die den Ton kosten kann.
     chime: soundEnabled && freshExpiries.some((entry) => isChimeFresh(entry.endsAt, realNow)),
     speak: freshCue ? setTimerCueSpeech(freshCue) : null,
-    // Über den Schlüssel, nicht über `endsAt`: eine Pause darf zufällig in
-    // derselben Millisekunde ablaufen, ohne den Satz-Timer abzuschließen.
+    /*
+     * Am Deckel und nur einmal - und nur, wenn die App dabei wach war. Lag sie
+     * im Hintergrund, hat niemand zwei Minuten über der Vorgabe gehalten; die
+     * Uhr bleibt dann bei "+02:00" stehen und wartet auf Stoppen oder
+     * Verwerfen. Genau das tut ein abgelaufener Timer heute schon bei "00:00",
+     * wenn die Frische fehlt: lieber keine Zahl als eine erfundene.
+     */
     finishSetTimerSeconds:
-      setTimer &&
-      setTimerExpired &&
-      freshExpiries.some((entry) => entry.key === expiredSetTimerKey(setTimer))
-        ? setTimer.durationSeconds
+      setTimer && freshOvertimeCap && isChimeFresh(setTimerOvertimeCapAt(setTimer), realNow)
+        ? setTimer.durationSeconds + SET_TIMER_MAX_OVERTIME_SECONDS
         : null,
     notifiedKeys: nextNotifiedKeys,
   };

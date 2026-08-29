@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { RestTimerTrack, SetTimerState } from '@/domain/models';
+import { SET_TIMER_MAX_OVERTIME_SECONDS } from '@/domain/set-timer';
 import {
   decideTimerNotifications,
   isChimeFresh,
@@ -140,24 +141,36 @@ describe('Ablauf einer Pause', () => {
 });
 
 describe('Ablauf des Satz-Timers', () => {
-  it('meldet ihn und gibt die volle Dauer zum Eintragen zurück', () => {
+  /** Der Zeitpunkt, an dem die Überzeit ausgeschöpft ist. */
+  const CAP_AT = NOW + SET_TIMER_MAX_OVERTIME_SECONDS * 1000;
+
+  it('meldet ihn, trägt aber nichts ein', () => {
+    /*
+     * Der Ablauf ist das Signal, nicht das Ende: die Uhr zählt weiter, und was
+     * gehalten wurde, entscheidet erst das Stoppen. Vorher stand hier immer
+     * exakt die Vorgabe im Satz - und die Sekundenkurve war eine Waagerechte.
+     */
     const result = decide({ setTimer: setTimer() });
 
     expect(result.vibrate).toEqual([180, 90, 180]);
     expect(result.chime).toBe(true);
     expect(result.speak).toBeNull();
-    expect(result.finishSetTimerSeconds).toBe(60);
+    expect(result.finishSetTimerSeconds).toBeNull();
   });
 
-  it('schließt ihn nur einmal ab', () => {
-    // Zwischen dem Abschließen und dem nächsten Emit der Live-Query tickt die
-    // Sekunde weiter - ohne Merker liefe die Aktion zweimal.
+  it('meldet auch in der Überzeit nicht ein zweites Mal', () => {
     const timer = setTimer();
     const first = decide({ setTimer: timer });
-    const second = decide({ setTimer: timer, notifiedKeys: first.notifiedKeys });
+    const second = decide({
+      setTimer: timer,
+      now: NOW + 12_000,
+      realNow: NOW + 12_000,
+      notifiedKeys: first.notifiedKeys,
+    });
 
-    expect(second.finishSetTimerSeconds).toBeNull();
     expect(second.vibrate).toBeNull();
+    expect(second.chime).toBe(false);
+    expect(second.finishSetTimerSeconds).toBeNull();
   });
 
   it('fasst ihn mit einer gleichzeitig abgelaufenen Pause zu einem Signal zusammen', () => {
@@ -165,27 +178,64 @@ describe('Ablauf des Satz-Timers', () => {
 
     expect(result.vibrate).toEqual([180, 90, 180]);
     expect(result.chime).toBe(true);
-    expect(result.finishSetTimerSeconds).toBe(60);
   });
 
-  it('lässt sich von einer gleich endenden Pause nicht abschließen', () => {
-    // Die Zuordnung läuft über den Schlüssel, nicht über den Zeitpunkt.
-    const timer = setTimer();
-    const notified = decide({ setTimer: timer }).notifiedKeys;
+  it('schließt am Deckel mit Vorgabe plus Überzeit ab', () => {
+    const result = decide({ setTimer: setTimer(), now: CAP_AT, realNow: CAP_AT });
 
-    const result = decide({
-      restTracks: [restTrack({ endsAt: NOW })],
+    expect(result.finishSetTimerSeconds).toBe(60 + SET_TIMER_MAX_OVERTIME_SECONDS);
+    // Gemeldet wurde beim Ablauf; der Deckel ist der Notausgang, kein Signal.
+    expect(result.chime).toBe(false);
+  });
+
+  it('schließt am Deckel nur einmal ab', () => {
+    // Zwischen dem Abschließen und dem nächsten Emit der Live-Query tickt die
+    // Sekunde weiter - ohne Merker liefe die Aktion zweimal.
+    const timer = setTimer();
+    const first = decide({ setTimer: timer, now: CAP_AT, realNow: CAP_AT });
+    const second = decide({
       setTimer: timer,
-      notifiedKeys: notified,
+      now: CAP_AT + 1_000,
+      realNow: CAP_AT + 1_000,
+      notifiedKeys: first.notifiedKeys,
+    });
+
+    expect(first.finishSetTimerSeconds).toBe(60 + SET_TIMER_MAX_OVERTIME_SECONDS);
+    expect(second.finishSetTimerSeconds).toBeNull();
+  });
+
+  it('trägt nichts ein, wenn die App den Deckel im Hintergrund erreicht hat', () => {
+    /*
+     * Zwei Minuten über der Vorgabe hat dann niemand gehalten - das Handy lag
+     * in der Tasche. Die Uhr bleibt bei "+02:00" stehen und wartet auf Stoppen
+     * oder Verwerfen: lieber keine Zahl als eine erfundene.
+     */
+    const result = decide({
+      setTimer: setTimer(),
+      now: CAP_AT,
+      realNow: CAP_AT + 600_000,
     });
 
     expect(result.finishSetTimerSeconds).toBeNull();
-    // Die Pause ist trotzdem neu und wird gemeldet.
+  });
+
+  it('wird von einer gleich endenden Pause nicht abgeschlossen', () => {
+    // Die Zuordnung läuft über den eigenen Schlüssel, nicht über den Zeitpunkt.
+    const result = decide({
+      restTracks: [restTrack({ endsAt: NOW })],
+      setTimer: setTimer(),
+    });
+
+    expect(result.finishSetTimerSeconds).toBeNull();
     expect(result.vibrate).toEqual([180, 90, 180]);
   });
 
   it('rührt einen Timer ohne Dauer nicht an', () => {
-    const result = decide({ setTimer: setTimer({ durationSeconds: 0 }) });
+    const result = decide({
+      setTimer: setTimer({ durationSeconds: 0 }),
+      now: CAP_AT,
+      realNow: CAP_AT,
+    });
 
     expect(result.finishSetTimerSeconds).toBeNull();
     expect(result.vibrate).toBeNull();
