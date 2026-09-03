@@ -4,8 +4,10 @@ import {
   buildSessionBlockProgress,
   buildSetRounds,
   describeExerciseTarget,
+  describeRepTargetDeviation,
   describeSetRow,
   describeSetRowValues,
+  describeSetTarget,
   setRowFallback,
   summarizeCompletedExercise,
   summarizeExerciseAsymmetry,
@@ -228,6 +230,69 @@ describe('describeExerciseTarget', () => {
     expect(
       describeExerciseTarget(exercise({ id: 'a', workSetCount: 3, targetReps: 8, targetRepsMax: 5 })),
     ).toBe('3 × 8 Wdh');
+  });
+});
+
+describe('describeSetTarget', () => {
+  it('gibt die geplante Spanne als Bereich, sonst die eine Zahl', () => {
+    expect(describeSetTarget(exercise({ id: 'a', targetReps: 8, targetRepsMax: 10 }), 'reps')).toBe('8–10');
+    expect(describeSetTarget(exercise({ id: 'a', targetReps: 8 }), 'reps')).toBe('8');
+  });
+
+  it('schweigt, wo kein Ziel geplant ist', () => {
+    const ohneZiel = exercise({ id: 'a' });
+
+    expect(describeSetTarget(ohneZiel, 'reps')).toBeUndefined();
+    expect(describeSetTarget(ohneZiel, 'weight')).toBeUndefined();
+    expect(describeSetTarget(ohneZiel, 'seconds')).toBeUndefined();
+    expect(describeSetTarget(ohneZiel, 'heightCm')).toBeUndefined();
+  });
+
+  it('schreibt Zahlen deutsch und ohne Einheit - die trägt das Feld daneben', () => {
+    const uebung = exercise({ id: 'a', targetWeight: 62.5, targetSeconds: 45, targetHeightCm: 25 });
+
+    expect(describeSetTarget(uebung, 'weight')).toBe('62,5');
+    expect(describeSetTarget(uebung, 'seconds')).toBe('45');
+    expect(describeSetTarget(uebung, 'heightCm')).toBe('25');
+  });
+
+  it('ist nicht die Vorgabe: der Platzhalter zeigt die letzte Ausführung, das Soll den Plan', () => {
+    // Genau der Unterschied, um den es geht - beide Zahlen stehen nebeneinander.
+    const uebung = exercise({ id: 'a', targetReps: 8, targetRepsMax: 10 });
+
+    expect(setRowFallback(uebung, { reps: 12 }).reps).toBe(12);
+    expect(describeSetTarget(uebung, 'reps')).toBe('8–10');
+  });
+});
+
+describe('describeRepTargetDeviation', () => {
+  it('schweigt, solange die Vorgabe das Soll trifft', () => {
+    // Der Normalfall im Ruhemodus: dieselbe Zahl stünde zweimal untereinander.
+    expect(describeRepTargetDeviation(exercise({ id: 'a', targetReps: 5 }), 5)).toBeUndefined();
+  });
+
+  it('nennt das Soll, wo die Vorgabe daneben liegt - nach unten wie nach oben', () => {
+    const uebung = exercise({ id: 'a', targetReps: 5 });
+
+    expect(describeRepTargetDeviation(uebung, 4)).toBe('5');
+    expect(describeRepTargetDeviation(uebung, 6)).toBe('5');
+  });
+
+  it('nimmt eine Spanne als getroffen, solange die Vorgabe darin liegt', () => {
+    const uebung = exercise({ id: 'a', targetReps: 8, targetRepsMax: 10 });
+
+    expect(describeRepTargetDeviation(uebung, 8)).toBeUndefined();
+    expect(describeRepTargetDeviation(uebung, 9)).toBeUndefined();
+    expect(describeRepTargetDeviation(uebung, 10)).toBeUndefined();
+    expect(describeRepTargetDeviation(uebung, 7)).toBe('8–10');
+    expect(describeRepTargetDeviation(uebung, 11)).toBe('8–10');
+  });
+
+  it('schweigt ohne Soll und ohne Vorgabe', () => {
+    expect(describeRepTargetDeviation(exercise({ id: 'a' }), 8)).toBeUndefined();
+    expect(
+      describeRepTargetDeviation(exercise({ id: 'a', targetReps: 5 }), undefined),
+    ).toBeUndefined();
   });
 });
 

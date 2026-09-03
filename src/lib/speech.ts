@@ -14,6 +14,9 @@
 /** Einmal pro Seitenlauf freigeschaltet - siehe [primeTimerSpeech]. */
 let primed = false;
 
+/** Eine Ansage, die noch auf ihren Versatz wartet - siehe [speakTimerAnnouncement]. */
+let pendingAnnouncement: ReturnType<typeof setTimeout> | null = null;
+
 type SpeechWindow = Window &
   typeof globalThis & {
     speechSynthesis?: SpeechSynthesis;
@@ -104,7 +107,7 @@ export function primeTimerSpeech() {
  * spät - genau das Versagen, das diese Funktion nicht haben darf. Etwas anderes
  * spricht in dieser App nicht, es geht also nie eine echte Ansage verloren.
  */
-export function speakTimerAnnouncement(text: string) {
+function speakNow(text: string) {
   if (!isTimerSpeechSupported()) {
     return;
   }
@@ -122,6 +125,36 @@ export function speakTimerAnnouncement(text: string) {
   } catch {
     // Siehe oben.
   }
+}
+
+/**
+ * Sagt einen Satz an, auf Wunsch erst nach einer Wartezeit.
+ *
+ * *Ob* und *wie lange* gewartet wird, entscheidet
+ * [decideTimerNotifications](@/domain/timer-notifications) - hier wird nur
+ * ausgeführt. Der Versatz liegt in diesem Modul und nicht im Effekt der
+ * `SessionPage`: der läuft im Sekundentakt neu, und ein Aufräumen beim
+ * Neulauf schnitte die wartende Ansage ab, bevor sie fällig wird.
+ *
+ * Eine noch wartende Ansage wird von der nächsten abgeräumt - dieselbe Haltung
+ * wie das `cancel()` darunter: es gilt, was gerade ansteht, nicht was einmal
+ * anstand.
+ */
+export function speakTimerAnnouncement(text: string, delayMs = 0) {
+  if (pendingAnnouncement !== null) {
+    clearTimeout(pendingAnnouncement);
+    pendingAnnouncement = null;
+  }
+
+  if (delayMs <= 0) {
+    speakNow(text);
+    return;
+  }
+
+  pendingAnnouncement = setTimeout(() => {
+    pendingAnnouncement = null;
+    speakNow(text);
+  }, delayMs);
 }
 
 /**

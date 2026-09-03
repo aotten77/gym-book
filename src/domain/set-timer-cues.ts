@@ -5,6 +5,10 @@
  * angesehen: die Restzeit steht nur auf dem Bildschirm. Zwei Marken sagen sie
  * an, ohne dass man hinsehen muss - Halbzeit und die letzten zehn Sekunden.
  *
+ * Der Ablauf gehört nicht hierher: die dritte Ansage ("Ende") entsteht in
+ * [timer-notifications.ts], weil [findDueSetTimerCue] ab `endsAt` schweigt und
+ * dieses Modul nur *Zwischen*ansagen kennt.
+ *
  * Rein wie [set-timer.ts]: `now` kommt als Parameter herein, hier tickt keine
  * Uhr und hier spricht auch nichts.
  */

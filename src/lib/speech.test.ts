@@ -71,3 +71,42 @@ describe('speakTimerAnnouncement', () => {
     expect(spoken).toEqual([{ text: 'Halbzeit', lang: 'de-DE', volume: 1 }]);
   });
 });
+
+describe('speakTimerAnnouncement mit Versatz', () => {
+  /*
+   * Beim Ablauf klingelt es *und* wird angesagt. Beides im selben Moment ist
+   * die Kombination, die den Ton kosten kann - also wartet die Ansage, bis der
+   * Zweiton durch ist.
+   */
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('waits for the delay before speaking', () => {
+    vi.useFakeTimers();
+    const { calls, spoken } = installSpeechStub();
+
+    speakTimerAnnouncement('Ende', 700);
+
+    expect(calls).toEqual([]);
+
+    vi.advanceTimersByTime(700);
+
+    expect(calls).toEqual(['cancel', 'speak']);
+    expect(spoken).toEqual([{ text: 'Ende', lang: 'de-DE', volume: 1 }]);
+  });
+
+  it('drops a waiting announcement when the next one comes in', () => {
+    // Es gilt, was gerade ansteht - dieselbe Haltung wie das `cancel()` im
+    // Modul. Sonst überholte eine wartende Ansage eine spätere sofortige.
+    vi.useFakeTimers();
+    const { spoken } = installSpeechStub();
+
+    speakTimerAnnouncement('Ende', 700);
+    speakTimerAnnouncement('Halbzeit');
+
+    vi.advanceTimersByTime(5_000);
+
+    expect(spoken.map((utterance) => utterance.text)).toEqual(['Halbzeit']);
+  });
+});

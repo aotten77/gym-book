@@ -70,6 +70,17 @@ interface RestModeProps {
   /** Und mit welchen Werten: "82,5 kg × 5". */
   nextValues?: string;
   /**
+   * Die Soll-Wiederholungen, wenn `nextValues` davon abweicht: "5", "8–10".
+   *
+   * `nextValues` darüber ist die *Vorgabe* - meist das, was beim letzten Mal in
+   * dieser Zeile stand, und meistens deckt sie sich mit dem Plan. Deshalb steht
+   * das Soll hier nur im Ausnahmefall: die Auskunft entsteht erst, wo die beiden
+   * Zahlen auseinandergehen. Was das heißt, entscheidet
+   * `describeRepTargetDeviation` - hier kommt wie bei `nextValues` nur die
+   * fertige Zeichenkette an.
+   */
+  nextTargetReps?: string;
+  /**
    * Ob an diesem kommenden Satz eine Steigerung möglich ist.
    *
    * Nur Anzeige - während der Pause wird die Scheibe aufgelegt, nicht getippt.
@@ -129,6 +140,7 @@ export function RestMode({
   restLabel,
   nextLabel,
   nextValues,
+  nextTargetReps,
   nextHint,
   outlook,
   isMinimized,
@@ -437,6 +449,34 @@ export function RestMode({
                     Danach: {nextLabel}
                   </p>
                 )}
+                {/*
+                  Das Soll, wenn die Vorgabe darüber daneben liegt.
+
+                  Nur dann: deckt sich beides - der Normalfall -, wäre die Zeile
+                  eine Wiederholung der Zahl darüber. Und weil sie nur im
+                  Ausnahmefall erscheint, trägt sie ihn auch: die Zahl ist groß
+                  und limette, während "Soll" und "Wdh" gedämpftes Papier
+                  bleiben. Das ist die *zweite* Limettenfläche auf diesem
+                  Bildschirm neben dem Balken und die einzige Ausnahme von der
+                  Ein-Feld-Regel - sie ist erkauft damit, dass hier fast immer
+                  nichts steht.
+
+                  `aria-hidden` wie alle Zahlen hier: die zugängliche Auskunft
+                  trägt die Satzzeile im Sheet.
+                */}
+                {nextTargetReps ? (
+                  <p
+                    aria-hidden="true"
+                    data-rest-target=""
+                    className="mt-1.5 flex items-baseline justify-center gap-1.5 text-[13px] font-bold text-accent-contrast/70"
+                  >
+                    Soll
+                    <span className="font-display text-[26px] font-extrabold leading-none tabular-nums text-highlight">
+                      {nextTargetReps}
+                    </span>
+                    Wdh
+                  </p>
+                ) : null}
                 {/*
                   Die Marke, damit die Scheibe während der Pause aufgelegt
                   werden kann. Behandelt wie die "Danach ·"-Zeile darüber:

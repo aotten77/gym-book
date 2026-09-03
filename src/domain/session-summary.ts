@@ -1,6 +1,7 @@
 import { sortSetLogs } from '@/domain/history';
 import type { SetKind, WorkoutSessionExercise, WorkoutSetLog } from '@/domain/models';
 import { calculateAsymmetryPercent } from '@/domain/session';
+import type { SetLogFieldKey } from '@/domain/set-log-draft';
 import type { SupersetBlock } from '@/domain/superset';
 import { formatNumber, formatSideLabel } from '@/lib/format';
 
@@ -333,6 +334,69 @@ export function describeRepRange(targetReps: number, targetRepsMax?: number): st
   return typeof targetRepsMax === 'number' && targetRepsMax > targetReps
     ? `${formatNumber(targetReps)}–${formatNumber(targetRepsMax)}`
     : formatNumber(targetReps);
+}
+
+/**
+ * Das Soll eines einzelnen Feldes, wie es in der Wertebox neben dem Wert
+ * steht: `8–10`, `62,5`, `45`. Ohne Einheit - die trägt das `<label>` der Box.
+ *
+ * Bewusst *nicht* `setRowFallback`: der ist die Vorgabe (die letzte Ausführung
+ * schlägt das Ziel) und damit genau die Zahl, die als Platzhalter im Feld
+ * steht. Genau daneben soll das Geplante stehen, sonst zeigten beide dasselbe
+ * und der Vergleich, um den es geht, wäre unmöglich.
+ */
+export function describeSetTarget(
+  exercise: Pick<
+    WorkoutSessionExercise,
+    'targetReps' | 'targetRepsMax' | 'targetSeconds' | 'targetWeight' | 'targetHeightCm'
+  >,
+  field: SetLogFieldKey,
+): string | undefined {
+  if (field === 'reps') {
+    return typeof exercise.targetReps === 'number'
+      ? describeRepRange(exercise.targetReps, exercise.targetRepsMax)
+      : undefined;
+  }
+
+  const value =
+    field === 'seconds'
+      ? exercise.targetSeconds
+      : field === 'weight'
+        ? exercise.targetWeight
+        : exercise.targetHeightCm;
+
+  return typeof value === 'number' ? formatNumber(value) : undefined;
+}
+
+/**
+ * Die Soll-Wiederholungen - aber nur, wenn die Vorgabe daneben liegt.
+ *
+ * Im Ruhemodus steht die Vorgabe der kommenden Zeile groß auf dem Schirm, und
+ * meistens *ist* sie das Geplante. Sie dann noch einmal darunter zu wiederholen
+ * wäre Lärm; die Auskunft entsteht erst in dem Fall, in dem beide Zahlen
+ * auseinandergehen. Anders als die Klammer in der Wertebox, die immer steht:
+ * dort vergleicht man ein Feld, hier wartet man.
+ *
+ * Eine Spanne gilt als getroffen, solange die Vorgabe darin liegt - bei 8–10
+ * sind 9 Wiederholungen keine Abweichung, sondern der Plan.
+ */
+export function describeRepTargetDeviation(
+  exercise: Pick<WorkoutSessionExercise, 'targetReps' | 'targetRepsMax'>,
+  plannedReps: number | undefined,
+): string | undefined {
+  const { targetReps, targetRepsMax } = exercise;
+
+  if (typeof targetReps !== 'number' || typeof plannedReps !== 'number') {
+    return undefined;
+  }
+
+  const ceiling = targetRepsMax ?? targetReps;
+
+  if (plannedReps >= targetReps && plannedReps <= ceiling) {
+    return undefined;
+  }
+
+  return describeRepRange(targetReps, targetRepsMax);
 }
 
 /**

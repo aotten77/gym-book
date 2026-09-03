@@ -4,6 +4,8 @@ import { SET_TIMER_MAX_OVERTIME_SECONDS } from '@/domain/set-timer';
 import {
   decideTimerNotifications,
   isChimeFresh,
+  EXPIRY_SPEECH_DELAY_MS,
+  SET_TIMER_END_SPEECH,
   type TimerNotificationsInput,
 } from '@/domain/timer-notifications';
 
@@ -154,8 +156,86 @@ describe('Ablauf des Satz-Timers', () => {
 
     expect(result.vibrate).toEqual([180, 90, 180]);
     expect(result.chime).toBe(true);
+    // Still gestartet: der Helfer setzt kein `cuesEnabled`, also bleibt es beim
+    // Ton. Die Ansage hängt an der Startart, nicht am Ablauf.
     expect(result.speak).toBeNull();
     expect(result.finishSetTimerSeconds).toBeNull();
+  });
+
+  it('sagt "Ende", wenn der Lauf mit Ansagen gestartet wurde', () => {
+    /*
+     * Der Zweiton geht im Gym unter - laute Umgebung, Klingelschalter auf
+     * stumm, und auf iOS gibt es die Vibration daneben gar nicht. Ausgerechnet
+     * das Signal, auf das man reagieren muss, kam damit am seltensten an.
+     */
+    const result = decide({ setTimer: setTimer({ cuesEnabled: true }) });
+
+    expect(result.speak).toBe(SET_TIMER_END_SPEECH);
+    expect(result.chime).toBe(true);
+    expect(result.vibrate).toEqual([180, 90, 180]);
+  });
+
+  it('lässt dem Ton den Vortritt und sagt versetzt an', () => {
+    // Sprache und AudioContext im selben Moment sind die Kombination, die den
+    // Ton kosten kann.
+    const result = decide({ setTimer: setTimer({ cuesEnabled: true }) });
+
+    expect(result.speakDelayMs).toBe(EXPIRY_SPEECH_DELAY_MS);
+  });
+
+  it('sagt ohne Versatz an, wenn gar kein Ton spielt', () => {
+    // Der Schalter in den Einstellungen nimmt den Ton, nicht die Sprache - und
+    // ohne Ton gibt es nichts zu umgehen.
+    const result = decide({ setTimer: setTimer({ cuesEnabled: true }), soundEnabled: false });
+
+    expect(result.speak).toBe(SET_TIMER_END_SPEECH);
+    expect(result.chime).toBe(false);
+    expect(result.speakDelayMs).toBe(0);
+  });
+
+  it('sagt nichts, wenn die App den Ablauf erst aus dem Hintergrund entdeckt', () => {
+    // Dieselbe Frische wie der Ton: ein "Ende" für einen Timer von vor zwanzig
+    // Minuten ist ein Schreck, kein Hinweis.
+    const result = decide({
+      setTimer: setTimer({ cuesEnabled: true }),
+      realNow: NOW + 600_000,
+    });
+
+    expect(result.speak).toBeNull();
+    expect(result.chime).toBe(false);
+    // Die Vibration meldet auch nachträglich - "der Timer ist um" bleibt wahr.
+    expect(result.vibrate).toEqual([180, 90, 180]);
+  });
+
+  it('sagt "Ende" nur einmal', () => {
+    const timer = setTimer({ cuesEnabled: true });
+    const first = decide({ setTimer: timer });
+    const second = decide({
+      setTimer: timer,
+      now: NOW + 12_000,
+      realNow: NOW + 12_000,
+      notifiedKeys: first.notifiedKeys,
+    });
+
+    expect(first.speak).toBe(SET_TIMER_END_SPEECH);
+    expect(second.speak).toBeNull();
+  });
+
+  it('lässt eine abgelaufene Pause kein "Ende" auslösen', () => {
+    /*
+     * In `expiries` liegen beide nebeneinander. Angesagt wird nur der
+     * Satz-Timer: eine Pause hat kein Ende, sie ist der Moment, in dem es
+     * weitergeht.
+     */
+    const result = decide({
+      restTracks: [restTrack()],
+      // 50 Sekunden Rest bei 60 Sekunden Dauer: weder abgelaufen noch auf
+      // einer der beiden Marken.
+      setTimer: setTimer({ cuesEnabled: true, endsAt: NOW + 50_000 }),
+    });
+
+    expect(result.chime).toBe(true);
+    expect(result.speak).toBeNull();
   });
 
   it('meldet auch in der Überzeit nicht ein zweites Mal', () => {

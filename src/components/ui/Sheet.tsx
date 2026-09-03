@@ -1,6 +1,13 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
+import { FieldNavigationBar } from '@/components/ui/FieldNavigationBar';
+import {
+  collectNavigableFields,
+  findFieldIndex,
+  isNavigableField,
+  moveFieldFocus,
+} from '@/lib/field-navigation';
 import { cn } from '@/lib/utils';
 
 /**
@@ -53,6 +60,13 @@ interface SheetProps {
   /** Fuß, der über der Tastatur stehen bleibt. */
   footer?: ReactNode;
   /**
+   * Blendet über dem Fuß eine Leiste ein, solange ein Feld den Fokus hat.
+   *
+   * Bewusst opt-in: sie kostet 44px im Fuß, und das lohnt nur dort, wo mehrere
+   * Felder untereinander stehen und die Tastatur die unteren verdeckt.
+   */
+  fieldNavigation?: boolean;
+  /**
    * Beschriftung des Schließen-Knopfes.
    *
    * Im Training schließt man eine Übung, in der Planung das Bearbeiten - der
@@ -77,6 +91,7 @@ export function Sheet({
   label,
   header,
   footer,
+  fieldNavigation,
   closeLabel = 'Übung schließen',
   onClose,
   children,
@@ -85,6 +100,55 @@ export function Sheet({
   const [dragOffset, setDragOffset] = useState(0);
   const dragStartRef = useRef<number | null>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
+  const surfaceRef = useRef<HTMLDivElement>(null);
+  /*
+   * Wo der Fokus in der Feldkette steht - `null`, solange er nirgends darin
+   * steht. Nur daran hängt die Leiste: sie erscheint mit der Tastatur und
+   * verschwindet mit ihr.
+   */
+  const [fieldPosition, setFieldPosition] = useState<{ index: number; count: number } | null>(null);
+
+  const syncFieldPosition = useCallback(() => {
+    const surface = surfaceRef.current;
+    const active = surface?.ownerDocument.activeElement ?? null;
+
+    if (!surface || !isNavigableField(active) || !surface.contains(active)) {
+      setFieldPosition(null);
+      return;
+    }
+
+    const fields = collectNavigableFields(surface);
+    setFieldPosition({ index: findFieldIndex(fields, active), count: fields.length });
+  }, []);
+
+  /*
+   * `focusout` feuert vor dem `focusin` des Ziels - der Blick auf
+   * `document.activeElement` fiele darin also immer auf den Body und die Leiste
+   * flackerte bei jedem Sprung. Deshalb wird erst im nächsten Frame gefragt,
+   * wenn der Fokus angekommen ist.
+   */
+  useEffect(() => {
+    if (!open || !fieldNavigation) {
+      setFieldPosition(null);
+      return undefined;
+    }
+
+    let frame = 0;
+    const schedule = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(syncFieldPosition);
+    };
+
+    document.addEventListener('focusin', schedule);
+    document.addEventListener('focusout', schedule);
+    schedule();
+
+    return () => {
+      cancelAnimationFrame(frame);
+      document.removeEventListener('focusin', schedule);
+      document.removeEventListener('focusout', schedule);
+    };
+  }, [open, fieldNavigation, syncFieldPosition]);
 
   useEffect(() => {
     if (!open) {
@@ -151,6 +215,7 @@ export function Sheet({
       style={{ top: viewport.offsetTop, height: viewport.height }}
     >
       <div
+        ref={surfaceRef}
         role="dialog"
         aria-modal="true"
         aria-label={label}
@@ -199,8 +264,29 @@ export function Sheet({
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4">{children}</div>
 
-        {footer ? (
+        {footer || fieldPosition ? (
           <div className="shrink-0 border-t border-line bg-surface px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3">
+            {/*
+              Über dem Fuß, nicht darunter: unter dem großen Knopf liegt nur
+              noch Rand - siehe [SessionPage]. Und die Pausen-Chips bleiben
+              stehen, weil im geöffneten Sheet der erste von ihnen das eine
+              `role="timer"` trägt.
+            */}
+            {fieldPosition ? (
+              <FieldNavigationBar
+                canGoPrevious={fieldPosition.index > 0}
+                canGoNext={fieldPosition.index < fieldPosition.count - 1}
+                onPrevious={() => moveFieldFocus(surfaceRef.current, -1)}
+                onNext={() => moveFieldFocus(surfaceRef.current, 1)}
+                onDismiss={() => {
+                  const active = surfaceRef.current?.ownerDocument.activeElement;
+
+                  if (active instanceof HTMLElement) {
+                    active.blur();
+                  }
+                }}
+              />
+            ) : null}
             {footer}
           </div>
         ) : null}

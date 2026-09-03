@@ -31,6 +31,27 @@ import { SET_TIMER_MAX_OVERTIME_SECONDS } from '@/domain/set-timer';
 export const CHIME_MAX_DELAY_MS = 4000;
 
 /**
+ * Was beim Ablauf des Satz-Timers gesagt wird.
+ *
+ * Der Zweiton allein reicht nicht: im Gym liegt das Telefon neben der Matte, die
+ * Umgebung ist laut, und auf iOS trägt der Ton allein, weil Safari die Vibration
+ * gar nicht kennt. Genau das Signal, auf das man reagieren muss, ging damit am
+ * häufigsten unter.
+ */
+export const SET_TIMER_END_SPEECH = 'Ende';
+
+/**
+ * Abstand zwischen Zweiton und Ansage.
+ *
+ * Der Chime läuft rund 0,49 Sekunden (siehe `CHIME_TONES` in [sound.ts]). Eine
+ * gesprochene Ansage und ein Ton im selben Moment sind die Kombination, die den
+ * Ton kosten kann - also erst klingelt es, dann wird bestätigt. Die Reihenfolge
+ * ist auch inhaltlich die richtige: der Zweiton markiert die Grenze scharf, die
+ * Ansage sagt hinterher, welche Grenze das war.
+ */
+export const EXPIRY_SPEECH_DELAY_MS = 700;
+
+/**
  * Ob ein abgelaufener Timer noch einen Ton wert ist.
  *
  * Die Vibration ist davon ausdrücklich nicht betroffen - sie meldet auch
@@ -71,8 +92,16 @@ export interface TimerNotifications {
   /** Muster für `navigator.vibrate`, oder nichts. */
   vibrate: number[] | null;
   chime: boolean;
-  /** Der Ansagetext, oder nichts. Der Ablauf sagt nie etwas. */
+  /** Der Ansagetext, oder nichts. */
   speak: string | null;
+  /**
+   * Wie lange die Ansage warten soll, bevor sie gesprochen wird.
+   *
+   * Nur der Ablauf des Satz-Timers setzt hier etwas: er klingelt *und* sagt an,
+   * und beides im selben Moment ist die Kombination, die den Ton kosten kann.
+   * Eine Zwischenansage kommt allein und wartet deshalb nicht.
+   */
+  speakDelayMs: number;
   /**
    * Gesetzt, wenn der Satz-Timer seine Überzeit ausgeschöpft hat: Vorgabe plus
    * Deckel gehören in den Satz.
@@ -190,6 +219,30 @@ export function decideTimerNotifications({
 
   const hasFreshExpiry = freshExpiries.length > 0;
 
+  /*
+   * Der Ablauf des Satz-Timers wird aus dem Topf wieder herausgefischt: in
+   * `expiries` liegt er neben den Pausen und ist dort nicht mehr zu
+   * unterscheiden, angesagt wird aber nur er. Eine Pause hat kein "Ende" - sie
+   * ist der Moment, in dem es weitergeht, und dafür steht der Zweiton.
+   *
+   * Angesagt wird nur, was der Nutzer beim Starten gewählt hat (`cuesEnabled`,
+   * der Knopf mit dem Megafon) - schon deshalb, weil [primeTimerSpeech] nur auf
+   * diesem Weg gelaufen ist. Und nur, solange es frisch ist, nach derselben
+   * Regel wie der Ton: lag die App im Hintergrund, ist ein "Ende" für einen
+   * Timer von vor zwanzig Minuten derselbe Schreck, gegen den
+   * [CHIME_MAX_DELAY_MS] existiert.
+   */
+  const setTimerExpiryKey = setTimer && setTimerExpired ? expiredSetTimerKey(setTimer) : null;
+  const speaksEnd = Boolean(
+    setTimer?.cuesEnabled &&
+      setTimerExpiryKey &&
+      freshExpiries.some((entry) => entry.key === setTimerExpiryKey) &&
+      isChimeFresh(setTimer.endsAt, realNow),
+  );
+
+  // Nur der Ablauf klingelt.
+  const chime = soundEnabled && freshExpiries.some((entry) => isChimeFresh(entry.endsAt, realNow));
+
   return {
     /*
      * Der Ablauf hat Vorrang vor der Ansage: er ist das dringendere Signal,
@@ -202,10 +255,20 @@ export function decideTimerNotifications({
       : freshCue
         ? setTimerCueVibrationPattern(freshCue)
         : null,
-    // Nur der Ablauf klingelt. Eine gesprochene Ansage und ein Ton im selben
-    // Moment sind genau die Kombination, die den Ton kosten kann.
-    chime: soundEnabled && freshExpiries.some((entry) => isChimeFresh(entry.endsAt, realNow)),
-    speak: freshCue ? setTimerCueSpeech(freshCue) : null,
+    chime,
+    /*
+     * Der Ablauf hat auch hier Vorrang. Beides gleichzeitig kann ohnehin nicht
+     * anliegen - [findDueSetTimerCue] schweigt ab `endsAt` -, aber die
+     * Rangfolge steht trotzdem da, damit sie beim Verstellen der Schwellen
+     * nicht dem Zufall überlassen bleibt.
+     *
+     * Die Ansage hängt bewusst *nicht* an `soundEnabled`, genau wie die beiden
+     * Zwischenansagen: der Schalter in den Einstellungen schaltet den Ton aus,
+     * nicht die Sprache. Der Versatz hängt dagegen sehr wohl daran - spielt
+     * kein Ton, gibt es auch nichts zu umgehen.
+     */
+    speak: speaksEnd ? SET_TIMER_END_SPEECH : freshCue ? setTimerCueSpeech(freshCue) : null,
+    speakDelayMs: speaksEnd && chime ? EXPIRY_SPEECH_DELAY_MS : 0,
     /*
      * Am Deckel und nur einmal - und nur, wenn die App dabei wach war. Lag sie
      * im Hintergrund, hat niemand zwei Minuten über der Vorgabe gehalten; die

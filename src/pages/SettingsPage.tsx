@@ -662,7 +662,7 @@ export function SettingsPage() {
             */}
             <p className="text-sm text-content-muted">
               {isTimerSpeechSupported()
-                ? `Sätze auf Zeit lassen sich still starten oder mit gesprochenen Ansagen - dafür steht neben dem Startknopf ein zweiter mit einem Megafon. Angesagt werden die Halbzeit (ab ${SET_TIMER_HALF_CUE_MIN_SECONDS} Sekunden) und die letzten zehn (ab ${SET_TIMER_FINAL_CUE_MIN_SECONDS}) - sonst lägen beide Ansagen fast aufeinander.`
+                ? `Sätze auf Zeit lassen sich still starten oder mit gesprochenen Ansagen - dafür steht neben dem Startknopf ein zweiter mit einem Megafon. Angesagt werden die Halbzeit (ab ${SET_TIMER_HALF_CUE_MIN_SECONDS} Sekunden), die letzten zehn (ab ${SET_TIMER_FINAL_CUE_MIN_SECONDS}) - sonst lägen beide Ansagen fast aufeinander - und das Ende, kurz nach dem Ton.`
                 : 'Dieses Gerät kann nichts vorlesen - der Knopf für Ansagen bleibt im Satz deshalb abgeblendet.'}
             </p>
 

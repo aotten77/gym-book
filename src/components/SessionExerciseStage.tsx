@@ -40,6 +40,7 @@ import {
   describeExerciseTarget,
   describeSetRow,
   describeSetRowValues,
+  describeSetTarget,
   setRowFallback,
   type SetRowFallback,
 } from '@/domain/session-summary';
@@ -61,6 +62,7 @@ import {
   resolveSetTimerSeconds,
 } from '@/domain/set-timer';
 import { supportsBand, supportsSeconds } from '@/domain/tracking';
+import { moveFieldFocus } from '@/lib/field-navigation';
 import { formatSideLabel, formatTimer } from '@/lib/format';
 import { isTimerSpeechSupported } from '@/lib/speech';
 import { parseNumberInput, toInputValue } from '@/lib/number-input';
@@ -469,12 +471,19 @@ function ActiveSetEditor({
             </p>
           ) : null}
 
-          {activeFields.map(({ key }) => {
+          {activeFields.map(({ key }, index) => {
             const isInvalid = invalidFields.includes(key);
             const fieldId = `${log.id}-${key}`;
             // Zeigt, was beim letzten Mal in genau diesem Satz stand.
             const placeholder = toInputValue(lastValues?.[key]);
             const step = STEP_BY_FIELD[key];
+            /*
+             * Nur am Arbeitssatz: die Vorgabe "3 × 8–10" beschreibt
+             * `workSetCount`. Ein "Soll 8–10" über der Aufwärmzeile behauptete
+             * etwas, das der Plan an dieser Stelle nicht sagt.
+             */
+            const targetLabel =
+              log.setKind === 'work' ? describeSetTarget(exercise, key) : undefined;
 
             return (
               <div key={key} className="grid grid-cols-[3.25rem_minmax(0,1fr)_3.25rem] gap-2">
@@ -496,10 +505,51 @@ function ActiveSetEditor({
                     // Weiß, nicht die versenkte Fläche: die Bühne liegt selbst
                     // auf einem hellen Grau, und ein Feld, das sich davon kaum
                     // abhebt, sieht im Studio nicht mehr wie ein Feld aus.
-                    'flex min-h-[3.25rem] items-baseline justify-center gap-1.5 rounded-panel bg-surface px-2',
+                    'relative flex min-h-[3.25rem] items-baseline justify-center gap-1.5 rounded-panel bg-surface px-2',
                     isInvalid && 'ring-2 ring-inset ring-danger-border',
                   )}
                 >
+                  {/*
+                    Das Soll, direkt neben der Zahl, mit der man es vergleicht.
+
+                    Im Feld steht als Platzhalter, was beim letzten Mal in genau
+                    diesem Satz stand - genau darauf schaut man im Training, und
+                    genau deshalb übersieht man, was eigentlich geplant war. Das
+                    Ziel stand bisher nur einmal klein im Kopf der Bühne, einen
+                    halben Bildschirm entfernt.
+
+                    Nur die Zahl in Klammern, ohne das Wort davor: eine Klammer
+                    neben einem Wert sagt bereits "das ist die Vorgabe", und ein
+                    zweizeiliges Etikett machte aus der Box ein Formular.
+
+                    Absolut gesetzt, damit die große Zahl genau dort steht, wo
+                    sie ohne Soll stünde. Sie ist das, was aus einem Meter
+                    Entfernung getroffen werden muss - eine Randnotiz, die den
+                    Hauptdarsteller aus der Mitte schiebt, hat den Rang
+                    vertauscht.
+
+                    Ruhig, ohne Zustandsfarbe: den Vergleich macht das Auge. Eine
+                    Marke bei Abweichung bräuchte eine Regel, wann eine Spanne
+                    als getroffen gilt - bei 8–10 wären 8 Wdh sonst fälschlich
+                    ein Fehler, und "Decke erreicht" beantwortet der
+                    Steigerungshinweis darüber bereits.
+                  */}
+                  {targetLabel ? (
+                    <span
+                      id={`${fieldId}-target`}
+                      data-set-target={key}
+                      /*
+                        Kleiner nur auf sehr schmalen Geräten: bei 320px bleiben
+                        neben "82,5 kg" in 28px keine 40px übrig, und die
+                        Klammer stieße an die Zahl, die mittig stehen bleiben
+                        soll. Ab 360px - jedes iPhone ab der SE 2 - trägt sie
+                        ihre volle Größe.
+                      */
+                      className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 font-display text-[12px] font-bold tabular-nums text-content-muted min-[360px]:text-[15px]"
+                    >
+                      ({targetLabel})
+                    </span>
+                  ) : null}
                   <input
                     id={fieldId}
                     value={draft[key]}
@@ -514,6 +564,24 @@ function ActiveSetEditor({
                         void persist();
                       }
                     }}
+                    /*
+                      Die Return-Taste tut dasselbe wie das "›" der Leiste im
+                      Fuß - nur gibt es sie auf dem Zahlenblock von iOS gar
+                      nicht. Das hier ist für Hardware-Tastatur und Schreibtisch;
+                      am Telefon trägt die Leiste den Sprung.
+                    */
+                    enterKeyHint={index < activeFields.length - 1 ? 'next' : 'done'}
+                    onKeyDown={(event) => {
+                      if (event.key !== 'Enter') {
+                        return;
+                      }
+
+                      event.preventDefault();
+
+                      if (!moveFieldFocus(event.currentTarget.closest('[data-sheet]'), 1)) {
+                        event.currentTarget.blur();
+                      }
+                    }}
                     inputMode={key === 'reps' ? 'numeric' : 'decimal'}
                     placeholder={placeholder || '–'}
                     aria-invalid={isInvalid}
@@ -522,6 +590,12 @@ function ActiveSetEditor({
                         ? `${SET_LOG_FIELD_LABELS[key]} ${sideLabel}`
                         : SET_LOG_FIELD_LABELS[key]
                     }
+                    /*
+                      Das Soll hängt als Beschreibung am Feld, nicht an seinem
+                      Namen: der zugängliche Name ist die Fassung, an der die
+                      e2e mit `exact: true` greifen.
+                    */
+                    aria-describedby={targetLabel ? `${fieldId}-target` : undefined}
                     disabled={disabled}
                     size={4}
                     className={cn(
@@ -641,7 +715,7 @@ function ActiveSetEditor({
                 variant="secondary"
                 size="lg"
                 aria-label={`${formatTimer(timerSeconds)} mit Ansagen starten`}
-                title="Mit gesprochenen Ansagen: Halbzeit und die letzten zehn Sekunden"
+                title="Mit gesprochenen Ansagen: Halbzeit, die letzten zehn Sekunden und das Ende"
                 className="px-0 bg-surface text-content hover:bg-surface-hover"
                 onClick={() => onStartTimer(log.id, timerSeconds, true)}
                 disabled={hasInvalidInput || !isTimerSpeechSupported()}

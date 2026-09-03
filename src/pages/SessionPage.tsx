@@ -74,6 +74,7 @@ import { buildSupersetBlocks, moveSupersetBlock, moveWithinGroup } from '@/domai
 import {
   buildSessionBlockProgress,
   buildSetRounds,
+  describeRepTargetDeviation,
   describeSetRow,
   describeSetRowValues,
   setRowFallback,
@@ -356,7 +357,7 @@ export function SessionPage() {
     }
 
     if (notifications.speak) {
-      speakTimerAnnouncement(notifications.speak);
+      speakTimerAnnouncement(notifications.speak, notifications.speakDelayMs);
     }
 
     if (notifications.finishSetTimerSeconds !== null) {
@@ -674,15 +675,26 @@ export function SessionPage() {
   const activeSetExercise = activeSetLog
     ? orderedSessionExercises.find((item) => item.id === activeSetLog.sessionExerciseId)
     : undefined;
-  const nextValues =
+  const nextFallback =
     activeSetLog && activeSetExercise
-      ? describeSetRowValues(
-          activeSetLog,
-          setRowFallback(
-            activeSetExercise,
-            lastValues?.[activeSetExercise.exerciseId]?.setValues?.resolve(activeSetLog),
-          ),
+      ? setRowFallback(
+          activeSetExercise,
+          lastValues?.[activeSetExercise.exerciseId]?.setValues?.resolve(activeSetLog),
         )
+      : undefined;
+  const nextValues =
+    activeSetLog && nextFallback ? describeSetRowValues(activeSetLog, nextFallback) : undefined;
+  /*
+   * Und die Soll-Wiederholungen, aber nur, wo `nextValues` daneben liegt - sonst
+   * stünde dieselbe Zahl zweimal untereinander. Verglichen wird genau das, was
+   * die Zeile darüber zeigt: der eingetragene Wert, sonst die Vorgabe.
+   *
+   * Nur am Arbeitssatz, wie die Klammer in der Wertebox: "3 × 5 Wdh" beschreibt
+   * `workSetCount`, nicht das Aufwärmen.
+   */
+  const nextTargetReps =
+    activeSetExercise && activeSetLog?.setKind === 'work'
+      ? describeRepTargetDeviation(activeSetExercise, activeSetLog.reps ?? nextFallback?.reps)
       : undefined;
   /*
    * Und ob an dieser Zeile eine Steigerung möglich ist - dieselbe Frage wie im
@@ -1563,6 +1575,27 @@ export function SessionPage() {
     );
   }
 
+  /**
+   * Der Abbruch-Knopf.
+   *
+   * Steht oben *und* unten und deshalb als Funktion: zwei Kopien wären zwei
+   * Stellen, an denen sich Beschriftung und Sperre auseinanderentwickeln.
+   */
+  function renderAbortSessionButton() {
+    return (
+      <Button
+        variant="danger"
+        size="md"
+        fullWidth
+        onClick={() => void handleCloseSession('abort')}
+        disabled={isClosingSession}
+      >
+        <X size={16} />
+        Session abbrechen
+      </Button>
+    );
+  }
+
   function renderSessionControls(placement: SessionControlsPlacement) {
     const showAddExerciseForm = addExerciseFormAnchor === placement;
 
@@ -1580,6 +1613,12 @@ export function SessionPage() {
         <div className="space-y-3">
           {renderAddExerciseControl(placement, showAddExerciseForm)}
           {showAddExerciseForm ? renderAddExerciseForm() : null}
+          {/*
+            Abbrechen steht oben wie unten - man entscheidet sich dafür beim
+            Blick auf den Plan, nicht am Ende der Liste. Abschließen bleibt
+            unten allein: das ist die Handlung nach dem letzten Satz.
+          */}
+          {renderAbortSessionButton()}
         </div>
       );
     }
@@ -1609,16 +1648,7 @@ export function SessionPage() {
             <CheckCircle2 size={18} />
             {isClosingSession ? 'Wird beendet...' : 'Session abschließen'}
           </Button>
-          <Button
-            variant="danger"
-            size="md"
-            fullWidth
-            onClick={() => void handleCloseSession('abort')}
-            disabled={isClosingSession}
-          >
-            <X size={16} />
-            Session abbrechen
-          </Button>
+          {renderAbortSessionButton()}
         </div>
       </SectionCard>
     );
@@ -1806,6 +1836,13 @@ export function SessionPage() {
           ) : null
         }
         footer={renderSheetFooter()}
+        /*
+          Die Wertefelder stehen untereinander, und sobald die Tastatur aufgeht,
+          liegt das zweite darunter. iOS gibt einer vom Homescreen gestarteten
+          App weder die eigene Formularleiste noch - beim Zahlenblock - eine
+          Return-Taste; deshalb bringt der Fuß hier seine eigene mit.
+        */
+        fieldNavigation
         onClose={() => setOpenSessionBlockKey(null)}
       >
         <div className="space-y-2">
@@ -1837,6 +1874,7 @@ export function SessionPage() {
           restLabel={describeRestTrack(activeRestTrack)}
           nextLabel={activeSetLog ? describeSetRow(activeSetLog) : undefined}
           nextValues={nextValues}
+          nextTargetReps={nextTargetReps}
           nextHint={nextHint}
           /*
             Auch hier die beiden Zahlen der Einheit - während der Pause hat man

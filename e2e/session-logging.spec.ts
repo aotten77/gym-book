@@ -687,3 +687,110 @@ test.describe('Kopf der Einheit', () => {
     expect(clipped).toBe(false);
   });
 });
+
+/*
+ * Im Feld steht als Platzhalter die letzte Ausführung - genau darauf schaut
+ * man im Training, und genau deshalb übersieht man das Geplante. Das Soll
+ * steht deshalb in derselben Box daneben.
+ */
+test.describe('Das Soll in der Wertebox', () => {
+  test.beforeEach(async ({ page }) => {
+    await resetDatabase(page);
+    await seedSampleData(page);
+  });
+
+  test('steht neben dem Platzhalter und weicht sichtbar von ihm ab', async ({ page }) => {
+    await startSampleSession(page);
+    await openExerciseSheet(page, 'Front Squat');
+    await selectSetRow(page, 'Satz 1');
+
+    const sheet = page.locator('[data-sheet]');
+
+    /*
+     * Die Beispieldaten planen 3 × 5 Wdh à 82,5 kg und haben vor sechs Tagen
+     * eine Wiederholung weniger gebracht. Der Unterschied zwischen 4 und 5 ist
+     * genau das, was ohne die Soll-Angabe unsichtbar wäre.
+     */
+    await expect(sheet.locator('input[id$="-reps"]').first()).toHaveAttribute('placeholder', '4');
+    await expect(sheet.locator('[data-set-target="reps"]')).toHaveText('(5)');
+    await expect(sheet.locator('[data-set-target="weight"]')).toHaveText('(82,5)');
+  });
+
+  test('bleibt am Aufwärmsatz weg - dort schreibt der Plan nichts vor', async ({ page }) => {
+    await startSampleSession(page);
+    await openExerciseSheet(page, 'Front Squat');
+
+    // Der Aufwärmsatz ist die erste offene Zeile und liegt beim Öffnen bereits
+    // auf der Bühne. "3 × 5 Wdh" beschreibt die Arbeitssätze, nicht ihn.
+    await expect(page.getByText('Aufwärmen', { exact: true }).first()).toBeVisible();
+    await expect(page.locator('[data-set-target]')).toHaveCount(0);
+  });
+
+  test('lässt die große Zahl auf 320px mittig stehen und überlappt sie nicht', async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 640 });
+    await startSampleSession(page);
+    await openExerciseSheet(page, 'Front Squat');
+    await selectSetRow(page, 'Satz 1');
+
+    /*
+     * Das Soll ist absolut gesetzt, damit die große Zahl genau dort steht, wo
+     * sie ohne Soll stünde - sie ist der Wert, der aus einem Meter Entfernung
+     * getroffen werden muss. Geriete die Klammer zurück in den Fluss, schöbe
+     * sie die Zahl aus der Mitte, und das misst dieser Test.
+     */
+    const geometry = await page.locator('[data-set-target]').evaluateAll((elements) =>
+      elements.map((element) => {
+        const box = element.parentElement!;
+        const input = box.querySelector('input')!;
+        const unit = box.querySelector('label')!;
+        const boxRect = box.getBoundingClientRect();
+        const targetRect = element.getBoundingClientRect();
+
+        return {
+          // Wie weit die Gruppe aus Zahl und Einheit aus der Boxmitte steht.
+          offset: Math.abs(
+            (input.getBoundingClientRect().left + unit.getBoundingClientRect().right) / 2 -
+              (boxRect.left + boxRect.width / 2),
+          ),
+          // Und ob die Klammer selbst noch in der Box liegt.
+          inside: targetRect.left >= boxRect.left - 1 && targetRect.right <= boxRect.right + 1,
+        };
+      }),
+    );
+
+    expect(geometry.length).toBeGreaterThan(0);
+    for (const { offset, inside } of geometry) {
+      expect(offset).toBeLessThan(2);
+      expect(inside).toBe(true);
+    }
+  });
+
+  test('nennt das Geplante auch im Pausenmodus', async ({ page }) => {
+    await startSampleSession(page);
+    await openExerciseSheet(page, 'Front Squat');
+
+    /*
+     * Aufwärmen abhaken - danach wartet die Pause auf Satz 1, und der ist ein
+     * Arbeitssatz mit einer Vorgabe. Der Ruhemodus bleibt dabei stehen: er ist
+     * genau der Zustand, den dieser Test ansieht.
+     */
+    await page.locator('[data-sheet]').getByRole('button', { name: /abhaken$/ }).click();
+    await page.waitForTimeout(900);
+
+    const restMode = page.getByRole('dialog', { name: /^Pause · / });
+
+    await expect(restMode).toBeVisible();
+    /*
+     * Die große Zeile ist die Vorgabe der letzten Woche - 4 Wiederholungen, wo
+     * der Plan 5 sagt. Genau diese Abweichung holt das Soll auf den Schirm.
+     */
+    await expect(restMode.locator('[data-rest-values]')).toHaveText(/82,5\s*kg\s*×\s*4/);
+    await expect(restMode.locator('[data-rest-target]')).toHaveText(/^Soll\s*5\s*Wdh$/);
+  });
+
+  /*
+   * Dass die Zeile bei getroffenem Soll wieder verschwindet, entscheidet
+   * `describeRepTargetDeviation` - vier Fälle in `session-summary.test.ts`,
+   * Spanne eingeschlossen. Hier steht nur, dass die Entscheidung ankommt.
+   */
+});
