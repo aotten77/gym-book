@@ -104,7 +104,9 @@ function ExerciseDetail({ exercise }: { exercise: Exercise }) {
       ) : null}
 
       {exercise.instructions ? (
-        <p className="text-sm text-content-secondary">{exercise.instructions}</p>
+        // pre-line: eine Anleitung, die Zeile für Zeile geschrieben wurde, soll
+        // hier nicht zu einem Block zusammenfallen.
+        <p className="whitespace-pre-line text-sm text-content-secondary">{exercise.instructions}</p>
       ) : null}
 
       {exercise.tempo ? (

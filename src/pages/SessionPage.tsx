@@ -1379,6 +1379,13 @@ export function SessionPage() {
         exercise={exercise}
         exerciseLogs={sortedFocusedLogs}
         mediaAsset={mediaAssetForExercise(exercise)}
+        /*
+          Live aus der Bibliothek - `availableExercises` ist ohnehin geladen,
+          die Übungsauswahl zum Ergänzen braucht sie. Siehe die Begründung am
+          Prop, warum hier bewusst kein Snapshot steht.
+        */
+        instructions={availableExerciseById[exercise.exerciseId]?.instructions}
+        tempo={availableExerciseById[exercise.exerciseId]?.tempo}
         bandLevels={bandLevels}
         /*
           Eine Tabelle, zwei Leser: der Platzhalter im Feld nimmt `resolve`

@@ -20,6 +20,7 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { SectionCard } from '@/components/SectionCard';
 import { WeekStepper } from '@/components/WeekStepper';
 import { bootstrapAppData, seedSampleData } from '@/db/bootstrap';
+import { formatBuildVersion, readBuildInfo } from '@/lib/build-info';
 import { formatDateTime, formatNumber } from '@/lib/format';
 import { playTimerChimeFromGesture, primeTimerSound } from '@/lib/sound';
 import { isTimerSpeechSupported, speakTimerAnnouncementFromGesture } from '@/lib/speech';
@@ -61,6 +62,9 @@ interface PendingImportState {
   fileName: string;
   snapshot: DatabaseSnapshot;
 }
+
+/** Fest im Bundle - ändert sich erst mit dem nächsten Update, nie zur Laufzeit. */
+const buildInfo = readBuildInfo();
 
 export function SettingsPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -499,6 +503,30 @@ export function SettingsPage() {
             <div className="rounded-panel bg-surface p-4">
               <p className="text-xs uppercase tracking-[0.18em] text-content-muted">Tests</p>
               <p className="mt-2 text-2xl font-semibold text-content">{counts?.tests ?? 0}</p>
+            </div>
+            {/*
+              Über die volle Breite: die Commit-Nachricht ist der Teil, an dem
+              man eine Änderung wiedererkennt, und in einer halben Kachel bliebe
+              davon auf 320px ein Wort übrig. Der Hash steht trotzdem groß - er
+              ist das, was man mit `git log --oneline` vergleicht.
+            */}
+            <div data-build-version="" className="col-span-2 rounded-panel bg-surface p-4">
+              <p className="text-xs uppercase tracking-[0.18em] text-content-muted">Version</p>
+              <p
+                data-build-commit=""
+                className="mt-2 font-display text-2xl font-semibold tabular-nums text-content"
+              >
+                {formatBuildVersion(buildInfo)}
+              </p>
+              {buildInfo?.subject ? (
+                <p className="mt-1 text-sm text-content">{buildInfo.subject}</p>
+              ) : null}
+              <p className="mt-1 text-sm text-content-muted">
+                {buildInfo?.committedAt
+                  ? `Stand vom ${formatDateTime(buildInfo.committedAt)}`
+                  : 'Ohne Git gebaut - kein Stand bekannt'}
+                {buildInfo?.dirty ? ' · lokal, mit nicht committeten Änderungen' : ''}
+              </p>
             </div>
           </div>
         </SectionCard>

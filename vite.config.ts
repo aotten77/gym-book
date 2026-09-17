@@ -1,10 +1,38 @@
+import { execSync } from 'node:child_process';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 import tsconfigPaths from 'vite-tsconfig-paths';
 import { VitePWA } from 'vite-plugin-pwa';
+import type { BuildInfo } from './src/lib/build-info';
+
+function git(args: string): string | null {
+  try {
+    return execSync(`git ${args}`, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  } catch {
+    return null;
+  }
+}
+
+/*
+ * Der Stand, der ins Bundle geschrieben und in den Einstellungen angezeigt wird
+ * - siehe src/lib/build-info.ts. Scheitert Git (kein Repo, kein Binary), baut
+ * der Build trotzdem: eine fehlende Versionsanzeige ist kein Grund, nicht zu
+ * deployen. Der Checkout in der Pages-Action ist flach, aber `-1` braucht auch
+ * nur den einen Commit.
+ */
+const buildInfo: BuildInfo = {
+  commit: git('rev-parse HEAD') ?? process.env.GITHUB_SHA ?? null,
+  subject: git('log -1 --format=%s'),
+  committedAt: git('log -1 --format=%cI'),
+  builtAt: new Date().toISOString(),
+  dirty: Boolean(git('status --porcelain')),
+};
 
 // https://vite.dev/config/
 export default defineConfig({
+  define: {
+    __BUILD_INFO__: JSON.stringify(buildInfo),
+  },
   // Die App liegt auf einer eigenen Subdomain (gym.andreasotten.de, siehe
   // public/CNAME), also im Wurzelverzeichnis - nicht mehr unter dem
   // GitHub-Pages-Projektpfad /gym-book/.

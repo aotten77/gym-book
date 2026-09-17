@@ -12,6 +12,7 @@ import {
   TrendingUp,
   Unlink,
 } from 'lucide-react';
+import { ExerciseGuideBlock } from '@/components/ExerciseGuideBlock';
 import { ExerciseMedia } from '@/components/ExerciseMedia';
 import { Button, IconButton } from '@/components/ui/Button';
 import { toggleSetCompletion, updateSetLogValues } from '@/db/session-actions';
@@ -61,6 +62,7 @@ import {
   formatSetTimerClock,
   resolveSetTimerSeconds,
 } from '@/domain/set-timer';
+import { buildExerciseGuide } from '@/domain/exercise-guide';
 import { supportsBand, supportsSeconds } from '@/domain/tracking';
 import { moveFieldFocus } from '@/lib/field-navigation';
 import { formatSideLabel, formatTimer } from '@/lib/format';
@@ -856,6 +858,16 @@ interface SessionExerciseStageProps {
   /** Die Sätze dieser Übung, bereits sortiert. */
   exerciseLogs: WorkoutSetLog[];
   mediaAsset?: MediaAsset;
+  /**
+   * Anleitung und Tempo aus der Bibliothek, nicht aus einem Snapshot.
+   *
+   * Eine Anleitung beschreibt, *wie* die Übung geht, nicht, was damals galt:
+   * wer sie in der Bibliothek korrigiert, soll die Korrektur auch in der
+   * laufenden Einheit sehen. Fehlt die Übung dort (gelöscht), bleibt es bei der
+   * Workout-Notiz.
+   */
+  instructions?: string;
+  tempo?: string;
   bandLevels?: BandLevel[];
   lastSetValues?: LastSetValues;
   /** Der Satz, der gerade groß liegt - siehe SessionPage. */
@@ -902,6 +914,8 @@ export function SessionExerciseStage({
   exercise,
   exerciseLogs,
   mediaAsset,
+  instructions,
+  tempo,
   bandLevels,
   lastSetValues,
   activeSetLog,
@@ -931,6 +945,7 @@ export function SessionExerciseStage({
 }: SessionExerciseStageProps) {
   const rounds = buildSetRounds(exerciseLogs);
   const restBadges = buildRestBadges(exerciseLogs, restTracks, now);
+  const guide = buildExerciseGuide({ instructions, tempo, notes: exercise.notes });
   /*
    * Die Marke je Zeile - `byKey` und ausdrücklich nicht `resolve`.
    *
@@ -1036,6 +1051,14 @@ export function SessionExerciseStage({
           </div>
         ) : null}
       </div>
+
+      {/*
+        Die Anleitung direkt unter dem Kopf und über den Sätzen: gelesen wird
+        sie vor dem ersten Satz, und dort steht sie dann auch - siehe
+        [ExerciseGuideBlock]. Ohne Anleitung, Tempo und Notiz gibt es keinen
+        Block, statt einer leeren Zeile, die zum Aufklappen einlädt.
+      */}
+      {guide ? <ExerciseGuideBlock guide={guide} /> : null}
 
       {/*
         Beide Seiten der laufenden Runde nebeneinander: bei einer einbeinigen

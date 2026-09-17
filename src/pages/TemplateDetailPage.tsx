@@ -140,7 +140,9 @@ function TemplateExerciseMeta({
           {bandName ? ` · ${bandName}` : ''}
           {item.restSeconds ? ` · Pause ${item.restSeconds}s` : ''}
         </p>
-        {item.notes ? <p className="mt-2 text-sm text-content-muted">{item.notes}</p> : null}
+        {item.notes ? (
+          <p className="mt-2 whitespace-pre-line text-sm text-content-muted">{item.notes}</p>
+        ) : null}
       </div>
     </div>
   );
@@ -921,7 +923,7 @@ export function TemplateDetailPage() {
                     {selectedExistingExercise.unilateral ? 'unilateral' : 'beidseitig'}
                   </p>
                   {selectedExistingExercise.instructions ? (
-                    <p className="mt-2">{selectedExistingExercise.instructions}</p>
+                    <p className="mt-2 whitespace-pre-line">{selectedExistingExercise.instructions}</p>
                   ) : null}
                   <div className="mt-4 flex flex-wrap gap-2">
                     <label className="min-h-touch inline-flex items-center justify-center rounded-control border border-line px-3 py-2 text-sm text-content-secondary transition hover:bg-surface-hover">
