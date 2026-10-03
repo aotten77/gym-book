@@ -898,7 +898,8 @@ interface SessionExerciseStageProps {
   onClearSetTimer: () => void;
   onRequestDeleteSetLog: (log: WorkoutSetLog, exerciseName: string) => void;
   onAddSetLog: (sessionExerciseId: string) => void;
-  onOpenMedia: (mediaAsset: MediaAsset, alt: string) => void;
+  /** Öffnet das Info-Modal dieser Übung - vom Thumbnail und von der Ausführungszeile. */
+  onOpenInfo: (sessionExerciseId: string) => void;
 }
 
 /**
@@ -941,7 +942,7 @@ export function SessionExerciseStage({
   onClearSetTimer,
   onRequestDeleteSetLog,
   onAddSetLog,
-  onOpenMedia,
+  onOpenInfo,
 }: SessionExerciseStageProps) {
   const rounds = buildSetRounds(exerciseLogs);
   const restBadges = buildRestBadges(exerciseLogs, restTracks, now);
@@ -981,8 +982,14 @@ export function SessionExerciseStage({
         {mediaAsset ? (
           <button
             type="button"
-            onClick={() => onOpenMedia(mediaAsset, exercise.exerciseNameSnapshot)}
-            aria-label={`Bild von ${exercise.exerciseNameSnapshot} vergrößern`}
+            onClick={(event) => {
+              // Wie in [ExerciseGuideBlock]: Safari fokussiert den Knopf beim
+              // Antippen nicht, das Modal braucht ihn aber als Rücksprungziel.
+              event.currentTarget.focus();
+              onOpenInfo(exercise.id);
+            }}
+            aria-haspopup="dialog"
+            aria-label={`Übung ansehen: ${exercise.exerciseNameSnapshot}`}
             className="shrink-0 overflow-hidden rounded-panel focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
             <ExerciseMedia
@@ -1054,11 +1061,12 @@ export function SessionExerciseStage({
 
       {/*
         Die Anleitung direkt unter dem Kopf und über den Sätzen: gelesen wird
-        sie vor dem ersten Satz, und dort steht sie dann auch - siehe
-        [ExerciseGuideBlock]. Ohne Anleitung, Tempo und Notiz gibt es keinen
-        Block, statt einer leeren Zeile, die zum Aufklappen einlädt.
+        sie vor dem ersten Satz, und dort steht sie dann auch - als Zeile, die
+        das Info-Modal öffnet, siehe [ExerciseGuideBlock]. Ohne Anleitung,
+        Tempo und Notiz gibt es keine Zeile; ein Bild allein öffnet das Modal
+        über das Thumbnail.
       */}
-      {guide ? <ExerciseGuideBlock guide={guide} /> : null}
+      {guide ? <ExerciseGuideBlock guide={guide} onOpen={() => onOpenInfo(exercise.id)} /> : null}
 
       {/*
         Beide Seiten der laufenden Runde nebeneinander: bei einer einbeinigen

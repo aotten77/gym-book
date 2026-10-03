@@ -5,9 +5,9 @@ import { CheckCircle2, Clock3, Plus, Timer, X } from 'lucide-react';
 import { Alert } from '@/components/Alert';
 import { AppShell } from '@/components/AppShell';
 import { RestMode } from '@/components/RestMode';
+import { ExerciseInfoDialog } from '@/components/ExerciseInfoDialog';
 import { ExerciseMedia } from '@/components/ExerciseMedia';
 import { ExerciseTargetFields } from '@/components/ExerciseTargetFields';
-import { MediaLightbox } from '@/components/MediaLightbox';
 import { SectionCard } from '@/components/SectionCard';
 import { Button, IconButton } from '@/components/ui/Button';
 import { CheckboxField, SelectField, TextArea } from '@/components/ui/Field';
@@ -43,6 +43,7 @@ import {
 } from '@/db/session-timer-actions';
 import { loadLastValuesForExercises } from '@/db/history-queries';
 import { prefillTargetReps } from '@/domain/exercise-defaults';
+import { buildExerciseGuide } from '@/domain/exercise-guide';
 import { setLogKey, sortSetLogs } from '@/domain/history';
 import { hasProgressionHint } from '@/domain/progression-hint';
 import type {
@@ -201,10 +202,11 @@ export function SessionPage() {
   const [sessionExerciseOrder, setSessionExerciseOrder] = useState<string[]>([]);
   const [pendingSetLogDelete, setPendingSetLogDelete] = useState<PendingSetLogDelete | null>(null);
   const [isDeletingSetLog, setIsDeletingSetLog] = useState(false);
-  const [mediaPreview, setMediaPreview] = useState<{
-    mediaAsset: MediaAsset;
-    alt: string;
-  } | null>(null);
+  /**
+   * Welche Session-Übung ihr Info-Modal offen hat - ephemer wie das Sheet
+   * selbst: nach einem Reload ist es zu.
+   */
+  const [infoExerciseId, setInfoExerciseId] = useState<string | null>(null);
   const [exerciseForm, setExerciseForm] = useState<SessionExerciseFormState>(
     defaultSessionExerciseFormState,
   );
@@ -450,6 +452,10 @@ export function SessionPage() {
     // Die Liste selbst ist die Abhängigkeit; als String stabil vergleichbar.
     [sessionMediaIds.join(',')],
   );
+
+  const infoExercise = infoExerciseId
+    ? orderedSessionExercises.find((item) => item.id === infoExerciseId)
+    : undefined;
 
   function mediaAssetForExercise(sessionExercise?: WorkoutSessionExercise) {
     const mediaAssetId = sessionExercise
@@ -1417,7 +1423,7 @@ export function SessionPage() {
         onClearSetTimer={() => void clearSetTimer(sessionId)}
         onRequestDeleteSetLog={handleRequestDeleteSetLog}
         onAddSetLog={(sessionExerciseId) => void handleAddSetLog(sessionExerciseId)}
-        onOpenMedia={(mediaAsset, alt) => setMediaPreview({ mediaAsset, alt })}
+        onOpenInfo={setInfoExerciseId}
       />
     );
   }
@@ -1928,10 +1934,20 @@ export function SessionPage() {
         />
       ) : null}
 
-      <MediaLightbox
-        mediaAsset={mediaPreview?.mediaAsset}
-        alt={mediaPreview?.alt ?? ''}
-        onClose={() => setMediaPreview(null)}
+      <ExerciseInfoDialog
+        open={Boolean(infoExercise)}
+        name={infoExercise?.exerciseNameSnapshot ?? ''}
+        mediaAsset={mediaAssetForExercise(infoExercise)}
+        guide={
+          infoExercise
+            ? buildExerciseGuide({
+                instructions: availableExerciseById[infoExercise.exerciseId]?.instructions,
+                tempo: availableExerciseById[infoExercise.exerciseId]?.tempo,
+                notes: infoExercise.notes,
+              })
+            : null
+        }
+        onClose={() => setInfoExerciseId(null)}
       />
 
       <ConfirmDialog
