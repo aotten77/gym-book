@@ -28,6 +28,8 @@ interface UiStoreState {
   isOnline: boolean;
   isOfflineReady: boolean;
   isUpdateAvailable: boolean;
+  /** Cloudflare Access hat die Sitzung beendet - siehe [access-session.ts]. */
+  isAccessExpired: boolean;
   deferredInstallPrompt: BeforeInstallPromptEvent | null;
   setActiveSessionExerciseId: (sessionExerciseId: string | null) => void;
   setOpenSessionBlockKey: (blockKey: string | null) => void;
@@ -35,6 +37,7 @@ interface UiStoreState {
   setOnlineStatus: (isOnline: boolean) => void;
   setOfflineReady: (isOfflineReady: boolean) => void;
   setUpdateAvailable: (isUpdateAvailable: boolean) => void;
+  setAccessExpired: (isAccessExpired: boolean) => void;
   setDeferredInstallPrompt: (event: BeforeInstallPromptEvent | null) => void;
 }
 
@@ -53,6 +56,7 @@ export const useUiStore = create<UiStoreState>((set) => ({
   isOnline: true,
   isOfflineReady: false,
   isUpdateAvailable: false,
+  isAccessExpired: false,
   deferredInstallPrompt: null,
   setActiveSessionExerciseId: (activeSessionExerciseId) => set({ activeSessionExerciseId }),
   setOpenSessionBlockKey: (openSessionBlockKey) => set({ openSessionBlockKey }),
@@ -60,5 +64,6 @@ export const useUiStore = create<UiStoreState>((set) => ({
   setOnlineStatus: (isOnline) => set({ isOnline }),
   setOfflineReady: (isOfflineReady) => set({ isOfflineReady }),
   setUpdateAvailable: (isUpdateAvailable) => set({ isUpdateAvailable }),
+  setAccessExpired: (isAccessExpired) => set({ isAccessExpired }),
   setDeferredInstallPrompt: (deferredInstallPrompt) => set({ deferredInstallPrompt }),
 }));

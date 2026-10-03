@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { registerSW } from 'virtual:pwa-register';
 import App from './App';
 import './index.css';
+import { checkAccessSession } from '@/lib/access-session';
 import { watchScreenOrientation } from '@/lib/orientation';
 import { useUiStore } from '@/store/ui-store';
 
@@ -35,12 +36,30 @@ const updateServiceWorker = registerSW({
         return;
       }
 
-      void registration.update().catch((error) => {
-        // Offline ist der Normalfall dieser App, kein Fehler fürs Log.
-        if (navigator.onLine) {
-          console.error('Update-Prüfung fehlgeschlagen', error);
-        }
-      });
+      void registration
+        .update()
+        .then(() => {
+          // Die Prüfung kam durch, also gilt die Sitzung - ein stehengebliebenes
+          // Banner muss dann auch wieder weg.
+          useUiStore.getState().setAccessExpired(false);
+        })
+        .catch((error) => {
+          // Offline ist der Normalfall dieser App, kein Fehler fürs Log.
+          if (navigator.onLine) {
+            console.error('Update-Prüfung fehlgeschlagen', error);
+          }
+
+          /*
+           * Der häufigste Grund fürs Scheitern ist kein Fehler im Update,
+           * sondern eine abgelaufene Access-Sitzung: Cloudflare leitet um, und
+           * ein Service-Worker-Skript darf nicht umgeleitet werden. Das ist von
+           * außen nicht zu sehen, weil die App weiter aus dem Precache läuft -
+           * also wird hier nachgefragt und im Zweifel gesagt, was los ist.
+           */
+          void checkAccessSession().then((state) => {
+            useUiStore.getState().setAccessExpired(state === 'expired');
+          });
+        });
     };
 
     checkForUpdate();

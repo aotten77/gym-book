@@ -10,6 +10,7 @@ import {
   Dumbbell,
   FlaskConical,
   FolderKanban,
+  LogIn,
   RefreshCcw,
   Settings,
   WifiOff,
@@ -18,6 +19,7 @@ import {
 import { ActiveSessionBar } from '@/components/ActiveSessionBar';
 import { Button, IconButton } from '@/components/ui/Button';
 import { db } from '@/db/appDb';
+import { ACCESS_LOGIN_PATH } from '@/lib/access-session';
 import { cn } from '@/lib/utils';
 import { keepScreenAwake } from '@/lib/wake-lock';
 import { useUiStore } from '@/store/ui-store';
@@ -78,6 +80,7 @@ export function AppShell({ title, eyebrow, children }: AppShellProps) {
   const isOnline = useUiStore((state) => state.isOnline);
   const isOfflineReady = useUiStore((state) => state.isOfflineReady);
   const isUpdateAvailable = useUiStore((state) => state.isUpdateAvailable);
+  const isAccessExpired = useUiStore((state) => state.isAccessExpired);
   const deferredInstallPrompt = useUiStore((state) => state.deferredInstallPrompt);
   const setDeferredInstallPrompt = useUiStore((state) => state.setDeferredInstallPrompt);
   const setOfflineReady = useUiStore((state) => state.setOfflineReady);
@@ -111,6 +114,16 @@ export function AppShell({ title, eyebrow, children }: AppShellProps) {
     await deferredInstallPrompt.prompt();
     await deferredInstallPrompt.userChoice;
     setDeferredInstallPrompt(null);
+  }
+
+  /*
+   * Eine echte Navigation, kein Reload: nur sie führt durch die Anmeldeseite
+   * von Cloudflare, und nur dort wird das Cookie wieder gesetzt. Der Parameter
+   * hält den Service Worker davon ab, den Aufruf aus dem Precache zu
+   * beantworten - siehe `ACCESS_LOGIN_PATH`.
+   */
+  function handleReauthenticate() {
+    window.location.href = ACCESS_LOGIN_PATH;
   }
 
   function handleRefreshApp() {
@@ -269,6 +282,33 @@ export function AppShell({ title, eyebrow, children }: AppShellProps) {
                       <X size={14} />
                     </IconButton>
                   </div>
+                </div>
+              </div>
+            ) : null}
+
+            {/*
+              Steht über dem Update-Banner, weil ohne Anmeldung gar kein Update
+              kommt. Kein `danger`: verloren ist nichts, die App läuft
+              vollständig weiter - sie bekommt nur nichts Neues mehr.
+            */}
+            {isAccessExpired ? (
+              <div
+                role="status"
+                data-access-expired=""
+                className="rounded-card border border-line bg-surface px-4 py-4"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-content">Anmeldung abgelaufen</p>
+                    <p className="mt-1 text-sm text-content-muted">
+                      Die App kann nicht mehr nach Updates sehen. Deine Daten bleiben auf dem
+                      Gerät, Training geht weiter.
+                    </p>
+                  </div>
+                  <Button size="md" variant="primary" onClick={handleReauthenticate} className="shrink-0">
+                    <LogIn size={14} />
+                    Anmelden
+                  </Button>
                 </div>
               </div>
             ) : null}

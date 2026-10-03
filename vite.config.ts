@@ -105,6 +105,14 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
+        /*
+         * Zwei Wege müssen am Precache vorbei ans Netz, sonst kann sich die
+         * App hinter Cloudflare Access nie wieder anmelden - siehe
+         * [access-session.ts]. Die Navigations-Route beantwortet sonst *jede*
+         * Navigation aus dem Precache, auch die Anmeldung selbst und die
+         * Rückleitung, mit der Cloudflare das Cookie setzt.
+         */
+        navigateFallbackDenylist: [/[?&]reauth=1/, /^\/cdn-cgi\//],
       },
     }),
   ],
