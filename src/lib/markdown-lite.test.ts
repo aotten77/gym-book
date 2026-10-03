@@ -107,6 +107,7 @@ describe('parseMarkdownLite', () => {
     'nur **offen',
     '3 * 5 * 2',
     'Kurzhantel_rechts_unten',
+    '3*5 Wdh, Pause 2*60 s',
     '** fett **',
     '<b>x</b>',
     '[Link](http://x)',

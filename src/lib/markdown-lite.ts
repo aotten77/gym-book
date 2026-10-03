@@ -112,8 +112,9 @@ function isWordCharacter(character: string | undefined) {
  * Sucht das schließende Zeichen zu einem öffnenden an `start`.
  *
  * Auszeichnung gilt nur, wenn sie am Text anliegt: `**fett**` ja,
- * `** fett **` und `3 * 5 * 2` nein. Ein `_` zählt nur an Wortgrenzen, damit
- * `Kurzhantel_rechts_unten` ein Wort bleibt.
+ * `** fett **` und `3 * 5 * 2` nein. Ein einzelnes `*` oder `_` zählt nur an
+ * Wortgrenzen, damit `Kurzhantel_rechts_unten` ein Wort und `3*5 Wdh, Pause
+ * 2*60 s` eine Vorgabe bleibt statt kursiv quer über den Satz zu laufen.
  */
 function findClosing(text: string, start: number, marker: string): number {
   const opening = start + marker.length;
@@ -122,7 +123,7 @@ function findClosing(text: string, start: number, marker: string): number {
     return -1;
   }
 
-  if (marker === '_' && isWordCharacter(text[start - 1])) {
+  if (marker.length === 1 && isWordCharacter(text[start - 1])) {
     return -1;
   }
 
@@ -134,7 +135,7 @@ function findClosing(text: string, start: number, marker: string): number {
       continue;
     }
 
-    if (marker === '_' && isWordCharacter(after)) {
+    if (marker.length === 1 && isWordCharacter(after)) {
       continue;
     }
 

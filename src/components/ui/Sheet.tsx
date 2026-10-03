@@ -8,6 +8,7 @@ import {
   isNavigableField,
   moveFieldFocus,
 } from '@/lib/field-navigation';
+import { lockBodyScroll } from '@/lib/scroll-lock';
 import { cn } from '@/lib/utils';
 
 /**
@@ -162,12 +163,11 @@ export function Sheet({
     };
 
     document.addEventListener('keydown', handleKeyDown);
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    const releaseScroll = lockBodyScroll();
 
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
-      document.body.style.overflow = previousOverflow;
+      releaseScroll();
     };
   }, [open, onClose]);
 

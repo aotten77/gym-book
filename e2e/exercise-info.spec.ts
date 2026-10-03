@@ -81,6 +81,21 @@ test.describe('Übungsinfo in der Session', () => {
     await expect(page.locator('[data-sheet]')).toBeVisible();
   });
 
+  test('gibt die Scroll-Sperre frei, wenn man die Session mit offenem Modal verlässt', async ({
+    page,
+  }) => {
+    // Im Safari-Tab reicht ein Wischen zurück: Sheet und Modal werden in
+    // einem Zug abgebaut, und wer zuletzt aufräumt, darf nicht "hidden"
+    // zurückschreiben - sonst scrollt keine Seite mehr bis zum Neuladen.
+    await guideRow(page).click();
+    await expect(page.locator('[data-exercise-info]')).toBeVisible();
+
+    await page.goto('./#/exercises');
+    await expect(page.locator('[data-exercise-info]')).toHaveCount(0);
+
+    expect(await page.evaluate(() => document.body.style.overflow)).toBe('');
+  });
+
   test('schiebt die Wertefelder nicht aus dem Bild', async ({ page }) => {
     await expect(page.locator('input[id$="-reps"]').first()).toBeInViewport();
   });

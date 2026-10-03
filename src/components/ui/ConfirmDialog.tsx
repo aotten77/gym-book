@@ -1,6 +1,7 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/Button';
+import { lockBodyScroll } from '@/lib/scroll-lock';
 
 interface ConfirmDialogProps {
   open: boolean;
@@ -55,12 +56,11 @@ export function ConfirmDialog({
 
     document.addEventListener('keydown', handleKeyDown);
     // Hintergrund nicht mitscrollen lassen, solange der Dialog offen ist.
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    const releaseScroll = lockBodyScroll();
 
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
-      document.body.style.overflow = previousOverflow;
+      releaseScroll();
     };
   }, [open, onCancel]);
 

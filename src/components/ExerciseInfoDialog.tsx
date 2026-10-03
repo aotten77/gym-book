@@ -6,6 +6,7 @@ import { MarkdownText } from '@/components/MarkdownText';
 import { IconButton } from '@/components/ui/Button';
 import type { ExerciseGuide } from '@/domain/exercise-guide';
 import type { MediaAsset } from '@/domain/models';
+import { lockBodyScroll } from '@/lib/scroll-lock';
 
 interface ExerciseInfoDialogProps {
   open: boolean;
@@ -57,13 +58,12 @@ export function ExerciseInfoDialog({ open, name, mediaAsset, guide, onClose }: E
     // nach dem Schließen auf dem Body und die Tastatur fängt oben an.
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     window.addEventListener('keydown', handleKeyDown, true);
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    const releaseScroll = lockBodyScroll();
     dialogRef.current?.querySelector<HTMLButtonElement>('[data-info-close]')?.focus();
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown, true);
-      document.body.style.overflow = previousOverflow;
+      releaseScroll();
       opener?.focus();
     };
   }, [open]);
