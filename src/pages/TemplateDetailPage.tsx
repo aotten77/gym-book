@@ -21,8 +21,10 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { NowCard } from '@/components/ui/StatusCard';
 import { Sheet } from '@/components/ui/Sheet';
 import { ExerciseMedia } from '@/components/ExerciseMedia';
+import { MarkdownText } from '@/components/MarkdownText';
 import { ExerciseTargetFields } from '@/components/ExerciseTargetFields';
 import { formatNumber, formatTrackingMode } from '@/lib/format';
+import { parseMarkdownLite } from '@/lib/markdown-lite';
 import { optionalNumberInput, toInputValue } from '@/lib/number-input';
 import { SectionCard } from '@/components/SectionCard';
 import { SupersetBlock } from '@/components/SupersetBlock';
@@ -923,7 +925,11 @@ export function TemplateDetailPage() {
                     {selectedExistingExercise.unilateral ? 'unilateral' : 'beidseitig'}
                   </p>
                   {selectedExistingExercise.instructions ? (
-                    <p className="mt-2 whitespace-pre-line">{selectedExistingExercise.instructions}</p>
+                    <MarkdownText
+                      blocks={parseMarkdownLite(selectedExistingExercise.instructions)}
+                      compact
+                      className="mt-2"
+                    />
                   ) : null}
                   <div className="mt-4 flex flex-wrap gap-2">
                     <label className="min-h-touch inline-flex items-center justify-center rounded-control border border-line px-3 py-2 text-sm text-content-secondary transition hover:bg-surface-hover">

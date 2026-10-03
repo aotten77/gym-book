@@ -1,5 +1,6 @@
 import { useId, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
+import { MarkdownText } from '@/components/MarkdownText';
 import type { ExerciseGuide } from '@/domain/exercise-guide';
 import { cn } from '@/lib/utils';
 
@@ -61,15 +62,7 @@ export function ExerciseGuideBlock({ guide }: { guide: ExerciseGuide }) {
       </button>
 
       <div id={panelId} hidden={!isOpen} className="space-y-2 px-3 pb-3 text-sm text-content">
-        {guide.lines.length > 1 ? (
-          <ul className="list-disc space-y-1 pl-5">
-            {guide.lines.map((line, index) => (
-              <li key={index}>{line}</li>
-            ))}
-          </ul>
-        ) : guide.lines.length === 1 ? (
-          <p>{guide.lines[0]}</p>
-        ) : null}
+        <MarkdownText blocks={guide.blocks} />
 
         {guide.tempo ? (
           <p className="text-content-secondary">

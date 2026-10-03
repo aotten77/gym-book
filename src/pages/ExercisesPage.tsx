@@ -5,6 +5,7 @@ import { AppShell } from '@/components/AppShell';
 import { Alert } from '@/components/Alert';
 import { Empty } from '@/components/Empty';
 import { ExerciseMedia } from '@/components/ExerciseMedia';
+import { MarkdownText } from '@/components/MarkdownText';
 import { ProgressChart } from '@/components/ProgressChart';
 import { SectionCard } from '@/components/SectionCard';
 import { Button, IconButton } from '@/components/ui/Button';
@@ -26,6 +27,7 @@ import type { Exercise, LoadKind, TrackingMode } from '@/domain/models';
 import { buildProgressSeries, isLegacyExecution, progressMetricFor } from '@/domain/progress';
 import { supportsLoad, supportsReps, TRACKING_MODE_LABELS } from '@/domain/tracking';
 import { formatDateTime, formatLoadLabel, formatNumber } from '@/lib/format';
+import { parseMarkdownLite } from '@/lib/markdown-lite';
 import { isSupportedMediaType } from '@/lib/media';
 import { optionalNumberInput, toInputValue } from '@/lib/number-input';
 
@@ -104,9 +106,11 @@ function ExerciseDetail({ exercise }: { exercise: Exercise }) {
       ) : null}
 
       {exercise.instructions ? (
-        // pre-line: eine Anleitung, die Zeile für Zeile geschrieben wurde, soll
-        // hier nicht zu einem Block zusammenfallen.
-        <p className="whitespace-pre-line text-sm text-content-secondary">{exercise.instructions}</p>
+        <MarkdownText
+          blocks={parseMarkdownLite(exercise.instructions)}
+          compact
+          className="text-sm text-content-secondary"
+        />
       ) : null}
 
       {exercise.tempo ? (
@@ -401,6 +405,7 @@ export function ExercisesPage() {
                 }
                 rows={3}
                 placeholder="Worauf es bei der Ausführung ankommt"
+                hint="**fett**, - Liste, ### Überschrift"
               />
               <div className="grid grid-cols-2 gap-3">
                 <TextField

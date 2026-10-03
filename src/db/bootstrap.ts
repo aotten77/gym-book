@@ -105,7 +105,7 @@ export async function seedSampleData() {
       {
         id: frontSquatId,
         name: 'Front Squat',
-        instructions: 'Ellbogen hoch halten, sauber tief, keine Grind-Reps.',
+        instructions: '- Ellbogen **hoch** halten\n- Sauber tief, keine Grind-Reps',
         tempo: '3-1-1',
         trackingMode: 'reps_weight',
         unilateral: false,

@@ -24,6 +24,7 @@ test.describe('Ausführung im Sheet', () => {
 
     await expect(toggle).toHaveAttribute('aria-expanded', 'false');
     await expect(toggle).toContainText('Ellbogen hoch halten');
+    await expect(toggle).not.toContainText('**');
     await expect(panel).toBeHidden();
 
     // 44px, wie jedes Tippziel - der Block liegt über den Wertefeldern.
@@ -33,7 +34,8 @@ test.describe('Ausführung im Sheet', () => {
 
     await expect(toggle).toHaveAttribute('aria-expanded', 'true');
     await expect(panel).toBeVisible();
-    await expect(panel).toContainText('Ellbogen hoch halten, sauber tief, keine Grind-Reps.');
+    await expect(panel.locator('li')).toHaveCount(2);
+    await expect(panel.locator('strong')).toHaveText('hoch');
     await expect(panel).toContainText('Tempo 3-1-1');
     await expect(panel).toContainText('In diesem Workout: RPE 7-8');
 

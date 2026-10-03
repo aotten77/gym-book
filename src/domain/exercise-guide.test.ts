@@ -2,21 +2,47 @@ import { describe, expect, it } from 'vitest';
 import { buildExerciseGuide } from '@/domain/exercise-guide';
 
 describe('buildExerciseGuide', () => {
-  it('zerlegt eine Anleitung an Zeilenumbrüchen und lässt leere Zeilen weg', () => {
+  it('liest die Anleitung als Markdown-Blöcke', () => {
     const guide = buildExerciseGuide({
-      instructions: '  Ferse bleibt am Boden\r\n\nKnie über den Zeh\n  ',
+      instructions: '- Ferse bleibt am Boden\r\n- Knie über den Zeh',
     });
 
-    expect(guide?.lines).toEqual(['Ferse bleibt am Boden', 'Knie über den Zeh']);
+    expect(guide?.blocks).toEqual([
+      {
+        kind: 'list',
+        ordered: false,
+        start: 1,
+        items: [[{ text: 'Ferse bleibt am Boden' }], [{ text: 'Knie über den Zeh' }]],
+      },
+    ]);
     expect(guide?.teaser).toBe('Ferse bleibt am Boden');
   });
 
-  it('lässt Fließtext eine Zeile - "ca. 90 Grad" ist keine zweite Regel', () => {
+  it('lässt Fließtext einen Absatz - "ca. 90 Grad" ist keine zweite Regel', () => {
     const guide = buildExerciseGuide({
       instructions: 'Knie ca. 90 Grad. Fuß nah am Körper.',
     });
 
-    expect(guide?.lines).toEqual(['Knie ca. 90 Grad. Fuß nah am Körper.']);
+    expect(guide?.blocks).toEqual([
+      { kind: 'paragraph', lines: [[{ text: 'Knie ca. 90 Grad. Fuß nah am Körper.' }]] },
+    ]);
+    expect(guide?.teaser).toBe('Knie ca. 90 Grad. Fuß nah am Körper.');
+  });
+
+  it('überspringt Überschriften und nimmt den ersten Listenpunkt als Teaser', () => {
+    const guide = buildExerciseGuide({
+      instructions: '### Ausführung\n- Ellbogen **hoch** halten\n- Sauber tief',
+    });
+
+    expect(guide?.teaser).toBe('Ellbogen hoch halten');
+  });
+
+  it('nimmt die erste Absatzzeile ohne Auszeichnung als Teaser', () => {
+    const guide = buildExerciseGuide({
+      instructions: 'Langsam absenken, **kein Schwung**\nOben halten',
+    });
+
+    expect(guide?.teaser).toBe('Langsam absenken, kein Schwung');
   });
 
   it('trägt Tempo und Workout-Notiz getrimmt mit', () => {
@@ -27,7 +53,7 @@ describe('buildExerciseGuide', () => {
     });
 
     expect(guide).toEqual({
-      lines: ['Ellbogen hoch'],
+      blocks: [{ kind: 'paragraph', lines: [[{ text: 'Ellbogen hoch' }]] }],
       tempo: '3-1-1',
       notes: 'RPE 7-8',
       teaser: 'Ellbogen hoch',
@@ -39,6 +65,15 @@ describe('buildExerciseGuide', () => {
       'Direkt nach dem Couch Stretch',
     );
     expect(buildExerciseGuide({ tempo: '2-0-2' })?.teaser).toBe('Tempo 2-0-2');
+  });
+
+  it('fällt bei einer Anleitung nur aus Überschrift auf Notiz, sonst die Überschrift zurück', () => {
+    expect(buildExerciseGuide({ instructions: '### Achtung', notes: 'RPE 7' })?.teaser).toBe('RPE 7');
+
+    const headingOnly = buildExerciseGuide({ instructions: '### Achtung' });
+
+    expect(headingOnly).not.toBeNull();
+    expect(headingOnly?.teaser).toBe('Achtung');
   });
 
   it('liefert null, wenn es nichts zu sagen gibt', () => {
