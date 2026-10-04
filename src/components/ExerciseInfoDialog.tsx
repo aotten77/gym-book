@@ -103,8 +103,13 @@ export function ExerciseInfoDialog({ open, name, mediaAsset, guide, onClose }: E
           />
         ) : null}
 
+        {/*
+          17px ist die Fließtextgröße von iOS. Das Modal ist zum Lesen da, im
+          Stehen und mit dem Telefon in der Hand, und Pinch-Zoom ist in der App
+          gesperrt - kleiner wird die Anleitung zur Fußnote.
+        */}
         {guide ? (
-          <div className="space-y-3 text-[15px] leading-relaxed text-content">
+          <div className="space-y-3 text-[17px] leading-relaxed text-content">
             {guide.blocks.length > 0 ? <MarkdownText blocks={guide.blocks} /> : null}
 
             {guide.tempo ? (

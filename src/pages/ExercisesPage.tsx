@@ -109,7 +109,7 @@ function ExerciseDetail({ exercise }: { exercise: Exercise }) {
         <MarkdownText
           blocks={parseMarkdownLite(exercise.instructions)}
           compact
-          className="text-sm text-content-secondary"
+          className="text-[15px] text-content"
         />
       ) : null}
 

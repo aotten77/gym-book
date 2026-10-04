@@ -96,8 +96,39 @@ test.describe('Übungsinfo in der Session', () => {
     expect(await page.evaluate(() => document.body.style.overflow)).toBe('');
   });
 
+  /*
+   * Das Modal ist zum Lesen da, im Stehen und mit dem Telefon in der Hand -
+   * und Pinch-Zoom ist in der App gesperrt. 17px ist die Fließtextgröße von
+   * iOS; darunter wird die Anleitung zur Fußnote.
+   */
+  test('setzt die Anleitung in Lesegröße', async ({ page }) => {
+    await guideRow(page).click();
+
+    const info = page.locator('[data-exercise-info]');
+    await expect(info.locator('li').first()).toHaveCSS('font-size', '17px');
+    await expect(info.getByText('Tempo 3-1-1')).toHaveCSS('font-size', '17px');
+  });
+
   test('schiebt die Wertefelder nicht aus dem Bild', async ({ page }) => {
     await expect(page.locator('input[id$="-reps"]').first()).toBeInViewport();
+  });
+});
+
+test.describe('Anleitung in der Bibliothek', () => {
+  // Größer als die Metadaten der Karte und in Tinte statt Grau: die Anleitung
+  // ist der Inhalt der Karte, nicht ihr Beiwerk.
+  test('steht in 15px und in Tinte', async ({ page }) => {
+    await resetDatabase(page);
+    await seedSampleData(page);
+    await page.goto('./#/exercises');
+
+    const card = page
+      .locator('section')
+      .filter({ has: page.getByRole('heading', { name: 'Front Squat', exact: true }) });
+    await card.getByRole('button', { name: 'Verlauf anzeigen' }).click();
+    const markdown = card.locator('[data-markdown]');
+    await expect(markdown).toHaveCSS('font-size', '15px');
+    await expect(markdown).toHaveCSS('color', 'rgb(12, 18, 16)');
   });
 });
 

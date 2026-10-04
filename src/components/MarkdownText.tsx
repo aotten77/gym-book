@@ -43,10 +43,10 @@ export function MarkdownText({ blocks, compact = false, className }: MarkdownTex
           return (
             <h4
               key={index}
-              className={cn(
-                'font-display font-bold text-content',
-                compact ? 'text-sm' : 'pt-1 text-[15px]',
-              )}
+              // Keine eigene Größe: die Überschrift erbt die des Textes und
+              // hebt sich nur durch Schrift und Gewicht ab - so bleibt sie
+              // stimmig, wo immer der Aufrufer die Größe setzt.
+              className={cn('font-display font-bold text-content', !compact && 'pt-1')}
             >
               {renderInline(block.content)}
             </h4>
