@@ -156,7 +156,7 @@ Der Verlauf ist nach Übungen gruppiert, nicht chronologisch. Neue Reihenfolge:
 2. **Wochenübersicht** – die letzten 8 Kalenderwochen, neueste oben:
 
    ```
-   KW 40 · 28.9.–4.10.
+   KW 40 · 28.09.–04.10.
    Kraft     3 Einheiten · 3:10 h · 12.450 kg · 54 Sätze
    Mobility  1 Einheit · 0:25 h
    Laufen    2 Läufe · 14,2 km · 180 HM · 1:21 h
@@ -201,10 +201,11 @@ Kraftzahlen aufblähen.
   Schreibweise (wie `normalizeTracksHeight`). Eingestellt in
   [TemplateDetailPage.tsx](../../../src/pages/TemplateDetailPage.tsx) über ein
   `SelectField` „Art“.
-- `startSessionFromTemplate` kopiert sie als
-  `WorkoutSession.templateCategorySnapshot`. `materializeSession` bleibt
-  unverändert. Eine spätere Umstellung des Workouts verschiebt die
-  Vergangenheit nicht.
+- Beim Start wird sie als `WorkoutSession.templateCategorySnapshot`
+  kopiert – in `materializeSession`, direkt neben `templateNameSnapshot`, wo
+  alle Session-Snapshots entstehen. An der Satz-Materialisierung ändert sich
+  nichts. Eine spätere Umstellung des Workouts verschiebt die Vergangenheit
+  nicht.
 - Unindiziert und additiv: kein Dexie-Index, `.optional()` im Backup, keine
   Versionserhöhung.
 - **Bibliotheks-Import:** Workouts dürfen `category` tragen (`"mobility"`,
@@ -243,13 +244,18 @@ buildWeeklyVolume(input: {
   [calendar-week.ts](../../../src/domain/calendar-week.ts). Mit der
   Programmwoche hat sie nichts zu tun. Leere Wochen im Bereich sind enthalten.
 - **Gezählte Sessions:** `status === 'completed'` **und** mindestens ein
-  abgehakter Satz – dieselbe Auswahl, die `sessions.csv` nicht verwirft, damit
-  App und Export dieselbe Zahl nennen. Woche nach `completedAt`, Art nach
-  `templateCategorySnapshot` (fehlt = Kraft).
+  abgehakter Arbeitssatz. Das ist die Konvention der App (Heute, Kalender):
+  abgebrochen heißt nicht trainiert. `sessions.csv` enthält dagegen auch
+  abgebrochene Sessions mit Sätzen; `meta.json` sagt das in einem Hinweis.
+  Woche nach `completedAt`, Art nach `templateCategorySnapshot` (fehlt =
+  Kraft).
 - **Dauer** = `completedAt − startedAt`, also inklusive Pausen.
-- **Volumen** = `sumWorkVolume` über abgehakte Arbeitssätze (nur Kraft).
-- **Sätze** = Anzahl abgehakter Arbeitssatz-Zeilen, eine je Seite – die Summe
-  der Spalte `arbeitssaetze` aus `sessions.csv`.
+- **Volumen** = `sumWorkVolume` über abgehakte Arbeitssätze von Übungen mit
+  `supportsReps(trackingMode)` (nur Kraft) – dieselbe Einschränkung wie die
+  Spalte `volumen` in `sessions.csv`; Kilo mal Sekunden ist kein Volumen in kg.
+  Die Zahl auf Heute kann dadurch etwas kleiner werden als bisher.
+- **Sätze** = Anzahl abgehakter Arbeitssatz-Zeilen, eine je Seite – gezählt
+  wie die Spalte `arbeitssaetze` in `sessions.csv`.
 - **Laufen:** Woche nach `date`; Summe von Strecke, Dauer, Höhenmeter. Ein Lauf
   ohne Höhenmeter zählt mit 0 und setzt `elevationIncomplete`.
 
@@ -276,12 +282,15 @@ mobility_einheiten,mobility_dauer_min,lauf_anzahl,lauf_km,lauf_hm,
 lauf_hm_unvollstaendig,lauf_dauer_min
 ```
 
-**`sessions.csv`** bekommt die Spalte `art` (`kraft` / `mobility`).
+**`sessions.csv`** bekommt die Spalte `art` (`kraft` / `mobility`), als
+**letzte** Spalte, damit bestehende Auswertungen ihre Spaltenpositionen behalten.
 
 Zahlen mit Dezimalpunkt wie bisher, leeres Feld = nicht erfasst, Minuten
 gerundet auf ganze. `meta.json` nennt den Zeitraum über Sessions *und* Läufe,
-die Zahl der Läufe und beschreibt in einer Zeile, dass `kraft_dauer_min` die
-Session-Dauer inklusive Pausen ist.
+die Zahl der Läufe und unter `hinweise` zwei Sätze: dass `kraft_dauer_min` die
+Session-Dauer inklusive Pausen ist und dass `wochen.csv` abgebrochene Sessions
+nicht zählt. Reihenfolge in der Zwischenablage: `meta.json`, `sessions.csv`,
+`progression.csv`, `tests.csv`, `wochen.csv`, `laeufe.csv`.
 
 ## 7. Architekturvertrag
 
