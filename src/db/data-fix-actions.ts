@@ -23,6 +23,8 @@ export interface DataFixStatus {
   /** Sätze, die dabei Sekunden tragen und als Altdaten stehen bleiben. */
   nordicCurlSecondsLogs: number;
   /** Ob die Einstellungen eine Woche von Hand übersteuern. */
+  /** Abgeschlossene oder laufende Sessions von Mobility-Workouts ohne Art-Snapshot. */
+  sessionsWithoutCategory: number;
   hasWeekOverride: boolean;
   weekOverride?: number;
   activeProgramId?: string;
@@ -34,6 +36,23 @@ async function findNordicCurlExercises() {
   const key = normalizeImportKey(NORDIC_CURL_NAME);
 
   return db.exercises.filter((exercise) => normalizeImportKey(exercise.name) === key).toArray();
+}
+
+/** Sessions der Mobility-Workouts, die den Snapshot der Art noch nicht tragen. */
+async function findSessionsWithoutCategory() {
+  const mobilityIds = (await db.workoutTemplates.toArray())
+    .filter((template) => template.category === 'mobility')
+    .map((template) => template.id);
+
+  if (mobilityIds.length === 0) {
+    return [];
+  }
+
+  return db.workoutSessions
+    .where('templateId')
+    .anyOf(mobilityIds)
+    .filter((session) => session.templateCategorySnapshot === undefined)
+    .toArray();
 }
 
 export async function describeDataFixes(): Promise<DataFixStatus> {
@@ -64,6 +83,7 @@ export async function describeDataFixes(): Promise<DataFixStatus> {
   return {
     nordicCurlOnTime: onTime.length,
     nordicCurlSecondsLogs: secondsLogs,
+    sessionsWithoutCategory: (await findSessionsWithoutCategory()).length,
     hasWeekOverride: typeof settings?.weekOverride === 'number',
     weekOverride: settings?.weekOverride,
     activeProgramId: program?.id,
@@ -146,4 +166,27 @@ export async function applyProgramWeekFix(programId: string, startedOn: string) 
       updatedAt: new Date().toISOString(),
     });
   });
+}
+
+/**
+ * Überträgt die Art "Mobility" auf frühere Sessions.
+ *
+ * Sessions vor der Einführung der Art tragen keinen Snapshot; die Wochenübersicht
+ * hielte sie für Kraft. Gewählt wird über die `templateId` der Workouts, die
+ * jetzt Mobility sind - nie über Namen. Nur der Snapshot wird gesetzt, wo er
+ * fehlt; Status, Zeiten und Sätze bleiben, wie sie sind.
+ */
+export async function applyWorkoutCategoryBackfill(): Promise<number> {
+  let changed = 0;
+
+  await db.transaction('rw', db.workoutTemplates, db.workoutSessions, async () => {
+    const sessions = await findSessionsWithoutCategory();
+
+    for (const session of sessions) {
+      await db.workoutSessions.update(session.id, { templateCategorySnapshot: 'mobility' });
+      changed += 1;
+    }
+  });
+
+  return changed;
 }

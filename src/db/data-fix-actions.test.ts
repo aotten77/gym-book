@@ -3,6 +3,7 @@ import { db } from '@/db/appDb';
 import {
   applyNordicCurlTrackingFix,
   applyProgramWeekFix,
+  applyWorkoutCategoryBackfill,
   describeDataFixes,
 } from '@/db/data-fix-actions';
 import { createProgram } from '@/db/program-actions';
@@ -155,5 +156,75 @@ describe('Programmwochen-Korrektur', () => {
     expect(session?.resolvedProgramWeek).toBe(3);
     expect(session?.usedWeekOverride).toBeFalsy();
     expect(session?.programWeekLabelSnapshot).toBe('Woche 3');
+  });
+});
+
+describe('Art auf frühere Sessions übertragen', () => {
+  const now = '2026-02-01T09:00:00.000Z';
+
+  async function seedCategories() {
+    await db.workoutTemplates.bulkAdd([
+      { id: 't-mob', name: 'Mobility Flow', category: 'mobility', createdAt: now, updatedAt: now },
+      { id: 't-str', name: 'Kraft A', createdAt: now, updatedAt: now },
+    ]);
+
+    const base = {
+      resolvedProgramWeek: 1,
+      startedAt: now,
+      completedAt: '2026-02-01T10:00:00.000Z',
+      status: 'completed' as const,
+    };
+
+    await db.workoutSessions.bulkAdd([
+      { ...base, id: 's1', templateId: 't-mob', templateNameSnapshot: 'Mobility Flow' },
+      { ...base, id: 's2', templateId: 't-mob', templateNameSnapshot: 'Mobility Flow' },
+      {
+        ...base,
+        id: 's3',
+        templateId: 't-mob',
+        templateNameSnapshot: 'Mobility Flow',
+        templateCategorySnapshot: 'mobility',
+      },
+      { ...base, id: 's4', templateId: 't-str', templateNameSnapshot: 'Kraft A' },
+    ]);
+  }
+
+  it('zählt Sessions von Mobility-Workouts ohne Snapshot', async () => {
+    await seedCategories();
+
+    expect((await describeDataFixes()).sessionsWithoutCategory).toBe(2);
+  });
+
+  it('überträgt die Art und meldet danach nichts mehr', async () => {
+    await seedCategories();
+
+    expect(await applyWorkoutCategoryBackfill()).toBe(2);
+    expect((await db.workoutSessions.get('s1'))?.templateCategorySnapshot).toBe('mobility');
+    expect((await db.workoutSessions.get('s2'))?.templateCategorySnapshot).toBe('mobility');
+    expect((await db.workoutSessions.get('s4'))?.templateCategorySnapshot).toBeUndefined();
+    expect((await describeDataFixes()).sessionsWithoutCategory).toBe(0);
+    expect(await applyWorkoutCategoryBackfill()).toBe(0);
+  });
+
+  it('fasst sonst nichts an', async () => {
+    await seedCategories();
+    await db.workoutSetLogs.add({
+      id: 'l1',
+      sessionExerciseId: 'se-x',
+      setNumber: 1,
+      setKind: 'work',
+      side: 'both',
+      completed: true,
+      reps: 8,
+    } as never);
+    const before = await db.workoutSessions.get('s1');
+    const logsBefore = await db.workoutSetLogs.toArray();
+
+    await applyWorkoutCategoryBackfill();
+
+    const after = await db.workoutSessions.get('s1');
+    expect(after?.status).toBe(before?.status);
+    expect(after?.completedAt).toBe(before?.completedAt);
+    expect(await db.workoutSetLogs.toArray()).toEqual(logsBefore);
   });
 });

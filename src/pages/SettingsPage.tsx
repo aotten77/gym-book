@@ -30,6 +30,7 @@ import { db } from '@/db/appDb';
 import {
   applyNordicCurlTrackingFix,
   applyProgramWeekFix,
+  applyWorkoutCategoryBackfill,
   describeDataFixes,
   NORDIC_CURL_NAME,
 } from '@/db/data-fix-actions';
@@ -88,6 +89,7 @@ export function SettingsPage() {
   const [soundError, setSoundError] = useState<string | null>(null);
   const [screenAwakeError, setScreenAwakeError] = useState<string | null>(null);
   const [showNordicFixDialog, setShowNordicFixDialog] = useState(false);
+  const [showCategoryFixDialog, setShowCategoryFixDialog] = useState(false);
   const [showWeekFixDialog, setShowWeekFixDialog] = useState(false);
   const [weekFixDate, setWeekFixDate] = useState('');
   const [dataFixMessage, setDataFixMessage] = useState<string | null>(null);
@@ -430,6 +432,7 @@ export function SettingsPage() {
       setIsFixing(false);
       setShowNordicFixDialog(false);
       setShowWeekFixDialog(false);
+      setShowCategoryFixDialog(false);
     }
   }
 
@@ -856,6 +859,30 @@ export function SettingsPage() {
               </Button>
             </div>
 
+            <div className="rounded-panel border border-line bg-surface p-4">
+              <p className="font-medium text-content">Art auf frühere Sessions übertragen</p>
+              <p className="mt-1 text-sm text-content-muted">
+                Stell zuerst die Mobility-Workouts um. Danach zählen ihre bisherigen Einheiten in
+                der Wochenübersicht als Mobility statt als Kraft.
+              </p>
+              <p className="mt-2 text-sm text-content-muted">
+                {dataFixes === undefined
+                  ? 'Wird geprüft...'
+                  : dataFixes.sessionsWithoutCategory > 0
+                    ? `${formatNumber(dataFixes.sessionsWithoutCategory)} Sessions ohne Art.`
+                    : 'Nichts zu tun.'}
+              </p>
+              <Button
+                variant="ghost"
+                fullWidth
+                className="mt-3"
+                disabled={isFixing || !dataFixes?.sessionsWithoutCategory}
+                onClick={() => setShowCategoryFixDialog(true)}
+              >
+                Art übertragen
+              </Button>
+            </div>
+
             {dataFixMessage ? <Alert variant="success">{dataFixMessage}</Alert> : null}
             {dataFixError ? <Alert variant="error">{dataFixError}</Alert> : null}
           </div>
@@ -1099,6 +1126,25 @@ export function SettingsPage() {
           })
         }
         onCancel={() => setShowNordicFixDialog(false)}
+      />
+
+      <ConfirmDialog
+        open={showCategoryFixDialog}
+        title="Art auf frühere Sessions übertragen?"
+        description={`${formatNumber(dataFixes?.sessionsWithoutCategory ?? 0)} ${dataFixes?.sessionsWithoutCategory === 1 ? 'Session' : 'Sessions'} der Mobility-Workouts ${dataFixes?.sessionsWithoutCategory === 1 ? 'bekommt' : 'bekommen'} die Art Mobility. Status, Zeiten und Sätze bleiben unverändert.`}
+        confirmLabel="Übertragen"
+        destructive={false}
+        busy={isFixing}
+        onConfirm={() =>
+          void runDataFix(async () => {
+            const changed = await applyWorkoutCategoryBackfill();
+
+            return changed === 1
+              ? '1 Session zählt jetzt als Mobility.'
+              : `${formatNumber(changed)} Sessions zählen jetzt als Mobility.`;
+          })
+        }
+        onCancel={() => setShowCategoryFixDialog(false)}
       />
 
       <ConfirmDialog
