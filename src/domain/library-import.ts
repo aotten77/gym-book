@@ -55,6 +55,13 @@ const importExerciseSchema = z.object({
 const importTemplateSchema = z.object({
   name: z.string().min(1),
   notes: z.string().optional(),
+  /*
+   * Die Zuordnungen dieses Workouts in der Datei sind der vollständige
+   * Soll-Stand seiner Zusammensetzung: was fehlt, wird entfernt, Reihenfolge
+   * und Supersätze kommen aus der Datei. Ohne das Flag bleibt der Import für
+   * dieses Workout additiv. Gespeichert wird es nicht.
+   */
+  replaceAssignments: z.boolean().optional(),
 });
 
 const importAssignmentSchema = z.object({
@@ -63,12 +70,19 @@ const importAssignmentSchema = z.object({
   orderIndex: z.number().int().positive(),
   workSetCount: z.number().int().positive(),
   includeWarmup: z.boolean().optional(),
-  targetReps: z.number().nonnegative().optional(),
-  targetSeconds: z.number().nonnegative().optional(),
-  targetWeight: z.number().nonnegative().optional(),
-  targetHeightCm: z.number().nonnegative().optional(),
-  restSeconds: z.number().nonnegative().optional(),
-  notes: z.string().optional(),
+  /*
+   * `null` leert ein Feld, ein fehlender Schlüssel lässt es stehen. Nur so
+   * lässt sich beides ausdrücken: "unverändert" und "kein Ziel mehr".
+   */
+  targetReps: z.number().nonnegative().nullable().optional(),
+  targetRepsMax: z.number().nonnegative().nullable().optional(),
+  targetSeconds: z.number().nonnegative().nullable().optional(),
+  targetWeight: z.number().nonnegative().nullable().optional(),
+  targetHeightCm: z.number().nonnegative().nullable().optional(),
+  restSeconds: z.number().nonnegative().nullable().optional(),
+  notes: z.string().nullable().optional(),
+  /** Gruppenname eines Supersatzes - nur in einem ersetzten Workout. */
+  superset: z.string().min(1).optional(),
 });
 
 const importBandLevelSchema = z.object({
@@ -692,15 +706,22 @@ function planAssignments(
     }
 
     diffAssignmentNumber(changes, values, 'Ziel-Wdh.', 'targetReps', existing, input.targetReps);
+    diffAssignmentNumber(changes, values, 'Ziel-Wdh. max.', 'targetRepsMax', existing, input.targetRepsMax);
     diffAssignmentNumber(changes, values, 'Ziel-Sekunden', 'targetSeconds', existing, input.targetSeconds);
     diffAssignmentNumber(changes, values, 'Ziel-Gewicht', 'targetWeight', existing, input.targetWeight);
     diffAssignmentNumber(changes, values, 'Ziel-Höhe', 'targetHeightCm', existing, input.targetHeightCm);
     diffAssignmentNumber(changes, values, 'Pause', 'restSeconds', existing, input.restSeconds);
 
-    const notes = optionalText(input.notes);
+    if (input.notes === null) {
+      if (existing.notes !== undefined && diffField(changes, 'Notiz', existing.notes, undefined)) {
+        values.notes = undefined;
+      }
+    } else {
+      const notes = optionalText(input.notes);
 
-    if (notes !== undefined && diffField(changes, 'Notiz', existing.notes, notes)) {
-      values.notes = notes;
+      if (notes !== undefined && diffField(changes, 'Notiz', existing.notes, notes)) {
+        values.notes = notes;
+      }
     }
 
     /*
@@ -751,7 +772,13 @@ function planAssignments(
   return { entries, templateOrder };
 }
 
-type AssignmentNumberField = 'targetReps' | 'targetSeconds' | 'targetWeight' | 'targetHeightCm' | 'restSeconds';
+type AssignmentNumberField =
+  | 'targetReps'
+  | 'targetRepsMax'
+  | 'targetSeconds'
+  | 'targetWeight'
+  | 'targetHeightCm'
+  | 'restSeconds';
 
 function diffAssignmentNumber(
   changes: ImportFieldChange[],
@@ -759,9 +786,23 @@ function diffAssignmentNumber(
   label: string,
   field: AssignmentNumberField,
   existing: WorkoutTemplateExercise,
-  next?: number,
+  next?: number | null,
 ) {
   if (next === undefined) {
+    return;
+  }
+
+  if (next === null) {
+    /*
+     * Die einzige Stelle, an der Dexies Eigenheit gewollt ist: `Table.update`
+     * entfernt eine Property, deren Wert `undefined` ist. Der Schlüssel muss
+     * deshalb in `values` stehen - ein fehlender Schlüssel ließe das Feld
+     * stehen. Ein `null` auf ein ohnehin leeres Feld ist keine Änderung.
+     */
+    if (existing[field] !== undefined && diffField(changes, label, existing[field], undefined)) {
+      values[field] = undefined;
+    }
+
     return;
   }
 
@@ -777,12 +818,14 @@ function buildAssignmentValues(
     workSetCount: input.workSetCount,
     // Immer als echter Boolean: `undefined` löschte die Property beim Update.
     includeWarmup: input.includeWarmup !== false,
-    targetReps: input.targetReps,
-    targetSeconds: input.targetSeconds,
-    targetWeight: input.targetWeight,
-    targetHeightCm: input.targetHeightCm,
-    restSeconds: input.restSeconds,
-    notes: optionalText(input.notes),
+    // `null` heißt bei einer neuen Zuordnung schlicht: kein Wert.
+    targetReps: input.targetReps ?? undefined,
+    targetRepsMax: input.targetRepsMax ?? undefined,
+    targetSeconds: input.targetSeconds ?? undefined,
+    targetWeight: input.targetWeight ?? undefined,
+    targetHeightCm: input.targetHeightCm ?? undefined,
+    restSeconds: input.restSeconds ?? undefined,
+    notes: optionalText(input.notes ?? undefined),
   };
 }
 

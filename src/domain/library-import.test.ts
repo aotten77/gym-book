@@ -176,6 +176,34 @@ describe('parseLibraryImportPayload', () => {
     expect(payload.exercises).toEqual([]);
     expect(payload.templateAssignments).toEqual([]);
   });
+  it('akzeptiert replaceAssignments, superset und null', () => {
+    const payload = parseLibraryImportPayload(
+      JSON.stringify({
+        schemaVersion: 1,
+        templates: [{ name: 'Einheit A', replaceAssignments: true }],
+        templateAssignments: [
+          {
+            template: 'Einheit A',
+            exercise: 'Squat',
+            orderIndex: 1,
+            workSetCount: 3,
+            superset: 'Block 1',
+            targetRepsMax: 10,
+            targetWeight: null,
+            notes: null,
+          },
+        ],
+      }),
+    );
+
+    expect(payload.templates[0].replaceAssignments).toBe(true);
+    expect(payload.templateAssignments[0]).toMatchObject({
+      superset: 'Block 1',
+      targetRepsMax: 10,
+      targetWeight: null,
+      notes: null,
+    });
+  });
 });
 
 describe('hashImportPayload', () => {
@@ -459,6 +487,108 @@ describe('planLibraryImport - Zuordnungen', () => {
     expect(plan.assignments[0].values).toEqual({ workSetCount: 4 });
     expect(plan.assignments[0].note).toBe('Position 2 bleibt (Datei nennt 7)');
     expect(plan.templateOrder).toHaveLength(0);
+  });
+});
+
+describe('planLibraryImport - Felder leeren und Spannen', () => {
+  const stateWith = (overrides: Partial<WorkoutTemplateExercise> = {}) =>
+    emptyState({
+      exercises: [buildExercise({ id: 'e1', name: 'Hip Thrust' })],
+      templates: [buildTemplate('t1', 'Einheit B')],
+      templateExercises: [
+        buildAssignment({ id: 'te1', templateId: 't1', exerciseId: 'e1', orderIndex: 1, ...overrides }),
+      ],
+    });
+
+  it('übernimmt targetRepsMax bei neuer und bestehender Zuordnung', () => {
+    const created = planLibraryImport(
+      buildPayload({
+        templates: [{ name: 'Einheit C' }],
+        templateAssignments: [
+          { template: 'Einheit C', exercise: 'Hip Thrust', orderIndex: 1, workSetCount: 3, targetRepsMax: 10 },
+        ],
+      }),
+      stateWith(),
+    );
+
+    expect(created.assignments[0].record?.targetRepsMax).toBe(10);
+
+    const updated = planLibraryImport(
+      buildPayload({
+        templateAssignments: [
+          { template: 'Einheit B', exercise: 'Hip Thrust', orderIndex: 1, workSetCount: 3, targetRepsMax: 10 },
+        ],
+      }),
+      stateWith({ targetRepsMax: 8 }),
+    );
+
+    expect(updated.assignments[0].changes).toContainEqual({
+      field: 'Ziel-Wdh. max.',
+      from: '8',
+      to: '10',
+    });
+    expect(updated.assignments[0].values.targetRepsMax).toBe(10);
+  });
+
+  it('leert ein Feld bei null und zeigt einen Strich', () => {
+    const plan = planLibraryImport(
+      buildPayload({
+        templateAssignments: [
+          { template: 'Einheit B', exercise: 'Hip Thrust', orderIndex: 1, workSetCount: 3, targetWeight: null },
+        ],
+      }),
+      stateWith({ targetWeight: 82.5 }),
+    );
+    const [entry] = plan.assignments;
+
+    expect(entry.kind).toBe('update');
+    expect(entry.changes).toContainEqual({ field: 'Ziel-Gewicht', from: '82,5', to: '—' });
+    expect('targetWeight' in entry.values).toBe(true);
+    expect(entry.values.targetWeight).toBeUndefined();
+  });
+
+  it('null auf ein leeres Feld ist keine Änderung', () => {
+    const plan = planLibraryImport(
+      buildPayload({
+        templateAssignments: [
+          { template: 'Einheit B', exercise: 'Hip Thrust', orderIndex: 1, workSetCount: 3, targetWeight: null },
+        ],
+      }),
+      stateWith(),
+    );
+
+    expect(plan.assignments[0].kind).toBe('unchanged');
+    expect('targetWeight' in plan.assignments[0].values).toBe(false);
+  });
+
+  it('null bei einer neuen Zuordnung lässt das Feld weg', () => {
+    const plan = planLibraryImport(
+      buildPayload({
+        templates: [{ name: 'Einheit C' }],
+        templateAssignments: [
+          { template: 'Einheit C', exercise: 'Hip Thrust', orderIndex: 1, workSetCount: 3, targetWeight: null },
+        ],
+      }),
+      stateWith(),
+    );
+    const [entry] = plan.assignments;
+
+    expect(entry.record?.targetWeight).toBeUndefined();
+    expect(entry.changes.map((change) => change.field)).not.toContain('Ziel-Gewicht');
+  });
+
+  it('leert eine Notiz bei null', () => {
+    const plan = planLibraryImport(
+      buildPayload({
+        templateAssignments: [
+          { template: 'Einheit B', exercise: 'Hip Thrust', orderIndex: 1, workSetCount: 3, notes: null },
+        ],
+      }),
+      stateWith({ notes: 'alt' }),
+    );
+
+    expect(plan.assignments[0].changes).toContainEqual({ field: 'Notiz', from: 'alt', to: '—' });
+    expect('notes' in plan.assignments[0].values).toBe(true);
   });
 });
 
