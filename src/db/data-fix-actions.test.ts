@@ -206,6 +206,24 @@ describe('Art auf frühere Sessions übertragen', () => {
     expect(await applyWorkoutCategoryBackfill()).toBe(0);
   });
 
+  it('lässt Sessions mit Snapshot "strength" eines inzwischen umgestellten Workouts in Ruhe', async () => {
+    await seedCategories();
+    await db.workoutSessions.add({
+      id: 's5',
+      templateId: 't-mob',
+      templateNameSnapshot: 'Mobility Flow',
+      templateCategorySnapshot: 'strength',
+      resolvedProgramWeek: 1,
+      startedAt: now,
+      completedAt: '2026-02-01T10:00:00.000Z',
+      status: 'completed',
+    });
+
+    expect((await describeDataFixes()).sessionsWithoutCategory).toBe(2);
+    expect(await applyWorkoutCategoryBackfill()).toBe(2);
+    expect((await db.workoutSessions.get('s5'))?.templateCategorySnapshot).toBe('strength');
+  });
+
   it('fasst sonst nichts an', async () => {
     await seedCategories();
     await db.workoutSetLogs.add({

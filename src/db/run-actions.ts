@@ -86,7 +86,18 @@ export async function updateRunLog(
 
     assertValid(merged, now);
 
-    await db.runLogs.put(buildRecord(id, merged, existing.createdAt, now.toISOString()));
+    // Auf dem bestehenden Datensatz aufbauen, damit Felder, die diese Version
+    // nicht kennt (etwa aus einer neueren Sicherung), nicht verloren gehen.
+    const built = buildRecord(id, merged, existing.createdAt, now.toISOString());
+    const record: Record<string, unknown> = { ...existing, ...built };
+
+    for (const key of ['elevationGainM', 'averageHeartRate', 'notes'] as const) {
+      if (!(key in built)) {
+        delete record[key];
+      }
+    }
+
+    await db.runLogs.put(record as unknown as RunLog);
   });
 }
 

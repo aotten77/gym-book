@@ -33,7 +33,7 @@ describe('materializeSession', () => {
       }).session;
 
     expect(run({ ...base, category: 'mobility' }).templateCategorySnapshot).toBe('mobility');
-    expect('templateCategorySnapshot' in run(base)).toBe(false);
+    expect(run(base).templateCategorySnapshot).toBe('strength');
   });
 
   it('mirrors warmup and work sets for a unilateral exercise', () => {

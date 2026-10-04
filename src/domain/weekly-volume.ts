@@ -214,11 +214,11 @@ export function describeWeekCounts(week: WeekVolume): string {
   const parts: string[] = [];
 
   if (week.strength.sessions > 0) {
-    parts.push(`${week.strength.sessions} Kraft`);
+    parts.push(`${formatNumber(week.strength.sessions)} Kraft`);
   }
 
   if (week.mobility.sessions > 0) {
-    parts.push(`${week.mobility.sessions} Mobility`);
+    parts.push(`${formatNumber(week.mobility.sessions)} Mobility`);
   }
 
   if (week.running.runs > 0) {

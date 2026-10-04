@@ -71,11 +71,11 @@ export function formatRunDuration(totalSeconds: number): string {
 
 /** Die erste deutsche Fehlermeldung oder `undefined`, wenn der Lauf geschrieben werden darf. */
 export function validateRunLogValues(values: RunLogValues, today: Date): string | undefined {
-  if (!(values.distanceKm > 0)) {
+  if (!Number.isFinite(values.distanceKm) || !(values.distanceKm > 0)) {
     return RUN_MESSAGES.distance;
   }
 
-  if (!(values.durationSeconds > 0)) {
+  if (!Number.isInteger(values.durationSeconds) || !(values.durationSeconds > 0)) {
     return RUN_MESSAGES.duration;
   }
 

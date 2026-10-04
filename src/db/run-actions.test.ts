@@ -25,6 +25,18 @@ describe('run-actions', () => {
     expect(record?.createdAt).toBe(record?.updatedAt);
   });
 
+  it('lässt unbekannte Felder beim Ändern stehen', async () => {
+    const id = await createRunLog(VALUES, NOW);
+    const record = await db.runLogs.get(id);
+    await db.runLogs.put({ ...record, plannedEntryId: 'p1' } as never);
+
+    await updateRunLog(id, { notes: 'x' }, NOW);
+
+    const after = (await db.runLogs.get(id)) as unknown as Record<string, unknown>;
+    expect(after.plannedEntryId).toBe('p1');
+    expect(after.notes).toBe('x');
+  });
+
   it('ändert nur übergebene Felder', async () => {
     const id = await createRunLog(VALUES, NOW);
     const before = await db.runLogs.get(id);

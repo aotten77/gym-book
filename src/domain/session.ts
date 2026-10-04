@@ -1,4 +1,4 @@
-import { normalizeWorkoutCategory } from '@/domain/workout-category';
+import { resolveWorkoutCategory } from '@/domain/workout-category';
 import type {
   BandLevel,
   Exercise,
@@ -45,10 +45,12 @@ export function materializeSession({
     id: sessionId,
     templateId: template.id,
     templateNameSnapshot: template.name,
-    // Nur Mobility wird festgehalten; bei Kraft fehlt der Schlüssel ganz.
-    ...(normalizeWorkoutCategory(template.category) && {
-      templateCategorySnapshot: 'mobility' as const,
-    }),
+    // Der Snapshot der Session ist immer ausdrücklich: "kein Snapshot" heißt
+    // damit genau "gestartet, bevor Workouts eine Art hatten" - und nur diese
+    // Sessions fasst die Datenkorrektur in den Einstellungen an. Die
+    // Ein-Schreibweise-Regel (Kraft wird nie geschrieben) gilt für das
+    // Workout selbst, das ist eine andere Frage.
+    templateCategorySnapshot: resolveWorkoutCategory(template.category),
     programNameSnapshot,
     programWeekLabelSnapshot,
     usedWeekOverride,

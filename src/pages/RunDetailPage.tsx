@@ -29,6 +29,7 @@ export function RunDetailPage() {
   const [isEditing, setIsEditing] = useState(false);
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   if (run === undefined) {
     return <AppShell title="Lauf">{null}</AppShell>;
@@ -54,10 +55,13 @@ export function RunDetailPage() {
 
   async function handleDelete() {
     setIsDeleting(true);
+    setDeleteError(null);
 
     try {
       await deleteRunLog(run!.id);
       navigate('/history');
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : 'Löschen fehlgeschlagen.');
     } finally {
       setIsDeleting(false);
     }
@@ -103,8 +107,17 @@ export function RunDetailPage() {
         description="Der Lauf wird endgültig entfernt."
         busy={isDeleting}
         onConfirm={() => void handleDelete()}
-        onCancel={() => setIsConfirmingDelete(false)}
-      />
+        onCancel={() => {
+          setIsConfirmingDelete(false);
+          setDeleteError(null);
+        }}
+      >
+        {deleteError ? (
+          <p role="alert" className="text-sm text-danger">
+            {deleteError}
+          </p>
+        ) : null}
+      </ConfirmDialog>
     </AppShell>
   );
 }

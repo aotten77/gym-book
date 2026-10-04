@@ -90,7 +90,7 @@ class GymBookDatabase extends Dexie {
     });
 
     // v5 bringt die Läufe. Wieder nur eine neue Tabelle und kein `upgrade()`:
-    // es ist nichts umzuformen. `Exercise.category` und
+    // es ist nichts umzuformen. `WorkoutTemplate.category` und
     // `WorkoutSession.templateCategorySnapshot` kommen im selben Zug dazu,
     // brauchen aber keinen Index - Dexie speichert das ganze Objekt. Indiziert
     // ist nur `date`, weil Liste und Wochenrechnung nach dem Tag lesen.

@@ -863,13 +863,16 @@ export function SettingsPage() {
               <p className="font-medium text-content">Art auf frühere Sessions übertragen</p>
               <p className="mt-1 text-sm text-content-muted">
                 Stell zuerst die Mobility-Workouts um. Danach zählen ihre bisherigen Einheiten in
-                der Wochenübersicht als Mobility statt als Kraft.
+                der Wochenübersicht als Mobility statt als Kraft. Betrifft nur Einheiten aus der
+                Zeit, bevor Workouts eine Art hatten.
               </p>
               <p className="mt-2 text-sm text-content-muted">
                 {dataFixes === undefined
                   ? 'Wird geprüft...'
                   : dataFixes.sessionsWithoutCategory > 0
-                    ? `${formatNumber(dataFixes.sessionsWithoutCategory)} Sessions ohne Art.`
+                    ? dataFixes.sessionsWithoutCategory === 1
+                      ? '1 Session ohne Art.'
+                      : `${formatNumber(dataFixes.sessionsWithoutCategory)} Sessions ohne Art.`
                     : 'Nichts zu tun.'}
               </p>
               <Button
@@ -1131,7 +1134,7 @@ export function SettingsPage() {
       <ConfirmDialog
         open={showCategoryFixDialog}
         title="Art auf frühere Sessions übertragen?"
-        description={`${formatNumber(dataFixes?.sessionsWithoutCategory ?? 0)} ${dataFixes?.sessionsWithoutCategory === 1 ? 'Session' : 'Sessions'} der Mobility-Workouts ${dataFixes?.sessionsWithoutCategory === 1 ? 'bekommt' : 'bekommen'} die Art Mobility. Status, Zeiten und Sätze bleiben unverändert.`}
+        description={`${formatNumber(dataFixes?.sessionsWithoutCategory ?? 0)} ${dataFixes?.sessionsWithoutCategory === 1 ? 'Session' : 'Sessions'} der Mobility-Workouts ${dataFixes?.sessionsWithoutCategory === 1 ? 'bekommt' : 'bekommen'} die Art Mobility. Status, Zeiten und Sätze bleiben unverändert. Betrifft nur Einheiten aus der Zeit, bevor Workouts eine Art hatten.`}
         confirmLabel="Übertragen"
         destructive={false}
         busy={isFixing}

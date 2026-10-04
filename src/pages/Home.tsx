@@ -256,17 +256,17 @@ export default function Home() {
           </p>
         ) : null}
 
-        {/*
-          Waldgrün heißt "erledigt" - und darf sich deshalb wiederholen, anders
-          als die Limette. Bei null Einheiten steht hier aber keine gefüllte
-          Fläche: sie behauptete einen Zustand, den es nicht gibt.
-        */}
         <Button variant="secondary" fullWidth onClick={() => setIsRunSheetOpen(true)}>
           <RunIcon size={18} className="mr-2" />
           Lauf eintragen
         </Button>
         <RunLogSheet open={isRunSheetOpen} onClose={() => setIsRunSheetOpen(false)} />
 
+        {/*
+          Waldgrün heißt "erledigt" - und darf sich deshalb wiederholen, anders
+          als die Limette. Bei null Einheiten steht hier aber keine gefüllte
+          Fläche: sie behauptete einen Zustand, den es nicht gibt.
+        */}
         {weekVolume && hasTraining(weekVolume) ? (
           <DoneCard
             eyebrow="Diese Woche"

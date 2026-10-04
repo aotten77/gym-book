@@ -55,8 +55,9 @@ export function RunLogSheet({ open, run, onClose }: RunLogSheetProps) {
     setTouched((current) => new Set(current).add(field));
 
   const errorFor = (field: RunFormField) => (touched.has(field) ? errors[field] : undefined);
-  const durationError =
-    errorFor('hours') ?? undefined;
+  const durationTouched =
+    touched.has('hours') || touched.has('minutes') || touched.has('seconds');
+  const durationError = durationTouched ? errors.hours : undefined;
 
   async function handleSave() {
     if (!values || isSaving) {
@@ -139,6 +140,7 @@ export function RunLogSheet({ open, run, onClose }: RunLogSheetProps) {
               autoComplete="off"
               value={form.hours}
               aria-invalid={durationError ? true : undefined}
+              aria-describedby={durationError ? 'run-duration-error' : undefined}
               onChange={(event) => setField('hours', event.target.value)}
               onBlur={touch('hours')}
             />
@@ -162,7 +164,7 @@ export function RunLogSheet({ open, run, onClose }: RunLogSheetProps) {
             />
           </div>
           {durationError ? (
-            <p role="alert" className="mt-1.5 text-xs text-danger">
+            <p id="run-duration-error" role="alert" className="mt-1.5 text-xs text-danger">
               {durationError}
             </p>
           ) : null}

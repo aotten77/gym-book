@@ -21,7 +21,7 @@ test.describe('Lauf eintragen', () => {
     await sheet.getByLabel('Min', { exact: true }).fill('52');
     await expect(sheet.locator('[data-run-pace]')).toContainText('5:12 /km');
 
-    // Über die Tastaturleiste von Strecke zurück zu Std springen.
+    // Über die Tastaturleiste von Strecke vor zu Std springen.
     await sheet.getByLabel('Strecke (km)').click();
     await page.locator('[data-field-nav]').getByRole('button', { name: 'Nächstes Feld' }).click();
     await expect(sheet.getByLabel('Std', { exact: true })).toBeFocused();

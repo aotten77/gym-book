@@ -22,9 +22,9 @@ export interface DataFixStatus {
   nordicCurlOnTime: number;
   /** Sätze, die dabei Sekunden tragen und als Altdaten stehen bleiben. */
   nordicCurlSecondsLogs: number;
-  /** Ob die Einstellungen eine Woche von Hand übersteuern. */
-  /** Abgeschlossene oder laufende Sessions von Mobility-Workouts ohne Art-Snapshot. */
+  /** Sessions von Mobility-Workouts ohne Art-Snapshot, also aus der Zeit vor den Workout-Arten. */
   sessionsWithoutCategory: number;
+  /** Ob die Einstellungen eine Woche von Hand übersteuern. */
   hasWeekOverride: boolean;
   weekOverride?: number;
   activeProgramId?: string;

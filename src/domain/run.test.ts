@@ -55,6 +55,8 @@ describe('validateRunLogValues', () => {
   it('prüft Strecke und Dauer', () => {
     expect(check({ distanceKm: 0 })).toBe('Bitte eine Strecke über 0 km eintragen.');
     expect(check({ durationSeconds: 0 })).toBe('Bitte eine Dauer eintragen.');
+    expect(check({ distanceKm: Infinity })).toBe('Bitte eine Strecke über 0 km eintragen.');
+    expect(check({ durationSeconds: 2400.5 })).toBe('Bitte eine Dauer eintragen.');
   });
 
   it('prüft das Datum', () => {
