@@ -7,6 +7,7 @@ import {
 import type {
   Exercise,
   ExerciseTest,
+  RunLog,
   Side,
   TrackingMode,
   WorkoutSession,
@@ -69,6 +70,17 @@ function exerciseTest(overrides: Partial<ExerciseTest> & { id: string }): Exerci
   };
 }
 
+function run(overrides: Partial<RunLog> & { id: string }): RunLog {
+  return {
+    date: '2026-10-04',
+    distanceKm: 10,
+    durationSeconds: 3120,
+    createdAt: '2026-10-04T10:00:00.000Z',
+    updatedAt: '2026-10-04T10:00:00.000Z',
+    ...overrides,
+  };
+}
+
 function build(input: Partial<AnalysisExportInput>) {
   return buildAnalysisExport({
     exportedAt: new Date('2026-08-26T09:00:00'),
@@ -78,6 +90,7 @@ function build(input: Partial<AnalysisExportInput>) {
     setLogs: [],
     bandLevels: [],
     tests: [],
+    runs: [],
     weekControl,
     ...input,
   });
@@ -604,11 +617,11 @@ describe('buildAnalysisPasteText', () => {
 
     expect(text.startsWith('# Gym Book Analyse-Export 2026-08-28')).toBe(true);
     expect(text).toContain('```json');
-    // Dreimal csv-Rahmen: sessions, progression und tests.
-    expect(text.match(/```csv/g)).toHaveLength(3);
+    // Fünfmal csv-Rahmen: sessions, progression, tests, wochen und laeufe.
+    expect(text.match(/```csv/g)).toHaveLength(5);
   });
 
-  it('trägt den Inhalt aller vier Dateien', () => {
+  it('trägt den Inhalt aller sechs Dateien', () => {
     const files = build({
       sessions: [session({ id: 's1' })],
       sessionExercises: [sessionExercise({ id: 'e1', sessionId: 's1' })],
@@ -617,7 +630,14 @@ describe('buildAnalysisPasteText', () => {
     });
     const text = buildAnalysisPasteText(files, new Date('2026-08-28T09:00:00'));
 
-    for (const content of [files.sessionsCsv, files.progressionCsv, files.testsCsv, files.metaJson]) {
+    for (const content of [
+      files.sessionsCsv,
+      files.progressionCsv,
+      files.testsCsv,
+      files.weeksCsv,
+      files.runsCsv,
+      files.metaJson,
+    ]) {
       expect(text).toContain(content.trimEnd());
     }
   });
@@ -701,5 +721,137 @@ describe('meta.uebungen: Tracking-Modus', () => {
 
     expect(uebung.trackingMode).toBe('time');
     expect(uebung).not.toHaveProperty('trackingModeHistorisch');
+  });
+});
+
+describe('Läufe und Wochensummen', () => {
+  it('laeufe.csv: Spalten und Werte, neueste zuerst', () => {
+    const files = build({
+      runs: [
+        run({ id: 'r1', date: '2026-10-01', createdAt: '2026-10-01T10:00:00.000Z' }),
+        run({ id: 'r2' }),
+      ],
+    });
+    const { columns, rows } = parseCsv(files.runsCsv);
+
+    expect(columns).toEqual([
+      'datum',
+      'wochentag',
+      'strecke_km',
+      'dauer_sek',
+      'pace_sek_pro_km',
+      'hoehenmeter',
+      'puls_avg',
+      'notiz',
+    ]);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toEqual(['2026-10-04', 'So', '10', '3120', '312', '', '', '']);
+    expect(rows[1][0]).toBe('2026-10-01');
+  });
+
+  it('wochen.csv: eine Zeile je Woche über den ganzen Zeitraum', () => {
+    const files = build({
+      exportedAt: new Date('2026-10-04T09:00:00'),
+      sessions: [session({ id: 's1', startedAt: '2026-09-02T10:00:00', completedAt: '2026-09-02T11:00:00' })],
+      sessionExercises: [sessionExercise({ id: 'e1', sessionId: 's1' })],
+      setLogs: [setLog({ id: 'l1', sessionExerciseId: 'e1', weight: 40, reps: 5 })],
+      runs: [run({ id: 'r1', date: '2026-10-01' })],
+    });
+    const { columns, rows } = parseCsv(files.weeksCsv);
+
+    expect(columns).toEqual([
+      'woche_beginn',
+      'kraft_einheiten',
+      'kraft_dauer_min',
+      'kraft_volumen_kg',
+      'kraft_arbeitssaetze',
+      'mobility_einheiten',
+      'mobility_dauer_min',
+      'lauf_anzahl',
+      'lauf_km',
+      'lauf_hm',
+      'lauf_hm_unvollstaendig',
+      'lauf_dauer_min',
+    ]);
+    expect(rows.map((row) => row[0])).toEqual([
+      '2026-08-31',
+      '2026-09-07',
+      '2026-09-14',
+      '2026-09-21',
+      '2026-09-28',
+    ]);
+    expect(rows[0].slice(1, 5)).toEqual(['1', '60', '200', '1']);
+    expect(rows[1]).toEqual(['2026-09-07', '0', '0', '0', '0', '0', '0', '0', '0', '0', 'nein', '0']);
+    expect(rows[4].slice(7, 12)).toEqual(['1', '10', '0', 'ja', '52']);
+  });
+
+  it('wochen.csv: Minuten gerundet', () => {
+    const files = build({
+      sessions: [session({ id: 's1', startedAt: '2026-08-25T17:00:00.000Z', completedAt: '2026-08-25T18:10:00.000Z' })],
+      sessionExercises: [sessionExercise({ id: 'e1', sessionId: 's1' })],
+      setLogs: [setLog({ id: 'l1', sessionExerciseId: 'e1', weight: 40, reps: 5 })],
+    });
+    const { rows } = parseCsv(files.weeksCsv);
+
+    expect(rows[0][2]).toBe('70');
+  });
+
+  it('sessions.csv: Spalte art am Ende', () => {
+    const files = build({
+      sessions: [
+        session({ id: 's1' }),
+        session({
+          id: 's2',
+          startedAt: '2026-08-26T17:00:00.000Z',
+          completedAt: '2026-08-26T18:00:00.000Z',
+          templateCategorySnapshot: 'mobility',
+        }),
+      ],
+      sessionExercises: [
+        sessionExercise({ id: 'e1', sessionId: 's1' }),
+        sessionExercise({ id: 'e2', sessionId: 's2' }),
+      ],
+      setLogs: [
+        setLog({ id: 'l1', sessionExerciseId: 'e1', weight: 40, reps: 5 }),
+        setLog({ id: 'l2', sessionExerciseId: 'e2', reps: 5 }),
+      ],
+    });
+    const { columns, rows } = parseCsv(files.sessionsCsv);
+
+    expect(columns[columns.length - 1]).toBe('art');
+    expect(columns.slice(0, 7)).toHaveLength(7);
+    expect(rows.map((row) => row[row.length - 1])).toEqual(['kraft', 'mobility']);
+  });
+
+  it('meta.json: Zeitraum über Sessions und Läufe', () => {
+    const files = build({
+      sessions: [session({ id: 's1' })],
+      sessionExercises: [sessionExercise({ id: 'e1', sessionId: 's1' })],
+      setLogs: [setLog({ id: 'l1', sessionExerciseId: 'e1', weight: 40, reps: 5 })],
+      runs: [run({ id: 'r1', date: '2026-08-10' })],
+    });
+    const meta = JSON.parse(files.metaJson);
+
+    expect(meta.zeitraum.von).toBe('2026-08-10');
+    expect(meta.laeufe.anzahl).toBe(1);
+    expect(meta.hinweise.some((text: string) => text.includes('kraft_dauer_min'))).toBe(true);
+    expect(meta.hinweise.some((text: string) => text.includes('abgebrochene'))).toBe(true);
+  });
+
+  it('Zwischenablage: wochen.csv und laeufe.csv nach tests.csv', () => {
+    const text = buildAnalysisPasteText(build({}), new Date('2026-08-28T09:00:00'));
+    const order = ['meta.json', 'sessions.csv', 'progression.csv', 'tests.csv', 'wochen.csv', 'laeufe.csv'].map(
+      (name) => text.indexOf(`## ${name}`),
+    );
+
+    expect(order.every((index) => index >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+  });
+
+  it('ohne Läufe und Sessions: nur Kopfzeilen', () => {
+    const files = build({});
+
+    expect(files.runsCsv.trimEnd().split('\n')).toHaveLength(1);
+    expect(files.weeksCsv.trimEnd().split('\n')).toHaveLength(1);
   });
 });

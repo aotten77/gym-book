@@ -701,7 +701,7 @@ export async function exportDatabaseSnapshot(options: ExportOptions = {}): Promi
 }
 
 /**
- * Die vier Dateien und ihr Zeitstempel - gemeinsame Grundlage beider Wege
+ * Die sechs Dateien und ihr Zeitstempel - gemeinsame Grundlage beider Wege
  * nach draußen (Archiv und Zwischenablage).
  *
  * Ausdrücklich **keine Sicherung**, und das gilt für beide: hier fehlt
@@ -723,6 +723,7 @@ async function loadAnalysisFiles(): Promise<{ files: AnalysisExportFiles; export
     programs,
     programWeeks,
     settings,
+    runs,
   ] =
     await Promise.all([
       db.exercises.toArray(),
@@ -734,6 +735,7 @@ async function loadAnalysisFiles(): Promise<{ files: AnalysisExportFiles; export
       db.programs.toArray(),
       db.programWeeks.toArray(),
       db.appSettings.get('app-settings'),
+      db.runLogs.toArray(),
     ]);
 
   const program = settings?.activeProgramId
@@ -747,6 +749,7 @@ async function loadAnalysisFiles(): Promise<{ files: AnalysisExportFiles; export
     setLogs,
     bandLevels,
     tests,
+    runs,
     program,
     // Dieselbe Auflösung wie Start, Home und Einstellungen - die Rangfolge der
     // Woche hat genau eine Stelle, und der Export darf keine zweite werden.
@@ -761,7 +764,7 @@ async function loadAnalysisFiles(): Promise<{ files: AnalysisExportFiles; export
   return { files, exportedAt };
 }
 
-/** Der Analyse-Export als Archiv - vier Dateien, ein Teilen-Vorgang. */
+/** Der Analyse-Export als Archiv - sechs Dateien, ein Teilen-Vorgang. */
 export async function exportAnalysisSnapshot(options: ExportOptions = {}): Promise<ExportResult> {
   const { files, exportedAt } = await loadAnalysisFiles();
 
@@ -770,6 +773,8 @@ export async function exportAnalysisSnapshot(options: ExportOptions = {}): Promi
       { name: 'sessions.csv', content: files.sessionsCsv },
       { name: 'progression.csv', content: files.progressionCsv },
       { name: 'tests.csv', content: files.testsCsv },
+      { name: 'wochen.csv', content: files.weeksCsv },
+      { name: 'laeufe.csv', content: files.runsCsv },
       { name: 'meta.json', content: files.metaJson },
     ],
     exportedAt,

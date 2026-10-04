@@ -1,9 +1,11 @@
+import { parseLocalDate } from '@/domain/calendar-week';
 import { sortSetLogs } from '@/domain/history';
 import type {
   BandLevel,
   Exercise,
   ExerciseTest,
   Program,
+  RunLog,
   Side,
   TrackingMode,
   WorkoutSession,
@@ -11,9 +13,12 @@ import type {
   WorkoutSetLog,
 } from '@/domain/models';
 import { toDateInputValue, type WeekControl } from '@/domain/program';
+import { paceSecondsPerKm } from '@/domain/run';
 import { supportsReps } from '@/domain/tracking';
 import { isoWeekday, weekdayShortLabel } from '@/domain/training-calendar';
 import { sumWorkVolume } from '@/domain/volume';
+import { buildWeeklyVolume } from '@/domain/weekly-volume';
+import { resolveWorkoutCategory } from '@/domain/workout-category';
 
 /**
  * Der Analyse-Export - ein zweiter, ausdrücklich **verlustbehafteter** Export
@@ -97,6 +102,8 @@ export interface AnalysisExportInput {
    * lief. Siehe `buildTestsCsv` dazu, warum sie eine eigene Datei bekommen.
    */
   tests: ExerciseTest[];
+  /** Die Läufe - Rohstoff für `laeufe.csv` und die Laufspalten von `wochen.csv`. */
+  runs: RunLog[];
   /** Siehe [DEFAULT_REFERENCE_TEMPLATE_NAME]. */
   referenceTemplateName?: string;
 }
@@ -106,6 +113,8 @@ export interface AnalysisExportFiles {
   metaJson: string;
   progressionCsv: string;
   testsCsv: string;
+  weeksCsv: string;
+  runsCsv: string;
 }
 
 /** Was den Export einer Session verhindert hat - eine Zeile in `meta.json`. */
@@ -132,6 +141,8 @@ interface AnalysisRow {
   volumen?: number;
   uebersprungen: boolean;
   unvollstaendig: boolean;
+  /** `kraft` oder `mobility` - Kraft auch bei fehlendem Snapshot. */
+  art: 'kraft' | 'mobility';
   stundenSeitLetzterEinheit?: number;
   stundenSeitReferenz?: number;
   /** Der Spitzensatz als Kurzform - Rohstoff für `progression.csv`. */
@@ -327,10 +338,12 @@ const SESSION_COLUMNS = [
   'unvollstaendig',
   'std_seit_letzter_einheit',
   'std_seit_letzter_einheit_b',
+  // Zuletzt, damit bestehende Auswertungen ihre Spaltenpositionen behalten.
+  'art',
 ];
 
 /**
- * Baut die drei Dateien des Analyse-Exports.
+ * Baut die sechs Dateien des Analyse-Exports.
  *
  * Rein: nimmt die Tabellen als Arrays und gibt Text zurück. Die Filterregeln
  * stehen deshalb alle hier und sind einzeln testbar - was aus dem Export
@@ -505,6 +518,7 @@ export function buildAnalysisExport(input: AnalysisExportInput): AnalysisExportF
           volumen: volume > 0 ? volume : undefined,
           uebersprungen: exercise.wasSkipped,
           unvollstaendig: incomplete,
+          art: resolveWorkoutCategory(session.templateCategorySnapshot) === 'mobility' ? 'mobility' : 'kraft',
           stundenSeitLetzterEinheit,
           stundenSeitReferenz,
           topKurz: topSet ? formatTopSet(topSet) : '',
@@ -528,6 +542,8 @@ export function buildAnalysisExport(input: AnalysisExportInput): AnalysisExportF
     sessionsCsv: buildSessionsCsv(rows),
     progressionCsv: buildProgressionCsv(rows),
     testsCsv: buildTestsCsv(input.tests),
+    weeksCsv: buildWeeksCsv(input, rows),
+    runsCsv: buildRunsCsv(input.runs),
     metaJson: buildMetaJson(input, {
       rows,
       discarded,
@@ -562,6 +578,7 @@ function buildSessionsCsv(rows: AnalysisRow[]): string {
         row.unvollstaendig,
         row.stundenSeitLetzterEinheit,
         row.stundenSeitReferenz,
+        row.art,
       ]),
     );
   }
@@ -671,6 +688,114 @@ function buildTestsCsv(tests: ExerciseTest[]): string {
   return `${lines.join('\n')}\n`;
 }
 
+const RUN_COLUMNS = [
+  'datum',
+  'wochentag',
+  'strecke_km',
+  'dauer_sek',
+  'pace_sek_pro_km',
+  'hoehenmeter',
+  'puls_avg',
+  'notiz',
+];
+
+/**
+ * Die Läufe, neueste zuerst. Die Pace steht auf ganze Sekunden gerundet und
+ * wird hier berechnet, nie gespeichert; der Wochentag kommt aus dem lokalen
+ * Kalendertag (`parseLocalDate`), nicht aus `new Date('YYYY-MM-DD')`.
+ */
+function buildRunsCsv(runs: RunLog[]): string {
+  const lines = [RUN_COLUMNS.join(CSV_SEPARATOR)];
+  const sorted = [...runs].sort(
+    (left, right) => right.date.localeCompare(left.date) || right.createdAt.localeCompare(left.createdAt),
+  );
+
+  for (const run of sorted) {
+    const pace = paceSecondsPerKm(run.distanceKm, run.durationSeconds);
+    const day = parseLocalDate(run.date);
+
+    lines.push(
+      csvLine([
+        run.date,
+        day ? weekdayShortLabel(isoWeekday(day)) : '',
+        run.distanceKm,
+        run.durationSeconds,
+        pace === undefined ? undefined : Math.round(pace),
+        run.elevationGainM,
+        run.averageHeartRate,
+        run.notes,
+      ]),
+    );
+  }
+
+  return `${lines.join('\n')}\n`;
+}
+
+const WEEK_COLUMNS = [
+  'woche_beginn',
+  'kraft_einheiten',
+  'kraft_dauer_min',
+  'kraft_volumen_kg',
+  'kraft_arbeitssaetze',
+  'mobility_einheiten',
+  'mobility_dauer_min',
+  'lauf_anzahl',
+  'lauf_km',
+  'lauf_hm',
+  'lauf_hm_unvollstaendig',
+  'lauf_dauer_min',
+];
+
+/** Frühestes exportiertes Datum über Zeilen und Läufe (`YYYY-MM-DD`), sonst `undefined`. */
+function earliestDate(rows: AnalysisRow[], runs: RunLog[]): string | undefined {
+  return [...rows.map((row) => row.datum), ...runs.map((run) => run.date)].sort()[0];
+}
+
+/**
+ * Eine Zeile je Kalenderwoche vom ersten exportierten Datum bis zur Woche des
+ * Exports. Die Rechnung ist `buildWeeklyVolume` - dieselbe wie im Verlauf.
+ * Sie zählt nur abgeschlossene Sessions; abgebrochene stehen in
+ * `sessions.csv`, aber nicht hier.
+ */
+function buildWeeksCsv(input: AnalysisExportInput, rows: AnalysisRow[]): string {
+  const lines = [WEEK_COLUMNS.join(CSV_SEPARATOR)];
+  const firstDate = earliestDate(rows, input.runs);
+  const first = firstDate ? parseLocalDate(firstDate) : undefined;
+
+  if (first) {
+    const weeks = buildWeeklyVolume({
+      sessions: input.sessions,
+      sessionExercises: input.sessionExercises,
+      setLogs: input.setLogs,
+      runs: input.runs,
+      from: first,
+      to: input.exportedAt,
+    });
+    const minutes = (seconds: number) => Math.round(seconds / 60);
+
+    for (const week of weeks) {
+      lines.push(
+        csvLine([
+          toDateInputValue(week.weekStart),
+          week.strength.sessions,
+          minutes(week.strength.durationSeconds),
+          Math.round(week.strength.volumeKg),
+          week.strength.workSets,
+          week.mobility.sessions,
+          minutes(week.mobility.durationSeconds),
+          week.running.runs,
+          week.running.distanceKm,
+          week.running.elevationGainM,
+          week.running.elevationIncomplete,
+          minutes(week.running.durationSeconds),
+        ]),
+      );
+    }
+  }
+
+  return `${lines.join('\n')}\n`;
+}
+
 interface MetaContext {
   rows: AnalysisRow[];
   discarded: DiscardedSession[];
@@ -714,7 +839,9 @@ function describeTrackingMode(
 }
 
 function buildMetaJson(input: AnalysisExportInput, context: MetaContext): string {
-  const dates = [...new Set(context.rows.map((row) => row.datum))].sort();
+  const dates = [
+    ...new Set([...context.rows.map((row) => row.datum), ...input.runs.map((run) => run.date)]),
+  ].sort();
   const library = new Map(
     input.exercises.map((exercise) => [normalizeName(exercise.name), exercise.trackingMode]),
   );
@@ -745,6 +872,11 @@ function buildMetaJson(input: AnalysisExportInput, context: MetaContext): string
       bandLevels: [...input.bandLevels]
         .sort((left, right) => left.orderIndex - right.orderIndex)
         .map((band) => band.name),
+      laeufe: { anzahl: input.runs.length },
+      hinweise: [
+        'kraft_dauer_min ist die Session-Dauer von Start bis Abschluss, inklusive Pausen.',
+        'wochen.csv zählt nur abgeschlossene Sessions; abgebrochene stehen in sessions.csv, aber nicht in den Wochensummen.',
+      ],
       verworfeneSessions: context.discarded,
     },
     null,
@@ -753,7 +885,7 @@ function buildMetaJson(input: AnalysisExportInput, context: MetaContext): string
 }
 
 /**
- * Dieselben vier Dateien als ein Text zum Einfügen.
+ * Dieselben sechs Dateien als ein Text zum Einfügen.
  *
  * Das ZIP ist auf dem Telefon der längere Weg: sichern, App wechseln, Anhang
  * suchen - und ein Archiv wird am anderen Ende oft gar nicht ausgepackt. Über
@@ -796,6 +928,18 @@ export function buildAnalysisPasteText(
     '',
     '```csv',
     files.testsCsv.trimEnd(),
+    '```',
+    '',
+    '## wochen.csv',
+    '',
+    '```csv',
+    files.weeksCsv.trimEnd(),
+    '```',
+    '',
+    '## laeufe.csv',
+    '',
+    '```csv',
+    files.runsCsv.trimEnd(),
     '```',
     '',
   ].join('\n');

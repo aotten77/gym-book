@@ -935,7 +935,7 @@ export function SettingsPage() {
                   {isExportingAnalysis ? 'Analyse-Export läuft...' : 'Analyse-Export'}
                 </p>
                 <p className="mt-1 text-sm text-content-muted">
-                  Ein ZIP mit vier kleinen Dateien zum Auswerten: eine Zeile je Einheit, Übung und
+                  Ein ZIP mit sechs kleinen Dateien zum Auswerten: eine Zeile je Einheit, Übung und
                   Seite, dazu die Tests. Ohne Bilder, ohne Ids, ohne leere Sätze - und deshalb{' '}
                   <span className="font-medium">keine Sicherung</span>.
                 </p>
@@ -959,7 +959,7 @@ export function SettingsPage() {
                   {isCopyingAnalysis ? 'Wird kopiert...' : 'Analyse kopieren'}
                 </p>
                 <p className="mt-1 text-sm text-content-muted">
-                  Dieselben vier Dateien als Text in der Zwischenablage - zum Einfügen in ein
+                  Dieselben sechs Dateien als Text in der Zwischenablage - zum Einfügen in ein
                   Gespräch, ohne Datei und ohne Anhang.
                 </p>
               </div>
