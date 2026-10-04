@@ -23,7 +23,7 @@ import { cn } from '@/lib/utils';
  */
 
 const NOW_SURFACE = 'rounded-card bg-highlight text-highlight-contrast shadow-soft';
-const DONE_SURFACE = 'rounded-card bg-success text-success-contrast';
+export const DONE_SURFACE = 'rounded-card bg-success text-success-contrast';
 const FOCUS_RING =
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-app';
 

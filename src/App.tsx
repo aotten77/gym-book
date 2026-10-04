@@ -9,6 +9,7 @@ import { HistoryPage } from '@/pages/HistoryPage';
 import { HistorySessionPage } from '@/pages/HistorySessionPage';
 import { ProgramsManagePage } from '@/pages/ProgramsManagePage';
 import { ProgramsPage } from '@/pages/ProgramsPage';
+import { RunDetailPage } from '@/pages/RunDetailPage';
 import { SessionPage } from '@/pages/SessionPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { TemplateDetailPage } from '@/pages/TemplateDetailPage';
@@ -78,6 +79,7 @@ export default function App() {
           <Route path="/session/:sessionId" element={<SessionPage />} />
           <Route path="/history" element={<HistoryPage />} />
           <Route path="/history/session/:sessionId" element={<HistorySessionPage />} />
+          <Route path="/runs/:runId" element={<RunDetailPage />} />
           <Route path="/tests" element={<TestsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />

@@ -4,8 +4,11 @@ import { Link } from 'react-router-dom';
 import { AppShell } from '@/components/AppShell';
 import { Empty } from '@/components/Empty';
 import { SectionCard } from '@/components/SectionCard';
+import { RunHistoryCard } from '@/components/RunHistoryCard';
+import { WeeklyVolumeList } from '@/components/WeeklyVolumeList';
 import { DoneCard } from '@/components/ui/StatusCard';
 import { db } from '@/db/appDb';
+import { loadWeeklyVolume } from '@/db/history-queries';
 import type { WorkoutSession, WorkoutSessionExercise, WorkoutSetLog } from '@/domain/models';
 import { sumWorkVolume } from '@/domain/volume';
 import { formatDateTime, formatLoadLabel, formatNumber, formatSessionWeekContext } from '@/lib/format';
@@ -89,6 +92,15 @@ export function HistoryPage() {
     return db.workoutSetLogs.where('sessionExerciseId').anyOf(sessionExercises.map((item) => item.id)).toArray();
   }, []);
 
+  const weeks = useLiveQuery(() => {
+    const sevenWeeksAgo = new Date();
+
+    sevenWeeksAgo.setDate(sevenWeeksAgo.getDate() - 49);
+
+    return loadWeeklyVolume(sevenWeeksAgo, new Date()).then((list) => list.reverse());
+  }, []);
+  const runs = useLiveQuery(() => db.runLogs.toArray(), []);
+
   const historyByExercise = useMemo(() => {
     const completedAtBySessionId = Object.fromEntries(
       (completedSessions ?? []).map((item) => [item.id, item.completedAt]),
@@ -148,6 +160,10 @@ export function HistoryPage() {
             subtitle={`${formatNumber(Math.round(recentVolume))} kg Volumen in den letzten ${RECENT_VOLUME_DAYS} Tagen`}
           />
         ) : null}
+
+        {weeks ? <WeeklyVolumeList weeks={weeks} /> : null}
+
+        {runs && runs.length > 0 ? <RunHistoryCard runs={runs} /> : null}
 
         {Object.keys(historyByExercise).length > 0 ? (
           Object.entries(historyByExercise).map(([exerciseId, entries]) => {

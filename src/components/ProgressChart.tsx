@@ -15,6 +15,8 @@ interface ProgressChartProps {
    * Differenz-Angabe - zwei Stufen Unterschied sind keine zwei Kilo.
    */
   formatValue?: (value: number) => string;
+  /** Kleiner ist besser (Pace): die y-Achse läuft dann umgekehrt, der Fortschritt zeigt nach oben. */
+  lowerIsBetter?: boolean;
 }
 
 const WIDTH = 320;
@@ -28,7 +30,7 @@ const PADDING = { top: 12, right: 8, bottom: 20, left: 8 };
  * Abhängigkeit im Bundle - und ohne Netz muss ohnehin alles mit ausgeliefert
  * werden.
  */
-export function ProgressChart({ points, unit, label, formatValue }: ProgressChartProps) {
+export function ProgressChart({ points, unit, label, formatValue, lowerIsBetter }: ProgressChartProps) {
   const gradientId = useId();
 
   if (points.length === 0) {
@@ -47,7 +49,10 @@ export function ProgressChart({ points, unit, label, formatValue }: ProgressChar
   const coords = points.map((point, index) => {
     const x =
       PADDING.left + (points.length === 1 ? innerWidth / 2 : (index / (points.length - 1)) * innerWidth);
-    const y = PADDING.top + innerHeight - ((point.topValue - min) / span) * innerHeight;
+    const ratio = (point.topValue - min) / span;
+    const y = lowerIsBetter
+      ? PADDING.top + ratio * innerHeight
+      : PADDING.top + innerHeight - ratio * innerHeight;
     return { x, y, point };
   });
 
@@ -91,9 +96,9 @@ export function ProgressChart({ points, unit, label, formatValue }: ProgressChar
           vectorEffect="non-scaling-stroke"
         />
 
-        {coords.map(({ x, y, point }) => (
+        {coords.map(({ x, y, point }, index) => (
           <circle
-            key={point.completedAt}
+            key={`${point.completedAt}-${index}`}
             cx={x}
             cy={y}
             r="3"

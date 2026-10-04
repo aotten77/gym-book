@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { resetDatabase } from './helpers';
 
 /*
@@ -50,5 +50,67 @@ test.describe('Lauf eintragen', () => {
     await minutes.fill('75');
     await minutes.blur();
     await expect(sheet).toContainText('0–59');
+  });
+
+  async function enterRun(page: Page, km: string, min: string) {
+    await page.getByRole('button', { name: 'Lauf eintragen' }).click();
+    const sheet = page.locator('[data-sheet]');
+    await sheet.getByLabel('Strecke (km)').fill(km);
+    await sheet.getByLabel('Min', { exact: true }).fill(min);
+    await sheet.getByRole('button', { name: 'Lauf speichern' }).click();
+    await expect(sheet).toHaveCount(0);
+  }
+
+  test('zeigt den Lauf im Verlauf und auf der Detailseite', async ({ page }) => {
+    await enterRun(page, '10', '52');
+    await page.goto('./#/history');
+
+    await expect(page.locator('[data-week-volume]').first()).toContainText('1 Lauf');
+    await page.locator('a[href^="#/runs/"]').first().click();
+    await expect(page).toHaveURL(/#\/runs\//);
+
+    const main = page.locator('main');
+    await expect(main).toContainText('10 km');
+    await expect(main).toContainText('52:00');
+    await expect(main).toContainText('5:12 /km');
+    await expect(main).toContainText('–');
+  });
+
+  test('bearbeitet und löscht einen Lauf', async ({ page }) => {
+    await enterRun(page, '10', '52');
+    await page.goto('./#/history');
+    await page.locator('a[href^="#/runs/"]').first().click();
+
+    await page.getByRole('button', { name: 'Bearbeiten' }).click();
+    const sheet = page.locator('[data-sheet]');
+    await sheet.getByLabel('Ø Puls (bpm)').fill('150');
+    await sheet.getByRole('button', { name: 'Lauf speichern' }).click();
+    await expect(sheet).toHaveCount(0);
+    await expect(page.locator('main')).toContainText('150');
+
+    await page.getByRole('button', { name: 'Löschen' }).click();
+    await page.getByRole('alertdialog').getByRole('button', { name: 'Löschen' }).click();
+    await expect(page).toHaveURL(/#\/history/);
+    await expect(page.getByRole('heading', { name: 'Läufe' })).toHaveCount(0);
+  });
+
+  test('zwei Läufe am selben Tag', async ({ page }) => {
+    await enterRun(page, '10', '52');
+    await enterRun(page, '5', '30');
+    await page.goto('./#/history');
+
+    await expect(page.locator('a[href^="#/runs/"]')).toHaveCount(2);
+    await expect(page.locator('figure svg circle')).toHaveCount(2);
+    await expect(page.locator('[data-week-volume]').first()).toContainText('2 Läufe');
+  });
+
+  test('Wochenübersicht läuft bei 320px nicht über', async ({ page }) => {
+    await enterRun(page, '10', '52');
+    await page.goto('./#/history');
+
+    const weeks = page.locator('[data-week-volume]');
+    await expect(weeks.first()).toBeVisible();
+    const overflow = await weeks.evaluateAll((nodes) => nodes.filter((n) => n.scrollWidth > n.clientWidth).length);
+    expect(overflow).toBe(0);
   });
 });

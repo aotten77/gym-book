@@ -1,3 +1,4 @@
+import { parseLocalDate } from '@/domain/calendar-week';
 import type { TrackingMode, WorkoutSession, WorkoutSetLog } from '@/domain/models';
 
 const TRACKING_MODE_LABELS: Record<TrackingMode, string> = {
@@ -205,4 +206,13 @@ export function formatDurationHours(totalSeconds: number) {
   const hours = Math.floor(totalMinutes / 60);
 
   return `${hours}:${String(totalMinutes % 60).padStart(2, '0')} h`;
+}
+
+const runDateFormat = new Intl.DateTimeFormat('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' });
+
+/** Lokaler Tag, nie `new Date('YYYY-MM-DD')` (UTC-Mitternacht). */
+export function formatRunDate(date: string) {
+  const parsed = parseLocalDate(date);
+
+  return parsed ? runDateFormat.format(parsed) : date;
 }
