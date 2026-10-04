@@ -73,6 +73,7 @@ const workoutTemplateSchema = z.object({
    * bestehende Nutzer-Backup ab.
    */
   scheduledWeekdays: z.array(z.number().int().min(1).max(7)).optional(),
+  category: z.enum(['strength', 'mobility']).optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -108,6 +109,7 @@ const workoutSessionSchema = z.object({
   id: z.string().min(1),
   templateId: z.string().min(1),
   templateNameSnapshot: z.string().min(1),
+  templateCategorySnapshot: z.enum(['strength', 'mobility']).optional(),
   programNameSnapshot: z.string().optional(),
   programWeekLabelSnapshot: z.string().optional(),
   usedWeekOverride: z.boolean().optional(),

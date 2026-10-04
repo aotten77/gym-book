@@ -16,6 +16,26 @@ import type {
 } from '@/domain/models';
 
 describe('materializeSession', () => {
+  it('übernimmt die Art des Workouts als Snapshot', () => {
+    const base: WorkoutTemplate = {
+      id: 'template-1',
+      name: 'Mobility A',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+    const run = (template: WorkoutTemplate) =>
+      materializeSession({
+        template,
+        templateExercises: [],
+        exercisesById: {},
+        resolvedProgramWeek: 1,
+        startedAt: '2026-01-02T00:00:00.000Z',
+      }).session;
+
+    expect(run({ ...base, category: 'mobility' }).templateCategorySnapshot).toBe('mobility');
+    expect('templateCategorySnapshot' in run(base)).toBe(false);
+  });
+
   it('mirrors warmup and work sets for a unilateral exercise', () => {
     const template: WorkoutTemplate = {
       id: 'template-1',

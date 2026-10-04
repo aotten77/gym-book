@@ -54,3 +54,29 @@ async function hasWeekdays(templateId: string) {
 
   return stored !== undefined && stored.scheduledWeekdays !== undefined;
 }
+
+describe('Art des Workouts', () => {
+  it('speichert Mobility und entfernt die Art bei Kraft', async () => {
+    const templateId = await createTemplate({ name: 'Einheit A' });
+
+    await updateTemplate(templateId, { name: 'Einheit A', category: 'mobility' });
+    expect((await db.workoutTemplates.get(templateId))?.category).toBe('mobility');
+
+    await updateTemplate(templateId, { name: 'Einheit A' });
+    expect((await db.workoutTemplates.get(templateId))?.category).toBe('mobility');
+
+    await updateTemplate(templateId, { name: 'Einheit A', category: 'strength' });
+    expect('category' in ((await db.workoutTemplates.get(templateId)) ?? {})).toBe(false);
+
+    await updateTemplate(templateId, { name: 'Einheit A neu' });
+    expect('category' in ((await db.workoutTemplates.get(templateId)) ?? {})).toBe(false);
+  });
+
+  it('legt ein Mobility-Workout an und schreibt bei Kraft keinen Schlüssel', async () => {
+    const mobility = await createTemplate({ name: 'M', category: 'mobility' });
+    const strength = await createTemplate({ name: 'K', category: 'strength' });
+
+    expect((await db.workoutTemplates.get(mobility))?.category).toBe('mobility');
+    expect('category' in ((await db.workoutTemplates.get(strength)) ?? {})).toBe(false);
+  });
+});

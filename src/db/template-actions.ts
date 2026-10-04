@@ -1,5 +1,6 @@
 import { db } from '@/db/appDb';
 import type { WorkoutTemplate, WorkoutTemplateExercise } from '@/domain/models';
+import { normalizeWorkoutCategory, type WorkoutCategory } from '@/domain/workout-category';
 import { normalizeScheduledWeekdays } from '@/domain/training-calendar';
 import {
   areGroupsContiguous,
@@ -14,6 +15,8 @@ import { createId } from '@/lib/id';
 interface TemplateInput {
   name: string;
   notes?: string;
+  /** Fehlt der Schlüssel, bleibt die Art stehen; `'strength'` entfernt sie. */
+  category?: WorkoutCategory;
   /**
    * Die Wochentage des Workouts - `null` löscht sie, ein fehlender Schlüssel
    * lässt sie stehen.
@@ -89,6 +92,7 @@ export async function createTemplate(input: TemplateInput) {
     name: input.name.trim(),
     notes: normalizeOptionalText(input.notes),
     scheduledWeekdays: normalizeScheduledWeekdays(input.scheduledWeekdays),
+    ...(normalizeWorkoutCategory(input.category) && { category: 'mobility' as const }),
     createdAt: now,
     updatedAt: now,
   });
@@ -109,6 +113,14 @@ export async function updateTemplate(templateId: string, input: TemplateInput) {
    */
   if (input.scheduledWeekdays !== undefined) {
     changes.scheduledWeekdays = normalizeScheduledWeekdays(input.scheduledWeekdays);
+  }
+
+  /*
+   * Hier löscht `undefined` bewusst: Kraft hat keine Schreibweise, also
+   * entfernt `Table.update` die Eigenschaft.
+   */
+  if (input.category !== undefined) {
+    changes.category = normalizeWorkoutCategory(input.category);
   }
 
   await db.workoutTemplates.update(templateId, changes);

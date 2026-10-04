@@ -1050,3 +1050,52 @@ describe('planLibraryImport - Idempotenz', () => {
     expect(afterFirst.bandLevels).toHaveLength(2);
   });
 });
+
+describe('planLibraryImport - Art des Workouts', () => {
+  it('legt ein neues Workout mit Art Mobility an', () => {
+    const plan = planLibraryImport(
+      buildPayload({ templates: [{ name: 'Mobility A', category: 'mobility' }] }),
+      emptyState(),
+    );
+
+    expect(plan.templates[0].record?.category).toBe('mobility');
+  });
+
+  it('schreibt bei einem neuen Kraft-Workout keinen Schlüssel', () => {
+    const plan = planLibraryImport(
+      buildPayload({ templates: [{ name: 'Kraft A', category: 'strength' }] }),
+      emptyState(),
+    );
+
+    expect(plan.templates[0].record).not.toBeNull();
+    expect('category' in (plan.templates[0].record ?? {})).toBe(false);
+  });
+
+  it('meldet den Wechsel der Art eines bestehenden Workouts', () => {
+    const plan = planLibraryImport(
+      buildPayload({ templates: [{ name: 'Einheit A', category: 'mobility' }] }),
+      emptyState({ templates: [buildTemplate('t1', 'Einheit A')] }),
+    );
+
+    expect(plan.templates[0].changes).toContainEqual({ field: 'Art', from: 'Kraft', to: 'Mobility' });
+    expect(plan.templates[0].values.category).toBe('mobility');
+  });
+
+  it('lässt die Art stehen, wenn die Datei sie nicht nennt', () => {
+    const plan = planLibraryImport(
+      buildPayload({ templates: [{ name: 'Einheit A' }] }),
+      emptyState({ templates: [{ ...buildTemplate('t1', 'Einheit A'), category: 'mobility' }] }),
+    );
+
+    expect(plan.templates[0].kind).toBe('unchanged');
+  });
+
+  it('weist eine unbekannte Art mit Zeile ab', () => {
+    const json = JSON.stringify({
+      schemaVersion: 1,
+      templates: [{ name: 'Einheit A', category: 'yoga' }],
+    });
+
+    expect(() => parseLibraryImportPayload(json)).toThrow(/Workout 1, Feld "category"/);
+  });
+});

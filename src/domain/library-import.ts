@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { describeWorkoutCategory, normalizeWorkoutCategory } from '@/domain/workout-category';
 import type {
   BandLevel,
   Exercise,
@@ -59,6 +60,7 @@ const importExerciseSchema = z.object({
 const importTemplateSchema = z.object({
   name: z.string().min(1),
   notes: z.string().optional(),
+  category: z.enum(['strength', 'mobility']).optional(),
   /*
    * Die Zuordnungen dieses Workouts in der Datei sind der vollständige
    * Soll-Stand seiner Zusammensetzung: was fehlt, wird entfernt, Reihenfolge
@@ -500,7 +502,12 @@ function planTemplates(
         kind: 'new',
         label: name,
         changes: [],
-        record: { name, notes: optionalText(input.notes) },
+        record: {
+          name,
+          notes: optionalText(input.notes),
+          // Kraft hat keine Schreibweise: der Schlüssel fehlt dann ganz.
+          ...(normalizeWorkoutCategory(input.category) && { category: 'mobility' as const }),
+        },
         values: {},
       });
       return;
@@ -517,6 +524,19 @@ function planTemplates(
 
     if (notes !== undefined && diffField(changes, 'Notiz', existing.notes, notes)) {
       values.notes = notes;
+    }
+
+    if (
+      input.category !== undefined &&
+      diffField(
+        changes,
+        'Art',
+        describeWorkoutCategory(existing.category),
+        describeWorkoutCategory(input.category),
+      )
+    ) {
+      // `undefined` löscht die Eigenschaft über `Table.update` - gewollt bei Kraft.
+      values.category = normalizeWorkoutCategory(input.category);
     }
 
     entries.push({

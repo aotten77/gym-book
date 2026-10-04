@@ -1,3 +1,4 @@
+import { normalizeWorkoutCategory } from '@/domain/workout-category';
 import type {
   BandLevel,
   Exercise,
@@ -44,6 +45,10 @@ export function materializeSession({
     id: sessionId,
     templateId: template.id,
     templateNameSnapshot: template.name,
+    // Nur Mobility wird festgehalten; bei Kraft fehlt der Schlüssel ganz.
+    ...(normalizeWorkoutCategory(template.category) && {
+      templateCategorySnapshot: 'mobility' as const,
+    }),
     programNameSnapshot,
     programWeekLabelSnapshot,
     usedWeekOverride,

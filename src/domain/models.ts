@@ -1,3 +1,4 @@
+import type { WorkoutCategory } from '@/domain/workout-category';
 export type TrackingMode = 'reps_weight' | 'time' | 'time_weight';
 export type SetKind = 'warmup' | 'work';
 export type Side = 'both' | 'left' | 'right';
@@ -79,6 +80,8 @@ export interface WorkoutTemplate {
   id: string;
   name: string;
   notes?: string;
+  /** Fehlt bei Kraft - siehe [workout-category.ts]; geschrieben wird nur `'mobility'`. */
+  category?: WorkoutCategory;
   /**
    * Die Wochentage, an denen dieses Workout ansteht - ISO, 1 = Montag bis
    * 7 = Sonntag.
@@ -194,6 +197,8 @@ export interface WorkoutSession {
   id: string;
   templateId: string;
   templateNameSnapshot: string;
+  /** Art des Workouts beim Start; fehlt bei Kraft. */
+  templateCategorySnapshot?: WorkoutCategory;
   programNameSnapshot?: string;
   programWeekLabelSnapshot?: string;
   usedWeekOverride?: boolean;

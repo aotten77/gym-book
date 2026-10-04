@@ -15,8 +15,9 @@ import {
 import { AppShell } from '@/components/AppShell';
 import { Alert } from '@/components/Alert';
 import { Empty } from '@/components/Empty';
+import { resolveWorkoutCategory, type WorkoutCategory } from '@/domain/workout-category';
 import { Button, IconButton } from '@/components/ui/Button';
-import { CheckboxField } from '@/components/ui/Field';
+import { CheckboxField, SelectField } from '@/components/ui/Field';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { NowCard } from '@/components/ui/StatusCard';
 import { Sheet } from '@/components/ui/Sheet';
@@ -298,6 +299,7 @@ export function TemplateDetailPage() {
   const navigate = useNavigate();
   const [templateName, setTemplateName] = useState('');
   const [templateNotes, setTemplateNotes] = useState('');
+  const [templateCategory, setTemplateCategory] = useState<WorkoutCategory>('strength');
   const [templateWeekdays, setTemplateWeekdays] = useState<number[]>([]);
   const [editingTemplateExerciseId, setEditingTemplateExerciseId] = useState<string | null>(null);
   /*
@@ -379,10 +381,11 @@ export function TemplateDetailPage() {
   useEffect(() => {
     setTemplateName(template?.name ?? '');
     setTemplateNotes(template?.notes ?? '');
+    setTemplateCategory(resolveWorkoutCategory(template?.category));
     setTemplateWeekdays(
       templateWeekdayKey === '' ? [] : templateWeekdayKey.split(',').map(Number),
     );
-  }, [template?.id, template?.name, template?.notes, templateWeekdayKey]);
+  }, [template?.id, template?.name, template?.notes, template?.category, templateWeekdayKey]);
 
   function handleEditTemplateExercise(templateExerciseId: string) {
     setEditingTemplateExerciseId(templateExerciseId);
@@ -448,6 +451,8 @@ export function TemplateDetailPage() {
       await updateTemplate(template.id, {
         name: templateName,
         notes: templateNotes,
+        // Immer mitgeschickt: 'strength' entfernt die Art wieder.
+        category: templateCategory,
         /*
          * Immer mitgeschickt, nie weggelassen: `undefined` hieße "nicht
          * anfassen", und dann ließen sich die Tage nicht mehr leeren. Die
@@ -733,6 +738,15 @@ export function TemplateDetailPage() {
               rows={3}
               className="w-full rounded-panel border border-line bg-surface px-4 py-4 text-base text-content outline-none transition placeholder:text-content-muted focus-visible:border-accent-border focus-visible:ring-2 focus-visible:ring-accent"
             />
+            <SelectField
+              label="Art"
+              value={templateCategory}
+              onChange={(event) => setTemplateCategory(event.target.value as WorkoutCategory)}
+              disabled={isSavingTemplate}
+            >
+              <option value="strength">Kraft</option>
+              <option value="mobility">Mobility</option>
+            </SelectField>
             {/*
               Die Trainingstage stehen hier und nicht im Programm: sie sind
               eine Eigenschaft des Workouts wie sein Name, und der Kalender

@@ -750,6 +750,40 @@ describe('restoreDatabaseSnapshot', () => {
     });
   });
 
+  it('trägt die Art des Workouts und ihren Snapshot durch', async () => {
+    const parsed = parseDatabaseSnapshot(
+      JSON.stringify(
+        createSnapshot({
+          workoutTemplates: [
+            {
+              id: 'template-1',
+              name: 'Mobility A',
+              category: 'mobility',
+              createdAt: '2026-07-01T08:00:00.000Z',
+              updatedAt: '2026-07-01T08:00:00.000Z',
+            },
+          ],
+          workoutSessions: [
+            {
+              id: 'session-1',
+              templateId: 'template-1',
+              templateNameSnapshot: 'Mobility A',
+              templateCategorySnapshot: 'mobility',
+              resolvedProgramWeek: 1,
+              startedAt: '2026-07-01T08:00:00.000Z',
+              status: 'completed',
+            },
+          ],
+        }),
+      ),
+    );
+
+    await restoreDatabaseSnapshot(parsed);
+
+    expect((await db.workoutTemplates.get('template-1'))?.category).toBe('mobility');
+    expect((await db.workoutSessions.get('session-1'))?.templateCategorySnapshot).toBe('mobility');
+  });
+
   it('sichert und stellt Läufe wieder her', async () => {
     const run = {
       id: 'run-1',
