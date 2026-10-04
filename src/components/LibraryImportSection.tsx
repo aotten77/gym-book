@@ -14,6 +14,7 @@ import {
   type LibraryImportPayload,
   type LibraryImportPlan,
 } from '@/domain/library-import';
+import { cn } from '@/lib/utils';
 import { formatDateTime, formatNumber } from '@/lib/format';
 
 /**
@@ -107,12 +108,14 @@ function PreviewGroup({ title, rows }: { title: string; rows: PreviewRow[] }) {
           {visible.map((row) => (
             <li key={row.key} className="text-sm">
               <p className="flex flex-wrap items-baseline gap-x-2 text-content">
+                {/* Rot heißt in dieser App "gelöscht" - genau das passiert hier. */}
                 <span
-                  className={
-                    row.kind === 'unchanged'
-                      ? 'text-xs uppercase tracking-[0.14em] text-content-muted'
-                      : 'text-xs uppercase tracking-[0.14em] text-content-secondary'
-                  }
+                  className={cn(
+                    'text-xs uppercase tracking-[0.14em]',
+                    row.kind === 'unchanged' && 'text-content-muted',
+                    row.kind === 'removed' && 'text-danger',
+                    (row.kind === 'new' || row.kind === 'update') && 'text-content-secondary',
+                  )}
                 >
                   {KIND_LABELS[row.kind]}
                 </span>
@@ -217,7 +220,8 @@ export function LibraryImportSection() {
         `Eingespielt: ${formatNumber(summary.createdExercises)} Übungen neu, ` +
           `${formatNumber(summary.updatedExercises)} geändert · ` +
           `${formatNumber(summary.createdTemplates)} Workouts · ` +
-          `${formatNumber(summary.createdAssignments)} Zuordnungen · ` +
+          `${formatNumber(summary.createdAssignments)} Zuordnungen, ` +
+          `${formatNumber(summary.removedAssignments)} entfernt · ` +
           `${formatNumber(summary.createdBandLevels)} Bänder.`,
       );
       setError(null);

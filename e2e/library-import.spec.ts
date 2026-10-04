@@ -101,4 +101,47 @@ test.describe('Bibliotheks-Import', () => {
     await page.waitForTimeout(700);
     await expect(page.getByText('Pallof Press')).toHaveCount(0);
   });
+
+  /*
+   * Das Beispiel-Workout "Einheit A" trägt Front Squat, Bulgarian Split Squat
+   * und Nordic Curl Iso. Die Datei beschreibt es vollständig neu: zwei
+   * Übungen, umgekehrt, als Supersatz - der Split Squat muss gehen.
+   */
+  test('ersetzt ein Workout und entfernt, was die Datei nicht nennt', async ({ page }) => {
+    const replace = JSON.stringify({
+      schemaVersion: 1,
+      templates: [{ name: 'Einheit A', replaceAssignments: true }],
+      templateAssignments: [
+        { template: 'Einheit A', exercise: 'Nordic Curl Iso', orderIndex: 1, workSetCount: 3, superset: 'A' },
+        { template: 'Einheit A', exercise: 'Front Squat', orderIndex: 2, workSetCount: 4, superset: 'A' },
+      ],
+    });
+
+    await pasteAndPreview(page, replace);
+
+    const removedRow = page.getByRole('listitem').filter({ hasText: 'ENTFERNT' });
+    await expect(removedRow).toContainText('Bulgarian Split Squat');
+
+    await page.getByRole('button', { name: 'Import bestätigen' }).click();
+    await page.waitForTimeout(900);
+    await expect(page.getByRole('status').filter({ hasText: 'Eingespielt' })).toContainText('1 entfernt');
+
+    await page.goto('./#/templates');
+    await page.waitForTimeout(800);
+    await page.getByRole('link', { name: 'Bearbeiten' }).first().click();
+    await page.waitForTimeout(800);
+
+    await expect(
+      page.getByRole('group', { name: 'Supersatz: Nordic Curl Iso und Front Squat' }),
+    ).toBeVisible();
+    await expect(page.locator('p').filter({ hasText: /^1\. Nordic Curl Iso$/ })).toBeVisible();
+    await expect(page.locator('p').filter({ hasText: /^2\. Front Squat$/ })).toBeVisible();
+    await expect(page.locator('p').filter({ hasText: /Bulgarian Split Squat$/ })).toHaveCount(0);
+
+    await page.goto('./#/settings');
+    await page.waitForTimeout(900);
+    await pasteAndPreview(page, replace);
+
+    await expect(page.getByText('Alles steht schon so in der Datenbank')).toBeVisible();
+  });
 });
