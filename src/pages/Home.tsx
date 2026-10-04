@@ -6,14 +6,17 @@ import { AppShell } from '@/components/AppShell';
 import { Empty } from '@/components/Empty';
 import { Alert } from '@/components/Alert';
 import { Button } from '@/components/ui/Button';
+import { RunIcon } from '@/components/icons/RunIcon';
+import { RunLogSheet } from '@/components/RunLogSheet';
 import { DoneCard, NowCard } from '@/components/ui/StatusCard';
 import { SectionCard } from '@/components/SectionCard';
 import { db } from '@/db/appDb';
-import { loadTemplateRecency, loadWeekSummary } from '@/db/history-queries';
+import { loadTemplateRecency, loadWeekSummary, loadWeeklyVolume } from '@/db/history-queries';
 import { startSessionFromTemplate } from '@/db/session-actions';
 import { evaluateBackupStatus } from '@/domain/backup';
 import { startOfCalendarWeek } from '@/domain/calendar-week';
 import { pickNextTemplate } from '@/domain/next-workout';
+import { describeWeekCounts, hasTraining } from '@/domain/weekly-volume';
 import { resolveWeekControl } from '@/domain/program';
 import { exportDatabaseSnapshot } from '@/lib/export';
 import { formatDateTime, formatNumber } from '@/lib/format';
@@ -24,6 +27,7 @@ export default function Home() {
   const [startError, setStartError] = useState<string | null>(null);
   const [isBackingUp, setIsBackingUp] = useState(false);
   const [backupError, setBackupError] = useState<string | null>(null);
+  const [isRunSheetOpen, setIsRunSheetOpen] = useState(false);
   const templates = useLiveQuery(() => db.workoutTemplates.toArray(), []);
   const settings = useLiveQuery(() => db.appSettings.get('app-settings'), []);
   const program = useLiveQuery(async () => {
@@ -67,6 +71,8 @@ export default function Home() {
     () => loadWeekSummary(startOfCalendarWeek(new Date()).toISOString()),
     [],
   );
+
+  const weekVolume = useLiveQuery(async () => (await loadWeeklyVolume(new Date(), new Date()))[0], []);
 
   const completedSessionDates = useLiveQuery(
     async () => {
@@ -255,15 +261,28 @@ export default function Home() {
           als die Limette. Bei null Einheiten steht hier aber keine gefüllte
           Fläche: sie behauptete einen Zustand, den es nicht gibt.
         */}
-        {weekSummary && weekSummary.sessionCount > 0 ? (
+        <Button variant="secondary" fullWidth onClick={() => setIsRunSheetOpen(true)}>
+          <RunIcon size={18} className="mr-2" />
+          Lauf eintragen
+        </Button>
+        <RunLogSheet open={isRunSheetOpen} onClose={() => setIsRunSheetOpen(false)} />
+
+        {weekVolume && hasTraining(weekVolume) ? (
           <DoneCard
             eyebrow="Diese Woche"
-            title={
-              weekSummary.sessionCount === 1 ? '1 Einheit' : `${weekSummary.sessionCount} Einheiten`
-            }
-            subtitle={`${formatNumber(Math.round(weekSummary.volume))} kg Volumen`}
+            title={describeWeekCounts(weekVolume)}
+            subtitle={[
+              weekVolume.strength.volumeKg > 0
+                ? `${formatNumber(Math.round(weekVolume.strength.volumeKg))} kg Volumen`
+                : null,
+              weekVolume.running.distanceKm > 0
+                ? `${formatNumber(weekVolume.running.distanceKm)} km`
+                : null,
+            ]
+              .filter(Boolean)
+              .join(' · ')}
           >
-            {weekSummary.sessions[0] ? (
+            {weekSummary?.sessions[0] ? (
               <p className="text-sm opacity-75">
                 Zuletzt: {weekSummary.sessions[0].templateName} ·{' '}
                 {formatDateTime(weekSummary.sessions[0].completedAt)}
@@ -273,7 +292,7 @@ export default function Home() {
         ) : (
           <Empty
             title="Diese Woche noch nichts"
-            description="Sobald du eine Einheit abschließt, steht hier, was du geschafft hast."
+            description="Sobald du eine Einheit abschließt oder einen Lauf einträgst, steht hier, was du geschafft hast."
           />
         )}
 
