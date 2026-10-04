@@ -91,6 +91,30 @@ function toRows(plan: LibraryImportPlan) {
   ].filter((group) => group.rows.length > 0);
 }
 
+/**
+ * Der Satz über der Vorschau. Sie ist die einzige Bestätigung vor dem
+ * Schreiben - sagt sie "nichts gelöscht", während darunter eine Zeile rot
+ * steht, bestätigt man das Falsche.
+ */
+function describePreviewIntro(plan: LibraryImportPlan, hasChanges: boolean) {
+  if (!hasChanges) {
+    return 'Alles steht schon so in der Datenbank - ein Import würde nichts ändern.';
+  }
+
+  const removed = plan.summary.removedAssignments;
+
+  if (removed === 0) {
+    return 'Es wird nichts gelöscht. Bestehende Einträge behalten ihre Position; genannt werden nur die Felder aus der Datei.';
+  }
+
+  const count =
+    removed === 1
+      ? '1 Zuordnung wird entfernt'
+      : `${formatNumber(removed)} Zuordnungen werden entfernt`;
+
+  return `${count}, samt ihrer Wochenregeln. Ersetzte Workouts übernehmen Reihenfolge und Supersätze aus der Datei; Werte, die die Datei nicht nennt, bleiben stehen.`;
+}
+
 function PreviewGroup({ title, rows }: { title: string; rows: PreviewRow[] }) {
   const [showUnchanged, setShowUnchanged] = useState(false);
   const changed = rows.filter((row) => row.kind !== 'unchanged');
@@ -296,9 +320,7 @@ export function LibraryImportSection() {
           <div className="rounded-panel border border-warning-border bg-warning-soft p-4">
             <p className="text-sm font-semibold text-warning">Vorschau: {pending.sourceName}</p>
             <p className="mt-1 text-sm text-content-secondary">
-              {hasChanges
-                ? 'Es wird nichts gelöscht. Bestehende Einträge behalten ihre Position; genannt werden nur die Felder aus der Datei.'
-                : 'Alles steht schon so in der Datenbank - ein Import würde nichts ändern.'}
+              {describePreviewIntro(pending.plan, hasChanges)}
             </p>
 
             <div className="mt-4 space-y-3">

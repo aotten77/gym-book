@@ -1031,6 +1031,33 @@ function planReplacedTemplates(
     const templateName = templateNameById.get(templateId) ?? '';
     const rows = replacedRows.get(templateId) ?? [];
 
+    /*
+     * Die App erlaubt dieselbe Übung zweimal in einem Workout, die Datei nennt
+     * sie nur einmal. Welche der beiden Zeilen bliebe - und wessen
+     * Wochenregeln gingen -, entschiede sonst die Sortierung der Ids.
+     */
+    const seenExerciseIds = new Set<string>();
+    let hasDuplicate = false;
+
+    for (const item of state.templateExercises) {
+      if (item.templateId !== templateId) {
+        continue;
+      }
+
+      if (seenExerciseIds.has(item.exerciseId)) {
+        problems.push(
+          `Workout "${templateName}" enthält "${exerciseNameById.get(item.exerciseId) ?? ''}" doppelt – bitte erst in der App bereinigen, dann ersetzen.`,
+        );
+        hasDuplicate = true;
+      }
+
+      seenExerciseIds.add(item.exerciseId);
+    }
+
+    if (hasDuplicate) {
+      continue;
+    }
+
     if (rows.length === 0) {
       problems.push(
         `Workout "${templateName}" soll ersetzt werden, die Datei nennt aber keine Übung dafür.`,

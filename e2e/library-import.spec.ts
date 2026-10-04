@@ -121,6 +121,10 @@ test.describe('Bibliotheks-Import', () => {
 
     const removedRow = page.getByRole('listitem').filter({ hasText: 'ENTFERNT' });
     await expect(removedRow).toContainText('Bulgarian Split Squat');
+    // Die Vorschau ist die einzige Bestätigung - sie darf nicht behaupten,
+    // es werde nichts gelöscht, während eine Zeile rot darunter steht.
+    await expect(page.getByText('Es wird nichts gelöscht')).toHaveCount(0);
+    await expect(page.getByText('1 Zuordnung wird entfernt, samt ihrer Wochenregeln.')).toBeVisible();
 
     await page.getByRole('button', { name: 'Import bestätigen' }).click();
     await page.waitForTimeout(900);

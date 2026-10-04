@@ -777,6 +777,19 @@ describe('planLibraryImport - Workout ersetzen', () => {
     expect(planHasChanges(second)).toBe(false);
   });
 
+  it('bricht ab, wenn das ersetzte Workout dieselbe Übung doppelt enthält', () => {
+    const state = baseState();
+    state.templateExercises.push(
+      buildAssignment({ id: 'te4', templateId: 't1', exerciseId: 'e1', orderIndex: 4 }),
+    );
+
+    // Die Datei kann eine Übung nur einmal nennen - welche der beiden Zeilen
+    // bleiben soll, darf nicht die Sortierung der Ids entscheiden.
+    expect(() => planLibraryImport(replacePayload(), state)).toThrow(
+      'Workout "Einheit A" enthält "Squat" doppelt – bitte erst in der App bereinigen, dann ersetzen.',
+    );
+  });
+
   it('planHasChanges zählt eine reine Entfernung', () => {
     const plan = planLibraryImport(
       buildPayload({
