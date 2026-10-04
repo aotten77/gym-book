@@ -19,6 +19,7 @@ import type {
   Program,
   ProgramWeek,
   ProgressionRule,
+  RunLog,
   WorkoutSession,
   WorkoutSessionExercise,
   WorkoutSetLog,
@@ -260,6 +261,18 @@ const appSettingsSchema = z.object({
   updatedAt: z.string(),
 });
 
+const runLogSchema = z.object({
+  id: z.string(),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  distanceKm: z.number().positive(),
+  durationSeconds: z.number().int().positive(),
+  elevationGainM: z.number().int().min(0).optional(),
+  averageHeartRate: z.number().int().optional(),
+  notes: z.string().optional(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
 const databaseSnapshotSchema = z.object({
   schemaVersion: z.literal(SNAPSHOT_SCHEMA_VERSION),
   exportedAt: z.string(),
@@ -282,6 +295,8 @@ const databaseSnapshotSchema = z.object({
   // Bump von SNAPSHOT_SCHEMA_VERSION: das z.literal würde sonst jedes
   // bestehende Nutzer-Backup abweisen.
   libraryImports: z.array(libraryImportLogSchema).optional().default([]),
+  // Dieselbe Begründung für die Läufe: neue Tabelle, kein Bump des Literals.
+  runLogs: z.array(runLogSchema).optional().default([]),
 });
 
 export interface DatabaseSnapshot {
@@ -301,6 +316,7 @@ export interface DatabaseSnapshot {
   appSettings: AppSettings[];
   bandLevels: BandLevel[];
   libraryImports: LibraryImportLog[];
+  runLogs: RunLog[];
 }
 
 export interface DatabaseSnapshotSummary {
@@ -330,6 +346,7 @@ async function createDatabaseSnapshot(): Promise<DatabaseSnapshot> {
     appSettings: await db.appSettings.toArray(),
     bandLevels: await db.bandLevels.toArray(),
     libraryImports: await db.libraryImports.toArray(),
+    runLogs: await db.runLogs.toArray(),
   };
 }
 
@@ -495,6 +512,7 @@ export async function restoreDatabaseSnapshot(snapshot: DatabaseSnapshot) {
       db.appSettings,
       db.bandLevels,
       db.libraryImports,
+      db.runLogs,
     ],
     async () => {
       await db.workoutSetLogs.clear();
@@ -511,6 +529,7 @@ export async function restoreDatabaseSnapshot(snapshot: DatabaseSnapshot) {
       await db.appSettings.clear();
       await db.bandLevels.clear();
       await db.libraryImports.clear();
+      await db.runLogs.clear();
 
       if (snapshot.exercises.length) {
         await db.exercises.bulkAdd(snapshot.exercises);
@@ -566,6 +585,10 @@ export async function restoreDatabaseSnapshot(snapshot: DatabaseSnapshot) {
 
       if (snapshot.libraryImports?.length) {
         await db.libraryImports.bulkAdd(snapshot.libraryImports);
+      }
+
+      if (snapshot.runLogs?.length) {
+        await db.runLogs.bulkAdd(snapshot.runLogs);
       }
     },
   );

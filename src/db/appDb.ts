@@ -9,6 +9,7 @@ import type {
   Program,
   ProgramWeek,
   ProgressionRule,
+  RunLog,
   WorkoutSession,
   WorkoutSessionExercise,
   WorkoutSetLog,
@@ -31,6 +32,7 @@ class GymBookDatabase extends Dexie {
   appSettings!: Table<AppSettings, string>;
   bandLevels!: Table<BandLevel, string>;
   libraryImports!: Table<LibraryImportLog, string>;
+  runLogs!: Table<RunLog, string>;
 
   constructor() {
     super('gym-book-db');
@@ -85,6 +87,15 @@ class GymBookDatabase extends Dexie {
     // Indiziert ist nur `importedAt`, weil die Anzeige nach Zeit sortiert.
     this.version(4).stores({
       libraryImports: 'id, importedAt',
+    });
+
+    // v5 bringt die Läufe. Wieder nur eine neue Tabelle und kein `upgrade()`:
+    // es ist nichts umzuformen. `Exercise.category` und
+    // `WorkoutSession.templateCategorySnapshot` kommen im selben Zug dazu,
+    // brauchen aber keinen Index - Dexie speichert das ganze Objekt. Indiziert
+    // ist nur `date`, weil Liste und Wochenrechnung nach dem Tag lesen.
+    this.version(5).stores({
+      runLogs: 'id, date',
     });
   }
 }

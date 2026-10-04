@@ -25,6 +25,7 @@ function createSnapshot(overrides: Partial<DatabaseSnapshot> = {}): DatabaseSnap
     mediaAssets: [],
     bandLevels: [],
     libraryImports: [],
+    runLogs: [],
     appSettings: [
       {
         id: 'app-settings',
@@ -747,5 +748,44 @@ describe('restoreDatabaseSnapshot', () => {
       name: 'grün',
       orderIndex: 1,
     });
+  });
+
+  it('sichert und stellt Läufe wieder her', async () => {
+    const run = {
+      id: 'run-1',
+      date: '2026-10-04',
+      distanceKm: 7.5,
+      durationSeconds: 2400,
+      elevationGainM: 80,
+      averageHeartRate: 152,
+      notes: 'zäh',
+      createdAt: '2026-10-04T16:00:00.000Z',
+      updatedAt: '2026-10-04T16:00:00.000Z',
+    };
+    const parsed = parseDatabaseSnapshot(JSON.stringify(createSnapshot({ runLogs: [run] })));
+
+    await restoreDatabaseSnapshot(parsed);
+
+    expect(await db.runLogs.get('run-1')).toEqual(run);
+  });
+
+  it('nimmt ein altes Backup ohne runLogs an', async () => {
+    await db.runLogs.add({
+      id: 'alt',
+      date: '2026-10-01',
+      distanceKm: 5,
+      durationSeconds: 1500,
+      createdAt: '2026-10-01T16:00:00.000Z',
+      updatedAt: '2026-10-01T16:00:00.000Z',
+    });
+    const legacy = createSnapshot();
+    delete (legacy as Partial<DatabaseSnapshot>).runLogs;
+    const parsed = parseDatabaseSnapshot(JSON.stringify(legacy));
+
+    expect(parsed.runLogs).toEqual([]);
+
+    await restoreDatabaseSnapshot(parsed);
+
+    expect(await db.runLogs.count()).toBe(0);
   });
 });
