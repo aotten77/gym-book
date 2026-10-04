@@ -126,9 +126,15 @@ test.describe('Bibliotheks-Import', () => {
     await expect(page.getByText('Es wird nichts gelöscht')).toHaveCount(0);
     await expect(page.getByText('1 Zuordnung wird entfernt, samt ihrer Wochenregeln.')).toBeVisible();
 
+    // Entfernte Wochenregeln lassen sich nicht wieder importieren - vor dem
+    // Schreiben liegt deshalb ein Backup des alten Stands vor.
+    const download = page.waitForEvent('download');
     await page.getByRole('button', { name: 'Import bestätigen' }).click();
+    expect((await download).suggestedFilename()).toMatch(/^gym-book-export-.*\.json$/);
     await page.waitForTimeout(900);
-    await expect(page.getByRole('status').filter({ hasText: 'Eingespielt' })).toContainText('1 entfernt');
+    const status = page.getByRole('status').filter({ hasText: 'Eingespielt' });
+    await expect(status).toContainText('1 entfernt');
+    await expect(status).toContainText('Backup des vorherigen Stands');
 
     await page.goto('./#/templates');
     await page.waitForTimeout(800);

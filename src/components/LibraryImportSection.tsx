@@ -14,6 +14,7 @@ import {
   type LibraryImportPayload,
   type LibraryImportPlan,
 } from '@/domain/library-import';
+import { exportDatabaseSnapshot } from '@/lib/export';
 import { cn } from '@/lib/utils';
 import { formatDateTime, formatNumber } from '@/lib/format';
 
@@ -237,6 +238,17 @@ export function LibraryImportSection() {
     setIsBusy(true);
 
     try {
+      /*
+       * Sicherheitsnetz wie vor dem Restore in Settings: ein ersetztes Workout
+       * nimmt Wochenregeln mit, und die lassen sich nicht wieder importieren.
+       * Scheitert die Sicherung, wird gar nicht erst geschrieben.
+       */
+      const backedUp = pending.plan.summary.removedAssignments > 0;
+
+      if (backedUp) {
+        await exportDatabaseSnapshot();
+      }
+
       const { plan } = await applyLibraryImport(pending.payload, pending.sourceName);
       const { summary } = plan;
 
@@ -246,7 +258,8 @@ export function LibraryImportSection() {
           `${formatNumber(summary.createdTemplates)} Workouts · ` +
           `${formatNumber(summary.createdAssignments)} Zuordnungen, ` +
           `${formatNumber(summary.removedAssignments)} entfernt · ` +
-          `${formatNumber(summary.createdBandLevels)} Bänder.`,
+          `${formatNumber(summary.createdBandLevels)} Bänder.` +
+          (backedUp ? ' Ein Backup des vorherigen Stands wurde heruntergeladen.' : ''),
       );
       setError(null);
       setPending(null);
