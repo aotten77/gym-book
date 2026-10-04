@@ -153,6 +153,14 @@ Recommended set log shape:
 - The current exercise must be visually dominant.
 - Rest timer interactions should be one-tap and recoverable after backgrounding or reload.
 
+## Runs
+
+- A run is its own table (`runLogs`), one row per run: local calendar day, distance, duration, optional elevation gain, optional average heart rate, optional notes. It has no sets and no session machinery — no materialization, no timers, no snapshots.
+- Pace is derived from distance and duration and never stored.
+- Unlike a completed session, a run stays editable and deletable: it is one row of numbers copied off a watch, and a typo should be correctable.
+- The date is a local calendar day (`YYYY-MM-DD`), not a timestamp.
+- The app invents no heart-rate formulas: no zones, no maximum-pulse estimate, no training load. It stores the number the user entered.
+
 ## v1 Scope
 
 Must include:
@@ -169,6 +177,7 @@ Must include:
 - exercise history graph
 - tests with left/right values and asymmetry
 - export/import backup
+- run logging (distance, duration, elevation, average heart rate)
 - installable PWA behavior on GitHub Pages
 
 Must exclude:
