@@ -192,3 +192,17 @@ export function describeRemainingEstimate(seconds: number) {
     ? `etwa ${hourLabel}`
     : `etwa ${hourLabel} und ${restMinutes} Minuten`;
 }
+
+/**
+ * Eine Dauer in Stunden und Minuten: "3:10 h", "0:25 h".
+ *
+ * Für die Wochenzeilen, wo Einheiten Stunden dauern und "190 min" nichts
+ * vergleichbar macht. Auf ganze Minuten gerundet - Sekunden sind in einer
+ * Wochensumme Rauschen.
+ */
+export function formatDurationHours(totalSeconds: number) {
+  const totalMinutes = Math.round(Math.max(0, totalSeconds) / 60);
+  const hours = Math.floor(totalMinutes / 60);
+
+  return `${hours}:${String(totalMinutes % 60).padStart(2, '0')} h`;
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isInCalendarWeek, startOfCalendarWeek } from '@/domain/calendar-week';
+import { isInCalendarWeek, isoWeekNumber, startOfCalendarWeek } from '@/domain/calendar-week';
 
 /*
  * Alle Daten werden lokal konstruiert (`new Date(jahr, monat, tag, ...)`) und
@@ -65,5 +65,13 @@ describe('isInCalendarWeek', () => {
   it('treats an unparsable timestamp as outside instead of throwing', () => {
     expect(isInCalendarWeek('irgendwann', now)).toBe(false);
     expect(isInCalendarWeek('', now)).toBe(false);
+  });
+});
+
+describe('isoWeekNumber', () => {
+  it('counts the iso week', () => {
+    expect(isoWeekNumber(new Date(2026, 9, 4))).toBe(40);
+    expect(isoWeekNumber(new Date(2027, 0, 1))).toBe(53);
+    expect(isoWeekNumber(new Date(2026, 0, 1))).toBe(1);
   });
 });

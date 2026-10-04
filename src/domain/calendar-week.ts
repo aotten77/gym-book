@@ -99,3 +99,30 @@ export function isInCalendarWeek(iso: string, now: Date): boolean {
 
   return value.getTime() >= start.getTime() && value.getTime() < end.getTime();
 }
+
+/**
+ * ISO-8601-Kalenderwochennummer (1-53) eines Datums in Ortszeit.
+ *
+ * Die Woche gehört zu dem Jahr, in dem ihr Donnerstag liegt - deshalb ist der
+ * 1. Januar 2027 (ein Freitag) noch Woche 53 von 2026.
+ */
+export function isoWeekNumber(date: Date): number {
+  const thursday = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+
+  thursday.setDate(thursday.getDate() + 3 - ((thursday.getDay() + 6) % DAYS_PER_WEEK));
+
+  const firstThursday = new Date(thursday.getFullYear(), 0, 4);
+
+  firstThursday.setDate(firstThursday.getDate() + 3 - ((firstThursday.getDay() + 6) % DAYS_PER_WEEK));
+
+  return 1 + Math.round(calendarDaysBetween(firstThursday, thursday) / DAYS_PER_WEEK);
+}
+
+function calendarDaysBetween(from: Date, to: Date): number {
+  // Über UTC-Mitternächte, damit eine Zeitumstellung keinen Tag verschluckt.
+  return Math.round(
+    (Date.UTC(to.getFullYear(), to.getMonth(), to.getDate()) -
+      Date.UTC(from.getFullYear(), from.getMonth(), from.getDate())) /
+      86_400_000,
+  );
+}

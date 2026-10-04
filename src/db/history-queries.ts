@@ -7,7 +7,10 @@ import {
   type LastSetValues,
 } from '@/domain/history';
 import type { WorkoutSetLog } from '@/domain/models';
+import { startOfCalendarWeek } from '@/domain/calendar-week';
+import { toDateInputValue } from '@/domain/program';
 import { sumWorkVolume } from '@/domain/volume';
+import { buildWeeklyVolume, type WeekVolume } from '@/domain/weekly-volume';
 
 /**
  * Alle abgeschlossenen Ausführungen einer Übung, älteste zuerst.
@@ -371,4 +374,51 @@ export async function loadLastValuesForExercises(
   }
 
   return result;
+}
+
+/**
+ * Die Wochenrechnung über einen Zeitraum, älteste Woche zuerst.
+ *
+ * Liest nur, was die Wochen berühren: Sessions über den `completedAt`-Index
+ * zwischen dem Montag von `from` und dem Montag nach der Woche von `to`,
+ * deren Übungen und Sätze per `anyOf`, Läufe über den `date`-Index. Die Regeln
+ * selbst stehen in `buildWeeklyVolume`.
+ */
+export async function loadWeeklyVolume(from: Date, to: Date): Promise<WeekVolume[]> {
+  const rangeStart = startOfCalendarWeek(from);
+  const rangeEnd = startOfCalendarWeek(to);
+
+  rangeEnd.setDate(rangeEnd.getDate() + 7);
+
+  const lastDay = new Date(rangeEnd);
+
+  lastDay.setDate(lastDay.getDate() - 1);
+
+  const sessions = (
+    await db.workoutSessions
+      .where('completedAt')
+      .between(rangeStart.toISOString(), rangeEnd.toISOString(), true, false)
+      .toArray()
+  ).filter((session) => session.status === 'completed' && session.completedAt);
+
+  const sessionExercises =
+    sessions.length > 0
+      ? await db.workoutSessionExercises
+          .where('sessionId')
+          .anyOf(sessions.map((session) => session.id))
+          .toArray()
+      : [];
+  const setLogs =
+    sessionExercises.length > 0
+      ? await db.workoutSetLogs
+          .where('sessionExerciseId')
+          .anyOf(sessionExercises.map((item) => item.id))
+          .toArray()
+      : [];
+  const runs = await db.runLogs
+    .where('date')
+    .between(toDateInputValue(rangeStart), toDateInputValue(lastDay), true, true)
+    .toArray();
+
+  return buildWeeklyVolume({ sessions, sessionExercises, setLogs, runs, from, to });
 }

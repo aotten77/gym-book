@@ -6,6 +6,7 @@ import {
   loadTemplateRecency,
   loadTestDatesBetween,
   loadWeekSummary,
+  loadWeeklyVolume,
 } from '@/db/history-queries';
 import type { SessionStatus } from '@/domain/models';
 
@@ -345,5 +346,37 @@ describe('loadTestDatesBetween', () => {
     await expect(
       loadTestDatesBetween('2026-08-01T00:00:00.000Z', '2026-08-10T00:00:00.000Z'),
     ).resolves.toEqual(['2026-08-05T10:00:00.000Z']);
+  });
+});
+
+describe('loadWeeklyVolume', () => {
+  it('loadWeeklyVolume liest Sessions und Läufe der Wochen', async () => {
+    const now = new Date();
+    const lastWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7);
+    const threeWeeksAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 21);
+    const stamp = (date: Date) =>
+      `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+
+    await addSession({
+      id: 'session-1',
+      templateId: 'template-a',
+      status: 'completed',
+      completedAt: new Date(now.getTime() - 1000).toISOString(),
+    });
+    await addSessionExercise({ id: 'se-1', sessionId: 'session-1', exerciseId: 'exercise-1' });
+    await addSetLog({ id: 'log-1', sessionExerciseId: 'se-1', weight: 50, reps: 5 });
+
+    const runBase = { distanceKm: 5, durationSeconds: 1800, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' };
+    await db.runLogs.bulkAdd([
+      { id: 'run-now', date: stamp(now), ...runBase },
+      { id: 'run-old', date: stamp(threeWeeksAgo), ...runBase },
+    ]);
+
+    const weeks = await loadWeeklyVolume(lastWeek, now);
+
+    expect(weeks).toHaveLength(2);
+    expect(weeks[1].strength.sessions).toBe(1);
+    expect(weeks[1].running.runs).toBe(1);
+    expect(weeks.reduce((sum, week) => sum + week.running.runs, 0)).toBe(1);
   });
 });
