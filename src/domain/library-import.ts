@@ -3,6 +3,7 @@ import type {
   BandLevel,
   Exercise,
   LoadKind,
+  ProgressionRule,
   TrackingMode,
   WorkoutTemplate,
   WorkoutTemplateExercise,
@@ -23,8 +24,11 @@ import { formatNumber } from '@/lib/format';
  * 2. Geschrieben werden **nur die angegebenen Felder**. Ein fehlender Schlüssel
  *    ist keine Löschung - dieselbe Regel wie in `updateSetLogValues`, wo Dexies
  *    Update-Semantik über `undefined` sonst gespeicherte Werte vernichtet.
- * 3. Gelöscht wird **nie**. Entfernen bleibt eine Handlung in der Oberfläche,
- *    wo man sieht, was daran hängt.
+ * 3. Gelöscht wird nur, was die Datei **ausdrücklich** verlangt: eine Zuordnung
+ *    in einem Workout mit `replaceAssignments: true`, die die Datei nicht mehr
+ *    nennt - samt ihrer Wochenregeln, wie beim Löschen von Hand. Übungen,
+ *    Workouts und Bänder selbst entfernt der Import nie; das bleibt eine
+ *    Handlung in der Oberfläche, wo man sieht, was daran hängt.
  *
  * Die Planung ist rein: sie bekommt den Bestand als Arrays und liefert
  * beschriebene Änderungen zurück. Das ist zugleich die Dry-Run-Vorschau und
@@ -112,9 +116,12 @@ export interface LibraryImportState {
   templates: WorkoutTemplate[];
   templateExercises: WorkoutTemplateExercise[];
   bandLevels: BandLevel[];
+  /** Nur gezählt: welche Wochenregeln mit einer entfernten Zuordnung gehen. */
+  progressionRules: ProgressionRule[];
 }
 
-export type ImportEntryKind = 'new' | 'update' | 'unchanged';
+/** `removed` gibt es nur für Zuordnungen eines ersetzten Workouts. */
+export type ImportEntryKind = 'new' | 'update' | 'unchanged' | 'removed';
 
 /** Eine Zeile der Vorschau: "Erfassung: Zeit → Wiederholungen + Gewicht". */
 export interface ImportFieldChange {
@@ -187,6 +194,7 @@ export interface LibraryImportSummary {
   updatedAssignments: number;
   createdBandLevels: number;
   updatedBandLevels: number;
+  removedAssignments: number;
 }
 
 export interface LibraryImportPlan {
@@ -603,6 +611,23 @@ function planAssignments(
     existingByPair.set(`${item.templateId}::${item.exerciseId}`, item);
   }
 
+  /*
+   * Workouts, deren Zusammensetzung die Datei vollständig beschreibt. Ihre
+   * Zuordnungen laufen nicht über die Einfügelogik, sondern werden gesammelt
+   * und nach der Schleife als Ganzes gegen den Bestand gelegt.
+   */
+  const replacedTemplateIds = new Set<string>();
+
+  for (const input of payload.templates) {
+    const template = templateIdByKey.get(normalizeImportKey(input.name));
+
+    if (input.replaceAssignments && template) {
+      replacedTemplateIds.add(template.id);
+    }
+  }
+
+  const replacedRows = new Map<string, ReplacedRow[]>();
+
   // Nur Workouts, in die etwas eingefügt wurde, werden neu durchnummeriert.
   // Eine reine Wertänderung soll die Reihenfolge nicht stillschweigend
   // verdichten - die gehört den Pfeilen in der Workout-Ansicht.
@@ -647,6 +672,33 @@ function planAssignments(
 
     const existing = existingByPair.get(pairKey);
     const changes: ImportFieldChange[] = [];
+    const replaced = replacedTemplateIds.has(template.id);
+
+    if (!existing && replaced) {
+      const entry: AssignmentPlanEntry = {
+        id: createId(),
+        kind: 'new',
+        label: exerciseName,
+        templateId: template.id,
+        templateName: template.name,
+        exerciseId: exercise.id,
+        exerciseName,
+        changes: [
+          { field: 'Arbeitssätze', from: '—', to: formatNumber(input.workSetCount) },
+          { field: 'Warmup', from: '—', to: input.includeWarmup === false ? 'nein' : 'ja' },
+        ],
+        record: {
+          templateId: template.id,
+          exerciseId: exercise.id,
+          ...buildAssignmentValues(input),
+        },
+        values: {},
+      };
+
+      entries.push(entry);
+      pushReplacedRow(replacedRows, template.id, { entry, input, position });
+      return;
+    }
 
     if (!existing) {
       const { position: insertAt, movedPastSuperset } = resolveInsertPosition(slots, input.orderIndex);
@@ -732,11 +784,11 @@ function planAssignments(
      */
     const currentPosition = slots.findIndex((slot) => slot.id === existing.id) + 1;
     const note =
-      currentPosition > 0 && currentPosition !== input.orderIndex
+      !replaced && currentPosition > 0 && currentPosition !== input.orderIndex
         ? `Position ${currentPosition} bleibt (Datei nennt ${input.orderIndex})`
         : undefined;
 
-    entries.push({
+    const entry: AssignmentPlanEntry = {
       id: existing.id,
       kind: changes.length > 0 ? 'update' : 'unchanged',
       label: exerciseName,
@@ -748,8 +800,24 @@ function planAssignments(
       changes,
       record: null,
       values,
-    });
+    };
+
+    entries.push(entry);
+
+    if (replaced) {
+      pushReplacedRow(replacedRows, template.id, { entry, input, position });
+    }
   });
+
+  const replacedOrder = planReplacedTemplates(
+    replacedTemplateIds,
+    replacedRows,
+    slotsByTemplateId,
+    state,
+    templateIdByKey,
+    entries,
+    problems,
+  );
 
   const templateOrder: TemplateOrderPlan[] = [];
 
@@ -769,7 +837,133 @@ function planAssignments(
     });
   }
 
-  return { entries, templateOrder };
+  return { entries, templateOrder: [...templateOrder, ...replacedOrder] };
+}
+
+/** Eine Dateizeile eines ersetzten Workouts, samt ihrem Planeintrag. */
+interface ReplacedRow {
+  entry: AssignmentPlanEntry;
+  input: ImportAssignmentInput;
+  /** 1-basierte Zeile in `templateAssignments` - für Fehlermeldungen. */
+  position: number;
+}
+
+function pushReplacedRow(rows: Map<string, ReplacedRow[]>, templateId: string, row: ReplacedRow) {
+  const list = rows.get(templateId) ?? [];
+  list.push(row);
+  rows.set(templateId, list);
+}
+
+function describeRuleCount(count: number) {
+  return count === 1 ? '1 Wochenregel geht mit' : `${formatNumber(count)} Wochenregeln gehen mit`;
+}
+
+/**
+ * Legt die Dateizeilen jedes ersetzten Workouts als Ganzes gegen den Bestand.
+ *
+ * Die Reihenfolge der Datei gilt (dicht ab 1, Lücken im `orderIndex` sind
+ * erlaubt), eine bleibende Zuordnung behält ihre Id - und damit ihre
+ * Wochenregeln -, und was die Datei nicht nennt, wird ein `removed`-Eintrag.
+ * Ergänzt die Einträge in `entries` an Ort und Stelle und gibt die
+ * Zielreihenfolgen zurück, aber nur für Workouts, an deren Reihenfolge sich
+ * etwas ändert: ein zweiter Lauf derselben Datei soll nichts schreiben.
+ */
+function planReplacedTemplates(
+  replacedTemplateIds: Set<string>,
+  replacedRows: Map<string, ReplacedRow[]>,
+  slotsByTemplateId: Map<string, OrderSlot[]>,
+  state: LibraryImportState,
+  templateIdByKey: Map<string, { id: string; name: string }>,
+  entries: AssignmentPlanEntry[],
+  problems: string[],
+): TemplateOrderPlan[] {
+  const templateNameById = new Map([...templateIdByKey.values()].map((item) => [item.id, item.name]));
+  const exerciseNameById = new Map(state.exercises.map((item) => [item.id, item.name]));
+  const existingById = new Map(state.templateExercises.map((item) => [item.id, item]));
+  const orders: TemplateOrderPlan[] = [];
+
+  for (const templateId of replacedTemplateIds) {
+    const templateName = templateNameById.get(templateId) ?? '';
+    const rows = replacedRows.get(templateId) ?? [];
+
+    if (rows.length === 0) {
+      problems.push(
+        `Workout "${templateName}" soll ersetzt werden, die Datei nennt aber keine Übung dafür.`,
+      );
+      continue;
+    }
+
+    const seenIndexes = new Set<number>();
+
+    for (const row of rows) {
+      if (seenIndexes.has(row.input.orderIndex)) {
+        problems.push(
+          `Zuordnung ${row.position}: orderIndex ${row.input.orderIndex} steht für "${templateName}" mehrfach in dieser Datei.`,
+        );
+      }
+
+      seenIndexes.add(row.input.orderIndex);
+    }
+
+    const sorted = [...rows].sort((left, right) => left.input.orderIndex - right.input.orderIndex);
+    const targetIds = sorted.map((row) => row.entry.id);
+    const currentIds = (slotsByTemplateId.get(templateId) ?? []).map((slot) => slot.id);
+
+    sorted.forEach((row, index) => {
+      const { entry } = row;
+
+      if (entry.kind === 'new') {
+        entry.note = `Position ${index + 1}`;
+        return;
+      }
+
+      const currentPosition = currentIds.indexOf(entry.id) + 1;
+
+      if (diffField(entry.changes, 'Position', currentPosition, index + 1)) {
+        entry.kind = 'update';
+      }
+    });
+
+    const kept = new Set(targetIds);
+
+    for (const id of currentIds) {
+      if (kept.has(id)) {
+        continue;
+      }
+
+      const existing = existingById.get(id);
+
+      if (!existing) {
+        continue;
+      }
+
+      const ruleCount = state.progressionRules.filter((rule) => rule.templateExerciseId === id).length;
+      const exerciseName = exerciseNameById.get(existing.exerciseId) ?? '';
+
+      entries.push({
+        id,
+        kind: 'removed',
+        label: exerciseName,
+        templateId,
+        templateName,
+        exerciseId: existing.exerciseId,
+        exerciseName,
+        note: ruleCount > 0 ? describeRuleCount(ruleCount) : undefined,
+        changes: [],
+        record: null,
+        values: {},
+      });
+    }
+
+    const unchangedOrder =
+      targetIds.length === currentIds.length && targetIds.every((id, index) => id === currentIds[index]);
+
+    if (!unchangedOrder) {
+      orders.push({ templateId, templateName, orderedIds: targetIds });
+    }
+  }
+
+  return orders;
 }
 
 type AssignmentNumberField =
@@ -956,6 +1150,7 @@ export function planLibraryImport(
       updatedAssignments: countKind(assignments, 'update'),
       createdBandLevels: countKind(bandLevels, 'new'),
       updatedBandLevels: countKind(bandLevels, 'update'),
+      removedAssignments: countKind(assignments, 'removed'),
     },
   };
 }

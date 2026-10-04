@@ -32,6 +32,7 @@ const KIND_LABELS: Record<ImportEntryKind, string> = {
   new: 'NEU',
   update: 'AKTUALISIERT',
   unchanged: 'UNVERÄNDERT',
+  removed: 'ENTFERNT',
 };
 
 interface PreviewRow {

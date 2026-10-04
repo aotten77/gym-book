@@ -3,11 +3,18 @@ import { describe, expect, it } from 'vitest';
 import {
   hashImportPayload,
   parseLibraryImportPayload,
+  planHasChanges,
   planLibraryImport,
   type LibraryImportPayload,
   type LibraryImportState,
 } from '@/domain/library-import';
-import type { BandLevel, Exercise, WorkoutTemplate, WorkoutTemplateExercise } from '@/domain/models';
+import type {
+  BandLevel,
+  Exercise,
+  ProgressionRule,
+  WorkoutTemplate,
+  WorkoutTemplateExercise,
+} from '@/domain/models';
 
 function buildExercise(overrides: Partial<Exercise> & { id: string; name: string }): Exercise {
   return {
@@ -58,8 +65,13 @@ function emptyState(overrides: Partial<LibraryImportState> = {}): LibraryImportS
     templates: [],
     templateExercises: [],
     bandLevels: [],
+    progressionRules: [],
     ...overrides,
   };
+}
+
+function buildRule(id: string, templateExerciseId: string): ProgressionRule {
+  return { id, templateExerciseId, programWeekId: 'w1', targetReps: 6 };
 }
 
 function buildPayload(overrides: Partial<LibraryImportPayload> = {}): LibraryImportPayload {
@@ -107,7 +119,15 @@ function applyPlan(
     templates[index] = { ...templates[index], ...entry.values };
   }
 
+  const removedIds = new Set(
+    plan.assignments.filter((entry) => entry.kind === 'removed').map((entry) => entry.id),
+  );
+
   for (const entry of plan.assignments) {
+    if (entry.kind === 'removed') {
+      continue;
+    }
+
     if (entry.record) {
       templateExercises.push({ id: entry.id, orderIndex: 0, ...entry.record });
       continue;
@@ -139,7 +159,13 @@ function applyPlan(
     bandLevels[position] = { ...bandLevels[position], orderIndex: index + 1 };
   }
 
-  return { exercises, templates, templateExercises, bandLevels };
+  return {
+    exercises,
+    templates,
+    templateExercises: templateExercises.filter((item) => !removedIds.has(item.id)),
+    bandLevels,
+    progressionRules: state.progressionRules.filter((rule) => !removedIds.has(rule.templateExerciseId)),
+  };
 }
 
 describe('parseLibraryImportPayload', () => {
@@ -592,6 +618,185 @@ describe('planLibraryImport - Felder leeren und Spannen', () => {
   });
 });
 
+describe('planLibraryImport - Workout ersetzen', () => {
+  const baseState = () =>
+    emptyState({
+      exercises: [
+        buildExercise({ id: 'e1', name: 'Squat' }),
+        buildExercise({ id: 'e2', name: 'Beinstrecker' }),
+        buildExercise({ id: 'e3', name: 'Klimmzug' }),
+      ],
+      templates: [buildTemplate('t1', 'Einheit A')],
+      templateExercises: [
+        buildAssignment({ id: 'te1', templateId: 't1', exerciseId: 'e1', orderIndex: 1 }),
+        buildAssignment({ id: 'te2', templateId: 't1', exerciseId: 'e2', orderIndex: 2 }),
+        buildAssignment({ id: 'te3', templateId: 't1', exerciseId: 'e3', orderIndex: 3 }),
+      ],
+      progressionRules: [buildRule('r1', 'te1'), buildRule('r2', 'te2')],
+    });
+
+  const replacePayload = (replaceAssignments = true) =>
+    buildPayload({
+      templates: [{ name: 'Einheit A', replaceAssignments }],
+      templateAssignments: [
+        { template: 'Einheit A', exercise: 'Klimmzug', orderIndex: 1, workSetCount: 3 },
+        { template: 'Einheit A', exercise: 'Squat', orderIndex: 2, workSetCount: 3 },
+      ],
+    });
+
+  it('entfernt Zuordnungen, die die Datei nicht nennt, und nennt ihre Wochenregeln', () => {
+    const plan = planLibraryImport(replacePayload(), baseState());
+    const removed = plan.assignments.filter((entry) => entry.kind === 'removed');
+
+    expect(removed).toHaveLength(1);
+    expect(removed[0]).toMatchObject({
+      id: 'te2',
+      label: 'Beinstrecker',
+      templateName: 'Einheit A',
+      note: '1 Wochenregel geht mit',
+      record: null,
+    });
+    expect(plan.summary.removedAssignments).toBe(1);
+  });
+
+  it('behält die Id bleibender Zuordnungen und übernimmt die Reihenfolge', () => {
+    const plan = planLibraryImport(replacePayload(), baseState());
+    const pullUp = plan.assignments.find((entry) => entry.id === 'te3');
+
+    expect(plan.templateOrder).toEqual([
+      { templateId: 't1', templateName: 'Einheit A', orderedIds: ['te3', 'te1'] },
+    ]);
+    expect(pullUp?.kind).toBe('update');
+    expect(pullUp?.changes).toContainEqual({ field: 'Position', from: '3', to: '1' });
+    expect(pullUp?.note).toBeUndefined();
+  });
+
+  it('nummeriert Lücken im orderIndex dicht', () => {
+    const plan = planLibraryImport(
+      buildPayload({
+        templates: [{ name: 'Einheit A', replaceAssignments: true }],
+        templateAssignments: [
+          { template: 'Einheit A', exercise: 'Squat', orderIndex: 10, workSetCount: 3 },
+          { template: 'Einheit A', exercise: 'Klimmzug', orderIndex: 5, workSetCount: 3 },
+        ],
+      }),
+      baseState(),
+    );
+    const squat = plan.assignments.find((entry) => entry.id === 'te1');
+
+    expect(plan.templateOrder[0].orderedIds).toEqual(['te3', 'te1']);
+    expect(squat?.changes).toContainEqual({ field: 'Position', from: '1', to: '2' });
+  });
+
+  it('bricht ab, wenn ein ersetztes Workout keine Zuordnung in der Datei hat', () => {
+    expect(() =>
+      planLibraryImport(
+        buildPayload({ templates: [{ name: 'Einheit A', replaceAssignments: true }] }),
+        baseState(),
+      ),
+    ).toThrow('Workout "Einheit A" soll ersetzt werden, die Datei nennt aber keine Übung dafür.');
+  });
+
+  it('bricht bei doppeltem orderIndex in einem ersetzten Workout ab', () => {
+    expect(() =>
+      planLibraryImport(
+        buildPayload({
+          templates: [{ name: 'Einheit A', replaceAssignments: true }],
+          templateAssignments: [
+            { template: 'Einheit A', exercise: 'Squat', orderIndex: 2, workSetCount: 3 },
+            { template: 'Einheit A', exercise: 'Klimmzug', orderIndex: 2, workSetCount: 3 },
+          ],
+        }),
+        baseState(),
+      ),
+    ).toThrow(/orderIndex 2 steht für "Einheit A" mehrfach/);
+  });
+
+  it('bricht bei unbekanntem Workoutnamen ab, statt etwas zu entfernen', () => {
+    expect(() =>
+      planLibraryImport(
+        buildPayload({
+          templates: [{ name: 'Einheit A', replaceAssignments: true }],
+          templateAssignments: [
+            { template: 'Einheit A', exercise: 'Squat', orderIndex: 1, workSetCount: 3 },
+            { template: 'Einheit Ä', exercise: 'Klimmzug', orderIndex: 2, workSetCount: 3 },
+          ],
+        }),
+        baseState(),
+      ),
+    ).toThrow(/Workout "Einheit Ä" gibt es nicht/);
+  });
+
+  it('lässt Workouts ohne Flag additiv', () => {
+    const plan = planLibraryImport(replacePayload(false), baseState());
+
+    expect(plan.assignments.some((entry) => entry.kind === 'removed')).toBe(false);
+    expect(plan.assignments.find((entry) => entry.id === 'te3')?.note).toBe(
+      'Position 3 bleibt (Datei nennt 1)',
+    );
+    expect(plan.templateOrder).toHaveLength(0);
+  });
+
+  it('ersetzt ein Workout, das in derselben Datei entsteht', () => {
+    const plan = planLibraryImport(
+      buildPayload({
+        templates: [{ name: 'Einheit Neu', replaceAssignments: true }],
+        templateAssignments: [
+          { template: 'Einheit Neu', exercise: 'Klimmzug', orderIndex: 2, workSetCount: 3 },
+          { template: 'Einheit Neu', exercise: 'Squat', orderIndex: 1, workSetCount: 3 },
+        ],
+      }),
+      baseState(),
+    );
+    const created = plan.assignments.filter((entry) => entry.templateName === 'Einheit Neu');
+
+    expect(created.map((entry) => entry.kind)).toEqual(['new', 'new']);
+    expect(plan.summary.removedAssignments).toBe(0);
+    expect(plan.templateOrder[0].orderedIds).toEqual([created[1].id, created[0].id]);
+  });
+
+  it('ändert beim zweiten Lauf nichts mehr', () => {
+    const payload = buildPayload({
+      exercises: [{ name: 'Ruderzug', trackingMode: 'reps_weight', unilateral: false }],
+      templates: [{ name: 'Einheit A', replaceAssignments: true }],
+      templateAssignments: [
+        { template: 'Einheit A', exercise: 'Ruderzug', orderIndex: 1, workSetCount: 3 },
+        { template: 'Einheit A', exercise: 'Klimmzug', orderIndex: 2, workSetCount: 3 },
+        { template: 'Einheit A', exercise: 'Squat', orderIndex: 3, workSetCount: 3 },
+      ],
+    });
+    const first = planLibraryImport(payload, baseState());
+    const afterFirst = applyPlan(baseState(), first);
+    const second = planLibraryImport(payload, afterFirst);
+
+    expect(afterFirst.templateExercises).toHaveLength(3);
+    expect(afterFirst.progressionRules.map((rule) => rule.id)).toEqual(['r1']);
+    expect(second.assignments.every((entry) => entry.kind === 'unchanged')).toBe(true);
+    expect(second.summary.removedAssignments).toBe(0);
+    expect(second.templateOrder).toHaveLength(0);
+    expect(planHasChanges(second)).toBe(false);
+  });
+
+  it('planHasChanges zählt eine reine Entfernung', () => {
+    const plan = planLibraryImport(
+      buildPayload({
+        templates: [{ name: 'Einheit A', replaceAssignments: true }],
+        templateAssignments: [
+          { template: 'Einheit A', exercise: 'Squat', orderIndex: 1, workSetCount: 3 },
+          { template: 'Einheit A', exercise: 'Beinstrecker', orderIndex: 2, workSetCount: 3 },
+        ],
+      }),
+      baseState(),
+    );
+
+    expect(plan.assignments.filter((entry) => entry.kind !== 'removed').map((entry) => entry.kind)).toEqual([
+      'unchanged',
+      'unchanged',
+    ]);
+    expect(planHasChanges(plan)).toBe(true);
+  });
+});
+
 describe('planLibraryImport - Bänder', () => {
   it('hängt neue Stufen an ihrer Position ein und verschiebt den Rest', () => {
     const state = emptyState({ bandLevels: [buildBand('b1', 'Lila', 1)] });
@@ -674,6 +879,7 @@ describe('planLibraryImport - Idempotenz', () => {
       updatedAssignments: 0,
       createdBandLevels: 0,
       updatedBandLevels: 0,
+      removedAssignments: 0,
     });
     expect(second.templateOrder).toHaveLength(0);
     expect(second.bandOrder).toBeNull();

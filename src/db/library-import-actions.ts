@@ -25,6 +25,7 @@ export async function loadLibraryImportState(): Promise<LibraryImportState> {
     templates: await db.workoutTemplates.toArray(),
     templateExercises: await db.workoutTemplateExercises.toArray(),
     bandLevels: await db.bandLevels.toArray(),
+    progressionRules: await db.progressionRules.toArray(),
   };
 }
 
@@ -58,7 +59,14 @@ export async function applyLibraryImport(
 
   await db.transaction(
     'rw',
-    [db.exercises, db.workoutTemplates, db.workoutTemplateExercises, db.bandLevels, db.libraryImports],
+    [
+      db.exercises,
+      db.workoutTemplates,
+      db.workoutTemplateExercises,
+      db.bandLevels,
+      db.progressionRules,
+      db.libraryImports,
+    ],
     async () => {
       const current = planLibraryImport(payload, await loadLibraryImportState());
       plan = current;
