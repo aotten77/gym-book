@@ -307,6 +307,24 @@ export interface ExerciseTest {
   notes?: string;
 }
 
+/**
+ * Ein gelaufener Lauf. `date` ist ein lokaler Kalendertag (`YYYY-MM-DD`) und
+ * wird nur über `parseLocalDate` gelesen. Die Pace wird nie gespeichert, sie
+ * folgt aus Strecke und Dauer. Fehlende Höhenmeter oder fehlender Puls heißen
+ * "nicht erfasst", nicht 0.
+ */
+export interface RunLog {
+  id: string;
+  date: string;
+  distanceKm: number;
+  durationSeconds: number;
+  elevationGainM?: number;
+  averageHeartRate?: number;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Program {
   id: string;
   name: string;
