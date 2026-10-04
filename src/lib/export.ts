@@ -201,6 +201,7 @@ const libraryImportLogSchema = z.object({
   updatedAssignments: z.number().int().nonnegative(),
   createdBandLevels: z.number().int().nonnegative(),
   updatedBandLevels: z.number().int().nonnegative(),
+  removedAssignments: z.number().int().nonnegative().optional(),
 });
 
 const programWeekSchema = z.object({

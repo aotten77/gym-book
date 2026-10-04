@@ -428,6 +428,8 @@ export interface LibraryImportLog {
   updatedAssignments: number;
   createdBandLevels: number;
   updatedBandLevels: number;
+  /** Zuordnungen, die ein ersetztes Workout verloren hat. Fehlt bei älteren Zeilen. */
+  removedAssignments?: number;
 }
 
 export interface SessionBundle {

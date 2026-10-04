@@ -103,6 +103,15 @@ export async function applyLibraryImport(
         }
       }
 
+      // Erst die Wochenregeln, dann die Zuordnung - dieselbe Reihenfolge wie
+      // `deleteTemplateExercise`, damit keine Regel ins Leere zeigt.
+      for (const entry of current.assignments) {
+        if (entry.kind === 'removed') {
+          await db.progressionRules.where('templateExerciseId').equals(entry.id).delete();
+          await db.workoutTemplateExercises.delete(entry.id);
+        }
+      }
+
       // Die Zielposition steht im Reihenfolge-Plan, nicht am Eintrag: eine
       // Einfügung verschiebt auch die Nachbarn, und beide Seiten derselben
       // Rechnung dürfen nicht getrennt gepflegt werden.
@@ -172,6 +181,7 @@ export async function applyLibraryImport(
         updatedAssignments: current.summary.updatedAssignments,
         createdBandLevels: current.summary.createdBandLevels,
         updatedBandLevels: current.summary.updatedBandLevels,
+        removedAssignments: current.summary.removedAssignments,
       };
 
       await db.libraryImports.add(log);

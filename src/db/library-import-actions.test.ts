@@ -2,12 +2,15 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { db } from '@/db/appDb';
+import { bootstrapAppData } from '@/db/bootstrap';
+import { startSessionFromTemplate } from '@/db/session-actions';
 import {
   applyLibraryImport,
   buildLibraryImportPlan,
   listLibraryImports,
 } from '@/db/library-import-actions';
 import { parseLibraryImportPayload, type LibraryImportPayload } from '@/domain/library-import';
+import { parseDatabaseSnapshot, SNAPSHOT_SCHEMA_VERSION } from '@/lib/export';
 
 const PAYLOAD: LibraryImportPayload = parseLibraryImportPayload(
   JSON.stringify({
@@ -295,5 +298,178 @@ describe('Bibliotheks-Import', () => {
     expect(plan.summary.createdExercises).toBe(2);
     expect(await db.exercises.count()).toBe(2);
     expect(await listLibraryImports()).toHaveLength(0);
+  });
+});
+
+describe('applyLibraryImport - Workout ersetzen', () => {
+  const REPLACE: LibraryImportPayload = parseLibraryImportPayload(
+    JSON.stringify({
+      schemaVersion: 1,
+      exercises: [{ name: 'Klimmzug', trackingMode: 'reps_weight', unilateral: false }],
+      templates: [{ name: 'Einheit B', replaceAssignments: true }],
+      templateAssignments: [
+        { template: 'Einheit B', exercise: 'Klimmzug', orderIndex: 1, workSetCount: 3, superset: 'A' },
+        {
+          template: 'Einheit B',
+          exercise: 'Hip Thrust',
+          orderIndex: 2,
+          workSetCount: 4,
+          superset: 'A',
+          targetWeight: null,
+        },
+      ],
+    }),
+  );
+
+  /** Bestand plus Programmwoche und je eine Wochenregel auf beiden Zuordnungen. */
+  async function seedWithRules() {
+    await seedLibrary();
+    await db.workoutTemplateExercises.update('te1', { targetWeight: 80 });
+    await db.programs.add({
+      id: 'p1',
+      name: 'Block',
+      activeWeek: 1,
+      createdAt: '2026-02-01T09:00:00.000Z',
+      updatedAt: '2026-02-01T09:00:00.000Z',
+    });
+    await db.programWeeks.add({ id: 'w1', programId: 'p1', weekNumber: 1, label: 'Woche 1' });
+    await db.progressionRules.bulkAdd([
+      { id: 'r1', templateExerciseId: 'te1', programWeekId: 'w1', targetReps: 8 },
+      { id: 'r2', templateExerciseId: 'te2', programWeekId: 'w1', targetSeconds: 10 },
+    ]);
+  }
+
+  it('entfernt Zuordnungen samt ihrer Wochenregeln und lässt die anderen stehen', async () => {
+    await seedWithRules();
+
+    await applyLibraryImport(REPLACE);
+
+    expect(await db.workoutTemplateExercises.get('te2')).toBeUndefined();
+    expect(await db.progressionRules.where('templateExerciseId').equals('te2').count()).toBe(0);
+    expect(await db.progressionRules.where('templateExerciseId').equals('te1').count()).toBe(1);
+  });
+
+  it('schreibt Reihenfolge und Supersätze', async () => {
+    await seedWithRules();
+
+    await applyLibraryImport(REPLACE);
+
+    const rows = await db.workoutTemplateExercises.where('templateId').equals('t1').sortBy('orderIndex');
+    const exercises = await db.exercises.toArray();
+    const nameOf = (id: string) => exercises.find((exercise) => exercise.id === id)?.name;
+
+    expect(rows.map((row) => [nameOf(row.exerciseId), row.orderIndex])).toEqual([
+      ['Klimmzug', 1],
+      ['Hip Thrust', 2],
+    ]);
+    expect(rows[0].supersetGroupId).toBeTruthy();
+    expect(rows[1].supersetGroupId).toBe(rows[0].supersetGroupId);
+  });
+
+  it('löst eine Gruppe auf, ohne einen leeren Schlüssel zu hinterlassen', async () => {
+    await seedWithRules();
+    await applyLibraryImport(REPLACE);
+
+    await applyLibraryImport(
+      parseLibraryImportPayload(
+        JSON.stringify({
+          schemaVersion: 1,
+          templates: [{ name: 'Einheit B', replaceAssignments: true }],
+          templateAssignments: [
+            { template: 'Einheit B', exercise: 'Hip Thrust', orderIndex: 1, workSetCount: 4 },
+            { template: 'Einheit B', exercise: 'Klimmzug', orderIndex: 2, workSetCount: 3 },
+          ],
+        }),
+      ),
+    );
+
+    const rows = await db.workoutTemplateExercises.where('templateId').equals('t1').toArray();
+
+    expect(rows.every((row) => !('supersetGroupId' in row))).toBe(true);
+  });
+
+  it('leert ein Zielfeld bei null', async () => {
+    await seedWithRules();
+
+    await applyLibraryImport(REPLACE);
+
+    const row = await db.workoutTemplateExercises.get('te1');
+
+    expect(row && 'targetWeight' in row).toBe(false);
+  });
+
+  it('lässt eine laufende Session aus dem Workout unberührt', async () => {
+    await seedWithRules();
+    await bootstrapAppData();
+    const sessionId = await startSessionFromTemplate('t1');
+    const before = {
+      sessions: await db.workoutSessions.toArray(),
+      exercises: await db.workoutSessionExercises.toArray(),
+      logs: await db.workoutSetLogs.toArray(),
+    };
+
+    await applyLibraryImport(REPLACE);
+
+    expect(await db.workoutSessions.toArray()).toEqual(before.sessions);
+    expect(await db.workoutSessionExercises.toArray()).toEqual(before.exercises);
+    expect(await db.workoutSetLogs.toArray()).toEqual(before.logs);
+    expect((await db.workoutSessions.get(sessionId))?.status).toBe('active');
+
+    const snapshot = {
+      schemaVersion: SNAPSHOT_SCHEMA_VERSION,
+      exportedAt: new Date().toISOString(),
+      exercises: await db.exercises.toArray(),
+      workoutTemplates: await db.workoutTemplates.toArray(),
+      workoutTemplateExercises: await db.workoutTemplateExercises.toArray(),
+      workoutSessions: await db.workoutSessions.toArray(),
+      workoutSessionExercises: await db.workoutSessionExercises.toArray(),
+      workoutSetLogs: await db.workoutSetLogs.toArray(),
+      exerciseTests: await db.exerciseTests.toArray(),
+      programs: await db.programs.toArray(),
+      programWeeks: await db.programWeeks.toArray(),
+      progressionRules: await db.progressionRules.toArray(),
+      mediaAssets: await db.mediaAssets.toArray(),
+      appSettings: await db.appSettings.toArray(),
+      bandLevels: await db.bandLevels.toArray(),
+      libraryImports: await db.libraryImports.toArray(),
+    };
+
+    expect(() => parseDatabaseSnapshot(JSON.stringify(snapshot))).not.toThrow();
+  });
+
+  it('rollt alles zurück, wenn die Planung abbricht', async () => {
+    await seedWithRules();
+    const before = {
+      assignments: await db.workoutTemplateExercises.toArray(),
+      rules: await db.progressionRules.toArray(),
+    };
+
+    await expect(
+      applyLibraryImport(
+        parseLibraryImportPayload(
+          JSON.stringify({
+            schemaVersion: 1,
+            templates: [{ name: 'Einheit B', replaceAssignments: true }],
+            templateAssignments: [
+              { template: 'Einheit B', exercise: 'Hip Thrust', orderIndex: 1, workSetCount: 4 },
+              { template: 'Einheit B', exercise: 'Nordic Curl', orderIndex: 1, workSetCount: 3 },
+            ],
+          }),
+        ),
+      ),
+    ).rejects.toThrow(/orderIndex 1/);
+
+    expect(await db.workoutTemplateExercises.toArray()).toEqual(before.assignments);
+    expect(await db.progressionRules.toArray()).toEqual(before.rules);
+    expect(await db.libraryImports.count()).toBe(0);
+  });
+
+  it('protokolliert die Zahl entfernter Zuordnungen', async () => {
+    await seedWithRules();
+
+    const { log } = await applyLibraryImport(REPLACE, 'plan.json');
+
+    expect(log.removedAssignments).toBe(1);
+    expect((await listLibraryImports())[0].removedAssignments).toBe(1);
   });
 });
