@@ -797,6 +797,155 @@ describe('planLibraryImport - Workout ersetzen', () => {
   });
 });
 
+describe('planLibraryImport - Supersätze', () => {
+  const baseState = (groups: Record<string, string> = {}) =>
+    emptyState({
+      exercises: [
+        buildExercise({ id: 'e1', name: 'Squat' }),
+        buildExercise({ id: 'e2', name: 'Beinstrecker' }),
+        buildExercise({ id: 'e3', name: 'Klimmzug' }),
+      ],
+      templates: [buildTemplate('t1', 'Einheit A')],
+      templateExercises: [
+        buildAssignment({ id: 'te1', templateId: 't1', exerciseId: 'e1', orderIndex: 1, supersetGroupId: groups.te1 }),
+        buildAssignment({ id: 'te2', templateId: 't1', exerciseId: 'e2', orderIndex: 2, supersetGroupId: groups.te2 }),
+        buildAssignment({ id: 'te3', templateId: 't1', exerciseId: 'e3', orderIndex: 3, supersetGroupId: groups.te3 }),
+      ],
+      progressionRules: [buildRule('r1', 'te3')],
+    });
+
+  const row = (exercise: string, orderIndex: number, superset?: string) => ({
+    template: 'Einheit A',
+    exercise,
+    orderIndex,
+    workSetCount: 3,
+    ...(superset ? { superset } : {}),
+  });
+
+  const replace = (...rows: ReturnType<typeof row>[]) =>
+    buildPayload({
+      templates: [{ name: 'Einheit A', replaceAssignments: true }],
+      templateAssignments: rows,
+    });
+
+  const byId = (plan: ReturnType<typeof planLibraryImport>, id: string) =>
+    plan.assignments.find((entry) => entry.id === id);
+
+  it('bildet eine Gruppe aus dem Gruppennamen', () => {
+    const plan = planLibraryImport(
+      replace(row('Squat', 1, 'Block 1'), row('Klimmzug', 2, 'Block 1'), row('Beinstrecker', 3)),
+      baseState(),
+    );
+    const squat = byId(plan, 'te1');
+    const pullUp = byId(plan, 'te3');
+
+    expect(squat?.values.supersetGroupId).toBeTruthy();
+    expect(pullUp?.values.supersetGroupId).toBe(squat?.values.supersetGroupId);
+    expect(squat?.changes).toContainEqual({ field: 'Supersatz', from: 'allein', to: 'mit Klimmzug' });
+    expect(byId(plan, 'te2')?.kind).toBe('update');
+  });
+
+  it('behält die Gruppen-Id bei gleichen Mitgliedern', () => {
+    const plan = planLibraryImport(
+      replace(row('Squat', 1, 'block 1'), row('Beinstrecker', 2, 'Block 1 '), row('Klimmzug', 3)),
+      baseState({ te1: 'g1', te2: 'g1' }),
+    );
+
+    expect(plan.assignments.map((entry) => entry.kind)).toEqual(['unchanged', 'unchanged', 'unchanged']);
+    expect('supersetGroupId' in (byId(plan, 'te1')?.values ?? {})).toBe(false);
+  });
+
+  it('vergibt eine neue Id, wenn ein Fremder die alte Id behält', () => {
+    const plan = planLibraryImport(
+      replace(row('Squat', 1, 'A'), row('Klimmzug', 2, 'A'), row('Beinstrecker', 3)),
+      baseState({ te1: 'g1', te2: 'g1', te3: 'g1' }),
+    );
+    const groupId = byId(plan, 'te1')?.values.supersetGroupId;
+
+    expect(groupId).toBeTruthy();
+    expect(groupId).not.toBe('g1');
+    expect(byId(plan, 'te3')?.values.supersetGroupId).toBe(groupId);
+    expect('supersetGroupId' in (byId(plan, 'te2')?.values ?? {})).toBe(true);
+    expect(byId(plan, 'te2')?.values.supersetGroupId).toBeUndefined();
+  });
+
+  it('löst eine Gruppe auf, wenn die Datei keinen Gruppennamen nennt', () => {
+    const plan = planLibraryImport(
+      replace(row('Squat', 1), row('Beinstrecker', 2), row('Klimmzug', 3)),
+      baseState({ te1: 'g1', te2: 'g1' }),
+    );
+    const squat = byId(plan, 'te1');
+
+    expect('supersetGroupId' in (squat?.values ?? {})).toBe(true);
+    expect(squat?.values.supersetGroupId).toBeUndefined();
+    expect(squat?.changes).toContainEqual({ field: 'Supersatz', from: 'mit Beinstrecker', to: 'allein' });
+  });
+
+  it('wechselt die Gruppe, ohne die Id der Zuordnung zu ändern', () => {
+    const plan = planLibraryImport(
+      replace(row('Beinstrecker', 1, 'Neu'), row('Klimmzug', 2, 'Neu'), row('Squat', 3)),
+      baseState({ te1: 'g1', te3: 'g1' }),
+    );
+    const pullUp = byId(plan, 'te3');
+
+    expect(pullUp?.kind).toBe('update');
+    expect(pullUp?.changes).toContainEqual({ field: 'Supersatz', from: 'mit Squat', to: 'mit Beinstrecker' });
+    expect(plan.summary.removedAssignments).toBe(0);
+  });
+
+  it('bricht bei nicht zusammenhängender Gruppe ab', () => {
+    expect(() =>
+      planLibraryImport(
+        replace(row('Squat', 1, 'Block 1'), row('Beinstrecker', 2), row('Klimmzug', 3, 'Block 1')),
+        baseState(),
+      ),
+    ).toThrow(/Supersatz "Block 1" in "Einheit A" ist nicht zusammenhängend/);
+  });
+
+  it('bricht bei einer Gruppe mit nur einem Mitglied ab', () => {
+    expect(() =>
+      planLibraryImport(replace(row('Squat', 1, 'Block 1'), row('Klimmzug', 2)), baseState()),
+    ).toThrow(/Supersatz "Block 1" in "Einheit A" hat nur eine Übung/);
+  });
+
+  it('bricht bei superset in einem nicht ersetzten Workout ab', () => {
+    expect(() =>
+      planLibraryImport(
+        buildPayload({ templateAssignments: [row('Squat', 1, 'Block 1')] }),
+        baseState(),
+      ),
+    ).toThrow(/Zuordnung 1: "superset" geht nur bei einem Workout mit "replaceAssignments": true/);
+  });
+
+  it('bildet Gruppen in einem neu angelegten Workout', () => {
+    const plan = planLibraryImport(
+      buildPayload({
+        templates: [{ name: 'Einheit Neu', replaceAssignments: true }],
+        templateAssignments: [
+          { ...row('Squat', 1, 'X'), template: 'Einheit Neu' },
+          { ...row('Klimmzug', 2, 'X'), template: 'Einheit Neu' },
+        ],
+      }),
+      baseState(),
+    );
+    const [first, second] = plan.assignments;
+
+    expect(first.record?.supersetGroupId).toBeTruthy();
+    expect(second.record?.supersetGroupId).toBe(first.record?.supersetGroupId);
+  });
+
+  it('ändert beim zweiten Lauf auch mit Gruppen nichts mehr', () => {
+    const payload = replace(row('Klimmzug', 1, 'B1'), row('Squat', 2, 'B1'), row('Beinstrecker', 3));
+    const first = planLibraryImport(payload, baseState({ te2: 'g9' }));
+    const afterFirst = applyPlan(baseState({ te2: 'g9' }), first);
+    const second = planLibraryImport(payload, afterFirst);
+
+    expect(second.assignments.every((entry) => entry.kind === 'unchanged')).toBe(true);
+    expect(second.templateOrder).toHaveLength(0);
+    expect(afterFirst.templateExercises.find((item) => item.id === 'te2')?.supersetGroupId).toBeUndefined();
+  });
+});
+
 describe('planLibraryImport - Bänder', () => {
   it('hängt neue Stufen an ihrer Position ein und verschiebt den Rest', () => {
     const state = emptyState({ bandLevels: [buildBand('b1', 'Lila', 1)] });

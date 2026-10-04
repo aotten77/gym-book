@@ -674,6 +674,15 @@ function planAssignments(
     const changes: ImportFieldChange[] = [];
     const replaced = replacedTemplateIds.has(template.id);
 
+    if (input.superset !== undefined && !replaced) {
+      // Wie sich eine Gruppe zu einem Bestand verhält, den die Datei nicht
+      // vollständig beschreibt, ist nicht zu entscheiden - also kein Raten.
+      problems.push(
+        `Zuordnung ${position}: "superset" geht nur bei einem Workout mit "replaceAssignments": true.`,
+      );
+      return;
+    }
+
     if (!existing && replaced) {
       const entry: AssignmentPlanEntry = {
         id: createId(),
@@ -858,6 +867,142 @@ function describeRuleCount(count: number) {
   return count === 1 ? '1 Wochenregel geht mit' : `${formatNumber(count)} Wochenregeln gehen mit`;
 }
 
+function describePartners(names: string[]) {
+  if (names.length === 0) {
+    return 'allein';
+  }
+
+  if (names.length === 1) {
+    return `mit ${names[0]}`;
+  }
+
+  return `mit ${names.slice(0, -1).join(', ')} und ${names[names.length - 1]}`;
+}
+
+/**
+ * Supersätze eines ersetzten Workouts aus den Gruppennamen der Datei.
+ *
+ * Eine Gruppe behält ihre bisherige `supersetGroupId`, wenn alle Mitglieder
+ * sie schon tragen und keine andere bleibende Zuordnung des Workouts sie
+ * trägt; sonst bekommt sie eine neue. Nur so ist der zweite Lauf derselben
+ * Datei "unverändert". Die Vorschau nennt die Partner, nie die Id - eine
+ * UUID sagt niemandem etwas.
+ *
+ * Bricht ab, wenn eine Gruppe nicht zusammenhängend steht oder nur eine
+ * Übung hat: Mitglieder liegen immer am Stück im `orderIndex` (siehe
+ * [superset.ts]), und ein Supersatz aus einer Übung ist keiner.
+ */
+function planReplacedSupersets(
+  sorted: ReplacedRow[],
+  templateName: string,
+  existingById: Map<string, WorkoutTemplateExercise>,
+  exerciseNameById: Map<string, string>,
+  problems: string[],
+) {
+  const labelOf = (row: ReplacedRow) =>
+    row.input.superset !== undefined ? normalizeImportKey(row.input.superset) : undefined;
+  const members = new Map<string, ReplacedRow[]>();
+  const closed = new Set<string>();
+  let previous: string | undefined;
+
+  for (const row of sorted) {
+    const label = labelOf(row);
+
+    if (label !== previous && previous !== undefined) {
+      closed.add(previous);
+    }
+
+    if (label !== undefined) {
+      if (closed.has(label)) {
+        problems.push(
+          `Supersatz "${row.input.superset?.trim()}" in "${templateName}" ist nicht zusammenhängend – seine Übungen müssen direkt hintereinander stehen.`,
+        );
+        return;
+      }
+
+      members.set(label, [...(members.get(label) ?? []), row]);
+    }
+
+    previous = label;
+  }
+
+  const keptIds = new Set(sorted.filter((row) => row.entry.kind !== 'new').map((row) => row.entry.id));
+  const targetGroupByEntryId = new Map<string, string>();
+
+  for (const group of members.values()) {
+    if (group.length === 1) {
+      problems.push(
+        `Supersatz "${group[0].input.superset?.trim()}" in "${templateName}" hat nur eine Übung.`,
+      );
+      return;
+    }
+
+    const groupIds = group.map((row) => existingById.get(row.entry.id)?.supersetGroupId);
+    const candidate = groupIds[0];
+    const memberIds = new Set(group.map((row) => row.entry.id));
+    const reusable =
+      candidate !== undefined &&
+      groupIds.every((id) => id === candidate) &&
+      [...keptIds].every(
+        (id) => memberIds.has(id) || existingById.get(id)?.supersetGroupId !== candidate,
+      );
+    const groupId = reusable ? candidate : createId();
+
+    for (const row of group) {
+      targetGroupByEntryId.set(row.entry.id, groupId);
+    }
+  }
+
+  const targetPartners = (row: ReplacedRow) => {
+    const label = labelOf(row);
+    const group = label !== undefined ? members.get(label) ?? [] : [];
+    return group.filter((other) => other !== row).map((other) => other.entry.exerciseName);
+  };
+
+  const currentPartners = (id: string) => {
+    const groupId = existingById.get(id)?.supersetGroupId;
+
+    if (!groupId) {
+      return [];
+    }
+
+    return [...existingById.values()]
+      .filter((other) => other.id !== id && other.supersetGroupId === groupId)
+      .sort((left, right) => left.orderIndex - right.orderIndex)
+      .map((other) => exerciseNameById.get(other.exerciseId) ?? '');
+  };
+
+  for (const row of sorted) {
+    const { entry } = row;
+    const targetGroupId = targetGroupByEntryId.get(entry.id);
+
+    if (entry.kind === 'new') {
+      if (entry.record && targetGroupId) {
+        entry.record.supersetGroupId = targetGroupId;
+        entry.changes.push({ field: 'Supersatz', from: '—', to: describePartners(targetPartners(row)) });
+      }
+
+      continue;
+    }
+
+    const currentGroupId = existingById.get(entry.id)?.supersetGroupId;
+
+    if (currentGroupId === targetGroupId) {
+      continue;
+    }
+
+    entry.changes.push({
+      field: 'Supersatz',
+      from: describePartners(currentPartners(entry.id)),
+      to: describePartners(targetPartners(row)),
+    });
+    // `undefined` als Wert löst die Gruppe auf - `Table.update` entfernt die
+    // Property, und genau das ist hier gemeint.
+    entry.values.supersetGroupId = targetGroupId;
+    entry.kind = 'update';
+  }
+}
+
 /**
  * Legt die Dateizeilen jedes ersetzten Workouts als Ganzes gegen den Bestand.
  *
@@ -908,6 +1053,8 @@ function planReplacedTemplates(
     const sorted = [...rows].sort((left, right) => left.input.orderIndex - right.input.orderIndex);
     const targetIds = sorted.map((row) => row.entry.id);
     const currentIds = (slotsByTemplateId.get(templateId) ?? []).map((slot) => slot.id);
+
+    planReplacedSupersets(sorted, templateName, existingById, exerciseNameById, problems);
 
     sorted.forEach((row, index) => {
       const { entry } = row;
