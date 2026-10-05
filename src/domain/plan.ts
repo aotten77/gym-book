@@ -4,6 +4,7 @@ import type {
   PlanEntry,
   PlanEntryKind,
   RunLog,
+  RunPlanSnapshot,
   RunTarget,
   WorkoutSession,
 } from '@/domain/models';
@@ -405,4 +406,26 @@ export function planEntryName(
   }
 
   return links[entry.id]?.nameSnapshot ?? 'Gelöschtes Workout';
+}
+
+/** Der Termin, wie ihn ein Lauf festhält: Titel, Datum, Vorgaben, Anleitung - fehlende Felder ohne Schlüssel. */
+export function toRunPlanSnapshot(entry: PlanEntry): RunPlanSnapshot {
+  return {
+    title: entry.title ?? '',
+    date: entry.date,
+    ...(entry.targetDistanceKm !== undefined ? { targetDistanceKm: entry.targetDistanceKm } : {}),
+    ...(entry.targetDurationSeconds !== undefined
+      ? { targetDurationSeconds: entry.targetDurationSeconds }
+      : {}),
+    ...(entry.targetElevationGainM !== undefined
+      ? { targetElevationGainM: entry.targetElevationGainM }
+      : {}),
+    ...(entry.targetAverageHeartRate !== undefined
+      ? { targetAverageHeartRate: entry.targetAverageHeartRate }
+      : {}),
+    ...(entry.targetPaceSecondsPerKm !== undefined
+      ? { targetPaceSecondsPerKm: entry.targetPaceSecondsPerKm }
+      : {}),
+    ...(entry.instructions !== undefined ? { instructions: entry.instructions } : {}),
+  };
 }

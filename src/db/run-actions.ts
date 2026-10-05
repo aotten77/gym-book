@@ -1,5 +1,6 @@
 import { db } from '@/db/appDb';
-import type { RunLog } from '@/domain/models';
+import type { RunLog, RunPlanSnapshot } from '@/domain/models';
+import { PLAN_MESSAGES, toRunPlanSnapshot } from '@/domain/plan';
 import { type RunLogValues, validateRunLogValues } from '@/domain/run';
 import { createId } from '@/lib/id';
 
@@ -38,6 +39,42 @@ function buildRecord(
   };
 }
 
+export type RunLogInput = RunLogValues & { planEntryId?: string | null };
+
+/**
+ * Prüft den Termin, auf den ein Lauf zeigen soll, und liefert den frischen
+ * Snapshot. Belegt ist er durch eine nicht abgebrochene Session oder durch
+ * einen *anderen* Lauf - der Lauf, der gerade gespeichert wird, zählt nicht.
+ */
+async function resolvePlanLink(
+  planEntryId: string,
+  ownRunId: string | undefined,
+): Promise<RunPlanSnapshot> {
+  const entry = await db.planEntries.get(planEntryId);
+
+  if (!entry) {
+    throw new Error(PLAN_MESSAGES.notFound);
+  }
+
+  if (entry.kind !== 'run') {
+    throw new Error(PLAN_MESSAGES.notRun);
+  }
+
+  const [sessions, runs] = await Promise.all([
+    db.workoutSessions.where('planEntryId').equals(planEntryId).toArray(),
+    db.runLogs.where('planEntryId').equals(planEntryId).toArray(),
+  ]);
+
+  if (
+    sessions.some((session) => session.status !== 'aborted') ||
+    runs.some((run) => run.id !== ownRunId)
+  ) {
+    throw new Error(PLAN_MESSAGES.taken);
+  }
+
+  return toRunPlanSnapshot(entry);
+}
+
 function assertValid(values: RunLogValues, now: Date) {
   const message = validateRunLogValues(values, now);
 
@@ -46,23 +83,32 @@ function assertValid(values: RunLogValues, now: Date) {
   }
 }
 
-export async function createRunLog(values: RunLogValues, now: Date = new Date()) {
+export async function createRunLog(values: RunLogInput, now: Date = new Date()) {
   assertValid(values, now);
 
   const id = createId();
   const timestamp = now.toISOString();
 
-  await db.runLogs.add(buildRecord(id, values, timestamp, timestamp));
+  await db.transaction('rw', db.runLogs, db.planEntries, db.workoutSessions, async () => {
+    const record = buildRecord(id, values, timestamp, timestamp);
+
+    if (values.planEntryId) {
+      record.runPlanSnapshot = await resolvePlanLink(values.planEntryId, undefined);
+      record.planEntryId = values.planEntryId;
+    }
+
+    await db.runLogs.add(record);
+  });
 
   return id;
 }
 
 export async function updateRunLog(
   id: string,
-  changes: Partial<RunLogValues>,
+  changes: Partial<RunLogInput>,
   now: Date = new Date(),
 ) {
-  await db.transaction('rw', db.runLogs, async () => {
+  await db.transaction('rw', db.runLogs, db.planEntries, db.workoutSessions, async () => {
     const existing = await db.runLogs.get(id);
 
     if (!existing) {
@@ -87,7 +133,8 @@ export async function updateRunLog(
     assertValid(merged, now);
 
     // Auf dem bestehenden Datensatz aufbauen, damit Felder, die diese Version
-    // nicht kennt (etwa aus einer neueren Sicherung), nicht verloren gehen.
+    // nicht kennt, nicht verloren gehen. Das gilt nur für Schreibvorgänge dieser
+    // Version auf dem Gerät: ein Restore läuft durch Zod, das Unbekanntes verwirft.
     const built = buildRecord(id, merged, existing.createdAt, now.toISOString());
     const record: Record<string, unknown> = { ...existing, ...built };
 
@@ -95,6 +142,15 @@ export async function updateRunLog(
       if (!(key in built)) {
         delete record[key];
       }
+    }
+
+    // undefined = Verweis unverändert, null = lösen, id = frisch verknüpfen.
+    if (changes.planEntryId === null) {
+      delete record.planEntryId;
+      delete record.runPlanSnapshot;
+    } else if (changes.planEntryId) {
+      record.runPlanSnapshot = await resolvePlanLink(changes.planEntryId, id);
+      record.planEntryId = changes.planEntryId;
     }
 
     await db.runLogs.put(record as unknown as RunLog);

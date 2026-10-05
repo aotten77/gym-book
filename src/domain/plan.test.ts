@@ -12,6 +12,7 @@ import {
   planEntryName,
   planEntryState,
   toPlanEntryFields,
+  toRunPlanSnapshot,
   validatePlanEntryValues,
   type PlanEntryValues,
 } from '@/domain/plan';
@@ -260,5 +261,42 @@ describe('planEntryName', () => {
     expect(planEntryName(e, {}, links)).toBe('Einheit A');
     expect(planEntryName(e, {}, {})).toBe('Gelöschtes Workout');
     expect(planEntryName(e, { gone: 'Neu' }, links)).toBe('Neu');
+  });
+});
+
+describe('toRunPlanSnapshot', () => {
+  const base: PlanEntry = {
+    id: 'p1',
+    date: '2026-10-05',
+    orderInDay: 1,
+    kind: 'run',
+    title: 'Dauerlauf',
+    targetDistanceKm: 8,
+    targetPaceSecondsPerKm: 330,
+    instructions: 'locker',
+    notes: 'privat',
+    createdAt: 'x',
+    updatedAt: 'x',
+  };
+
+  it('übernimmt Titel, Datum, Vorgaben und Anleitung', () => {
+    expect(toRunPlanSnapshot(base)).toEqual({
+      title: 'Dauerlauf',
+      date: '2026-10-05',
+      targetDistanceKm: 8,
+      targetPaceSecondsPerKm: 330,
+      instructions: 'locker',
+    });
+  });
+
+  it('lässt fehlende Felder als Schlüssel weg', () => {
+    const snapshot = toRunPlanSnapshot({
+      ...base,
+      instructions: undefined,
+      targetDistanceKm: undefined,
+      targetPaceSecondsPerKm: undefined,
+    });
+
+    expect(Object.keys(snapshot).sort()).toEqual(['date', 'title']);
   });
 });
