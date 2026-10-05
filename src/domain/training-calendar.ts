@@ -143,6 +143,10 @@ export interface CalendarDay {
   planned: CalendarUnitRef[];
   /** Wie viele davon an diesem Tag erledigt wurden. */
   plannedDone: number;
+  /** Alle Termine, die auf diesen Tag datiert sind - auch ein anderswo erledigter. Grundlage der Wochenzählung. */
+  dated: number;
+  /** Wie viele davon erledigt sind, an welchem Tag auch immer. */
+  datedDone: number;
   /** Was an diesem Tag tatsächlich abgeschlossen wurde (Sessions und Läufe) - auch Ungeplantes. */
   done: CalendarUnitRef[];
   state: CalendarDayState;
@@ -208,8 +212,8 @@ export function countWeekProgress(row: CalendarWeekRow): { planned: number; done
   let done = 0;
 
   for (const day of row.days) {
-    planned += day.planned.length;
-    done += day.plannedDone;
+    planned += day.dated;
+    done += day.datedDone;
   }
 
   return { planned, done };
@@ -294,13 +298,16 @@ export function buildTrainingCalendar({
             isToday: false,
             planned: [],
             plannedDone: 0,
+            dated: 0,
+            datedDone: 0,
             done: [],
             state: 'leer',
           };
         }
 
         const key = toDateInputValue(date);
-        const plannedEntries = (entriesByDay.get(key) ?? []).filter((entry) => {
+        const datedEntries = entriesByDay.get(key) ?? [];
+        const plannedEntries = datedEntries.filter((entry) => {
           const link = planLinks[entry.id];
 
           return planEntryState(entry.id, planLinks) !== 'erledigt' || (link && doneDayOf(link) === key);
@@ -321,6 +328,9 @@ export function buildTrainingCalendar({
           isToday: isSameDay(date, today),
           planned,
           plannedDone: planned.length - openPlanned,
+          dated: datedEntries.length,
+          datedDone: datedEntries.filter((entry) => planEntryState(entry.id, planLinks) === 'erledigt')
+            .length,
           done,
           state: resolveDayState({ openPlanned, doneCount: done.length, date, today }),
         };

@@ -67,13 +67,18 @@ export async function loadRunPlanOptions(day: string, currentRunId?: string): Pr
     toDateInputValue(weekStart),
     toDateInputValue(weekEnd),
   );
-  const ownLink = currentRunId
-    ? Object.values(links).find((link) => link.source === 'run' && link.sourceId === currentRunId)
-    : undefined;
+  /* Der Termin des eigenen Laufs bleibt wählbar, auch aus einer anderen Woche. */
+  const ownEntryId = currentRunId ? (await db.runLogs.get(currentRunId))?.planEntryId : undefined;
+  const own =
+    ownEntryId && !entries.some((entry) => entry.id === ownEntryId)
+      ? await db.planEntries.get(ownEntryId)
+      : undefined;
 
-  return entries.filter(
-    (entry) =>
-      entry.kind === 'run' &&
-      (planEntryState(entry.id, links) === 'offen' || entry.id === ownLink?.planEntryId),
+  return sortPlanEntries(
+    [...entries, ...(own?.kind === 'run' ? [own] : [])].filter(
+      (entry) =>
+        entry.kind === 'run' &&
+        (entry.id === ownEntryId || planEntryState(entry.id, links) === 'offen'),
+    ),
   );
 }

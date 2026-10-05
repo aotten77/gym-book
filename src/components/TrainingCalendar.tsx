@@ -125,10 +125,9 @@ function CalendarWeekButton({
     labelParts.push(describeWeekKind(row.kind));
   }
 
-  if (planned > 0 && row.start) {
+  /* Ohne Startdatum hat kein Tag Termine, `planned` ist dann immer 0. */
+  if (planned > 0) {
     labelParts.push(`${done} von ${planned} erledigt`);
-  } else if (planned > 0) {
-    labelParts.push(planned === 1 ? '1 Einheit geplant' : `${planned} Einheiten geplant`);
   }
 
   return (

@@ -377,13 +377,13 @@ export function ProgramsPage() {
 
             {/*
               Ohne Startdatum kann keine Programmwoche auf einen Montag
-              zurückgerechnet werden - das Raster zeigt dann den Plan und
-              keine Termine, und sagt das, statt Daten zu erfinden.
+              zurückgerechnet werden - das Raster zeigt dann keine Termine
+              und keine erledigten Tage, und sagt das, statt Daten zu erfinden.
             */}
             {!program.startedOn ? (
               <Empty
                 title="Noch kein Startdatum"
-                description="Ohne Startdatum weiß der Kalender nicht, welcher Montag zu Woche 1 gehört - er zeigt den Plan, aber keine Termine."
+                description="Ohne Startdatum weiß der Kalender nicht, welcher Montag zu Woche 1 gehört - er zeigt keine Termine."
                 action={
                   <Link
                     to="/settings"

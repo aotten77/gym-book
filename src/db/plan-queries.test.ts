@@ -103,6 +103,18 @@ describe('loadRunPlanOptions', () => {
   });
 });
 
+describe('loadRunPlanOptions, eigener Termin', () => {
+  it('nimmt den verknüpften Termin auch aus einer anderen Woche mit', async () => {
+    await addEntry('mo', '2026-10-05', 'run');
+    await addEntry('far', '2026-10-20', 'run');
+    await addRun('mine', '2026-10-07', 'far');
+
+    const options = await loadRunPlanOptions('2026-10-07', 'mine');
+
+    expect(options.map((entry) => entry.id)).toEqual(['mo', 'far']);
+  });
+});
+
 describe('loadRunDatesBetween', () => {
   it('liefert id und Datum, inklusive der Grenzen', async () => {
     await addRun('a', '2026-10-05');

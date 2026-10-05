@@ -187,6 +187,20 @@ describe('buildTrainingCalendar', () => {
     expect(rows[0].days[1].state).toBe('erledigt');
     expect(rows[0].days[1].planned).toEqual([]);
     expect(rows[0].days[1].done).toHaveLength(1);
+    expect(countWeekProgress(rows[0])).toEqual({ planned: 1, done: 1 });
+  });
+
+  it('zählt einen Sonntags-Termin, der am Montag danach erledigt wurde, in seiner Woche', () => {
+    const rows = build(
+      {
+        planEntries: [entry('e1', '2026-10-11')],
+        completedSessions: [doneRef(12)],
+      },
+      [completedSession('e1', 12)],
+    );
+
+    expect(countWeekProgress(rows[0])).toEqual({ planned: 1, done: 1 });
+    expect(countWeekProgress(rows[1])).toEqual({ planned: 0, done: 0 });
   });
 
   it('nennt einen Tag mit zwei Terminen, von denen einer erledigt ist, teilweise', () => {
