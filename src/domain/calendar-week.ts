@@ -126,3 +126,12 @@ function calendarDaysBetween(from: Date, to: Date): number {
       86_400_000,
   );
 }
+
+/** Der Wochenanfang `delta` Wochen von `from` entfernt - über `setDate`, nie Millisekunden (DST). */
+export function shiftWeekStart(from: Date, delta: -1 | 1): Date {
+  const next = new Date(from.getTime());
+
+  next.setDate(next.getDate() + delta * 7);
+
+  return next;
+}

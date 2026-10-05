@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { AppShell } from '@/components/AppShell';
 import { Empty } from '@/components/Empty';
+import { PlanWeekSection } from '@/components/PlanWeekSection';
 import { ProgressionRuleFields } from '@/components/ProgressionRuleFields';
 import { SupersetBlock } from '@/components/SupersetBlock';
 import { TrainingCalendar } from '@/components/TrainingCalendar';
@@ -18,6 +19,7 @@ import {
 import { loadPlanBetween } from '@/db/plan-queries';
 import { clearProgressionRule, saveProgressionRule } from '@/db/template-actions';
 import { pickTodayPlan, planEntryName } from '@/domain/plan';
+import { shiftWeekStart, startOfCalendarWeek } from '@/domain/calendar-week';
 import { buildTrainingCalendar, programWeekStart } from '@/domain/training-calendar';
 import type { ProgramWeek } from '@/domain/models';
 import {
@@ -60,6 +62,11 @@ export function ProgramsPage() {
    * den Einstellungen.
    */
   const [selectedWeekNumber, setSelectedWeekNumber] = useState<number | null>(null);
+  /*
+   * Ohne Startdatum bestimmt keine Programmwoche die Termin-Woche - dann
+   * blättert man von Hand. Ebenfalls ephemer, genau wie die Wochenauswahl.
+   */
+  const [freeWeekStart, setFreeWeekStart] = useState(() => startOfCalendarWeek(new Date()));
   /** Die Zeile, die gerade im Sheet bearbeitet wird - ebenfalls ephemer. */
   const [editingEntry, setEditingEntry] = useState<WeekPlanEntry | null>(null);
   const [ruleForm, setRuleForm] = useState<ProgressionRuleFormState>(emptyProgressionRuleForm);
@@ -92,6 +99,9 @@ export function ProgramsPage() {
   const weekControl = resolveWeekControl(settings?.weekOverride, program, weeks ?? []);
   const selectedWeek = selectedWeekNumber ?? weekControl.effectiveWeek;
   const selectedProgramWeek = (weeks ?? []).find((week) => week.weekNumber === selectedWeek);
+  const programWeekStartDate = program?.startedOn
+    ? programWeekStart(program.startedOn, selectedWeek)
+    : undefined;
 
   /*
    * Der Zeitraum, über den der Kalender Erledigtes sucht: vom Montag der
@@ -336,6 +346,12 @@ export function ProgramsPage() {
             </Link>
           }
         />
+        <div className="mt-4">
+          <PlanWeekSection
+            weekStart={freeWeekStart}
+            onShiftWeek={(delta) => setFreeWeekStart((current) => shiftWeekStart(current, delta))}
+          />
+        </div>
       </AppShell>
     );
   }
@@ -427,6 +443,19 @@ export function ProgramsPage() {
             ) : null}
           </div>
         ) : null}
+
+        {/*
+          Termine brauchen kein Programm, wohl aber eine Woche: mit Startdatum
+          ist es die gewählte Programmwoche, sonst blättert man von Hand.
+        */}
+        {programWeekStartDate ? (
+          <PlanWeekSection weekStart={programWeekStartDate} />
+        ) : (
+          <PlanWeekSection
+            weekStart={freeWeekStart}
+            onShiftWeek={(delta) => setFreeWeekStart((current) => shiftWeekStart(current, delta))}
+          />
+        )}
 
         {overrideCount === 0 && blocks.some((block) => block.entries.length > 0) ? (
           /*
