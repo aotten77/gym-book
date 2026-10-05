@@ -348,7 +348,9 @@ additiv.
   belegter Termin darf ein gelöschtes Workout überleben, und das eigene Backup
   darf daran nicht scheitern.
 - **Analyse-Export:**
-  - **`plan.csv`** als siebte Datei: alle Termine im Exportzeitraum, Spalten
+  - **`plan.csv`** als siebte Datei: alle Termine, auch künftige (der
+    `zeitraum` in `meta.json` leitet sich aus Sessions ab und würde genau die
+    Termine abschneiden, die das Planungsprojekt braucht), Spalten
     `datum, reihenfolge, art, name, soll_km, soll_dauer_min, soll_hm,
     soll_puls, soll_pace, notiz, status`. `status` ist `erledigt`, `offen`
     (heute oder künftig) oder `verstrichen` (vergangen und nicht erledigt).
