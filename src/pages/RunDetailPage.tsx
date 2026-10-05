@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { db } from '@/db/appDb';
 import { deleteRunLog } from '@/db/run-actions';
+import { describeRunTarget } from '@/domain/plan';
 import { formatPace, formatRunDuration, paceSecondsPerKm } from '@/domain/run';
 import { formatNumber, formatRunDate } from '@/lib/format';
 
@@ -70,6 +71,14 @@ export function RunDetailPage() {
   return (
     <AppShell title="Lauf" eyebrow={formatRunDate(run.date)}>
       <div className="space-y-4">
+        {run.runPlanSnapshot ? (
+          <p data-run-planned="" className="px-1 text-sm text-content-secondary">
+            Geplant: {run.runPlanSnapshot.title}
+            {describeRunTarget(run.runPlanSnapshot)
+              ? ` · ${describeRunTarget(run.runPlanSnapshot)}`
+              : ''}
+          </p>
+        ) : null}
         <div className="grid grid-cols-2 gap-3">
           <Tile label="Strecke" value={`${formatNumber(run.distanceKm)} km`} />
           <Tile label="Dauer" value={formatRunDuration(run.durationSeconds)} />

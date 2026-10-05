@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { resetDatabase } from './helpers';
+import { resetDatabase, seedSampleData } from './helpers';
 
 /*
  * Ein Lauf über Heute: Sheet, Pace-Zeile, Sprung über die Tastaturleiste.
@@ -112,5 +112,50 @@ test.describe('Lauf eintragen', () => {
     await expect(weeks.first()).toBeVisible();
     const overflow = await weeks.evaluateAll((nodes) => nodes.filter((n) => n.scrollWidth > n.clientWidth).length);
     expect(overflow).toBe(0);
+  });
+});
+
+test.describe('Lauf-Sheet und Termine', () => {
+  test('Lauf-Sheet wählt den heutigen Termin vor', async ({ page }) => {
+    await resetDatabase(page);
+    await seedSampleData(page);
+    await page.goto('./#/programs');
+    await page.waitForTimeout(1200);
+
+    const today = await page.evaluate(() => {
+      const now = new Date();
+      const month = `${now.getMonth() + 1}`.padStart(2, '0');
+      const day = `${now.getDate()}`.padStart(2, '0');
+
+      return `${now.getFullYear()}-${month}-${day}`;
+    });
+
+    await page.getByRole('button', { name: 'Termin hinzufügen' }).click();
+    const entrySheet = page.locator('[data-sheet]');
+    await entrySheet.getByRole('button', { name: 'Lauf', exact: true }).click();
+    await entrySheet.getByLabel('Datum').fill(today);
+    await entrySheet.getByLabel('Titel').fill('Intervalle 6×400');
+    await entrySheet.getByLabel('Strecke (km)').fill('7');
+    await entrySheet.getByRole('button', { name: 'Termin speichern' }).click();
+    await expect(entrySheet).toHaveCount(0);
+
+    await page.goto('./');
+    await page.waitForTimeout(800);
+    await page.getByRole('button', { name: /Heute · Intervalle 6×400/ }).click();
+
+    const sheet = page.locator('[data-sheet]');
+    await expect(sheet.locator('[data-run-plan] option:checked')).toContainText('Intervalle 6×400');
+    await expect(sheet.locator('[data-run-target]')).toContainText('7 km');
+
+    await sheet.getByLabel('Strecke (km)').fill('7');
+    await sheet.getByLabel('Min', { exact: true }).fill('35');
+    await sheet.getByRole('button', { name: 'Lauf speichern' }).click();
+    await expect(sheet).toHaveCount(0);
+
+    await page.goto('./#/programs');
+    await page.waitForTimeout(1000);
+    await expect(
+      page.locator('[data-plan-entry]').filter({ hasText: 'Intervalle 6×400' }),
+    ).toHaveAttribute('data-plan-entry-state', 'erledigt');
   });
 });

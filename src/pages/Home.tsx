@@ -11,15 +11,18 @@ import { RunLogSheet } from '@/components/RunLogSheet';
 import { DoneCard, NowCard } from '@/components/ui/StatusCard';
 import { SectionCard } from '@/components/SectionCard';
 import { db } from '@/db/appDb';
+import { loadUpcomingPlan } from '@/db/plan-queries';
 import { loadTemplateRecency, loadWeekSummary, loadWeeklyVolume } from '@/db/history-queries';
 import { startSessionFromTemplate } from '@/db/session-actions';
 import { evaluateBackupStatus } from '@/domain/backup';
 import { startOfCalendarWeek } from '@/domain/calendar-week';
 import { pickNextTemplate } from '@/domain/next-workout';
 import { describeWeekCounts, hasTraining } from '@/domain/weekly-volume';
-import { resolveWeekControl } from '@/domain/program';
+import type { PlanEntry } from '@/domain/models';
+import { describeRunTarget, pickTodayPlan, planEntryName } from '@/domain/plan';
+import { resolveWeekControl, toDateInputValue } from '@/domain/program';
 import { exportDatabaseSnapshot } from '@/lib/export';
-import { formatDateTime, formatNumber } from '@/lib/format';
+import { formatDateTime, formatNumber, formatRunDate } from '@/lib/format';
 
 export default function Home() {
   const navigate = useNavigate();
@@ -28,6 +31,10 @@ export default function Home() {
   const [isBackingUp, setIsBackingUp] = useState(false);
   const [backupError, setBackupError] = useState<string | null>(null);
   const [isRunSheetOpen, setIsRunSheetOpen] = useState(false);
+  // Der Lauf-Termin, mit dem das Sheet aufgemacht wurde; ohne ihn rechnet das Sheet selbst vor.
+  const [runSheetPlanEntryId, setRunSheetPlanEntryId] = useState<string | undefined>();
+  const todayKey = toDateInputValue(new Date());
+  const upcomingPlan = useLiveQuery(() => loadUpcomingPlan(todayKey), [todayKey]);
   const templates = useLiveQuery(() => db.workoutTemplates.toArray(), []);
   const settings = useLiveQuery(() => db.appSettings.get('app-settings'), []);
   const program = useLiveQuery(async () => {
@@ -147,11 +154,41 @@ export default function Home() {
     return count === 1 ? '1 Übung' : `${count} Übungen`;
   }
 
-  async function handleStartSession(templateId: string) {
+  /*
+   * Dieselbe Ableitung wie die Karte "Heute" im Programm-Tab: `pickTodayPlan`
+   * über die Termine ab heute, damit beide Seiten nie verschiedener Meinung sind.
+   */
+  const templateNames = useMemo(
+    () =>
+      (templates ?? []).reduce<Record<string, string>>((names, template) => {
+        names[template.id] = template.name;
+        return names;
+      }, {}),
+    [templates],
+  );
+  const todayPlan = upcomingPlan
+    ? pickTodayPlan(upcomingPlan.entries, upcomingPlan.links, todayKey)
+    : { todayOpen: [] as PlanEntry[], next: undefined };
+  const todayEntries = todayPlan.todayOpen;
+  const nextEntry = todayPlan.next;
+
+  function handleStartEntry(entry: PlanEntry) {
+    if (entry.kind === 'run') {
+      setRunSheetPlanEntryId(entry.id);
+      setIsRunSheetOpen(true);
+      return;
+    }
+
+    if (entry.templateId) {
+      void handleStartSession(entry.templateId, entry.id);
+    }
+  }
+
+  async function handleStartSession(templateId: string, planEntryId?: string) {
     setIsStartingSession(true);
 
     try {
-      const sessionId = await startSessionFromTemplate(templateId);
+      const sessionId = await startSessionFromTemplate(templateId, planEntryId ? { planEntryId } : {});
       setStartError(null);
       navigate(`/session/${sessionId}`);
     } catch (error) {
@@ -213,7 +250,55 @@ export default function Home() {
           und der Name des Workouts steht damit im zugänglichen Namen des
           Knopfes (worauf die e2e-Tests seit jeher zeigen).
         */}
-        {nextTemplate ? (
+        {todayEntries.length > 0 ? (
+          <>
+            <NowCard
+              eyebrow="Heute"
+              title={planEntryName(todayEntries[0], templateNames, upcomingPlan?.links ?? {})}
+              label={`Heute · ${planEntryName(todayEntries[0], templateNames, upcomingPlan?.links ?? {})}`}
+              subtitle={
+                todayEntries[0].kind === 'run'
+                  ? describeRunTarget(todayEntries[0]) || 'Lauf'
+                  : describeExerciseCount(todayEntries[0].templateId ?? '')
+              }
+              onClick={() => handleStartEntry(todayEntries[0])}
+              disabled={isStartingSession}
+              action={
+                <span className="flex h-11 w-11 items-center justify-center rounded-control bg-accent text-accent-contrast">
+                  {todayEntries[0].kind === 'run' ? <RunIcon size={18} /> : <Play size={18} />}
+                </span>
+              }
+            />
+            {todayEntries.slice(1).map((entry) => (
+              <Button
+                key={entry.id}
+                variant="secondary"
+                fullWidth
+                disabled={isStartingSession}
+                onClick={() => handleStartEntry(entry)}
+              >
+                Heute · {planEntryName(entry, templateNames, upcomingPlan?.links ?? {})}
+              </Button>
+            ))}
+          </>
+        ) : nextEntry ? (
+          /*
+            Ein Termin in der Zukunft ist nicht "jetzt dran" - die Karte ist
+            deshalb weiß und ohne Startknopf. Lime gehört dem, was heute
+            ansteht.
+          */
+          <SectionCard
+            title={`Nächster Termin · ${formatRunDate(nextEntry.date)} · ${planEntryName(
+              nextEntry,
+              templateNames,
+              upcomingPlan?.links ?? {},
+            )}`}
+          >
+            <p className="text-sm text-content-muted">
+              Der Termin lässt sich im Programm-Tab ändern.
+            </p>
+          </SectionCard>
+        ) : nextTemplate ? (
           <NowCard
             eyebrow="Am längsten her"
             title={nextTemplate.name}
@@ -256,11 +341,25 @@ export default function Home() {
           </p>
         ) : null}
 
-        <Button variant="secondary" fullWidth onClick={() => setIsRunSheetOpen(true)}>
+        <Button
+          variant="secondary"
+          fullWidth
+          onClick={() => {
+            setRunSheetPlanEntryId(undefined);
+            setIsRunSheetOpen(true);
+          }}
+        >
           <RunIcon size={18} className="mr-2" />
           Lauf eintragen
         </Button>
-        <RunLogSheet open={isRunSheetOpen} onClose={() => setIsRunSheetOpen(false)} />
+        <RunLogSheet
+          open={isRunSheetOpen}
+          initialPlanEntryId={runSheetPlanEntryId}
+          onClose={() => {
+            setIsRunSheetOpen(false);
+            setRunSheetPlanEntryId(undefined);
+          }}
+        />
 
         {/*
           Waldgrün heißt "erledigt" - und darf sich deshalb wiederholen, anders

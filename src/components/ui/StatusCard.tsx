@@ -44,6 +44,8 @@ interface NowCardProps {
    * ungültiges HTML und für Sprachbedienung nicht auflösbar.
    */
   onClick?: () => void;
+  /** Zugänglicher Name des Knopfes, wenn er mehr sagen soll als Eyebrow und Titel hintereinander. */
+  label?: string;
   disabled?: boolean;
   className?: string;
 }
@@ -54,6 +56,7 @@ export function NowCard({
   subtitle,
   action,
   onClick,
+  label,
   disabled,
   className,
 }: NowCardProps) {
@@ -76,6 +79,7 @@ export function NowCard({
   return (
     <button
       type="button"
+      aria-label={label}
       onClick={onClick}
       disabled={disabled}
       className={cn(

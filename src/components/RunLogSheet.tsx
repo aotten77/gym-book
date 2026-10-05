@@ -1,18 +1,69 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { ChevronDown } from 'lucide-react';
+import { MarkdownText } from '@/components/MarkdownText';
 import { Button } from '@/components/ui/Button';
 import { Sheet } from '@/components/ui/Sheet';
-import { TextArea, TextField } from '@/components/ui/Field';
+import { SelectField, TextArea, TextField } from '@/components/ui/Field';
+import { loadRunPlanOptions } from '@/db/plan-queries';
+import { buildExerciseGuide } from '@/domain/exercise-guide';
+import { describeRunTarget, findMatchingPlanEntry } from '@/domain/plan';
 import { createRunLog, updateRunLog } from '@/db/run-actions';
 import type { RunLog } from '@/domain/models';
 import { toDateInputValue } from '@/domain/program';
 import { formatPace } from '@/domain/run';
+import { formatRunDate } from '@/lib/format';
 import { readRunForm, toRunFormState, type RunFormField, type RunFormState } from '@/domain/run-form';
 
 interface RunLogSheetProps {
   open: boolean;
   /** Ohne Lauf wird ein neuer angelegt, mit Lauf dieser bearbeitet. */
   run?: RunLog;
+  /** Der Lauf-Termin, von dem aus das Sheet geöffnet wurde (Home: "Heute"). */
+  initialPlanEntryId?: string;
   onClose: () => void;
+}
+
+/**
+ * Die Anleitung des Termins als eine Zeile, die aufklappt - das Muster der
+ * Ausführungszeile in der Session. Anders als dort steht der Text gleich hier
+ * statt in einem Dialog: das Sheet ist schon die Ebene, auf der man ihn liest.
+ */
+function RunInstructions({ instructions }: { instructions: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const guide = buildExerciseGuide({ instructions });
+
+  if (!guide) {
+    return null;
+  }
+
+  return (
+    <div data-run-instructions="" className="rounded-panel bg-surface-raised">
+      <button
+        type="button"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((current) => !current)}
+        className="flex min-h-touch w-full items-center gap-2 rounded-panel px-3 py-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+      >
+        <span className="shrink-0 text-[10px] font-bold uppercase tracking-[0.16em] text-content-muted">
+          Anleitung
+        </span>
+        <span className="min-w-0 flex-1 truncate text-sm font-semibold text-content">
+          {expanded ? '' : guide.teaser}
+        </span>
+        <ChevronDown
+          size={18}
+          aria-hidden="true"
+          className={expanded ? 'shrink-0 rotate-180 text-content-muted' : 'shrink-0 text-content-muted'}
+        />
+      </button>
+      {expanded ? (
+        <div className="px-3 pb-3 text-[15px] text-content-secondary">
+          <MarkdownText blocks={guide.blocks} compact />
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 /**
@@ -21,11 +72,13 @@ interface RunLogSheetProps {
  * ein Fehler erst, wenn das Feld berührt wurde - ein leeres Formular soll
  * nicht beim Öffnen schon schimpfen.
  */
-export function RunLogSheet({ open, run, onClose }: RunLogSheetProps) {
+export function RunLogSheet({ open, run, initialPlanEntryId, onClose }: RunLogSheetProps) {
   const [form, setForm] = useState<RunFormState>(() => toRunFormState(run, new Date()));
   const [touched, setTouched] = useState<ReadonlySet<RunFormField>>(new Set());
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // `undefined` = nicht von Hand gewählt: dann rechnet das Sheet die Vorwahl mit dem Datum neu.
+  const [manualPlanEntryId, setManualPlanEntryId] = useState<string | undefined>();
 
   // Bei jedem Öffnen frisch: ein abgebrochener Entwurf bleibt nicht hängen.
   useEffect(() => {
@@ -34,6 +87,7 @@ export function RunLogSheet({ open, run, onClose }: RunLogSheetProps) {
       setTouched(new Set());
       setSaveError(null);
       setIsSaving(false);
+      setManualPlanEntryId(undefined);
     }
     // `run` bewusst nicht in den Abhängigkeiten: ein Live-Update des Laufs
     // darf das Formular unter den Fingern nicht zurücksetzen.
@@ -45,6 +99,22 @@ export function RunLogSheet({ open, run, onClose }: RunLogSheetProps) {
     () => readRunForm(form, new Date()),
     [form],
   );
+
+  const planOptions = useLiveQuery(
+    () => (open ? loadRunPlanOptions(form.date, run?.id) : Promise.resolve([])),
+    [open, form.date, run?.id],
+  );
+  const options = planOptions ?? [];
+  const autoPlanEntryId =
+    run?.planEntryId ??
+    initialPlanEntryId ??
+    findMatchingPlanEntry(options, { kind: 'run', day: form.date, takenIds: new Set() })?.id ??
+    '';
+  const wantedPlanEntryId = manualPlanEntryId ?? autoPlanEntryId;
+  // Ein Verweis auf einen Termin, den es hier nicht (mehr) zur Wahl gibt, wäre im Select unsichtbar.
+  const planEntryId = options.some((entry) => entry.id === wantedPlanEntryId) ? wantedPlanEntryId : '';
+  const planEntry = options.find((entry) => entry.id === planEntryId);
+  const planTarget = planEntry ? describeRunTarget(planEntry) : '';
 
   function setField(field: RunFormField, value: string) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -68,10 +138,13 @@ export function RunLogSheet({ open, run, onClose }: RunLogSheetProps) {
     setSaveError(null);
 
     try {
+      // `null` löst den Verweis, `''` hieße in den Actions "nicht anfassen".
+      const input = { ...values, planEntryId: planEntryId || null };
+
       if (run) {
-        await updateRunLog(run.id, values);
+        await updateRunLog(run.id, input);
       } else {
-        await createRunLog(values);
+        await createRunLog(input);
       }
       onClose();
     } catch (error) {
@@ -112,6 +185,29 @@ export function RunLogSheet({ open, run, onClose }: RunLogSheetProps) {
       onClose={onClose}
     >
       <div className="space-y-4">
+        {options.length > 0 || planEntryId ? (
+          <div className="space-y-2">
+            <SelectField
+              label="Geplanter Lauf"
+              data-run-plan=""
+              value={planEntryId}
+              onChange={(event) => setManualPlanEntryId(event.target.value)}
+            >
+              <option value="">Keiner</option>
+              {options.map((entry) => (
+                <option key={entry.id} value={entry.id}>
+                  {`${entry.title ?? 'Lauf'} · ${formatRunDate(entry.date)}`}
+                </option>
+              ))}
+            </SelectField>
+            {planTarget ? (
+              <p data-run-target="" className="text-sm text-content-secondary">
+                {planTarget}
+              </p>
+            ) : null}
+            {planEntry?.instructions ? <RunInstructions instructions={planEntry.instructions} /> : null}
+          </div>
+        ) : null}
         <TextField
           label="Datum"
           type="date"

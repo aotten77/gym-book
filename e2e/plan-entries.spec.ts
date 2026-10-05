@@ -1,5 +1,12 @@
 import { expect, test, type Page } from '@playwright/test';
-import { collectPageErrors, resetDatabase, seedSampleData } from './helpers';
+import {
+  collectPageErrors,
+  completeActiveSet,
+  closeExerciseSheet,
+  openExerciseSheet,
+  resetDatabase,
+  seedSampleData,
+} from './helpers';
 
 /*
  * Termine im Programm-Tab. Das Startdatum liegt auf dem Montag dieser Woche,
@@ -121,5 +128,46 @@ test.describe('Termine im Programm-Tab', () => {
     expect(overflow).toBeLessThanOrEqual(0);
 
     expect(errors).toEqual([]);
+  });
+
+  test('Home startet den heutigen Termin und markiert ihn erledigt', async ({ page }) => {
+    const errors = collectPageErrors(page);
+
+    await page.getByRole('button', { name: 'Termin hinzufügen' }).click();
+    const sheet = page.locator('[data-sheet]');
+    await sheet.getByLabel('Workout', { exact: true }).selectOption({ label: 'Einheit A' });
+    await sheet.getByRole('button', { name: 'Termin speichern' }).click();
+    await expect(page.locator('[data-plan-entry]').filter({ hasText: 'Einheit A' })).toHaveAttribute(
+      'data-plan-entry-state',
+      'offen',
+    );
+
+    await page.goto('./');
+    await page.waitForTimeout(800);
+    await page.getByRole('button', { name: /Heute · Einheit A/ }).click();
+    await page.waitForURL(/#\/session\//);
+    await page.waitForTimeout(600);
+
+    await openExerciseSheet(page);
+    await completeActiveSet(page);
+    await closeExerciseSheet(page);
+    await page.getByRole('button', { name: 'Session abschließen' }).first().click();
+    await page.waitForTimeout(1500);
+
+    await page.goto('./#/programs');
+    await page.waitForTimeout(1000);
+    await expect(
+      page.locator('[data-plan-entry]').filter({ hasText: 'Einheit A' }),
+    ).toHaveAttribute('data-plan-entry-state', 'erledigt');
+
+    expect(errors).toEqual([]);
+  });
+
+  test('ohne Termine bleibt Am längsten her', async ({ page }) => {
+    await page.goto('./');
+    await page.waitForTimeout(800);
+
+    await expect(page.getByText('Am längsten her')).toBeVisible();
+    await expect(page.getByText('Nächster Termin')).toHaveCount(0);
   });
 });
