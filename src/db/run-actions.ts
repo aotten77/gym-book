@@ -1,4 +1,5 @@
 import { db } from '@/db/appDb';
+import { loadTakenPlanEntryIds } from '@/db/plan-actions';
 import type { RunLog, RunPlanSnapshot } from '@/domain/models';
 import { PLAN_MESSAGES, toRunPlanSnapshot } from '@/domain/plan';
 import { type RunLogValues, validateRunLogValues } from '@/domain/run';
@@ -60,15 +61,7 @@ async function resolvePlanLink(
     throw new Error(PLAN_MESSAGES.notRun);
   }
 
-  const [sessions, runs] = await Promise.all([
-    db.workoutSessions.where('planEntryId').equals(planEntryId).toArray(),
-    db.runLogs.where('planEntryId').equals(planEntryId).toArray(),
-  ]);
-
-  if (
-    sessions.some((session) => session.status !== 'aborted') ||
-    runs.some((run) => run.id !== ownRunId)
-  ) {
+  if ((await loadTakenPlanEntryIds([planEntryId], { exceptRunId: ownRunId })).has(planEntryId)) {
     throw new Error(PLAN_MESSAGES.taken);
   }
 

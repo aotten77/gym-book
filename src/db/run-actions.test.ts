@@ -150,6 +150,24 @@ describe('run-actions: Termin zuordnen', () => {
     await expect(updateRunLog(other, { planEntryId: 'p1' }, NOW)).rejects.toThrow(PLAN_MESSAGES.taken);
   });
 
+  it('Session auf dem Termin blockiert, abgebrochene nicht', async () => {
+    await addEntry('p1');
+    const session = (status: string, id: string) =>
+      db.workoutSessions.add({ id, planEntryId: 'p1', status } as never);
+
+    await session('aborted', 's0');
+    await expect(createRunLog({ ...VALUES, planEntryId: 'p1' }, NOW)).resolves.toBeTruthy();
+    await db.runLogs.clear();
+
+    for (const [status, id] of [['active', 's1'], ['completed', 's2']] as const) {
+      await db.workoutSessions.clear();
+      await session(status, id);
+      await expect(createRunLog({ ...VALUES, planEntryId: 'p1' }, NOW)).rejects.toThrow(
+        PLAN_MESSAGES.taken,
+      );
+    }
+  });
+
   it('null löst', async () => {
     await addEntry('p1');
     const id = await createRunLog({ ...VALUES, planEntryId: 'p1' }, NOW);

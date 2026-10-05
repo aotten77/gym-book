@@ -37,7 +37,10 @@ export async function nextOrderInDay(date: string): Promise<number> {
  * Welche der Termine belegt sind: eine laufende oder abgeschlossene Session
  * oder irgendein Lauf zeigt auf sie. Abgebrochene Sessions belegen nichts.
  */
-export async function loadTakenPlanEntryIds(entryIds: string[]): Promise<Set<string>> {
+export async function loadTakenPlanEntryIds(
+  entryIds: string[],
+  options: { exceptRunId?: string } = {},
+): Promise<Set<string>> {
   if (entryIds.length === 0) {
     return new Set();
   }
@@ -55,7 +58,7 @@ export async function loadTakenPlanEntryIds(entryIds: string[]): Promise<Set<str
   }
 
   for (const run of runs) {
-    if (run.planEntryId) {
+    if (run.planEntryId && run.id !== options.exceptRunId) {
       taken.add(run.planEntryId);
     }
   }
