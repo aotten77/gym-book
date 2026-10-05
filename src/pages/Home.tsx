@@ -115,13 +115,6 @@ export default function Home() {
    * ihre Begründung als Beschriftung auf der Karte und nicht im Code allein.
    */
   const nextTemplate = pickNextTemplate(templates ?? [], templateRecency ?? {});
-  const otherTemplates = useMemo(
-    () =>
-      (templates ?? [])
-        .filter((template) => template.id !== nextTemplate?.id)
-        .sort((left, right) => left.name.localeCompare(right.name, 'de')),
-    [templates, nextTemplate?.id],
-  );
   const weekControl = resolveWeekControl(settings?.weekOverride, program, programWeeks ?? []);
   const weekHint = program?.name ?? 'Kein Programm gesetzt';
   /*
@@ -171,6 +164,19 @@ export default function Home() {
     : { todayOpen: [] as PlanEntry[], next: undefined };
   const todayEntries = todayPlan.todayOpen;
   const nextEntry = todayPlan.next;
+  /*
+   * "Am längsten her" steht nur, wenn kein Termin heute oder danach die Karte
+   * belegt - nur dann gehört dieses Workout nicht auch in die Liste. An einem
+   * freien Tag mit Termin später lässt sich jedes Workout weiter starten.
+   */
+  const nextTemplateShown = todayEntries.length === 0 && !nextEntry ? nextTemplate : undefined;
+  const otherTemplates = useMemo(
+    () =>
+      (templates ?? [])
+        .filter((template) => template.id !== nextTemplateShown?.id)
+        .sort((left, right) => left.name.localeCompare(right.name, 'de')),
+    [templates, nextTemplateShown?.id],
+  );
 
   function handleStartEntry(entry: PlanEntry) {
     if (entry.kind === 'run') {

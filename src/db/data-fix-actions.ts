@@ -11,7 +11,7 @@ import { createId } from '@/lib/id';
 /*
  * Einmalige Korrekturen an Daten, die schon auf dem Gerät liegen.
  *
- * Beides sind keine Migrationen im Dexie-Sinn: das Schema bleibt, wie es ist,
+ * Das sind keine Migrationen im Dexie-Sinn: das Schema bleibt, wie es ist,
  * und automatisch laufen darf hier nichts. Ein `upgrade()` würde ohne Rückfrage
  * Trainingsdaten umdeuten - deshalb steht jede dieser Aktionen hinter einem
  * Bestätigungsdialog in den Einstellungen.

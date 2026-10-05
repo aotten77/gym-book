@@ -197,4 +197,50 @@ test.describe('Termine im Programm-Tab', () => {
     await expect(page.getByText('Am längsten her')).toBeVisible();
     await expect(page.getByText('Nächster Termin')).toHaveCount(0);
   });
+
+  test('an einem Tag ohne Termin bleibt jedes Workout startbar', async ({ page }) => {
+    // Heute ist nichts geplant, der nächste Termin liegt morgen.
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve, reject) => {
+          const iso = (date: Date) =>
+            `${date.getFullYear()}-${`${date.getMonth() + 1}`.padStart(2, '0')}-${`${date.getDate()}`.padStart(2, '0')}`;
+          const tomorrow = new Date();
+          tomorrow.setDate(tomorrow.getDate() + 1);
+          const open = indexedDB.open('gym-book-db');
+
+          open.onerror = () => reject(open.error);
+          open.onsuccess = () => {
+            const database = open.result;
+            const tx = database.transaction(['planEntries', 'workoutTemplates'], 'readwrite');
+            const templates = tx.objectStore('workoutTemplates').getAll();
+
+            templates.onsuccess = () => {
+              const stamp = new Date().toISOString();
+
+              tx.objectStore('planEntries').add({
+                id: 'morgen',
+                date: iso(tomorrow),
+                kind: 'workout',
+                templateId: templates.result[0].id,
+                orderInDay: 1,
+                createdAt: stamp,
+                updatedAt: stamp,
+              });
+            };
+            tx.oncomplete = () => {
+              database.close();
+              resolve();
+            };
+            tx.onerror = () => reject(tx.error);
+          };
+        }),
+    );
+
+    await page.goto('./');
+    await page.waitForTimeout(800);
+
+    await expect(page.getByText(/Nächster Termin/)).toBeVisible();
+    await expect(page.getByRole('button', { name: /Einheit A/ })).toBeVisible();
+  });
 });

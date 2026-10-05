@@ -341,7 +341,7 @@ describe('planWeekdayMigration', () => {
     expect(plan.entries.every((entry) => entry.date >= '2026-10-21')).toBe(true);
   });
 
-  it('braucht bei abgelaufenem Programm die Wochenzahl', () => {
+  it('braucht bei abgelaufenem Programm oder ohne Startdatum die Wochenzahl', () => {
     const expired = planWeekdayMigration({
       templates,
       program,
@@ -353,17 +353,18 @@ describe('planWeekdayMigration', () => {
     expect(expired.needsWeeks).toBe(true);
     expect(expired.entries).toEqual([]);
 
-    const withWeeks = planWeekdayMigration({
+    const expiredWithWeeks = planWeekdayMigration({
       templates,
       program,
       programWeeks,
       weeks: 4,
-      today: '2026-10-21',
+      today: '2027-01-20',
       existingKeys: new Set(),
-      // Programm ohne Startdatum: ebenfalls Wochenzahl nötig.
     });
 
-    expect(withWeeks.needsWeeks).toBe(false);
+    expect(expiredWithWeeks.needsWeeks).toBe(true);
+    expect(expiredWithWeeks.to).toBe('2027-02-14');
+    expect(expiredWithWeeks.entries.length).toBeGreaterThan(0);
 
     const noStart = planWeekdayMigration({
       templates,

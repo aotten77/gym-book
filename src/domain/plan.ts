@@ -1,4 +1,4 @@
-import { parseLocalDate, startOfCalendarWeek } from '@/domain/calendar-week';
+import { calendarWeeksBetween, parseLocalDate, startOfCalendarWeek } from '@/domain/calendar-week';
 import { normalizeImportKey } from '@/domain/import-key';
 import type {
   PlanEntry,
@@ -489,12 +489,8 @@ export function planWeekdayMigration(input: {
   }
 
   const toDate = parseLocalDate(to);
-  const weeks = lastDay
-    ? Math.round(
-        (startOfCalendarWeek(lastDay).getTime() - startOfCalendarWeek(today).getTime()) /
-          (7 * 24 * 3600 * 1000),
-      ) + 1
-    : (input.weeks ?? 0);
+  // Großzügig ausrollen: was hinter `to` liegt, fällt unten über `date > to` wieder heraus.
+  const weeks = lastDay ? (calendarWeeksBetween(from, lastDay) ?? 0) + 1 : (input.weeks ?? 0);
   const templates = input.templates
     .filter((template) => normalizeScheduledWeekdays(template.scheduledWeekdays) !== undefined)
     .sort((a, b) => a.name.localeCompare(b.name, 'de'));
