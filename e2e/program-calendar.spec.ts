@@ -4,10 +4,11 @@ import { collectPageErrors, resetDatabase, seedSampleData } from './helpers';
 /*
  * Der Trainingskalender unter "Programm".
  *
- * Die Beispieldaten legen "Einheit A" auf Montag und Donnerstag, tragen aber
- * kein Startdatum ein - genau die Ausgangslage, in der das Raster den Plan
- * zeigen darf und Termine nicht. Der dritte Test setzt das Startdatum und
- * prüft, dass daraus Daten und ein markiertes Heute werden.
+ * Die Beispieldaten legen Termine für "Einheit A" auf Montag und Donnerstag
+ * der laufenden Woche (vier Wochen lang), tragen aber kein Startdatum ein -
+ * genau die Ausgangslage, in der das Raster keine Daten kennt und das sagt.
+ * Der letzte Test setzt das Startdatum und prüft, dass daraus Daten, ein
+ * markiertes Heute und geplante bzw. verpasste Termine werden.
  */
 test.describe('Trainingskalender', () => {
   test.beforeEach(async ({ page }) => {
@@ -15,7 +16,7 @@ test.describe('Trainingskalender', () => {
     await seedSampleData(page);
   });
 
-  test('zeigt den Wochenplan und ohne Startdatum keine Termine', async ({ page }) => {
+  test('zeigt das Raster und ohne Startdatum keine Termine', async ({ page }) => {
     const errors = collectPageErrors(page);
 
     await page.goto('./#/programs');
@@ -24,27 +25,10 @@ test.describe('Trainingskalender', () => {
     const calendar = page.locator('[data-training-calendar]');
     await expect(calendar).toBeVisible();
 
-    // Der Plan steht einmal unter dem Raster, nicht in jeder Zeile.
-    await expect(calendar.getByText('Einheit A').first()).toBeVisible();
-
-    // Montag und Donnerstag sind geplant, der Mittwoch ist leer.
-    const firstWeek = calendar.locator('[data-calendar-week="1"]');
-    await expect(firstWeek.locator('[data-calendar-day="1"]')).toHaveAttribute(
-      'data-day-state',
-      'geplant',
-    );
-    await expect(firstWeek.locator('[data-calendar-day="4"]')).toHaveAttribute(
-      'data-day-state',
-      'geplant',
-    );
-    await expect(firstWeek.locator('[data-calendar-day="3"]')).toHaveAttribute(
-      'data-day-state',
-      'leer',
-    );
-
     // Ohne Startdatum kennt keine Woche einen Montag - und der Kalender sagt das.
     await expect(page.getByText('Noch kein Startdatum')).toBeVisible();
     await expect(calendar.locator('[data-calendar-today]')).toHaveCount(0);
+    await expect(calendar.locator('[data-calendar-day][data-day-state="geplant"]')).toHaveCount(0);
 
     expect(errors).toEqual([]);
   });
@@ -73,7 +57,7 @@ test.describe('Trainingskalender', () => {
     expect(errors).toEqual([]);
   });
 
-  test('nimmt einen Trainingstag aus dem Workout auf', async ({ page }) => {
+  test('führt vom Workout in den Programm-Tab', async ({ page }) => {
     const errors = collectPageErrors(page);
 
     await page.goto('./#/templates');
@@ -81,24 +65,12 @@ test.describe('Trainingskalender', () => {
     await page.getByRole('link', { name: 'Bearbeiten' }).first().click();
     await page.waitForTimeout(900);
 
-    await page.getByRole('button', { name: 'Samstag' }).click();
-    await page.getByRole('button', { name: 'Workout speichern' }).click();
+    // Feste Wochentage gibt es am Workout nicht mehr.
+    await expect(page.getByRole('button', { name: 'Samstag' })).toHaveCount(0);
+
+    await page.getByRole('link', { name: 'Termine im Programm-Tab' }).click();
     await page.waitForTimeout(900);
-
-    await expect(page.getByRole('button', { name: 'Samstag' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
-
-    await page.goto('./#/programs');
-    await page.waitForTimeout(1200);
-
-    const calendar = page.locator('[data-training-calendar]');
-    await expect(calendar.locator('[data-calendar-week="1"] [data-calendar-day="6"]')).toHaveAttribute(
-      'data-day-state',
-      'geplant',
-    );
-    await expect(calendar.getByText('Sa · Einheit A')).toBeVisible();
+    await expect(page).toHaveURL(/#\/programs$/);
 
     expect(errors).toEqual([]);
   });
@@ -134,8 +106,38 @@ test.describe('Trainingskalender', () => {
       calendar.locator('[data-calendar-today]').locator('xpath=ancestor::*[@data-calendar-week][1]'),
     ).toHaveAttribute('data-calendar-week', '1');
 
+    // Montag und Donnerstag der laufenden Woche tragen die Termine der Beispieldaten:
+    // vergangene sind verpasst (oder erledigt, falls die Beispiel-Session auf den Tag fällt),
+    // heutige und künftige geplant.
+    const expected = await page.evaluate(() => {
+      const iso = (date: Date) =>
+        `${date.getFullYear()}-${`${date.getMonth() + 1}`.padStart(2, '0')}-${`${date.getDate()}`.padStart(2, '0')}`;
+      const now = new Date();
+      const monday = new Date(now);
+      monday.setDate(now.getDate() - ((now.getDay() + 6) % 7));
+      const sessionDay = new Date(now);
+      sessionDay.setDate(now.getDate() - 6);
+
+      return [1, 4].map((weekday) => {
+        const day = new Date(monday);
+        day.setDate(monday.getDate() + weekday - 1);
+
+        if (iso(day) === iso(sessionDay)) return 'erledigt';
+
+        return iso(day) < iso(now) ? 'verpasst' : 'geplant';
+      });
+    });
+
+    await expect(calendar.locator('[data-calendar-week="1"] [data-calendar-day="1"]')).toHaveAttribute(
+      'data-day-state',
+      expected[0],
+    );
+    await expect(calendar.locator('[data-calendar-week="1"] [data-calendar-day="4"]')).toHaveAttribute(
+      'data-day-state',
+      expected[1],
+    );
     // Spätere Wochen sind geplant, nicht verpasst.
-    await expect(calendar.locator('[data-calendar-week="8"] [data-calendar-day="1"]')).toHaveAttribute(
+    await expect(calendar.locator('[data-calendar-week="4"] [data-calendar-day="1"]')).toHaveAttribute(
       'data-day-state',
       'geplant',
     );

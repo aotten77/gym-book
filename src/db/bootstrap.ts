@@ -9,6 +9,9 @@ import type {
   WorkoutTemplateExercise,
 } from '@/domain/models';
 import { db } from '@/db/appDb';
+import { expandSeries } from '@/domain/plan';
+import { startOfCalendarWeek } from '@/domain/calendar-week';
+import { toDateInputValue } from '@/domain/program';
 import { createId } from '@/lib/id';
 
 function isoDaysAgo(days: number) {
@@ -138,8 +141,6 @@ export async function seedSampleData() {
       name: 'Einheit A',
       notes:
         'Unterkörper Fokus mit unilateraler Assistenz und Posterior-Chain-Arbeit.',
-      // Montag und Donnerstag, damit der Trainingskalender etwas zu zeigen hat.
-      scheduledWeekdays: [1, 4],
       createdAt: now,
       updatedAt: now,
     };
@@ -249,6 +250,23 @@ export async function seedSampleData() {
     await db.programs.add(program);
     await db.programWeeks.bulkAdd(weeks);
     await db.workoutTemplates.add(template);
+    // Montag und Donnerstag über vier Wochen ab dieser Woche, damit der
+    // Trainingskalender etwas zu zeigen hat.
+    await db.planEntries.bulkAdd(
+      expandSeries({
+        weekdays: [1, 4],
+        startDate: toDateInputValue(startOfCalendarWeek(new Date())),
+        weeks: 4,
+      }).map((date) => ({
+        id: createId(),
+        date,
+        kind: 'workout' as const,
+        templateId,
+        orderInDay: 1,
+        createdAt: now,
+        updatedAt: now,
+      })),
+    );
     await db.exercises.bulkAdd(exercises);
     await db.workoutTemplateExercises.bulkAdd(templateExercises);
     await db.progressionRules.bulkAdd(progressionRules);

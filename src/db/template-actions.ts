@@ -1,7 +1,6 @@
 import { db } from '@/db/appDb';
 import type { WorkoutTemplate, WorkoutTemplateExercise } from '@/domain/models';
 import { normalizeWorkoutCategory, type WorkoutCategory } from '@/domain/workout-category';
-import { normalizeScheduledWeekdays } from '@/domain/training-calendar';
 import {
   areGroupsContiguous,
   planGroupWithPrevious,
@@ -18,16 +17,6 @@ interface TemplateInput {
   notes?: string;
   /** Fehlt der Schlüssel, bleibt die Art stehen; `'strength'` entfernt sie. */
   category?: WorkoutCategory;
-  /**
-   * Die Wochentage des Workouts - `null` löscht sie, ein fehlender Schlüssel
-   * lässt sie stehen.
-   *
-   * Dieselbe Regel wie bei `updateProgramWeek.kind`, und aus demselben Grund:
-   * `Table.update` löscht jede Eigenschaft, deren Wert `undefined` ist. Ein
-   * durchgereichtes `undefined` nähme also einem Workout still seine Tage, das
-   * jemand nur umbenannt hat.
-   */
-  scheduledWeekdays?: number[] | null;
 }
 
 interface SaveTemplateExerciseInput {
@@ -92,7 +81,6 @@ export async function createTemplate(input: TemplateInput) {
     id: templateId,
     name: input.name.trim(),
     notes: normalizeOptionalText(input.notes),
-    scheduledWeekdays: normalizeScheduledWeekdays(input.scheduledWeekdays),
     ...(normalizeWorkoutCategory(input.category) && { category: 'mobility' as const }),
     createdAt: now,
     updatedAt: now,
@@ -107,14 +95,6 @@ export async function updateTemplate(templateId: string, input: TemplateInput) {
     notes: normalizeOptionalText(input.notes),
     updatedAt: new Date().toISOString(),
   };
-
-  /*
-   * Nur schreiben, wenn der Aufrufer die Tage überhaupt genannt hat - siehe
-   * die Begründung an `TemplateInput`.
-   */
-  if (input.scheduledWeekdays !== undefined) {
-    changes.scheduledWeekdays = normalizeScheduledWeekdays(input.scheduledWeekdays);
-  }
 
   /*
    * Hier löscht `undefined` bewusst: Kraft hat keine Schreibweise, also

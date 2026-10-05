@@ -1,6 +1,12 @@
 import { db } from '@/db/appDb';
 import { ensureSettings, SETTINGS_ID } from '@/db/normalize';
+import type { WorkoutTemplate } from '@/domain/models';
+import { nextOrderInDay } from '@/db/plan-actions';
 import { normalizeImportKey } from '@/domain/library-import';
+import { planEntryKey, planWeekdayMigration, toPlanEntryFields } from '@/domain/plan';
+import { toDateInputValue } from '@/domain/program';
+import { normalizeScheduledWeekdays } from '@/domain/training-calendar';
+import { createId } from '@/lib/id';
 
 /*
  * Einmalige Korrekturen an Daten, die schon auf dem Gerät liegen.
@@ -24,6 +30,8 @@ export interface DataFixStatus {
   nordicCurlSecondsLogs: number;
   /** Sessions von Mobility-Workouts ohne Art-Snapshot, also aus der Zeit vor den Workout-Arten. */
   sessionsWithoutCategory: number;
+  /** Workouts, die noch feste Wochentage tragen und in Termine umgewandelt werden können. */
+  templatesWithWeekdays: number;
   /** Ob die Einstellungen eine Woche von Hand übersteuern. */
   hasWeekOverride: boolean;
   weekOverride?: number;
@@ -84,6 +92,9 @@ export async function describeDataFixes(): Promise<DataFixStatus> {
     nordicCurlOnTime: onTime.length,
     nordicCurlSecondsLogs: secondsLogs,
     sessionsWithoutCategory: (await findSessionsWithoutCategory()).length,
+    templatesWithWeekdays: (await db.workoutTemplates.toArray()).filter(
+      (template) => normalizeScheduledWeekdays(template.scheduledWeekdays) !== undefined,
+    ).length,
     hasWeekOverride: typeof settings?.weekOverride === 'number',
     weekOverride: settings?.weekOverride,
     activeProgramId: program?.id,
@@ -189,4 +200,86 @@ export async function applyWorkoutCategoryBackfill(): Promise<number> {
   });
 
   return changed;
+}
+
+/**
+ * Liest den Bestand für die Umwandlung der Wochentage und plant sie.
+ * Nur lesen - `applyWeekdaysToPlanMigration` plant in seiner Transaktion neu.
+ */
+async function planFromWeekdays(weeks: number | undefined, now: Date) {
+  const settings = await db.appSettings.get(SETTINGS_ID);
+  const program = settings?.activeProgramId
+    ? await db.programs.get(settings.activeProgramId)
+    : undefined;
+  const programWeeks = program
+    ? await db.programWeeks.where('programId').equals(program.id).toArray()
+    : [];
+  const today = toDateInputValue(now);
+  const existing = await db.planEntries.where('date').aboveOrEqual(today).toArray();
+
+  return planWeekdayMigration({
+    templates: await db.workoutTemplates.toArray(),
+    program,
+    programWeeks,
+    weeks,
+    today,
+    existingKeys: new Set(existing.map((entry) => planEntryKey(entry))),
+  });
+}
+
+/** Was die Umwandlung schreiben würde, ohne die Termine selbst - für den Bestätigungsdialog. */
+export async function previewWeekdaysToPlanMigration(weeks?: number, now: Date = new Date()) {
+  const { entries, ...plan } = await planFromWeekdays(weeks, now);
+
+  return { ...plan, count: entries.length };
+}
+
+/**
+ * Macht aus den festen Wochentagen der Workouts Termine - und löst das Feld ab.
+ *
+ * Termine entstehen am Tagesende (`nextOrderInDay`, keine zweite Zählregel),
+ * schon vorhandene bleiben unberührt. Danach verlieren *alle* Workouts das
+ * Feld, per `put` des Datensatzes ohne den Schlüssel: `Table.update` mit
+ * `undefined` wäre hier dasselbe, aber der Zweck - Schlüssel weg - steht so
+ * wörtlich da. Ohne Wochenzahl bei abgelaufenem Programm bricht sie ab, statt
+ * zu raten.
+ */
+export async function applyWeekdaysToPlanMigration(
+  weeks?: number,
+  now: Date = new Date(),
+): Promise<{ created: number; skipped: number }> {
+  return db.transaction(
+    'rw',
+    [db.planEntries, db.workoutTemplates, db.programs, db.programWeeks, db.appSettings],
+    async () => {
+      const plan = await planFromWeekdays(weeks, now);
+
+      if (plan.needsWeeks && weeks === undefined) {
+        throw new Error('Bitte die Zahl der Wochen angeben.');
+      }
+
+      const timestamp = now.toISOString();
+
+      for (const values of plan.entries) {
+        await db.planEntries.add({
+          id: createId(),
+          ...toPlanEntryFields(values),
+          orderInDay: await nextOrderInDay(values.date),
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        });
+      }
+
+      for (const template of await db.workoutTemplates.toArray()) {
+        if ('scheduledWeekdays' in template) {
+          const rest: WorkoutTemplate = { ...template };
+
+          delete rest.scheduledWeekdays;
+          await db.workoutTemplates.put(rest);
+        }
+      }
+
+      return { created: plan.entries.length, skipped: plan.skipped };
+    },
+  );
 }

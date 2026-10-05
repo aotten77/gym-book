@@ -21,7 +21,7 @@ import { SectionCard } from '@/components/SectionCard';
 import { WeekStepper } from '@/components/WeekStepper';
 import { bootstrapAppData, seedSampleData } from '@/db/bootstrap';
 import { formatBuildVersion, readBuildInfo } from '@/lib/build-info';
-import { formatDateTime, formatNumber } from '@/lib/format';
+import { formatDateTime, formatNumber, formatRunDate } from '@/lib/format';
 import { playTimerChimeFromGesture, primeTimerSound } from '@/lib/sound';
 import { isTimerSpeechSupported, speakTimerAnnouncementFromGesture } from '@/lib/speech';
 import { formatBytes, readStorageStatus, requestPersistentStorage, type StorageStatus } from '@/lib/storage';
@@ -30,8 +30,10 @@ import { db } from '@/db/appDb';
 import {
   applyNordicCurlTrackingFix,
   applyProgramWeekFix,
+  applyWeekdaysToPlanMigration,
   applyWorkoutCategoryBackfill,
   describeDataFixes,
+  previewWeekdaysToPlanMigration,
   NORDIC_CURL_NAME,
 } from '@/db/data-fix-actions';
 import { setProgramActiveWeek, setProgramStartDate } from '@/db/program-actions';
@@ -90,6 +92,8 @@ export function SettingsPage() {
   const [screenAwakeError, setScreenAwakeError] = useState<string | null>(null);
   const [showNordicFixDialog, setShowNordicFixDialog] = useState(false);
   const [showCategoryFixDialog, setShowCategoryFixDialog] = useState(false);
+  const [showWeekdaysDialog, setShowWeekdaysDialog] = useState(false);
+  const [weekdaysWeeksText, setWeekdaysWeeksText] = useState('4');
   const [showWeekFixDialog, setShowWeekFixDialog] = useState(false);
   const [weekFixDate, setWeekFixDate] = useState('');
   const [dataFixMessage, setDataFixMessage] = useState<string | null>(null);
@@ -259,6 +263,15 @@ export function SettingsPage() {
    * Live-Query hält ihn nebenbei aktuell, sobald eine Korrektur gelaufen ist.
    */
   const dataFixes = useLiveQuery(() => describeDataFixes(), []);
+  // 1 bis 26 Wochen, sonst die Vorgabe: ein Zahlenfeld darf nie eine Umwandlung ins Leere schicken.
+  const parsedWeekdaysWeeks = Number.parseInt(weekdaysWeeksText, 10);
+  const weekdaysWeeks = Number.isFinite(parsedWeekdaysWeeks)
+    ? Math.min(26, Math.max(1, parsedWeekdaysWeeks))
+    : 4;
+  const weekdaysPreview = useLiveQuery(
+    () => (showWeekdaysDialog ? previewWeekdaysToPlanMigration(weekdaysWeeks) : undefined),
+    [showWeekdaysDialog, weekdaysWeeks],
+  );
   const pendingSummary = pendingImport ? summarizeDatabaseSnapshot(pendingImport.snapshot) : null;
   const weekControl = resolveWeekControl(settings?.weekOverride, activeProgram, programWeeks ?? []);
   const effectiveWeekLabel = `W${weekControl.effectiveWeek}`;
@@ -433,6 +446,7 @@ export function SettingsPage() {
       setShowNordicFixDialog(false);
       setShowWeekFixDialog(false);
       setShowCategoryFixDialog(false);
+      setShowWeekdaysDialog(false);
     }
   }
 
@@ -886,6 +900,32 @@ export function SettingsPage() {
               </Button>
             </div>
 
+            <div className="rounded-panel border border-line bg-surface p-4">
+              <p className="font-medium text-content">Wochentage in Termine umwandeln</p>
+              <p className="mt-1 text-sm text-content-muted">
+                Feste Wochentage am Workout gibt es nicht mehr. Die Umwandlung legt daraus Termine
+                im Plan an, von heute an, und entfernt die Wochentage danach.
+              </p>
+              <p className="mt-2 text-sm text-content-muted">
+                {dataFixes === undefined
+                  ? 'Wird geprüft...'
+                  : dataFixes.templatesWithWeekdays > 0
+                    ? dataFixes.templatesWithWeekdays === 1
+                      ? '1 Workout mit festen Wochentagen.'
+                      : `${formatNumber(dataFixes.templatesWithWeekdays)} Workouts mit festen Wochentagen.`
+                    : 'Nichts zu tun.'}
+              </p>
+              <Button
+                variant="ghost"
+                fullWidth
+                className="mt-3"
+                disabled={isFixing || !dataFixes?.templatesWithWeekdays}
+                onClick={() => setShowWeekdaysDialog(true)}
+              >
+                Wochentage umwandeln
+              </Button>
+            </div>
+
             {dataFixMessage ? <Alert variant="success">{dataFixMessage}</Alert> : null}
             {dataFixError ? <Alert variant="error">{dataFixError}</Alert> : null}
           </div>
@@ -1149,6 +1189,44 @@ export function SettingsPage() {
         }
         onCancel={() => setShowCategoryFixDialog(false)}
       />
+
+      <ConfirmDialog
+        open={showWeekdaysDialog}
+        title="Wochentage in Termine umwandeln?"
+        description={
+          weekdaysPreview === undefined
+            ? 'Wird geprüft...'
+            : `${formatNumber(weekdaysPreview.count)} ${weekdaysPreview.count === 1 ? 'Termin' : 'Termine'} von ${formatRunDate(weekdaysPreview.from)} bis ${formatRunDate(weekdaysPreview.to)}. Die festen Wochentage der Workouts entfallen danach.`
+        }
+        confirmLabel="Umwandeln"
+        destructive={false}
+        busy={isFixing}
+        onConfirm={() =>
+          void runDataFix(async () => {
+            const result = await applyWeekdaysToPlanMigration(
+              weekdaysPreview?.needsWeeks ? weekdaysWeeks : undefined,
+            );
+
+            return result.skipped > 0
+              ? `${formatNumber(result.created)} Termine angelegt, ${formatNumber(result.skipped)} standen schon im Plan.`
+              : `${formatNumber(result.created)} Termine angelegt.`;
+          })
+        }
+        onCancel={() => setShowWeekdaysDialog(false)}
+      >
+        {weekdaysPreview?.needsWeeks ? (
+          <TextField
+            label="Für wie viele Wochen?"
+            type="number"
+            inputMode="numeric"
+            min={1}
+            max={26}
+            hint="Das Programm hat kein Startdatum oder ist abgelaufen - gezählt wird ab dieser Woche."
+            value={weekdaysWeeksText}
+            onChange={(event) => setWeekdaysWeeksText(event.target.value)}
+          />
+        ) : null}
+      </ConfirmDialog>
 
       <ConfirmDialog
         open={showWeekFixDialog}

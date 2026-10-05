@@ -33,6 +33,32 @@ async function setStartToThisMonday(page: Page) {
   await page.waitForTimeout(1200);
 }
 
+/*
+ * Die Beispieldaten bringen Termine für Einheit A mit. Diese Tests gehen von
+ * einem leeren Plan aus, also räumen sie ihn vorher leer.
+ */
+async function clearPlanEntries(page: Page) {
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve, reject) => {
+        const open = indexedDB.open('gym-book-db');
+
+        open.onerror = () => reject(open.error);
+        open.onsuccess = () => {
+          const database = open.result;
+          const tx = database.transaction('planEntries', 'readwrite');
+
+          tx.objectStore('planEntries').clear();
+          tx.oncomplete = () => {
+            database.close();
+            resolve();
+          };
+          tx.onerror = () => reject(tx.error);
+        };
+      }),
+  );
+}
+
 async function addRun(page: Page, title: string, extra?: { distance?: string; pace?: string }) {
   await page.getByRole('button', { name: 'Termin hinzufügen' }).click();
 
@@ -55,6 +81,7 @@ test.describe('Termine im Programm-Tab', () => {
   test.beforeEach(async ({ page }) => {
     await resetDatabase(page);
     await seedSampleData(page);
+    await clearPlanEntries(page);
     await setStartToThisMonday(page);
   });
 

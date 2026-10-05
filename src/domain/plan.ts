@@ -7,6 +7,9 @@ import type {
   RunPlanSnapshot,
   RunTarget,
   WorkoutSession,
+  WorkoutTemplate,
+  Program,
+  ProgramWeek,
 } from '@/domain/models';
 import { toDateInputValue } from '@/domain/program';
 import {
@@ -16,7 +19,11 @@ import {
   formatPace,
   formatRunDuration,
 } from '@/domain/run';
-import type { IsoWeekday } from '@/domain/training-calendar';
+import {
+  normalizeScheduledWeekdays,
+  programWeekStart,
+  type IsoWeekday,
+} from '@/domain/training-calendar';
 import { formatNumber } from '@/lib/format';
 
 /*
@@ -428,4 +435,108 @@ export function toRunPlanSnapshot(entry: PlanEntry): RunPlanSnapshot {
       : {}),
     ...(entry.instructions !== undefined ? { instructions: entry.instructions } : {}),
   };
+}
+
+/**
+ * Was die Umwandlung der festen Wochentage in Termine schreiben würde.
+ *
+ * Von heute an bis zum Ende der letzten Programmwoche - ohne Startdatum oder
+ * bei abgelaufenem Programm gibt es kein Ende, dann nennt der Nutzer die
+ * Wochenzahl (`needsWeeks`), gezählt ab der laufenden Kalenderwoche. Ohne
+ * `weeks` bleibt `entries` dann leer. Je Tag stehen die Workouts nach Name;
+ * was schon im Plan steht, zählt in `skipped`.
+ */
+export function planWeekdayMigration(input: {
+  templates: WorkoutTemplate[];
+  program?: Program;
+  programWeeks: ProgramWeek[];
+  weeks?: number;
+  today: string;
+  existingKeys: ReadonlySet<string>;
+}): { from: string; to: string; needsWeeks: boolean; entries: PlanEntryValues[]; skipped: number } {
+  const from = input.today;
+  const today = parseLocalDate(input.today);
+  let to = from;
+  let needsWeeks = true;
+  let lastDay: Date | undefined;
+
+  const maxWeek = input.programWeeks.reduce((max, week) => Math.max(max, week.weekNumber), 0);
+
+  if (input.program?.startedOn && maxWeek > 0) {
+    const start = programWeekStart(input.program.startedOn, maxWeek);
+
+    if (start) {
+      start.setDate(start.getDate() + 6);
+
+      if (today && toDateInputValue(start) >= from) {
+        lastDay = start;
+        needsWeeks = false;
+      }
+    }
+  }
+
+  if (lastDay) {
+    to = toDateInputValue(lastDay);
+  } else if (input.weeks !== undefined && today) {
+    const end = startOfCalendarWeek(today);
+
+    end.setDate(end.getDate() + input.weeks * 7 - 1);
+    to = toDateInputValue(end);
+  }
+
+  if (!today || (needsWeeks && input.weeks === undefined)) {
+    return { from, to, needsWeeks, entries: [], skipped: 0 };
+  }
+
+  const toDate = parseLocalDate(to);
+  const weeks = lastDay
+    ? Math.round(
+        (startOfCalendarWeek(lastDay).getTime() - startOfCalendarWeek(today).getTime()) /
+          (7 * 24 * 3600 * 1000),
+      ) + 1
+    : (input.weeks ?? 0);
+  const templates = input.templates
+    .filter((template) => normalizeScheduledWeekdays(template.scheduledWeekdays) !== undefined)
+    .sort((a, b) => a.name.localeCompare(b.name, 'de'));
+  const candidates: PlanEntryValues[] = [];
+
+  for (const template of templates) {
+    const weekdays = normalizeScheduledWeekdays(template.scheduledWeekdays) as IsoWeekday[];
+
+    for (const date of expandSeries({ weekdays, startDate: from, weeks })) {
+      if (toDate && date > to) {
+        continue;
+      }
+
+      candidates.push({
+        date,
+        kind: 'workout',
+        templateId: template.id,
+        title: null,
+        targetDistanceKm: null,
+        targetDurationSeconds: null,
+        targetElevationGainM: null,
+        targetAverageHeartRate: null,
+        targetPaceSecondsPerKm: null,
+        instructions: null,
+        notes: null,
+      });
+    }
+  }
+
+  // Stabil nach Tag; innerhalb eines Tages bleibt die Namensreihenfolge.
+  candidates.sort((a, b) => a.date.localeCompare(b.date));
+
+  const entries: PlanEntryValues[] = [];
+  let skipped = 0;
+
+  for (const candidate of candidates) {
+    if (input.existingKeys.has(planEntryKey(candidate))) {
+      skipped += 1;
+    } else {
+      entries.push(candidate);
+    }
+  }
+
+  return { from, to, needsWeeks, entries, skipped };
 }

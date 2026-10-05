@@ -30,7 +30,6 @@ import { optionalNumberInput, toInputValue } from '@/lib/number-input';
 import { SectionCard } from '@/components/SectionCard';
 import { SupersetBlock } from '@/components/SupersetBlock';
 import { TemplateProgressionSection } from '@/components/TemplateProgressionSection';
-import { WeekdayPicker } from '@/components/WeekdayPicker';
 import { db } from '@/db/appDb';
 import { clearExerciseMedia, replaceExerciseMedia } from '@/db/media-actions';
 import { startSessionFromTemplate } from '@/db/session-actions';
@@ -300,7 +299,6 @@ export function TemplateDetailPage() {
   const [templateName, setTemplateName] = useState('');
   const [templateNotes, setTemplateNotes] = useState('');
   const [templateCategory, setTemplateCategory] = useState<WorkoutCategory>('strength');
-  const [templateWeekdays, setTemplateWeekdays] = useState<number[]>([]);
   const [editingTemplateExerciseId, setEditingTemplateExerciseId] = useState<string | null>(null);
   /*
    * Die Form lag früher als Abschnitt am Seitenende, und "Bearbeiten" scrollte
@@ -372,20 +370,11 @@ export function TemplateDetailPage() {
   const selectedExistingExercise = sortedExercises.find((item) => item.id === form.exerciseId);
   const selectedExistingExerciseMedia =
     selectedExistingExercise?.mediaAssetId ? mediaAssetById[selectedExistingExercise.mediaAssetId] : undefined;
-  /*
-   * Die Tage als Zeichenkette in die Abhängigkeiten: `useLiveQuery` liefert
-   * bei jedem Schreibvorgang ein frisches Array, und eine Identitätsprüfung
-   * darauf setzte das Formular zurück, während jemand es ausfüllt.
-   */
-  const templateWeekdayKey = (template?.scheduledWeekdays ?? []).join(',');
   useEffect(() => {
     setTemplateName(template?.name ?? '');
     setTemplateNotes(template?.notes ?? '');
     setTemplateCategory(resolveWorkoutCategory(template?.category));
-    setTemplateWeekdays(
-      templateWeekdayKey === '' ? [] : templateWeekdayKey.split(',').map(Number),
-    );
-  }, [template?.id, template?.name, template?.notes, template?.category, templateWeekdayKey]);
+  }, [template?.id, template?.name, template?.notes, template?.category]);
 
   function handleEditTemplateExercise(templateExerciseId: string) {
     setEditingTemplateExerciseId(templateExerciseId);
@@ -453,12 +442,6 @@ export function TemplateDetailPage() {
         notes: templateNotes,
         // Immer mitgeschickt: 'strength' entfernt die Art wieder.
         category: templateCategory,
-        /*
-         * Immer mitgeschickt, nie weggelassen: `undefined` hieße "nicht
-         * anfassen", und dann ließen sich die Tage nicht mehr leeren. Die
-         * leere Liste ist die bewusste Löschung.
-         */
-        scheduledWeekdays: templateWeekdays,
       });
     } finally {
       setIsSavingTemplate(false);
@@ -747,16 +730,13 @@ export function TemplateDetailPage() {
               <option value="strength">Kraft</option>
               <option value="mobility">Mobility</option>
             </SelectField>
-            {/*
-              Die Trainingstage stehen hier und nicht im Programm: sie sind
-              eine Eigenschaft des Workouts wie sein Name, und der Kalender
-              unter "Programm" liest sie nur.
-            */}
-            <WeekdayPicker
-              value={templateWeekdays}
-              onChange={setTemplateWeekdays}
-              disabled={isSavingTemplate}
-            />
+            {/* Wann das Workout stattfindet, steht als Termin im Plan - nicht am Workout. */}
+            <Link
+              to="/programs"
+              className="inline-flex min-h-touch items-center text-sm font-medium text-accent underline underline-offset-4"
+            >
+              Termine im Programm-Tab
+            </Link>
             <Button
               variant="primary"
               fullWidth

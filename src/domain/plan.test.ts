@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { PlanEntry } from '@/domain/models';
+import type { PlanEntry, Program, ProgramWeek, WorkoutTemplate } from '@/domain/models';
 import {
   PLAN_MESSAGES,
   buildPlanLinks,
@@ -11,6 +11,7 @@ import {
   planEntryKey,
   planEntryName,
   planEntryState,
+  planWeekdayMigration,
   toPlanEntryFields,
   toRunPlanSnapshot,
   validatePlanEntryValues,
@@ -298,5 +299,97 @@ describe('toRunPlanSnapshot', () => {
     });
 
     expect(Object.keys(snapshot).sort()).toEqual(['date', 'title']);
+  });
+});
+
+describe('planWeekdayMigration', () => {
+  const stamp = '2026-01-01T00:00:00.000Z';
+  const program: Program = {
+    id: 'p1',
+    name: 'Aufbau',
+    activeWeek: 1,
+    startedOn: '2026-10-05',
+    createdAt: stamp,
+    updatedAt: stamp,
+  };
+  const programWeeks: ProgramWeek[] = Array.from({ length: 8 }, (_, index) => ({
+    id: `w${index + 1}`,
+    programId: 'p1',
+    weekNumber: index + 1,
+  }));
+
+  function template(id: string, name: string, scheduledWeekdays?: number[]): WorkoutTemplate {
+    return { id, name, scheduledWeekdays, createdAt: stamp, updatedAt: stamp };
+  }
+
+  const templates = [template('tb', 'Einheit B', [4]), template('ta', 'Einheit A', [1, 4])];
+
+  it('rollt bis zum Programmende aus, ab heute, nach Tag und Name', () => {
+    const plan = planWeekdayMigration({
+      templates,
+      program,
+      programWeeks,
+      today: '2026-10-21',
+      existingKeys: new Set(),
+    });
+
+    expect(plan.from).toBe('2026-10-21');
+    expect(plan.to).toBe('2026-11-29');
+    expect(plan.needsWeeks).toBe(false);
+    expect(plan.entries[0]).toMatchObject({ date: '2026-10-22', templateId: 'ta' });
+    expect(plan.entries[1]).toMatchObject({ date: '2026-10-22', templateId: 'tb' });
+    expect(plan.entries.every((entry) => entry.date >= '2026-10-21')).toBe(true);
+  });
+
+  it('braucht bei abgelaufenem Programm die Wochenzahl', () => {
+    const expired = planWeekdayMigration({
+      templates,
+      program,
+      programWeeks,
+      today: '2027-01-20',
+      existingKeys: new Set(),
+    });
+
+    expect(expired.needsWeeks).toBe(true);
+    expect(expired.entries).toEqual([]);
+
+    const withWeeks = planWeekdayMigration({
+      templates,
+      program,
+      programWeeks,
+      weeks: 4,
+      today: '2026-10-21',
+      existingKeys: new Set(),
+      // Programm ohne Startdatum: ebenfalls Wochenzahl nötig.
+    });
+
+    expect(withWeeks.needsWeeks).toBe(false);
+
+    const noStart = planWeekdayMigration({
+      templates,
+      program: { ...program, startedOn: undefined },
+      programWeeks,
+      weeks: 4,
+      today: '2026-10-21',
+      existingKeys: new Set(),
+    });
+
+    expect(noStart.needsWeeks).toBe(true);
+    expect(noStart.to).toBe('2026-11-15');
+  });
+
+  it('zählt vorhandene Schlüssel als übersprungen', () => {
+    const plan = planWeekdayMigration({
+      templates,
+      program,
+      programWeeks,
+      today: '2026-10-21',
+      existingKeys: new Set(['2026-10-22|workout|ta']),
+    });
+
+    expect(plan.skipped).toBe(1);
+    expect(plan.entries.some((entry) => entry.date === '2026-10-22' && entry.templateId === 'ta')).toBe(
+      false,
+    );
   });
 });
