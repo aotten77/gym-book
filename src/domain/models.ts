@@ -197,8 +197,20 @@ export interface WorkoutSession {
   id: string;
   templateId: string;
   templateNameSnapshot: string;
-  /** Art des Workouts beim Start; fehlt bei Kraft. */
+  /**
+   * Art des Workouts beim Start. Wird seit `materializeSession` immer
+   * geschrieben; ein fehlender Wert heißt: vor Einführung der Workout-Art
+   * gestartet.
+   */
   templateCategorySnapshot?: WorkoutCategory;
+  /**
+   * Der Termin im Trainingsplan, aus dem diese Session gestartet wurde.
+   * Eine Referenz ohne Integritätsprüfung: ein gelöschter Termin kostet die
+   * Zuordnung, nie die Session.
+   */
+  planEntryId?: string;
+  /** Der geplante Tag (`YYYY-MM-DD`) zum Startzeitpunkt, falls ein Termin zugeordnet war. */
+  planDateSnapshot?: string;
   programNameSnapshot?: string;
   programWeekLabelSnapshot?: string;
   usedWeekOverride?: boolean;
@@ -326,8 +338,56 @@ export interface RunLog {
   elevationGainM?: number;
   averageHeartRate?: number;
   notes?: string;
+  /** Der Termin im Trainingsplan, den dieser Lauf erfüllt; ohne Integritätsprüfung. */
+  planEntryId?: string;
+  /** Was der Termin beim Eintragen vorsah - bleibt lesbar, auch wenn der Termin später verschwindet. */
+  runPlanSnapshot?: RunPlanSnapshot;
   createdAt: string;
   updatedAt: string;
+}
+
+/** Art eines Termins im Trainingsplan. */
+export type PlanEntryKind = 'workout' | 'run';
+
+/** Die Vorgaben für einen Lauf; jede einzelne ist optional. */
+export interface RunTarget {
+  targetDistanceKm?: number;
+  targetDurationSeconds?: number;
+  targetElevationGainM?: number;
+  targetAverageHeartRate?: number;
+  /** Ziel-Pace in Sekunden pro Kilometer. */
+  targetPaceSecondsPerKm?: number;
+}
+
+/**
+ * Ein Einzeltermin im Trainingsplan: ein Workout oder ein Lauf an einem Tag.
+ *
+ * Der Plan ist eine Verabredung, keine Ausführung - eine Session oder ein
+ * Lauf verweist auf den Termin, nicht umgekehrt. Ob er offen, belegt oder
+ * erledigt ist, wird aus diesen Verweisen abgeleitet und nie gespeichert.
+ */
+export interface PlanEntry extends RunTarget {
+  id: string;
+  /** Ortszeit-Tag, `YYYY-MM-DD`. */
+  date: string;
+  /** Reihenfolge innerhalb des Tages, dicht ab 1. */
+  orderInDay: number;
+  kind: PlanEntryKind;
+  /** Nur bei `workout`; ohne Integritätsprüfung, ein gelöschtes Workout lässt den Termin stehen. */
+  templateId?: string;
+  /** Nur bei `run`: der Name des Laufs. */
+  title?: string;
+  instructions?: string;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Der Termin, wie er beim Eintragen eines Laufs aussah. */
+export interface RunPlanSnapshot extends RunTarget {
+  title: string;
+  date: string;
+  instructions?: string;
 }
 
 export interface Program {

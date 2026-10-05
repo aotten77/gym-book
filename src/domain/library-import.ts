@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { normalizeImportKey } from '@/domain/import-key';
 import { describeWorkoutCategory, normalizeWorkoutCategory } from '@/domain/workout-category';
 import type {
   BandLevel,
@@ -12,6 +13,8 @@ import type {
 import { TRACKING_MODE_LABELS } from '@/domain/tracking';
 import { createId } from '@/lib/id';
 import { formatNumber } from '@/lib/format';
+
+export { normalizeImportKey };
 
 /*
  * Der Bibliotheks-Import: Übungen, Workouts, Zuordnungen und Bänder aus einer
@@ -209,18 +212,6 @@ export interface LibraryImportPlan {
   bandOrder: string[] | null;
   payloadHash: string;
   summary: LibraryImportSummary;
-}
-
-/**
- * Der Schlüssel, über den zugeordnet wird.
- *
- * Getrimmt und kleingeschrieben, an genau einer Stelle definiert: "Nordic
- * Curl" und "nordic curl " sind dieselbe Übung, sonst legt der zweite Import
- * eine zweite an. `toLocaleLowerCase('de')` statt `toLowerCase()`, damit auch
- * ein "Ü" verlässlich fällt.
- */
-export function normalizeImportKey(name: string) {
-  return name.trim().toLocaleLowerCase('de');
 }
 
 /**
