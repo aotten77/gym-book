@@ -8,6 +8,9 @@ import type {
   WorkoutSetLog,
 } from '@/domain/models';
 import { resolveWeekControl } from '@/domain/program';
+import { loadTakenPlanEntryIds } from '@/db/plan-actions';
+import { findMatchingPlanEntry } from '@/domain/plan';
+import { toDateInputValue } from '@/domain/program';
 import { findRestTrack, removeRestTrack, removeRestTracksForExercise } from '@/domain/rest-timer';
 import type { SetLogValuesInput } from '@/domain/history';
 import { materializeSession } from '@/domain/session';
@@ -84,7 +87,18 @@ export async function findActiveSession() {
   return db.workoutSessions.where('status').equals('active').first();
 }
 
-export async function startSessionFromTemplate(templateId: string) {
+export interface StartSessionOptions {
+  /** Der Termin, für den die Session gestartet wird; unbrauchbar heißt: normal zuordnen. */
+  planEntryId?: string;
+  /** Der Startzeitpunkt, auch der Tag für die Zuordnung. */
+  now?: Date;
+}
+
+export async function startSessionFromTemplate(
+  templateId: string,
+  options: StartSessionOptions = {},
+) {
+  const now = options.now ?? new Date();
   const template = await db.workoutTemplates.get(templateId);
 
   if (!template) {
@@ -147,11 +161,13 @@ export async function startSessionFromTemplate(templateId: string) {
     programWeekLabelSnapshot: programWeek?.label,
     usedWeekOverride,
     resolvedProgramWeek,
-    startedAt: new Date().toISOString(),
+    startedAt: now.toISOString(),
   });
 
   return db.transaction(
     'rw',
+    db.planEntries,
+    db.runLogs,
     db.workoutSessions,
     db.workoutSessionExercises,
     db.workoutSetLogs,
@@ -162,6 +178,36 @@ export async function startSessionFromTemplate(templateId: string) {
 
       if (existingActiveSession) {
         return existingActiveSession.id;
+      }
+
+      /*
+       * Der Termin wird erst hier gelesen, nach der Prüfung auf eine aktive
+       * Session und in derselben Transaktion wie das Insert: ob er belegt ist,
+       * darf sich zwischen Lesen und Schreiben nicht ändern. Ohne Treffer
+       * bleibt der Schlüssel ganz weg - kein `planEntryId: undefined`.
+       */
+      const candidates = await db.planEntries.where('templateId').equals(templateId).toArray();
+      const takenIds = await loadTakenPlanEntryIds(candidates.map((candidate) => candidate.id));
+      const requested = options.planEntryId
+        ? candidates.find(
+            (candidate) =>
+              candidate.id === options.planEntryId &&
+              candidate.kind === 'workout' &&
+              !takenIds.has(candidate.id),
+          )
+        : undefined;
+      const planEntry =
+        requested ??
+        findMatchingPlanEntry(candidates, {
+          kind: 'workout',
+          templateId,
+          day: toDateInputValue(now),
+          takenIds,
+        });
+
+      if (planEntry) {
+        bundle.session.planEntryId = planEntry.id;
+        bundle.session.planDateSnapshot = planEntry.date;
       }
 
       await db.workoutSessions.add(bundle.session);
