@@ -5,6 +5,7 @@ import type {
   Exercise,
   ExerciseTest,
   LibraryImportLog,
+  PlanEntry,
   MediaAsset,
   Program,
   ProgramWeek,
@@ -33,6 +34,7 @@ class GymBookDatabase extends Dexie {
   bandLevels!: Table<BandLevel, string>;
   libraryImports!: Table<LibraryImportLog, string>;
   runLogs!: Table<RunLog, string>;
+  planEntries!: Table<PlanEntry, string>;
 
   constructor() {
     super('gym-book-db');
@@ -96,6 +98,17 @@ class GymBookDatabase extends Dexie {
     // ist nur `date`, weil Liste und Wochenrechnung nach dem Tag lesen.
     this.version(5).stores({
       runLogs: 'id, date',
+    });
+
+    // v6 bringt den datierten Trainingsplan. Neue Tabelle `planEntries`, dazu
+    // `planEntryId` als Index auf Sessions und Läufen: "belegt" wird über genau
+    // diesen Verweis gelesen. Die Snapshot-Felder (`planDateSnapshot`,
+    // `runPlanSnapshot`) brauchen keinen Index. Kein `upgrade()`: es ist nichts
+    // umzuformen, Bestandsdaten haben schlicht keinen Verweis.
+    this.version(6).stores({
+      planEntries: 'id, date, templateId',
+      workoutSessions: 'id, templateId, status, startedAt, completedAt, planEntryId',
+      runLogs: 'id, date, planEntryId',
     });
   }
 }

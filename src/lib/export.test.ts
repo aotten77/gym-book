@@ -26,6 +26,7 @@ function createSnapshot(overrides: Partial<DatabaseSnapshot> = {}): DatabaseSnap
     bandLevels: [],
     libraryImports: [],
     runLogs: [],
+    planEntries: [],
     appSettings: [
       {
         id: 'app-settings',
@@ -821,5 +822,88 @@ describe('restoreDatabaseSnapshot', () => {
     await restoreDatabaseSnapshot(parsed);
 
     expect(await db.runLogs.count()).toBe(0);
+  });
+  it('sichert und stellt Termine wieder her', async () => {
+    const stamp = '2026-10-05T10:00:00.000Z';
+    const entry = {
+      id: 'p1',
+      date: '2026-10-06',
+      orderInDay: 1,
+      kind: 'run' as const,
+      title: 'Intervalle',
+      targetDistanceKm: 8,
+      targetPaceSecondsPerKm: 330,
+      instructions: 'locker',
+      createdAt: stamp,
+      updatedAt: stamp,
+    };
+    const run = {
+      id: 'run-1',
+      date: '2026-10-06',
+      distanceKm: 8,
+      durationSeconds: 2640,
+      planEntryId: 'p1',
+      runPlanSnapshot: { title: 'Intervalle', date: '2026-10-06', targetDistanceKm: 8 },
+      createdAt: stamp,
+      updatedAt: stamp,
+    };
+    const session = {
+      id: 'session-1',
+      templateId: 'gone',
+      templateNameSnapshot: 'Einheit A',
+      resolvedProgramWeek: 1,
+      startedAt: stamp,
+      status: 'active' as const,
+      planEntryId: 'p2',
+      planDateSnapshot: '2026-10-05',
+    };
+    const parsed = parseDatabaseSnapshot(
+      JSON.stringify(
+        createSnapshot({ planEntries: [entry], runLogs: [run], workoutSessions: [session] }),
+      ),
+    );
+
+    await restoreDatabaseSnapshot(parsed);
+
+    expect(await db.planEntries.get('p1')).toEqual(entry);
+    expect(await db.runLogs.get('run-1')).toEqual(run);
+    expect(await db.workoutSessions.get('session-1')).toEqual(session);
+  });
+
+  it('altes Backup ohne planEntries', async () => {
+    const stamp = '2026-10-05T10:00:00.000Z';
+    await db.planEntries.add({
+      id: 'alt',
+      date: '2026-10-06',
+      orderInDay: 1,
+      kind: 'run',
+      title: 'X',
+      createdAt: stamp,
+      updatedAt: stamp,
+    });
+    const legacy = createSnapshot();
+    delete (legacy as Partial<DatabaseSnapshot>).planEntries;
+    const parsed = parseDatabaseSnapshot(JSON.stringify(legacy));
+
+    expect(parsed.planEntries).toEqual([]);
+
+    await restoreDatabaseSnapshot(parsed);
+
+    expect(await db.planEntries.count()).toBe(0);
+  });
+
+  it('Termin mit gelöschtem Workout wird nicht abgelehnt', () => {
+    const stamp = '2026-10-05T10:00:00.000Z';
+    const parsed = parseDatabaseSnapshot(
+      JSON.stringify(
+        createSnapshot({
+          planEntries: [
+            { id: 'p1', date: '2026-10-06', orderInDay: 1, kind: 'workout', templateId: 'weg', createdAt: stamp, updatedAt: stamp },
+          ],
+        }),
+      ),
+    );
+
+    expect(parsed.planEntries).toHaveLength(1);
   });
 });

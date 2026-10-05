@@ -15,6 +15,7 @@ import type {
   Exercise,
   ExerciseTest,
   LibraryImportLog,
+  PlanEntry,
   MediaAsset,
   Program,
   ProgramWeek,
@@ -117,6 +118,9 @@ const workoutSessionSchema = z.object({
   startedAt: z.string(),
   completedAt: z.string().optional(),
   status: sessionStatusSchema,
+  /* Additiv: der Termin im Trainingsplan, den die Session erfüllt - kein Bump. */
+  planEntryId: z.string().optional(),
+  planDateSnapshot: z.string().optional(),
 });
 
 const workoutSessionExerciseSchema = z.object({
@@ -263,6 +267,40 @@ const appSettingsSchema = z.object({
   updatedAt: z.string(),
 });
 
+const runTargetShape = {
+  targetDistanceKm: z.number().positive().optional(),
+  targetDurationSeconds: z.number().int().positive().optional(),
+  targetElevationGainM: z.number().int().min(0).optional(),
+  targetAverageHeartRate: z.number().int().optional(),
+  targetPaceSecondsPerKm: z.number().positive().optional(),
+};
+
+/*
+ * Ein Termin des Trainingsplans. `templateId` wird bewusst nicht gegen die
+ * Workouts geprüft: ein gelöschtes Workout lässt den Termin stehen, und eine
+ * Sicherung mit so einem Termin wäre sonst nicht wieder einspielbar.
+ */
+const planEntrySchema = z.object({
+  id: z.string().min(1),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  orderInDay: z.number().int().positive(),
+  kind: z.enum(['workout', 'run']),
+  templateId: z.string().optional(),
+  title: z.string().optional(),
+  ...runTargetShape,
+  instructions: z.string().optional(),
+  notes: z.string().optional(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+const runPlanSnapshotSchema = z.object({
+  title: z.string(),
+  date: z.string(),
+  instructions: z.string().optional(),
+  ...runTargetShape,
+});
+
 const runLogSchema = z.object({
   id: z.string(),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -271,6 +309,8 @@ const runLogSchema = z.object({
   elevationGainM: z.number().int().min(0).optional(),
   averageHeartRate: z.number().int().optional(),
   notes: z.string().optional(),
+  planEntryId: z.string().optional(),
+  runPlanSnapshot: runPlanSnapshotSchema.optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -299,6 +339,8 @@ const databaseSnapshotSchema = z.object({
   libraryImports: z.array(libraryImportLogSchema).optional().default([]),
   // Dieselbe Begründung für die Läufe: neue Tabelle, kein Bump des Literals.
   runLogs: z.array(runLogSchema).optional().default([]),
+  // Und für den Plan: neue Tabelle, kein Bump des Literals.
+  planEntries: z.array(planEntrySchema).optional().default([]),
 });
 
 export interface DatabaseSnapshot {
@@ -319,6 +361,7 @@ export interface DatabaseSnapshot {
   bandLevels: BandLevel[];
   libraryImports: LibraryImportLog[];
   runLogs: RunLog[];
+  planEntries: PlanEntry[];
 }
 
 export interface DatabaseSnapshotSummary {
@@ -349,6 +392,7 @@ async function createDatabaseSnapshot(): Promise<DatabaseSnapshot> {
     bandLevels: await db.bandLevels.toArray(),
     libraryImports: await db.libraryImports.toArray(),
     runLogs: await db.runLogs.toArray(),
+    planEntries: await db.planEntries.toArray(),
   };
 }
 
@@ -515,6 +559,7 @@ export async function restoreDatabaseSnapshot(snapshot: DatabaseSnapshot) {
       db.bandLevels,
       db.libraryImports,
       db.runLogs,
+      db.planEntries,
     ],
     async () => {
       await db.workoutSetLogs.clear();
@@ -532,6 +577,7 @@ export async function restoreDatabaseSnapshot(snapshot: DatabaseSnapshot) {
       await db.bandLevels.clear();
       await db.libraryImports.clear();
       await db.runLogs.clear();
+      await db.planEntries.clear();
 
       if (snapshot.exercises.length) {
         await db.exercises.bulkAdd(snapshot.exercises);
@@ -539,6 +585,10 @@ export async function restoreDatabaseSnapshot(snapshot: DatabaseSnapshot) {
 
       if (snapshot.workoutTemplates.length) {
         await db.workoutTemplates.bulkAdd(snapshot.workoutTemplates);
+      }
+
+      if (snapshot.planEntries?.length) {
+        await db.planEntries.bulkAdd(snapshot.planEntries);
       }
 
       if (snapshot.workoutTemplateExercises.length) {

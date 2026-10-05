@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { db } from '@/db/appDb';
-import { createTemplate, updateTemplate } from '@/db/template-actions';
+import { createTemplate, deleteTemplate, updateTemplate } from '@/db/template-actions';
 
 /**
  * Die Trainingstage sind das erste Feld an `WorkoutTemplate`, das gelöscht
@@ -78,5 +78,31 @@ describe('Art des Workouts', () => {
 
     expect((await db.workoutTemplates.get(mobility))?.category).toBe('mobility');
     expect('category' in ((await db.workoutTemplates.get(strength)) ?? {})).toBe(false);
+  });
+});
+
+describe('deleteTemplate und der Plan', () => {
+  it('deleteTemplate löscht nur offene Termine', async () => {
+    const templateId = await createTemplate({ name: 'Einheit A' });
+    const stamp = '2026-10-05T10:00:00.000Z';
+
+    await db.planEntries.bulkAdd([
+      { id: 'offen', date: '2026-10-06', orderInDay: 1, kind: 'workout', templateId, createdAt: stamp, updatedAt: stamp },
+      { id: 'erledigt', date: '2026-10-05', orderInDay: 1, kind: 'workout', templateId, createdAt: stamp, updatedAt: stamp },
+    ]);
+    await db.workoutSessions.add({
+      id: 's1',
+      templateId,
+      templateNameSnapshot: 'Einheit A',
+      resolvedProgramWeek: 1,
+      startedAt: stamp,
+      completedAt: stamp,
+      status: 'completed',
+      planEntryId: 'erledigt',
+    });
+
+    await deleteTemplate(templateId);
+
+    expect((await db.planEntries.toArray()).map((e) => e.id)).toEqual(['erledigt']);
   });
 });

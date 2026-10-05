@@ -10,6 +10,7 @@ import {
   type SupersetAssignment,
 } from '@/domain/superset';
 import { normalizeOptionalNumber, normalizeOptionalText } from '@/db/normalize';
+import { loadTakenPlanEntryIds, renumberPlanDay } from '@/db/plan-actions';
 import { createId } from '@/lib/id';
 
 interface TemplateInput {
@@ -132,10 +133,29 @@ export async function deleteTemplate(templateId: string) {
 
   await db.transaction(
     'rw',
-    db.workoutTemplates,
-    db.workoutTemplateExercises,
-    db.progressionRules,
+    [
+      db.workoutTemplates,
+      db.workoutTemplateExercises,
+      db.progressionRules,
+      db.planEntries,
+      db.workoutSessions,
+      db.runLogs,
+    ],
     async () => {
+      // Offene Termine des Workouts gehen mit; belegte bleiben stehen, denn
+      // sie sind die Verabredung hinter einem trainierten Tag.
+      const entries = await db.planEntries.where('templateId').equals(templateId).toArray();
+      const taken = await loadTakenPlanEntryIds(entries.map((entry) => entry.id));
+      const open = entries.filter((entry) => !taken.has(entry.id));
+
+      if (open.length > 0) {
+        await db.planEntries.bulkDelete(open.map((entry) => entry.id));
+
+        for (const date of new Set(open.map((entry) => entry.date))) {
+          await renumberPlanDay(date);
+        }
+      }
+
       if (templateExerciseIds.length > 0) {
         await db.progressionRules.where('templateExerciseId').anyOf(templateExerciseIds).delete();
         await db.workoutTemplateExercises.where('templateId').equals(templateId).delete();
