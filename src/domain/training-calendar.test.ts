@@ -1,25 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { deriveProgramWeek } from '@/domain/program';
-import type { ProgramWeek, WorkoutTemplate } from '@/domain/models';
+import type { PlanEntry, ProgramWeek } from '@/domain/models';
+import { buildPlanLinks } from '@/domain/plan';
 import {
   buildTrainingCalendar,
   countWeekProgress,
   isoWeekday,
   normalizeScheduledWeekdays,
   programWeekStart,
-  templatesOnWeekday,
-  templatesWithoutSchedule,
 } from '@/domain/training-calendar';
-
-function template(name: string, scheduledWeekdays?: number[]): WorkoutTemplate {
-  return {
-    id: name.toLowerCase().replace(/\s+/g, '-'),
-    name,
-    scheduledWeekdays,
-    createdAt: '2026-01-01T00:00:00.000Z',
-    updatedAt: '2026-01-01T00:00:00.000Z',
-  };
-}
 
 function week(weekNumber: number, kind?: ProgramWeek['kind']): ProgramWeek {
   return { id: `w${weekNumber}`, programId: 'p1', weekNumber, kind };
@@ -92,135 +81,160 @@ describe('programWeekStart', () => {
   });
 });
 
-describe('templatesOnWeekday / templatesWithoutSchedule', () => {
-  const templates = [
-    template('Einheit B', [4]),
-    template('Einheit A', [1, 4]),
-    template('Kraftausdauer'),
-    template('Mobilität', []),
-  ];
-
-  it('gibt die Workouts eines Tages in Namensreihenfolge', () => {
-    expect(templatesOnWeekday(templates, 4).map((entry) => entry.name)).toEqual([
-      'Einheit A',
-      'Einheit B',
-    ]);
-    expect(templatesOnWeekday(templates, 3)).toEqual([]);
-  });
-
-  it('zählt eine leere Liste wie "kein fester Tag"', () => {
-    expect(templatesWithoutSchedule(templates).map((entry) => entry.name)).toEqual([
-      'Kraftausdauer',
-      'Mobilität',
-    ]);
-  });
-});
+function entry(id: string, date: string, kind: 'workout' | 'run' = 'workout', orderInDay = 1): PlanEntry {
+  return {
+    id,
+    date,
+    orderInDay,
+    kind,
+    ...(kind === 'workout' ? { templateId: 'einheit-a' } : { title: 'Dauerlauf' }),
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+  };
+}
 
 describe('buildTrainingCalendar', () => {
-  const templates = [template('Einheit A', [1, 4]), template('Mobilität', [6])];
-  const startedOn = '2026-08-31'; // Montag
+  const startedOn = '2026-10-05'; // Montag
 
-  function build(overrides: Partial<Parameters<typeof buildTrainingCalendar>[0]> = {}) {
+  function build(
+    overrides: Partial<Parameters<typeof buildTrainingCalendar>[0]> = {},
+    sessions: Parameters<typeof buildPlanLinks>[0] = [],
+    linkedRuns: Parameters<typeof buildPlanLinks>[1] = [],
+  ) {
     return buildTrainingCalendar({
       weeks: [week(1), week(2), week(3, 'test')],
-      templates,
+      planEntries: [],
+      planLinks: buildPlanLinks(sessions, linkedRuns),
+      templateNames: { 'einheit-a': 'Einheit A' },
+      runs: [],
       startedOn,
-      effectiveWeek: 2,
+      effectiveWeek: 1,
       completedSessions: [],
       testDates: [],
-      // Mittwoch der zweiten Woche.
-      now: new Date(2026, 8, 9, 12),
+      // Mittwoch der ersten Woche.
+      now: new Date(2026, 9, 7, 12),
       ...overrides,
     });
+  }
+
+  function completedSession(planEntryId: string, day: number) {
+    return {
+      id: `s-${planEntryId}`,
+      planEntryId,
+      status: 'completed' as const,
+      completedAt: localAt(2026, 10, day),
+      templateNameSnapshot: 'Einheit A',
+    };
+  }
+
+  function doneRef(day: number) {
+    return {
+      id: 'einheit-a',
+      templateName: 'Einheit A',
+      templateId: 'einheit-a',
+      completedAt: localAt(2026, 10, day),
+    };
   }
 
   it('legt jede Woche auf ihren Montag und gibt sieben Tage aus', () => {
     const [first] = build();
 
     expect(first.days).toHaveLength(7);
-    expect(first.start?.getDate()).toBe(31);
-    expect(first.end?.getDate()).toBe(6);
-    expect(first.days[0].date?.getDate()).toBe(31);
-    expect(first.days[6].date?.getDate()).toBe(6);
+    expect(first.start?.getDate()).toBe(5);
+    expect(first.end?.getDate()).toBe(11);
+    expect(first.days[6].date?.getDate()).toBe(11);
   });
 
   it('markiert die wirksame Woche und den heutigen Tag', () => {
     const rows = build();
 
-    expect(rows.map((row) => row.isEffective)).toEqual([false, true, false]);
-
-    const today = rows[1].days.find((day) => day.isToday);
-
-    expect(today?.isoWeekday).toBe(3);
-    // Am Mittwoch steht nichts an - "heute" ist trotzdem heute.
-    expect(today?.state).toBe('leer');
+    expect(rows.map((row) => row.isEffective)).toEqual([true, false, false]);
+    expect(rows[0].days.find((day) => day.isToday)?.isoWeekday).toBe(3);
   });
 
-  it('nennt vergangene geplante Tage ohne Einheit verpasst, künftige geplant', () => {
-    const rows = build();
+  it('nennt einen vergangenen offenen Termin verpasst, den Tag ohne Termin leer', () => {
+    const rows = build({ planEntries: [entry('e1', '2026-10-05')] });
 
-    // Woche 1, Montag: geplant und vorbei.
     expect(rows[0].days[0].state).toBe('verpasst');
-    // Woche 2, Donnerstag: geplant und noch vor uns.
-    expect(rows[1].days[3].state).toBe('geplant');
-    // Mittwoch ist in keiner Woche geplant.
-    expect(rows[0].days[2].state).toBe('leer');
+    expect(rows[0].days[0].planned.map((unit) => unit.name)).toEqual(['Einheit A']);
+    expect(rows[0].days[1].state).toBe('leer');
   });
 
-  it('färbt abgeschlossene Einheiten erledigt und teilweise erledigte teilweise', () => {
-    const rows = build({
-      templates: [template('Einheit A', [1]), template('Mobilität', [1])],
-      completedSessions: [
-        { templateId: 'einheit-a', templateName: 'Einheit A', completedAt: localAt(2026, 8, 31) },
-        { templateId: 'einheit-a', templateName: 'Einheit A', completedAt: localAt(2026, 9, 7) },
-        { templateId: 'mobilität', templateName: 'Mobilität', completedAt: localAt(2026, 9, 7) },
-      ],
-    });
+  it('nennt einen künftigen offenen Termin geplant', () => {
+    const rows = build({ planEntries: [entry('e1', '2026-10-09')] });
 
-    expect(rows[0].days[0].state).toBe('teilweise');
-    expect(rows[1].days[0].state).toBe('erledigt');
-    expect(countWeekProgress(rows[0])).toEqual({ planned: 2, done: 1 });
-    expect(countWeekProgress(rows[1])).toEqual({ planned: 2, done: 2 });
+    expect(rows[0].days[4].state).toBe('geplant');
   });
 
-  it('zeigt auch eine Einheit, die an einem ungeplanten Tag lief', () => {
-    const rows = build({
-      completedSessions: [
-        // Dienstag der ersten Woche - dort steht nichts im Plan.
-        { templateId: 'einheit-a', templateName: 'Einheit A', completedAt: localAt(2026, 9, 1) },
-      ],
-    });
+  it('zeigt einen Lauf ohne Termin als erledigten Tag', () => {
+    const rows = build({ runs: [{ id: 'r1', date: '2026-10-06' }] });
 
     expect(rows[0].days[1].state).toBe('erledigt');
-    expect(rows[0].days[1].done.map((entry) => entry.name)).toEqual(['Einheit A']);
-    // Der geplante Montag bleibt davon unberührt.
-    expect(rows[0].days[0].state).toBe('verpasst');
+    expect(rows[0].days[1].done[0].kind).toBe('run');
+  });
+
+  it('lässt einen Termin, der an anderem Tag erledigt wurde, an seinem Tag leer', () => {
+    const rows = build(
+      {
+        planEntries: [entry('e1', '2026-10-05')],
+        completedSessions: [doneRef(6)],
+      },
+      [completedSession('e1', 6)],
+    );
+
+    expect(rows[0].days[0].state).toBe('leer');
+    expect(rows[0].days[0].planned).toEqual([]);
+    expect(rows[0].days[1].state).toBe('erledigt');
+    expect(rows[0].days[1].planned).toEqual([]);
+    expect(rows[0].days[1].done).toHaveLength(1);
+  });
+
+  it('nennt einen Tag mit zwei Terminen, von denen einer erledigt ist, teilweise', () => {
+    const rows = build(
+      {
+        planEntries: [entry('e1', '2026-10-08'), entry('e2', '2026-10-08', 'run', 2)],
+        completedSessions: [doneRef(8)],
+      },
+      [completedSession('e1', 8)],
+    );
+
+    expect(rows[0].days[3].state).toBe('teilweise');
+    expect(countWeekProgress(rows[0])).toEqual({ planned: 2, done: 1 });
+  });
+
+  it('färbt einen Tag erledigt, wenn alle Termine erledigt sind', () => {
+    const rows = build(
+      {
+        planEntries: [entry('e1', '2026-10-05')],
+        completedSessions: [doneRef(5)],
+      },
+      [completedSession('e1', 5)],
+    );
+
+    expect(rows[0].days[0].state).toBe('erledigt');
+    expect(countWeekProgress(rows[0])).toEqual({ planned: 1, done: 1 });
   });
 
   it('kennt ohne Startdatum weder Termine noch Zustände', () => {
     const rows = build({
       startedOn: undefined,
-      completedSessions: [
-        { templateId: 'einheit-a', templateName: 'Einheit A', completedAt: localAt(2026, 8, 31) },
-      ],
+      planEntries: [entry('e1', '2026-10-05')],
+      runs: [{ id: 'r1', date: '2026-10-06' }],
     });
 
     expect(rows[0].start).toBeUndefined();
-    expect(rows[0].days[0].date).toBeUndefined();
-    expect(rows[0].days[0].state).toBe('geplant');
+    expect(rows[0].days.every((day) => day.date === undefined && day.state === 'leer')).toBe(true);
     expect(rows[0].days.some((day) => day.isToday)).toBe(false);
-    expect(rows[0].days.flatMap((day) => day.done)).toEqual([]);
   });
 
   it('meldet den Seitenvergleich nur in der Testwoche und nur mit Messung darin', () => {
     const withoutTest = build();
 
     expect(withoutTest.map((row) => row.hasTestAppointment)).toEqual([false, false, true]);
-    expect(withoutTest[2].testDone).toBe(false);
 
-    // Woche 3 läuft vom 14.09. bis zum 20.09.
-    const measuredInside = build({ testDates: [localAt(2026, 9, 20, 23)] });
-    const measuredOutside = build({ testDates: [localAt(2026, 9, 21, 1)] });
+    // Woche 3 läuft vom 19.10. bis zum 25.10.
+    const measuredInside = build({ testDates: [localAt(2026, 10, 25, 23)] });
+    const measuredOutside = build({ testDates: [localAt(2026, 10, 26, 1)] });
 
     expect(measuredInside[2].testDone).toBe(true);
     expect(measuredOutside[2].testDone).toBe(false);

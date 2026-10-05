@@ -10,14 +10,15 @@ import { Button } from '@/components/ui/Button';
 import { Sheet } from '@/components/ui/Sheet';
 import { DoneRow, NowCard } from '@/components/ui/StatusCard';
 import { db } from '@/db/appDb';
-import { loadCompletedSessionsBetween, loadTestDatesBetween } from '@/db/history-queries';
-import { clearProgressionRule, saveProgressionRule } from '@/db/template-actions';
 import {
-  buildTrainingCalendar,
-  isoWeekday,
-  programWeekStart,
-  templatesOnWeekday,
-} from '@/domain/training-calendar';
+  loadCompletedSessionsBetween,
+  loadRunDatesBetween,
+  loadTestDatesBetween,
+} from '@/db/history-queries';
+import { loadPlanBetween } from '@/db/plan-queries';
+import { clearProgressionRule, saveProgressionRule } from '@/db/template-actions';
+import { pickTodayPlan, planEntryName } from '@/domain/plan';
+import { buildTrainingCalendar, programWeekStart } from '@/domain/training-calendar';
 import type { ProgramWeek } from '@/domain/models';
 import {
   buildWeekPlan,
@@ -34,7 +35,7 @@ import {
   toProgressionRuleInput,
   type ProgressionRuleFormState,
 } from '@/domain/progression-rule-form';
-import { resolveWeekControl } from '@/domain/program';
+import { resolveWeekControl, toDateInputValue } from '@/domain/program';
 import { cn } from '@/lib/utils';
 
 /**
@@ -115,7 +116,22 @@ export function ProgramsPage() {
 
     until.setDate(until.getDate() + 7);
 
-    return { fromIso: start.toISOString(), toIso: until.toISOString() };
+    /*
+     * `until` ist der Montag *nach* der letzten Woche und gehört nicht mehr
+     * dazu. Die Zeitstempel-Abfragen sind dafür gebaut; Termine und Läufe
+     * tragen einen Tag und fragen inklusiv - deshalb der letzte Sonntag
+     * (`setDate(-1)`), nicht der Montag danach.
+     */
+    const lastDay = new Date(until.getTime());
+
+    lastDay.setDate(lastDay.getDate() - 1);
+
+    return {
+      fromIso: start.toISOString(),
+      toIso: until.toISOString(),
+      fromDay: toDateInputValue(start),
+      toDay: toDateInputValue(lastDay),
+    };
   }, [program?.startedOn, weeks]);
 
   const completedSessions = useLiveQuery(
@@ -133,11 +149,40 @@ export function ProgramsPage() {
     [calendarRange?.fromIso, calendarRange?.toIso],
   );
 
+  const planInRange = useLiveQuery(
+    () =>
+      calendarRange
+        ? loadPlanBetween(calendarRange.fromDay, calendarRange.toDay)
+        : Promise.resolve(undefined),
+    [calendarRange?.fromDay, calendarRange?.toDay],
+  );
+  const runsInRange = useLiveQuery(
+    () =>
+      calendarRange
+        ? loadRunDatesBetween(calendarRange.fromDay, calendarRange.toDay)
+        : Promise.resolve([]),
+    [calendarRange?.fromDay, calendarRange?.toDay],
+  );
+  const todayKey = toDateInputValue(new Date());
+  const todayPlan = useLiveQuery(() => loadPlanBetween(todayKey, todayKey), [todayKey]);
+
+  const templateNames = useMemo(
+    () =>
+      (templates ?? []).reduce<Record<string, string>>((names, template) => {
+        names[template.id] = template.name;
+        return names;
+      }, {}),
+    [templates],
+  );
+
   const calendarRows = useMemo(
     () =>
       buildTrainingCalendar({
         weeks: weeks ?? [],
-        templates: templates ?? [],
+        planEntries: planInRange?.entries ?? [],
+        planLinks: planInRange?.links ?? {},
+        templateNames,
+        runs: runsInRange ?? [],
         startedOn: program?.startedOn,
         effectiveWeek: weekControl.effectiveWeek,
         completedSessions: completedSessions ?? [],
@@ -146,7 +191,9 @@ export function ProgramsPage() {
       }),
     [
       weeks,
-      templates,
+      planInRange,
+      templateNames,
+      runsInRange,
       program?.startedOn,
       weekControl.effectiveWeek,
       completedSessions,
@@ -154,7 +201,11 @@ export function ProgramsPage() {
     ],
   );
   const selectedCalendarWeek = calendarRows.find((row) => row.weekNumber === selectedWeek);
-  const todaysTemplates = templatesOnWeekday(templates ?? [], isoWeekday(new Date()));
+  const todaysUnits = todayPlan
+    ? pickTodayPlan(todayPlan.entries, todayPlan.links, todayKey).todayOpen.map((entry) =>
+        planEntryName(entry, templateNames, todayPlan.links),
+      )
+    : [];
 
   const bandNameById = useMemo(
     () =>
@@ -310,9 +361,7 @@ export function ProgramsPage() {
               */}
               <span className="block font-semibold">
                 Heute ·{' '}
-                {todaysTemplates.length === 0
-                  ? 'frei'
-                  : todaysTemplates.map((template) => template.name).join(', ')}
+                {todaysUnits.length === 0 ? 'frei' : todaysUnits.join(', ')}
               </span>
             </>
           }
@@ -322,7 +371,6 @@ export function ProgramsPage() {
           <div className="space-y-3">
             <TrainingCalendar
               rows={calendarRows}
-              templates={templates ?? []}
               selectedWeek={selectedWeek}
               onSelectWeek={setSelectedWeekNumber}
             />

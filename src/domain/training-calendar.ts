@@ -1,14 +1,20 @@
 import { parseLocalDate, startOfCalendarWeek } from '@/domain/calendar-week';
-import type { ProgramWeek, WorkoutTemplate } from '@/domain/models';
+import type { PlanEntry, ProgramWeek } from '@/domain/models';
+import { planEntryName, planEntryState, type PlanEntryLink } from '@/domain/plan';
+import { toDateInputValue } from '@/domain/program';
 
 /**
  * Wann ist was dran?
  *
- * Der Wochenplan im Datenmodell besteht aus genau einem Feld -
- * `WorkoutTemplate.scheduledWeekdays` - und wiederholt sich in jeder
- * Programmwoche gleich. Was die Wochen voneinander unterscheidet, ist nicht der
- * Plan, sondern der *Zustand*: was ist erledigt, was steht noch aus, was ist
- * ausgefallen. Genau das rechnet dieses Modul aus, pur und ohne Dexie.
+ * Der Kalender liest die datierten Termine (`PlanEntry`) und die Läufe, die
+ * tatsächlich stattfanden. Was Programmwochen voneinander unterscheidet, ist
+ * nicht ein Plan je Woche, sondern der *Zustand* ihrer Tage: was ist erledigt,
+ * was steht noch aus, was ist ausgefallen. Genau das rechnet dieses Modul aus,
+ * pur und ohne Dexie.
+ *
+ * `WorkoutTemplate.scheduledWeekdays` ist nicht mehr der Plan - das Feld bleibt
+ * im Datenmodell (und `normalizeScheduledWeekdays` für die Serien), aber der
+ * Kalender fragt es nicht mehr.
  *
  * Zwei Grenzen sind Absicht:
  *
@@ -19,8 +25,9 @@ import type { ProgramWeek, WorkoutTemplate } from '@/domain/models';
  *   Progressionsschritt.
  * - **Erledigt kommt aus dem Verlauf, nie aus dem Plan.** Eine abgeschlossene
  *   Einheit zählt auf den Kalendertag ihres `completedAt`, auch wenn sie an
- *   einem Tag lief, an dem sie nicht geplant war. Der Kalender darf der
- *   Wirklichkeit nicht widersprechen.
+ *   einem Tag lief, an dem sie nicht geplant war. Ein Termin, der an einem
+ *   anderen Tag erledigt wurde, steht an seinem eigenen Tag nicht mehr - der
+ *   Kalender darf der Wirklichkeit nicht widersprechen.
  */
 
 const DAYS_PER_WEEK = 7;
@@ -120,9 +127,11 @@ export function programWeekStart(startedOn: string, weekNumber: number): Date | 
  */
 export type CalendarDayState = 'leer' | 'geplant' | 'erledigt' | 'teilweise' | 'verpasst';
 
-export interface CalendarTemplateRef {
+/** Eine Einheit im Raster: ein Termin (`id` = Termin-Id) oder eine erledigte Session bzw. ein Lauf. */
+export interface CalendarUnitRef {
   id: string;
   name: string;
+  kind: 'workout' | 'run';
 }
 
 export interface CalendarDay {
@@ -130,10 +139,12 @@ export interface CalendarDay {
   /** Fehlt ohne `Program.startedOn` - dann kennt der Kalender keine Termine. */
   date?: Date;
   isToday: boolean;
-  /** Was laut Wochenplan an diesem Tag ansteht. */
-  planned: CalendarTemplateRef[];
-  /** Was an diesem Tag tatsächlich abgeschlossen wurde - auch Ungeplantes. */
-  done: CalendarTemplateRef[];
+  /** Termine dieses Tages, die nicht erledigt sind - oder an diesem Tag erledigt wurden. */
+  planned: CalendarUnitRef[];
+  /** Wie viele davon an diesem Tag erledigt wurden. */
+  plannedDone: number;
+  /** Was an diesem Tag tatsächlich abgeschlossen wurde (Sessions und Läufe) - auch Ungeplantes. */
+  done: CalendarUnitRef[];
   state: CalendarDayState;
 }
 
@@ -161,10 +172,14 @@ export interface CalendarWeekRow {
 
 export interface BuildTrainingCalendarInput {
   weeks: ProgramWeek[];
-  templates: WorkoutTemplate[];
+  planEntries: PlanEntry[];
+  planLinks: Record<string, PlanEntryLink>;
+  templateNames: Record<string, string>;
+  /** Alle Läufe des Zeitraums, mit oder ohne Termin. */
+  runs: { id: string; date: string }[];
   startedOn?: string;
   effectiveWeek: number;
-  completedSessions: { templateId: string; templateName: string; completedAt: string }[];
+  completedSessions: { id: string; templateId: string; templateName: string; completedAt: string }[];
   /** `recordedAt` der Seitenvergleiche - mehr braucht die Woche nicht. */
   testDates: string[];
   now: Date;
@@ -187,31 +202,6 @@ function startOfDay(date: Date): Date {
   return value;
 }
 
-/** Die Workouts, die an diesem Wochentag anstehen - in Namensreihenfolge. */
-export function templatesOnWeekday(
-  templates: WorkoutTemplate[],
-  day: IsoWeekday,
-): CalendarTemplateRef[] {
-  return templates
-    .filter((template) => normalizeScheduledWeekdays(template.scheduledWeekdays)?.includes(day))
-    .map((template) => ({ id: template.id, name: template.name }))
-    .sort((left, right) => left.name.localeCompare(right.name, 'de'));
-}
-
-/**
- * Workouts ohne festen Tag.
- *
- * Sie stehen im Kalender unter dem Raster, statt still herauszufallen: ein
- * Workout, das aus einer Übersicht verschwindet, ist der teuerste Fehler, den
- * diese Seite machen kann.
- */
-export function templatesWithoutSchedule(templates: WorkoutTemplate[]): CalendarTemplateRef[] {
-  return templates
-    .filter((template) => normalizeScheduledWeekdays(template.scheduledWeekdays) === undefined)
-    .map((template) => ({ id: template.id, name: template.name }))
-    .sort((left, right) => left.name.localeCompare(right.name, 'de'));
-}
-
 /** Geplante und davon erledigte Einheiten einer Woche - für die Ansage der Zeile. */
 export function countWeekProgress(row: CalendarWeekRow): { planned: number; done: number } {
   let planned = 0;
@@ -219,17 +209,33 @@ export function countWeekProgress(row: CalendarWeekRow): { planned: number; done
 
   for (const day of row.days) {
     planned += day.planned.length;
-    done += day.planned.filter((template) =>
-      day.done.some((entry) => entry.id === template.id),
-    ).length;
+    done += day.plannedDone;
   }
 
   return { planned, done };
 }
 
+/** Der Kalendertag, an dem ein Termin erledigt wurde: Läufe tragen schon den Tag, Sessions einen Zeitstempel. */
+function doneDayOf(link: PlanEntryLink): string | undefined {
+  if (!link.done || !link.doneAt) {
+    return undefined;
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(link.doneAt)) {
+    return link.doneAt;
+  }
+
+  const at = new Date(link.doneAt);
+
+  return Number.isNaN(at.getTime()) ? undefined : toDateInputValue(at);
+}
+
 export function buildTrainingCalendar({
   weeks,
-  templates,
+  planEntries,
+  planLinks,
+  templateNames,
+  runs,
   startedOn,
   effectiveWeek,
   completedSessions,
@@ -237,17 +243,31 @@ export function buildTrainingCalendar({
   now,
 }: BuildTrainingCalendarInput): CalendarWeekRow[] {
   const today = startOfDay(now);
-  const plannedByWeekday = new Map<IsoWeekday, CalendarTemplateRef[]>(
-    ISO_WEEKDAYS.map((day) => [day, templatesOnWeekday(templates, day)]),
-  );
 
-  const sessionDates = completedSessions.flatMap((session) => {
+  /* Termine je Kalendertag, in der Reihenfolge des Tages. */
+  const entriesByDay = new Map<string, PlanEntry[]>();
+
+  for (const entry of [...planEntries].sort((a, b) => a.orderInDay - b.orderInDay)) {
+    entriesByDay.set(entry.date, [...(entriesByDay.get(entry.date) ?? []), entry]);
+  }
+
+  const doneByDay = new Map<string, CalendarUnitRef[]>();
+  const addDone = (day: string, unit: CalendarUnitRef) => {
+    doneByDay.set(day, [...(doneByDay.get(day) ?? []), unit]);
+  };
+
+  for (const session of completedSessions) {
     const at = new Date(session.completedAt);
 
-    return Number.isNaN(at.getTime())
-      ? []
-      : [{ at, ref: { id: session.templateId, name: session.templateName } }];
-  });
+    if (!Number.isNaN(at.getTime())) {
+      addDone(toDateInputValue(at), { id: session.id, name: session.templateName, kind: 'workout' });
+    }
+  }
+
+  for (const run of runs) {
+    addDone(run.date, { id: run.id, name: 'Lauf', kind: 'run' });
+  }
+
   const testMoments = testDates.flatMap((value) => {
     const at = new Date(value);
 
@@ -263,25 +283,46 @@ export function buildTrainingCalendar({
       end?.setDate(end.getDate() + DAYS_PER_WEEK - 1);
 
       const days = ISO_WEEKDAYS.map<CalendarDay>((day) => {
-        const planned = plannedByWeekday.get(day) ?? [];
         const date = start ? new Date(start.getTime()) : undefined;
 
         date?.setDate(date.getDate() + (day - 1));
 
-        const done = date
-          ? sessionDates
-              .filter((session) => isSameDay(session.at, date))
-              .map((session) => session.ref)
-          : [];
-        const isToday = date ? isSameDay(date, today) : false;
+        /* Ohne Datum kein Tag - und damit weder Termin noch erledigte Einheit. */
+        if (!date) {
+          return {
+            isoWeekday: day,
+            isToday: false,
+            planned: [],
+            plannedDone: 0,
+            done: [],
+            state: 'leer',
+          };
+        }
+
+        const key = toDateInputValue(date);
+        const plannedEntries = (entriesByDay.get(key) ?? []).filter((entry) => {
+          const link = planLinks[entry.id];
+
+          return planEntryState(entry.id, planLinks) !== 'erledigt' || (link && doneDayOf(link) === key);
+        });
+        const planned = plannedEntries.map<CalendarUnitRef>((entry) => ({
+          id: entry.id,
+          name: planEntryName(entry, templateNames, planLinks),
+          kind: entry.kind,
+        }));
+        const openPlanned = plannedEntries.filter(
+          (entry) => planEntryState(entry.id, planLinks) !== 'erledigt',
+        ).length;
+        const done = doneByDay.get(key) ?? [];
 
         return {
           isoWeekday: day,
           date,
-          isToday,
+          isToday: isSameDay(date, today),
           planned,
+          plannedDone: planned.length - openPlanned,
           done,
-          state: resolveDayState({ planned, done, date, today }),
+          state: resolveDayState({ openPlanned, doneCount: done.length, date, today }),
         };
       });
 
@@ -313,33 +354,21 @@ export function buildTrainingCalendar({
 }
 
 function resolveDayState({
-  planned,
-  done,
+  openPlanned,
+  doneCount,
   date,
   today,
 }: {
-  planned: CalendarTemplateRef[];
-  done: CalendarTemplateRef[];
-  date?: Date;
+  openPlanned: number;
+  doneCount: number;
+  date: Date;
   today: Date;
 }): CalendarDayState {
-  /*
-   * Ohne Datum gibt es keinen Zustand, nur den Plan: die Zuordnung
-   * Programmwoche -> Kalendertag fehlt, und "erledigt" wäre geraten.
-   */
-  if (!date) {
-    return planned.length > 0 ? 'geplant' : 'leer';
+  if (doneCount > 0) {
+    return openPlanned === 0 ? 'erledigt' : 'teilweise';
   }
 
-  if (done.length > 0) {
-    const openPlanned = planned.filter(
-      (template) => !done.some((entry) => entry.id === template.id),
-    );
-
-    return openPlanned.length === 0 ? 'erledigt' : 'teilweise';
-  }
-
-  if (planned.length === 0) {
+  if (openPlanned === 0) {
     return 'leer';
   }
 

@@ -206,6 +206,16 @@ export async function loadCompletedSessionsBetween(
     .sort((left, right) => left.completedAt.localeCompare(right.completedAt));
 }
 
+/** Welche Läufe zwischen zwei Tagen (`YYYY-MM-DD`, beide eingeschlossen) liegen - der Kalender braucht nur Id und Tag. */
+export async function loadRunDatesBetween(
+  from: string,
+  to: string,
+): Promise<{ id: string; date: string }[]> {
+  const runs = await db.runLogs.where('date').between(from, to, true, true).toArray();
+
+  return runs.map((run) => ({ id: run.id, date: run.date }));
+}
+
 /**
  * Wann in einem Zeitraum Seitenvergleiche gemessen wurden.
  *

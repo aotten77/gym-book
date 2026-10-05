@@ -1,10 +1,7 @@
-import type { WorkoutTemplate } from '@/domain/models';
 import { describeWeekKind } from '@/domain/program-plan';
 import {
   countWeekProgress,
   ISO_WEEKDAYS,
-  templatesOnWeekday,
-  templatesWithoutSchedule,
   weekdayLongLabel,
   weekdayShortLabel,
   type CalendarDay,
@@ -27,19 +24,16 @@ import { cn } from '@/lib/utils';
  *   passen bei 320px nicht nebeneinander (nutzbar sind 288px). Die Zeile hält
  *   die 44px, die Zellen sind Marken - damit braucht das Raster kein zweites,
  *   waagerechtes Scrollgebiet neben dem Seitenscroll.
- * - **Der Plan steht einmal unter dem Raster, nicht in jeder Zelle.** Der
- *   Wochenplan wiederholt sich in jeder Programmwoche gleich; in den Zeilen
- *   stünde er achtmal. Was die Wochen unterscheidet, ist der Zustand, und der
- *   gehört ins Raster.
+ * - **Die Zellen sind Zustand, kein Plan.** Die Termine sind datiert und
+ *   stehen im Plan-Bereich; das Raster zeigt nur, welcher Tag offen, erledigt
+ *   oder verpasst ist.
  */
 export function TrainingCalendar({
   rows,
-  templates,
   selectedWeek,
   onSelectWeek,
 }: {
   rows: CalendarWeekRow[];
-  templates: WorkoutTemplate[];
   selectedWeek: number;
   onSelectWeek: (weekNumber: number) => void;
 }) {
@@ -49,7 +43,6 @@ export function TrainingCalendar({
     first?.start && last?.end
       ? `${formatShortDate(first.start)}–${formatShortDate(last.end)}`
       : undefined;
-  const unscheduled = templatesWithoutSchedule(templates);
 
   return (
     <section
@@ -94,40 +87,6 @@ export function TrainingCalendar({
             onSelect={() => onSelectWeek(row.weekNumber)}
           />
         ))}
-      </div>
-
-      <div className="mt-4 space-y-1 border-t border-line pt-3">
-        {ISO_WEEKDAYS.map((day) => {
-          const planned = templatesOnWeekday(templates, day);
-
-          if (planned.length === 0) {
-            return null;
-          }
-
-          return (
-            <p key={day} className="text-sm text-content-secondary">
-              <span className="font-semibold text-content">{weekdayShortLabel(day)}</span>
-              {' · '}
-              {planned.map((template) => template.name).join(', ')}
-            </p>
-          );
-        })}
-
-        {/*
-          Workouts ohne Tag fallen nicht still heraus: ein Workout, das aus
-          einer Übersicht verschwindet, ist der teuerste Fehler dieser Seite.
-        */}
-        {unscheduled.length > 0 ? (
-          <p className="pt-1 text-sm text-content-muted">
-            Ohne festen Tag: {unscheduled.map((template) => template.name).join(', ')}
-          </p>
-        ) : null}
-
-        {templates.length > 0 && unscheduled.length === templates.length ? (
-          <p className="pt-1 text-sm text-content-muted">
-            Trage im Workout unter „Trainingstage“ ein, wann es ansteht.
-          </p>
-        ) : null}
       </div>
     </section>
   );
