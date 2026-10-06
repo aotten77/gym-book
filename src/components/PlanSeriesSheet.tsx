@@ -12,10 +12,12 @@ import { createPlanSeries } from '@/db/plan-actions';
 import {
   readPlanEntryForm,
   toPlanEntryFormState,
+  visiblePlanEntryError,
   type PlanEntryFormField,
   type PlanEntryFormState,
 } from '@/domain/plan-entry-form';
 import type { IsoWeekday } from '@/domain/training-calendar';
+import { formatNumber } from '@/lib/format';
 import { parseNumberInput } from '@/lib/number-input';
 
 interface PlanSeriesSheetProps {
@@ -82,7 +84,7 @@ export function PlanSeriesSheet({ open, defaultStartDate, onClose }: PlanSeriesS
 
   const touch = (field: PlanEntryFormField) =>
     setTouched((current) => new Set(current).add(field));
-  const errorFor = (field: PlanEntryFormField) => (touched.has(field) ? errors[field] : undefined);
+  const errorFor = (field: PlanEntryFormField) => visiblePlanEntryError(errors, touched, field);
 
   async function handleSave() {
     if (!values || weekCount === undefined || isSaving) {
@@ -102,7 +104,7 @@ export function PlanSeriesSheet({ open, defaultStartDate, onClose }: PlanSeriesS
         weeks: weekCount,
       });
 
-      setResult(`${created} angelegt, ${skipped} gab es schon`);
+      setResult(`${formatNumber(created)} angelegt, ${formatNumber(skipped)} gab es schon`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Die Serie konnte nicht angelegt werden.');
     } finally {
@@ -178,9 +180,11 @@ export function PlanSeriesSheet({ open, defaultStartDate, onClose }: PlanSeriesS
           label="Wochen"
           inputMode="numeric"
           autoComplete="off"
-          hint={`1 bis ${MAX_SERIES_WEEKS}`}
+          hint={`1 bis ${formatNumber(MAX_SERIES_WEEKS)}`}
           value={weeks}
-          error={weekCount === undefined ? `Bitte 1 bis ${MAX_SERIES_WEEKS} Wochen.` : undefined}
+          error={
+            weekCount === undefined ? `Bitte 1 bis ${formatNumber(MAX_SERIES_WEEKS)} Wochen.` : undefined
+          }
           onChange={(event) => {
             setWeeks(event.target.value);
             setResult(null);

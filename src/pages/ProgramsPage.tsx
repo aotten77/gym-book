@@ -99,9 +99,6 @@ export function ProgramsPage() {
   const weekControl = resolveWeekControl(settings?.weekOverride, program, weeks ?? []);
   const selectedWeek = selectedWeekNumber ?? weekControl.effectiveWeek;
   const selectedProgramWeek = (weeks ?? []).find((week) => week.weekNumber === selectedWeek);
-  const programWeekStartDate = program?.startedOn
-    ? programWeekStart(program.startedOn, selectedWeek)
-    : undefined;
 
   /*
    * Der Zeitraum, über den der Kalender Erledigtes sucht: vom Montag der
@@ -144,6 +141,22 @@ export function ProgramsPage() {
     };
   }, [program?.startedOn, weeks]);
 
+  /*
+   * Die Terminliste folgt der gewählten Programmwoche nur, solange heute in
+   * der Programmspanne liegt. Ist das Programm abgelaufen oder beginnt es erst,
+   * wäre die laufende Kalenderwoche über das Raster nie erreichbar - dann
+   * blättert die Liste frei, ab dieser Woche, wie ohne Startdatum.
+   */
+  const todayKey = toDateInputValue(new Date());
+  const todayInProgram =
+    calendarRange !== undefined &&
+    todayKey >= calendarRange.fromDay &&
+    todayKey <= calendarRange.toDay;
+  const programWeekStartDate =
+    program?.startedOn && todayInProgram
+      ? programWeekStart(program.startedOn, selectedWeek)
+      : undefined;
+
   const completedSessions = useLiveQuery(
     () =>
       calendarRange
@@ -173,7 +186,6 @@ export function ProgramsPage() {
         : Promise.resolve([]),
     [calendarRange?.fromDay, calendarRange?.toDay],
   );
-  const todayKey = toDateInputValue(new Date());
   const todayPlan = useLiveQuery(() => loadPlanBetween(todayKey, todayKey), [todayKey]);
 
   const templateNames = useMemo(
@@ -445,8 +457,9 @@ export function ProgramsPage() {
         ) : null}
 
         {/*
-          Termine brauchen kein Programm, wohl aber eine Woche: mit Startdatum
-          ist es die gewählte Programmwoche, sonst blättert man von Hand.
+          Termine brauchen kein Programm, wohl aber eine Woche: liegt heute in
+          der Programmspanne, ist es die gewählte Programmwoche, sonst
+          blättert man von Hand ab dieser Woche.
         */}
         {programWeekStartDate ? (
           <PlanWeekSection weekStart={programWeekStartDate} />

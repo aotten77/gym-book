@@ -4,6 +4,7 @@ import {
   PLAN_MESSAGES,
   buildPlanLinks,
   describeRunTarget,
+  doneDayOf,
   expandSeries,
   findMatchingPlanEntry,
   isValidLocalDate,
@@ -115,6 +116,36 @@ describe('toPlanEntryFields', () => {
     expect(fields).not.toHaveProperty('targetDistanceKm');
     expect(fields.title).toBe('Lauf');
     expect(fields.instructions).toBe('los');
+  });
+
+  it('drops instructions on a workout - nobody shows them there', () => {
+    const fields = toPlanEntryFields(
+      values({ kind: 'workout', templateId: 'A', instructions: '- 2 km einlaufen', notes: 'früh' }),
+    );
+
+    expect(fields).not.toHaveProperty('instructions');
+    expect(fields.notes).toBe('früh');
+  });
+});
+
+describe('doneDayOf', () => {
+  it('keeps a run date as the day it carries', () => {
+    expect(
+      doneDayOf({ planEntryId: 'p1', source: 'run', sourceId: 'r1', done: true, doneAt: '2026-10-05' }),
+    ).toBe('2026-10-05');
+  });
+
+  it('puts a session timestamp on its local calendar day', () => {
+    // Kurz nach Mitternacht Ortszeit - in UTC kann das noch der Vortag sein.
+    const completedAt = new Date(2026, 9, 6, 0, 30).toISOString();
+
+    expect(
+      doneDayOf({ planEntryId: 'p1', source: 'session', sourceId: 's1', done: true, doneAt: completedAt }),
+    ).toBe('2026-10-06');
+  });
+
+  it('has no day while not done', () => {
+    expect(doneDayOf({ planEntryId: 'p1', source: 'session', sourceId: 's1', done: false })).toBeUndefined();
   });
 });
 

@@ -105,11 +105,16 @@ export function RunLogSheet({ open, run, initialPlanEntryId, onClose }: RunLogSh
     [open, form.date, run?.id],
   );
   const options = planOptions ?? [];
-  const autoPlanEntryId =
-    run?.planEntryId ??
-    initialPlanEntryId ??
-    findMatchingPlanEntry(options, { kind: 'run', day: form.date, takenIds: new Set() })?.id ??
-    '';
+  /*
+   * Ein neuer Lauf wählt über dieselbe Regel vor wie ein Sessionstart. Beim
+   * Bearbeiten steht nur, was der Lauf schon trägt: eine Zuordnung, die beim
+   * Korrigieren eines Tippfehlers still entsteht, hat niemand gewählt.
+   */
+  const autoPlanEntryId = run
+    ? (run.planEntryId ?? '')
+    : (initialPlanEntryId ??
+      findMatchingPlanEntry(options, { kind: 'run', day: form.date, takenIds: new Set() })?.id ??
+      '');
   const wantedPlanEntryId = manualPlanEntryId ?? autoPlanEntryId;
   // Ein Verweis auf einen Termin, den es hier nicht (mehr) zur Wahl gibt, wäre im Select unsichtbar.
   const planEntryId = options.some((entry) => entry.id === wantedPlanEntryId) ? wantedPlanEntryId : '';
@@ -130,7 +135,8 @@ export function RunLogSheet({ open, run, initialPlanEntryId, onClose }: RunLogSh
   const durationError = durationTouched ? errors.hours : undefined;
 
   async function handleSave() {
-    if (!values || isSaving) {
+    // Solange die Termine laden, stünde im Select eine Vorwahl, die noch keine ist.
+    if (!values || isSaving || planOptions === undefined) {
       return;
     }
 
@@ -138,13 +144,19 @@ export function RunLogSheet({ open, run, initialPlanEntryId, onClose }: RunLogSh
     setSaveError(null);
 
     try {
-      // `null` löst den Verweis, `''` hieße in den Actions "nicht anfassen".
-      const input = { ...values, planEntryId: planEntryId || null };
-
       if (run) {
-        await updateRunLog(run.id, input);
+        /*
+         * Der Verweis geht nur mit, wenn die Auswahl von Hand geändert wurde -
+         * sonst fehlt der Schlüssel und `updateRunLog` lässt ihn stehen. Ein
+         * Termin, der hier gerade nicht zur Wahl steht, würde sonst still gelöst.
+         */
+        await updateRunLog(
+          run.id,
+          manualPlanEntryId !== undefined ? { ...values, planEntryId: planEntryId || null } : values,
+        );
       } else {
-        await createRunLog(input);
+        // `null` heißt "kein Termin", `''` hieße in den Actions "nicht anfassen".
+        await createRunLog({ ...values, planEntryId: planEntryId || null });
       }
       onClose();
     } catch (error) {
@@ -174,7 +186,7 @@ export function RunLogSheet({ open, run, initialPlanEntryId, onClose }: RunLogSh
             variant="primary"
             fullWidth
             className="min-h-[3.875rem]"
-            disabled={!values || isSaving}
+            disabled={!values || isSaving || planOptions === undefined}
             onClick={() => void handleSave()}
           >
             Lauf speichern

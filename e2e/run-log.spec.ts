@@ -159,3 +159,97 @@ test.describe('Lauf-Sheet und Termine', () => {
     ).toHaveAttribute('data-plan-entry-state', 'erledigt');
   });
 });
+
+test.describe('Lauf bearbeiten und Termine', () => {
+  async function addTodayRunEntry(page: Page, title: string) {
+    await page.goto('./#/programs');
+    await page.waitForTimeout(1000);
+    await page.getByRole('button', { name: 'Termin hinzufügen' }).click();
+
+    const sheet = page.locator('[data-sheet]');
+    await sheet.getByRole('button', { name: 'Lauf', exact: true }).click();
+    await sheet.getByLabel('Titel').fill(title);
+    await sheet.getByRole('button', { name: 'Termin speichern' }).click();
+    await expect(sheet).toHaveCount(0);
+  }
+
+  async function editRunHeartRate(page: Page, heartRate: string, planChoice?: string) {
+    await page.goto('./#/history');
+    await page.locator('a[href^="#/runs/"]').first().click();
+    await page.getByRole('button', { name: 'Bearbeiten' }).click();
+
+    const sheet = page.locator('[data-sheet]');
+    await expect(sheet.locator('[data-run-plan]')).toBeVisible();
+
+    if (planChoice !== undefined) {
+      await sheet.locator('[data-run-plan]').selectOption({ label: planChoice });
+    }
+
+    await sheet.getByLabel('Ø Puls (bpm)').fill(heartRate);
+    await sheet.getByRole('button', { name: 'Lauf speichern' }).click();
+    await expect(sheet).toHaveCount(0);
+  }
+
+  async function entryState(page: Page, title: string) {
+    await page.goto('./#/programs');
+    await page.waitForTimeout(1000);
+
+    return page.locator('[data-plan-entry]').filter({ hasText: title });
+  }
+
+  test.beforeEach(async ({ page }) => {
+    await resetDatabase(page);
+  });
+
+  test('Bearbeiten eines unverknüpften Laufs verknüpft ihn nicht', async ({ page }) => {
+    // Erst der Lauf, dann der Termin: der Lauf hängt an nichts.
+    await page.goto('./');
+    await enterRunFromHome(page, '10', '52');
+    await addTodayRunEntry(page, 'Dauerlauf');
+
+    await page.goto('./#/history');
+    await page.locator('a[href^="#/runs/"]').first().click();
+    await page.getByRole('button', { name: 'Bearbeiten' }).click();
+    const sheet = page.locator('[data-sheet]');
+    // Der offene Termin steht zur Wahl, vorgewählt ist er nicht.
+    await expect(sheet.locator('[data-run-plan] option:checked')).toHaveText('Keiner');
+    await sheet.getByLabel('Ø Puls (bpm)').fill('150');
+    await sheet.getByRole('button', { name: 'Lauf speichern' }).click();
+    await expect(sheet).toHaveCount(0);
+
+    await expect(await entryState(page, 'Dauerlauf')).toHaveAttribute('data-plan-entry-state', 'offen');
+  });
+
+  test('Bearbeiten eines verknüpften Laufs behält den Verweis', async ({ page }) => {
+    await addTodayRunEntry(page, 'Intervalle');
+
+    await page.goto('./');
+    await page.waitForTimeout(800);
+    await page.getByRole('button', { name: /Heute · Intervalle/ }).click();
+    const sheet = page.locator('[data-sheet]');
+    await expect(sheet.locator('[data-run-plan] option:checked')).toContainText('Intervalle');
+    await sheet.getByLabel('Strecke (km)').fill('7');
+    await sheet.getByLabel('Min', { exact: true }).fill('35');
+    await sheet.getByRole('button', { name: 'Lauf speichern' }).click();
+    await expect(sheet).toHaveCount(0);
+
+    await editRunHeartRate(page, '150');
+    await expect(await entryState(page, 'Intervalle')).toHaveAttribute(
+      'data-plan-entry-state',
+      'erledigt',
+    );
+
+    // Von Hand gelöst ist gelöst.
+    await editRunHeartRate(page, '152', 'Keiner');
+    await expect(await entryState(page, 'Intervalle')).toHaveAttribute('data-plan-entry-state', 'offen');
+  });
+});
+
+async function enterRunFromHome(page: Page, km: string, min: string) {
+  await page.getByRole('button', { name: 'Lauf eintragen' }).click();
+  const sheet = page.locator('[data-sheet]');
+  await sheet.getByLabel('Strecke (km)').fill(km);
+  await sheet.getByLabel('Min', { exact: true }).fill(min);
+  await sheet.getByRole('button', { name: 'Lauf speichern' }).click();
+  await expect(sheet).toHaveCount(0);
+}

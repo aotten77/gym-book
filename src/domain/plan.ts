@@ -191,9 +191,11 @@ export function toPlanEntryFields(
     if (values.targetPaceSecondsPerKm !== null) {
       fields.targetPaceSecondsPerKm = values.targetPaceSecondsPerKm;
     }
+
+    // Eine Anleitung gibt es nur am Lauf - an einem Workout zeigt sie niemand an.
+    if (instructions) fields.instructions = instructions;
   }
 
-  if (instructions) fields.instructions = instructions;
   if (notes) fields.notes = notes;
 
   return fields;
@@ -263,6 +265,26 @@ export function buildPlanLinks(
   }
 
   return links;
+}
+
+/**
+ * Der Kalendertag, an dem ein Termin erledigt wurde - die eine Regel dafür,
+ * für Raster und Sheet. Läufe tragen schon den Tag (`YYYY-MM-DD`, durch
+ * `new Date` gelesen wäre das UTC-Mitternacht und westlich von Greenwich der
+ * Vortag), Sessions einen Zeitstempel, der auf den lokalen Tag fällt.
+ */
+export function doneDayOf(link: PlanEntryLink): string | undefined {
+  if (!link.done || !link.doneAt) {
+    return undefined;
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(link.doneAt)) {
+    return isValidLocalDate(link.doneAt) ? link.doneAt : undefined;
+  }
+
+  const at = new Date(link.doneAt);
+
+  return Number.isNaN(at.getTime()) ? undefined : toDateInputValue(at);
 }
 
 export type PlanEntryState = 'offen' | 'belegt' | 'erledigt';

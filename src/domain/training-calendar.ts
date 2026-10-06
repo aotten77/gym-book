@@ -1,6 +1,6 @@
 import { parseLocalDate, startOfCalendarWeek } from '@/domain/calendar-week';
 import type { PlanEntry, ProgramWeek } from '@/domain/models';
-import { planEntryName, planEntryState, type PlanEntryLink } from '@/domain/plan';
+import { doneDayOf, planEntryName, planEntryState, type PlanEntryLink } from '@/domain/plan';
 import { toDateInputValue } from '@/domain/program';
 
 /**
@@ -217,21 +217,6 @@ export function countWeekProgress(row: CalendarWeekRow): { planned: number; done
   }
 
   return { planned, done };
-}
-
-/** Der Kalendertag, an dem ein Termin erledigt wurde: Läufe tragen schon den Tag, Sessions einen Zeitstempel. */
-function doneDayOf(link: PlanEntryLink): string | undefined {
-  if (!link.done || !link.doneAt) {
-    return undefined;
-  }
-
-  if (/^\d{4}-\d{2}-\d{2}$/.test(link.doneAt)) {
-    return link.doneAt;
-  }
-
-  const at = new Date(link.doneAt);
-
-  return Number.isNaN(at.getTime()) ? undefined : toDateInputValue(at);
 }
 
 export function buildTrainingCalendar({

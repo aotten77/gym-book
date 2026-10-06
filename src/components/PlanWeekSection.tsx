@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Dumbbell } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Empty } from '@/components/Empty';
 import { PlanEntrySheet } from '@/components/PlanEntrySheet';
@@ -8,6 +9,7 @@ import { RunIcon } from '@/components/icons/RunIcon';
 import { Button, IconButton } from '@/components/ui/Button';
 import { DoneRow } from '@/components/ui/StatusCard';
 import { db } from '@/db/appDb';
+import { countTemplatesWithWeekdays } from '@/db/data-fix-actions';
 import { movePlanEntryInDay } from '@/db/plan-actions';
 import { loadPlanBetween } from '@/db/plan-queries';
 import type { PlanEntry } from '@/domain/models';
@@ -38,6 +40,8 @@ export function PlanWeekSection({ weekStart, onShiftWeek }: PlanWeekSectionProps
   const fromDay = toDateInputValue(weekStart);
   const toDay = toDateInputValue(weekEnd(weekStart));
   const todayKey = toDateInputValue(new Date());
+  // Heute, wenn es in der Woche liegt, sonst deren Montag - für Termin *und*
+  // Serie: eine Serie ab Montag legte mittwochs zwei Termine in die Vergangenheit.
   const defaultDate = todayKey >= fromDay && todayKey <= toDay ? todayKey : fromDay;
 
   const [editing, setEditing] = useState<PlanEntry | undefined>(undefined);
@@ -55,6 +59,14 @@ export function PlanWeekSection({ weekStart, onShiftWeek }: PlanWeekSectionProps
       }, {}),
     [templates],
   );
+
+  /*
+   * Solange ein Workout noch feste Wochentage trägt, fehlen deren Termine hier -
+   * die Umwandlung ist eine Datenkorrektur in den Einstellungen, kein `upgrade()`.
+   * Ohne diesen Hinweis sähe ein leerer Plan aus wie "nichts geplant".
+   */
+  const templatesWithWeekdays = useLiveQuery(() => countTemplatesWithWeekdays(), []);
+  const hasUnmigratedWeekdays = (templatesWithWeekdays ?? 0) > 0;
 
   const entries = plan?.entries ?? [];
   const links = plan?.links ?? {};
@@ -105,6 +117,19 @@ export function PlanWeekSection({ weekStart, onShiftWeek }: PlanWeekSectionProps
           </IconButton>
         ) : null}
       </div>
+
+      {hasUnmigratedWeekdays ? (
+        <Link
+          to="/settings"
+          data-plan-weekday-hint=""
+          className="min-h-touch flex items-center justify-between gap-3 rounded-panel border border-line bg-surface px-4 py-3 text-sm text-content-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        >
+          <span className="min-w-0">
+            Feste Wochentage noch nicht umgewandelt – in den Einstellungen umwandeln
+          </span>
+          <ChevronRight size={18} className="shrink-0 text-content-muted" aria-hidden="true" />
+        </Link>
+      ) : null}
 
       {entries.length === 0 ? (
         <Empty
@@ -210,7 +235,7 @@ export function PlanWeekSection({ weekStart, onShiftWeek }: PlanWeekSectionProps
       />
       <PlanSeriesSheet
         open={seriesOpen}
-        defaultStartDate={fromDay}
+        defaultStartDate={defaultDate}
         onClose={() => setSeriesOpen(false)}
       />
     </section>

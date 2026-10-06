@@ -5,6 +5,8 @@ import {
   parsePaceInput,
   readPlanEntryForm,
   toPlanEntryFormState,
+  visiblePlanEntryError,
+  type PlanEntryFormField,
   type PlanEntryFormState,
 } from '@/domain/plan-entry-form';
 
@@ -45,6 +47,26 @@ describe('readPlanEntryForm', () => {
     expect(read({ minutes: '75' }).errors.minutes).toBe('0–59');
   });
 
+  it('Dauer 0/0/0 ist ein Fehler am Stundenfeld', () => {
+    const result = read({ hours: '0', minutes: '0', seconds: '0' });
+
+    expect(result.errors.hours).toBe(PLAN_MESSAGES.duration);
+    expect(result.values).toBeUndefined();
+  });
+
+  it('Anleitung nur am Lauf', () => {
+    const run = read({ instructions: ' - 2 km einlaufen ' });
+    const workout = readPlanEntryForm({
+      ...runBase,
+      kind: 'workout',
+      templateId: 'A',
+      instructions: '- 2 km einlaufen',
+    });
+
+    expect(run.values?.instructions).toBe('- 2 km einlaufen');
+    expect(workout.values?.instructions).toBeNull();
+  });
+
   it('Pace ungültig', () => {
     const result = read({ pace: '5:75' });
 
@@ -77,5 +99,24 @@ describe('toPlanEntryFormState', () => {
     expect(state.pace).toBe('5:30');
     expect(state.distance).toBe('7,5');
     expect(state.kind).toBe('run');
+  });
+});
+
+describe('visiblePlanEntryError', () => {
+  const errors = readPlanEntryForm({ ...runBase, hours: '', minutes: '0', seconds: '0' }).errors;
+  const touched = (...fields: PlanEntryFormField[]) => new Set<PlanEntryFormField>(fields);
+
+  it('zeigt den Dauerfehler, sobald irgendein Dauerfeld berührt ist', () => {
+    expect(errors.hours).toBe(PLAN_MESSAGES.duration);
+    expect(visiblePlanEntryError(errors, touched(), 'hours')).toBeUndefined();
+    expect(visiblePlanEntryError(errors, touched('minutes'), 'hours')).toBe(PLAN_MESSAGES.duration);
+    expect(visiblePlanEntryError(errors, touched('seconds'), 'hours')).toBe(PLAN_MESSAGES.duration);
+  });
+
+  it('andere Felder erst, wenn sie selbst berührt sind', () => {
+    const paceErrors = read({ pace: '5:75' }).errors;
+
+    expect(visiblePlanEntryError(paceErrors, touched('title'), 'pace')).toBeUndefined();
+    expect(visiblePlanEntryError(paceErrors, touched('pace'), 'pace')).toBe('Pace bitte als m:ss, z. B. 5:30.');
   });
 });

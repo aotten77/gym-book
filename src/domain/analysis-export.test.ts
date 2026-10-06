@@ -625,7 +625,7 @@ describe('buildAnalysisPasteText', () => {
     expect(text.match(/```csv/g)).toHaveLength(6);
   });
 
-  it('trägt den Inhalt aller sechs Dateien', () => {
+  it('trägt den Inhalt aller sieben Dateien', () => {
     const files = build({
       sessions: [session({ id: 's1' })],
       sessionExercises: [sessionExercise({ id: 'e1', sessionId: 's1' })],

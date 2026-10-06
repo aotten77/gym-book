@@ -12,14 +12,14 @@ import { db } from '@/db/appDb';
 import { createPlanEntry, deletePlanEntry, updatePlanEntry } from '@/db/plan-actions';
 import { loadPlanBetween } from '@/db/plan-queries';
 import type { PlanEntry } from '@/domain/models';
-import { planEntryName } from '@/domain/plan';
+import { doneDayOf, planEntryName } from '@/domain/plan';
 import {
   readPlanEntryForm,
   toPlanEntryFormState,
+  visiblePlanEntryError,
   type PlanEntryFormField,
   type PlanEntryFormState,
 } from '@/domain/plan-entry-form';
-import { toDateInputValue } from '@/domain/program';
 import { formatRunDate } from '@/lib/format';
 
 interface PlanEntrySheetProps {
@@ -45,10 +45,18 @@ export function PlanEntrySheet({ open, entry, defaultDate, onClose }: PlanEntryS
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const templates = useLiveQuery(() => db.workoutTemplates.toArray(), []);
-  const entryPlan = useLiveQuery(
-    () => (entry ? loadPlanBetween(entry.date, entry.date) : Promise.resolve(undefined)),
+  /*
+   * Das Ergebnis trägt die Id, für die es geladen wurde: beim Wechsel des
+   * Termins liefert `useLiveQuery` bis zur neuen Antwort noch die alte.
+   */
+  const loadedPlan = useLiveQuery(
+    async () =>
+      entry
+        ? { entryId: entry.id, plan: await loadPlanBetween(entry.date, entry.date) }
+        : undefined,
     [entry?.id, entry?.date],
   );
+  const entryPlan = entry && loadedPlan?.entryId === entry.id ? loadedPlan.plan : undefined;
   const link = entry ? entryPlan?.links[entry.id] : undefined;
 
   // Bei jedem Öffnen frisch: ein abgebrochener Entwurf bleibt nicht hängen.
@@ -86,7 +94,7 @@ export function PlanEntrySheet({ open, entry, defaultDate, onClose }: PlanEntryS
 
   const touch = (field: PlanEntryFormField) =>
     setTouched((current) => new Set(current).add(field));
-  const errorFor = (field: PlanEntryFormField) => (touched.has(field) ? errors[field] : undefined);
+  const errorFor = (field: PlanEntryFormField) => visiblePlanEntryError(errors, touched, field);
 
   async function handleSave() {
     if (!values || isSaving) {
@@ -134,8 +142,26 @@ export function PlanEntrySheet({ open, entry, defaultDate, onClose }: PlanEntryS
   const title = entry ? 'Termin bearbeiten' : 'Termin hinzufügen';
   const header = <h2 className="font-display text-xl font-bold text-content">{title}</h2>;
 
+  /*
+   * Ein bestehender Termin wartet auf seine Verweise: ohne sie stünde für einen
+   * Augenblick das bearbeitbare Formular da, auch wenn er längst trainiert ist.
+   */
+  if (entry && entryPlan === undefined) {
+    return null;
+  }
+
   if (entry && link) {
-    const doneDay = link.doneAt ? formatRunDate(toDateInputValue(new Date(link.doneAt))) : undefined;
+    const doneDay = doneDayOf(link);
+    /*
+     * Eine laufende Session führt in die Session, nicht in den Verlauf - dort
+     * steht sie erst, wenn sie abgeschlossen ist.
+     */
+    const target =
+      link.source === 'run'
+        ? `/runs/${link.sourceId}`
+        : link.done
+          ? `/history/session/${link.sourceId}`
+          : `/session/${link.sourceId}`;
 
     return (
       <Sheet open={open} label={title} closeLabel="Termin schließen" header={header} onClose={onClose}>
@@ -144,10 +170,10 @@ export function PlanEntrySheet({ open, entry, defaultDate, onClose }: PlanEntryS
             {planEntryName(entry, templateNames, entryPlan?.links ?? {})}
           </p>
           <p className="text-sm text-content-secondary">
-            {link.done ? `Erledigt am ${doneDay ?? formatRunDate(entry.date)}` : 'Läuft gerade'}
+            {link.done ? `Erledigt am ${formatRunDate(doneDay ?? entry.date)}` : 'Läuft gerade'}
           </p>
           <Link
-            to={link.source === 'session' ? `/history/session/${link.sourceId}` : `/runs/${link.sourceId}`}
+            to={target}
             className="min-h-touch inline-flex items-center rounded-control border border-line px-4 py-2 text-sm font-semibold text-content hover:bg-surface-raised"
           >
             {link.source === 'session' ? 'Zur Session' : 'Zum Lauf'}

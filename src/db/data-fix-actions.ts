@@ -63,6 +63,17 @@ async function findSessionsWithoutCategory() {
     .toArray();
 }
 
+/**
+ * Wie viele Workouts noch feste Wochentage tragen - "Umwandlung steht aus".
+ * Eigene Funktion, damit der Hinweis im Programm-Tab dieselbe Frage stellt
+ * wie die Einstellungen und `scheduledWeekdays` keinen dritten Leser bekommt.
+ */
+export async function countTemplatesWithWeekdays(): Promise<number> {
+  return (await db.workoutTemplates.toArray()).filter(
+    (template) => normalizeScheduledWeekdays(template.scheduledWeekdays) !== undefined,
+  ).length;
+}
+
 export async function describeDataFixes(): Promise<DataFixStatus> {
   const nordicCurls = await findNordicCurlExercises();
   const onTime = nordicCurls.filter((exercise) => exercise.trackingMode === 'time');
@@ -92,9 +103,7 @@ export async function describeDataFixes(): Promise<DataFixStatus> {
     nordicCurlOnTime: onTime.length,
     nordicCurlSecondsLogs: secondsLogs,
     sessionsWithoutCategory: (await findSessionsWithoutCategory()).length,
-    templatesWithWeekdays: (await db.workoutTemplates.toArray()).filter(
-      (template) => normalizeScheduledWeekdays(template.scheduledWeekdays) !== undefined,
-    ).length,
+    templatesWithWeekdays: await countTemplatesWithWeekdays(),
     hasWeekOverride: typeof settings?.weekOverride === 'number',
     weekOverride: settings?.weekOverride,
     activeProgramId: program?.id,

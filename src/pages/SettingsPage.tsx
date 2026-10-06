@@ -1207,9 +1207,11 @@ export function SettingsPage() {
               weekdaysPreview?.needsWeeks ? weekdaysWeeks : undefined,
             );
 
+            const created = `${formatNumber(result.created)} ${result.created === 1 ? 'Termin' : 'Termine'} angelegt`;
+
             return result.skipped > 0
-              ? `${formatNumber(result.created)} Termine angelegt, ${formatNumber(result.skipped)} standen schon im Plan.`
-              : `${formatNumber(result.created)} Termine angelegt.`;
+              ? `${created}, ${formatNumber(result.skipped)} ${result.skipped === 1 ? 'stand' : 'standen'} schon im Plan.`
+              : `${created}.`;
           })
         }
         onCancel={() => setShowWeekdaysDialog(false)}

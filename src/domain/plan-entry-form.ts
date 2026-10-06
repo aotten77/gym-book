@@ -84,6 +84,27 @@ export function toPlanEntryFormState(
 
 type Errors = Partial<Record<PlanEntryFormField, string>>;
 
+const DURATION_FIELDS: readonly PlanEntryFormField[] = ["hours", "minutes", "seconds"];
+
+/**
+ * Der sichtbare Fehler eines Feldes: erst, wenn es berührt wurde. `hours`
+ * trägt zusätzlich den Fehler der *ganzen* Dauer (`PLAN_MESSAGES.duration`)
+ * und zeigt ihn, sobald eines der drei Dauerfelder berührt ist - wer nur
+ * Minuten und Sekunden auf 0 setzt, fasst das Stundenfeld nie an.
+ */
+export function visiblePlanEntryError(
+  errors: Errors,
+  touched: ReadonlySet<PlanEntryFormField>,
+  field: PlanEntryFormField,
+): string | undefined {
+  const isTouched =
+    field === "hours"
+      ? DURATION_FIELDS.some((part) => touched.has(part))
+      : touched.has(field);
+
+  return isTouched ? errors[field] : undefined;
+}
+
 /** Ein Dauerfeld: leer zählt als 0, sonst eine ganze Zahl (ggf. unter dem Limit). */
 function readDurationPart(
   raw: string,
@@ -207,7 +228,8 @@ export function readPlanEntryForm(state: PlanEntryFormState): {
     targetElevationGainM,
     targetAverageHeartRate,
     targetPaceSecondsPerKm,
-    instructions: instructions || null,
+    // Eine Anleitung gibt es nur am Lauf; nach dem Wechsel Lauf → Workout bliebe sie unsichtbar stehen.
+    instructions: kind === "run" ? instructions || null : null,
     notes: notes || null,
   };
 
