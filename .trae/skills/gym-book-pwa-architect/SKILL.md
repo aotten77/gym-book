@@ -155,11 +155,20 @@ Recommended set log shape:
 
 ## Runs
 
-- A run is its own table (`runLogs`), one row per run: local calendar day, distance, duration, optional elevation gain, optional average heart rate, optional notes. It has no sets and no session machinery — no materialization, no timers, no snapshots.
+- A run is its own table (`runLogs`), one row per run: local calendar day, distance, duration, optional elevation gain, optional average heart rate, optional notes. It has no sets and no session machinery — no materialization, no timers, no set snapshots. Its one snapshot is `runPlanSnapshot`, what the plan entry it fulfils prescribed.
 - Pace is derived from distance and duration and never stored.
 - Unlike a completed session, a run stays editable and deletable: it is one row of numbers copied off a watch, and a typo should be correctable.
 - The date is a local calendar day (`YYYY-MM-DD`), not a timestamp.
 - The app invents no heart-rate formulas: no zones, no maximum-pulse estimate, no training load. It stores the number the user entered.
+
+## The dated plan
+
+- Training is planned as single dated entries (`planEntries`): a local calendar day, an order within the day, and either a workout or a run prescription (title plus optional distance, duration, elevation, heart rate, pace and instructions). Several entries per day are fine; the same workout or run title only once per day.
+- A series is a **copy, not a rule**: creating one writes individual entries and is done. No recurring weekday schedule, no rule that generates future entries, no automatic rescheduling of a missed day — that would be a second plan source and the automation v1 excludes.
+- Whether an entry is open, taken or done is **derived** from the sessions and runs that point at it (`planEntryId`), never stored on the entry. An aborted session takes nothing.
+- A taken entry is history: it cannot be changed, deleted or moved.
+- The link is made when a session starts or a run is saved — today's open matching entry first, else the earliest open one of the current calendar week. The program week still comes from `resolveWeekControl`; an entry never chooses it, and `materializeSession` knows nothing of the plan.
+- Sessions keep `planDateSnapshot`, runs `runPlanSnapshot`, so history stays readable after an entry changes or goes.
 
 ## v1 Scope
 
@@ -178,6 +187,7 @@ Must include:
 - tests with left/right values and asymmetry
 - export/import backup
 - run logging (distance, duration, elevation, average heart rate)
+- dated training plan (single entries for workouts and runs, series as copies)
 - installable PWA behavior on GitHub Pages
 
 Must exclude:
@@ -188,6 +198,7 @@ Must exclude:
 - video upload
 - complex adaptive progression systems
 - deload automation
+- recurring plan rules or automatic rescheduling
 - semantic conflict resolution
 
 ## Implementation Guidance
