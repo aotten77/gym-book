@@ -7,12 +7,14 @@ import {
 import type {
   Exercise,
   ExerciseTest,
+  PlanEntry,
   RunLog,
   Side,
   TrackingMode,
   WorkoutSession,
   WorkoutSessionExercise,
   WorkoutSetLog,
+  WorkoutTemplate,
 } from '@/domain/models';
 import type { WeekControl } from '@/domain/program';
 
@@ -91,6 +93,8 @@ function build(input: Partial<AnalysisExportInput>) {
     bandLevels: [],
     tests: [],
     runs: [],
+    planEntries: [],
+    templates: [],
     weekControl,
     ...input,
   });
@@ -617,8 +621,8 @@ describe('buildAnalysisPasteText', () => {
 
     expect(text.startsWith('# Gym Book Analyse-Export 2026-08-28')).toBe(true);
     expect(text).toContain('```json');
-    // Fünfmal csv-Rahmen: sessions, progression, tests, wochen und laeufe.
-    expect(text.match(/```csv/g)).toHaveLength(5);
+    // Sechsmal csv-Rahmen: sessions, progression, tests, wochen, laeufe und plan.
+    expect(text.match(/```csv/g)).toHaveLength(6);
   });
 
   it('trägt den Inhalt aller sechs Dateien', () => {
@@ -636,6 +640,7 @@ describe('buildAnalysisPasteText', () => {
       files.testsCsv,
       files.weeksCsv,
       files.runsCsv,
+      files.planCsv,
       files.metaJson,
     ]) {
       expect(text).toContain(content.trimEnd());
@@ -743,9 +748,11 @@ describe('Läufe und Wochensummen', () => {
       'hoehenmeter',
       'puls_avg',
       'notiz',
+      'geplant_am',
+      'plan_titel',
     ]);
     expect(rows).toHaveLength(2);
-    expect(rows[0]).toEqual(['2026-10-04', 'So', '10', '3120', '312', '', '', '']);
+    expect(rows[0]).toEqual(['2026-10-04', 'So', '10', '3120', '312', '', '', '', '', '']);
     expect(rows[1][0]).toBe('2026-10-01');
   });
 
@@ -818,9 +825,9 @@ describe('Läufe und Wochensummen', () => {
     });
     const { columns, rows } = parseCsv(files.sessionsCsv);
 
-    expect(columns[columns.length - 1]).toBe('art');
+    expect(columns.slice(-2)).toEqual(['art', 'geplant_am']);
     expect(columns.slice(0, 7)).toHaveLength(7);
-    expect(rows.map((row) => row[row.length - 1])).toEqual(['kraft', 'mobility']);
+    expect(rows.map((row) => row[row.length - 2])).toEqual(['kraft', 'mobility']);
   });
 
   it('meta.json: Zeitraum über Sessions und Läufe', () => {
@@ -840,7 +847,7 @@ describe('Läufe und Wochensummen', () => {
 
   it('Zwischenablage: wochen.csv und laeufe.csv nach tests.csv', () => {
     const text = buildAnalysisPasteText(build({}), new Date('2026-08-28T09:00:00'));
-    const order = ['meta.json', 'sessions.csv', 'progression.csv', 'tests.csv', 'wochen.csv', 'laeufe.csv'].map(
+    const order = ['meta.json', 'sessions.csv', 'progression.csv', 'tests.csv', 'wochen.csv', 'laeufe.csv', 'plan.csv'].map(
       (name) => text.indexOf(`## ${name}`),
     );
 
@@ -853,5 +860,141 @@ describe('Läufe und Wochensummen', () => {
 
     expect(files.runsCsv.trimEnd().split('\n')).toHaveLength(1);
     expect(files.weeksCsv.trimEnd().split('\n')).toHaveLength(1);
+  });
+});
+
+function template(overrides: Partial<WorkoutTemplate> & { id: string; name: string }): WorkoutTemplate {
+  return {
+    createdAt: '2026-08-01T10:00:00.000Z',
+    updatedAt: '2026-08-01T10:00:00.000Z',
+    ...overrides,
+  } as WorkoutTemplate;
+}
+
+function planEntry(overrides: Partial<PlanEntry> & { id: string }): PlanEntry {
+  return {
+    date: '2026-08-26',
+    orderInDay: 1,
+    kind: 'workout',
+    createdAt: '2026-08-01T10:00:00.000Z',
+    updatedAt: '2026-08-01T10:00:00.000Z',
+    ...overrides,
+  };
+}
+
+describe('Plandaten', () => {
+  const planColumns = [
+    'datum',
+    'reihenfolge',
+    'art',
+    'name',
+    'soll_km',
+    'soll_dauer_min',
+    'soll_hm',
+    'soll_puls',
+    'soll_pace',
+    'notiz',
+    'status',
+  ];
+
+  function planBuild() {
+    return build({
+      exportedAt: new Date('2026-08-26T09:00:00'),
+      templates: [
+        template({ id: 't-a', name: 'Einheit A' }),
+        template({ id: 't-m', name: 'Mobility', category: 'mobility' }),
+      ],
+      planEntries: [
+        planEntry({ id: 'p-future', date: '2026-09-01', templateId: 't-m' }),
+        planEntry({ id: 'p-done', date: '2026-08-20', templateId: 't-a' }),
+        planEntry({ id: 'p-past', date: '2026-08-22', templateId: 't-a', notes: 'locker' }),
+        planEntry({
+          id: 'p-run',
+          date: '2026-08-26',
+          orderInDay: 2,
+          kind: 'run',
+          title: 'Intervalle',
+          targetDistanceKm: 8.5,
+          targetDurationSeconds: 2700,
+          targetElevationGainM: 120,
+          targetAverageHeartRate: 145,
+          targetPaceSecondsPerKm: 330,
+        }),
+      ],
+      sessions: [
+        session({ id: 's1', planEntryId: 'p-done', planDateSnapshot: '2026-08-20' }),
+      ],
+      sessionExercises: [sessionExercise({ id: 'e1', sessionId: 's1' })],
+      setLogs: [setLog({ id: 'l1', sessionExerciseId: 'e1', weight: 40, reps: 5 })],
+    });
+  }
+
+  it('plan.csv: Kopfzeile wörtlich', () => {
+    expect(planBuild().planCsv.split('\n')[0]).toBe(
+      'datum,reihenfolge,art,name,soll_km,soll_dauer_min,soll_hm,soll_puls,soll_pace,notiz,status',
+    );
+    expect(parseCsv(planBuild().planCsv).columns).toEqual(planColumns);
+  });
+
+  it('plan.csv: alle Termine nach Datum, mit Status und Art', () => {
+    const { rows } = parseCsv(planBuild().planCsv);
+
+    expect(rows.map((row) => [row[0], row[2], row[3], row[10]])).toEqual([
+      ['2026-08-20', 'kraft', 'Einheit A', 'erledigt'],
+      ['2026-08-22', 'kraft', 'Einheit A', 'verstrichen'],
+      ['2026-08-26', 'lauf', 'Intervalle', 'offen'],
+      ['2026-09-01', 'mobility', 'Mobility', 'offen'],
+    ]);
+    expect(rows[1][9]).toBe('locker');
+  });
+
+  it('plan.csv: Lauf-Termin mit Sollwerten, Pace als m:ss', () => {
+    const run = parseCsv(planBuild().planCsv).rows[2];
+
+    expect(run.slice(1)).toEqual(['2', 'lauf', 'Intervalle', '8.5', '45', '120', '145', '5:30', '', 'offen']);
+  });
+
+  it('sessions.csv und laeufe.csv: Planspalten zuletzt', () => {
+    const files = build({
+      sessions: [session({ id: 's1', planDateSnapshot: '2026-08-24' }), session({ id: 's2', startedAt: '2026-08-26T17:00:00.000Z', completedAt: '2026-08-26T18:00:00.000Z' })],
+      sessionExercises: [
+        sessionExercise({ id: 'e1', sessionId: 's1' }),
+        sessionExercise({ id: 'e2', sessionId: 's2' }),
+      ],
+      setLogs: [
+        setLog({ id: 'l1', sessionExerciseId: 'e1', weight: 40, reps: 5 }),
+        setLog({ id: 'l2', sessionExerciseId: 'e2', weight: 40, reps: 5 }),
+      ],
+      runs: [
+        run({
+          id: 'r1',
+          runPlanSnapshot: { title: 'Dauerlauf', date: '2026-10-03' },
+        }),
+        run({ id: 'r2', date: '2026-10-01', createdAt: '2026-10-01T10:00:00.000Z' }),
+      ],
+    });
+    const sessions = parseCsv(files.sessionsCsv);
+    const runs = parseCsv(files.runsCsv);
+
+    expect(sessions.columns.slice(-1)).toEqual(['geplant_am']);
+    expect(sessions.rows.map((row) => row[row.length - 1])).toEqual(['2026-08-24', '']);
+    expect(runs.columns.slice(-2)).toEqual(['geplant_am', 'plan_titel']);
+    expect(runs.rows[0].slice(-2)).toEqual(['2026-10-03', 'Dauerlauf']);
+    expect(runs.rows[1].slice(-2)).toEqual(['', '']);
+  });
+
+  it('meta.json: plan-Zähler und Hinweis zu verstrichen', () => {
+    const meta = JSON.parse(planBuild().metaJson);
+
+    expect(meta.plan).toEqual({ anzahl: 4, erledigt: 1, offen: 2, verstrichen: 1 });
+    expect(meta.hinweise).toContain(
+      'verstrichen heißt: vergangen und keiner Session oder keinem Lauf zugeordnet – nicht zwingend ausgelassen.',
+    );
+  });
+
+  it('Zwischenablage: plan.csv steht nach laeufe.csv', () => {
+    const text = buildAnalysisPasteText(planBuild(), new Date('2026-08-26T09:00:00'));
+
+    expect(text.indexOf('## laeufe.csv')).toBeLessThan(text.indexOf('## plan.csv'));
   });
 });

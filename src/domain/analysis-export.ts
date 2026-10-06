@@ -4,6 +4,7 @@ import type {
   BandLevel,
   Exercise,
   ExerciseTest,
+  PlanEntry,
   Program,
   RunLog,
   Side,
@@ -11,9 +12,11 @@ import type {
   WorkoutSession,
   WorkoutSessionExercise,
   WorkoutSetLog,
+  WorkoutTemplate,
 } from '@/domain/models';
+import { buildPlanLinks, planEntryName, planEntryState, sortPlanEntries } from '@/domain/plan';
 import { toDateInputValue, type WeekControl } from '@/domain/program';
-import { paceSecondsPerKm } from '@/domain/run';
+import { formatPace, paceSecondsPerKm } from '@/domain/run';
 import { supportsReps } from '@/domain/tracking';
 import { isoWeekday, weekdayShortLabel } from '@/domain/training-calendar';
 import { sumWorkVolume } from '@/domain/volume';
@@ -104,6 +107,13 @@ export interface AnalysisExportInput {
   tests: ExerciseTest[];
   /** Die Läufe - Rohstoff für `laeufe.csv` und die Laufspalten von `wochen.csv`. */
   runs: RunLog[];
+  /**
+   * Alle Plan-Termine - auch künftige. Rohstoff für `plan.csv`; der Zeitraum in
+   * `meta.json` leitet sich aus Sessions ab und würde sie abschneiden.
+   */
+  planEntries: PlanEntry[];
+  /** Für Name und Art der Workout-Termine (`kraft` / `mobility`). */
+  templates: WorkoutTemplate[];
   /** Siehe [DEFAULT_REFERENCE_TEMPLATE_NAME]. */
   referenceTemplateName?: string;
 }
@@ -115,6 +125,7 @@ export interface AnalysisExportFiles {
   testsCsv: string;
   weeksCsv: string;
   runsCsv: string;
+  planCsv: string;
 }
 
 /** Was den Export einer Session verhindert hat - eine Zeile in `meta.json`. */
@@ -141,6 +152,8 @@ interface AnalysisRow {
   volumen?: number;
   uebersprungen: boolean;
   unvollstaendig: boolean;
+  /** Der Plan-Tag, an dem die Session stand (`planDateSnapshot`). */
+  geplantAm?: string;
   /** `kraft` oder `mobility` - Kraft auch bei fehlendem Snapshot. */
   art: 'kraft' | 'mobility';
   stundenSeitLetzterEinheit?: number;
@@ -340,6 +353,7 @@ const SESSION_COLUMNS = [
   'std_seit_letzter_einheit_b',
   // Zuletzt, damit bestehende Auswertungen ihre Spaltenpositionen behalten.
   'art',
+  'geplant_am',
 ];
 
 /**
@@ -518,6 +532,7 @@ export function buildAnalysisExport(input: AnalysisExportInput): AnalysisExportF
           volumen: volume > 0 ? volume : undefined,
           uebersprungen: exercise.wasSkipped,
           unvollstaendig: incomplete,
+          geplantAm: session.planDateSnapshot,
           art: resolveWorkoutCategory(session.templateCategorySnapshot) === 'mobility' ? 'mobility' : 'kraft',
           stundenSeitLetzterEinheit,
           stundenSeitReferenz,
@@ -544,6 +559,7 @@ export function buildAnalysisExport(input: AnalysisExportInput): AnalysisExportF
     testsCsv: buildTestsCsv(input.tests),
     weeksCsv: buildWeeksCsv(input, rows),
     runsCsv: buildRunsCsv(input.runs),
+    planCsv: buildPlanCsv(input),
     metaJson: buildMetaJson(input, {
       rows,
       discarded,
@@ -579,6 +595,7 @@ function buildSessionsCsv(rows: AnalysisRow[]): string {
         row.stundenSeitLetzterEinheit,
         row.stundenSeitReferenz,
         row.art,
+        row.geplantAm,
       ]),
     );
   }
@@ -697,6 +714,9 @@ const RUN_COLUMNS = [
   'hoehenmeter',
   'puls_avg',
   'notiz',
+  // Zuletzt, damit bestehende Auswertungen ihre Spaltenpositionen behalten.
+  'geplant_am',
+  'plan_titel',
 ];
 
 /**
@@ -724,6 +744,85 @@ function buildRunsCsv(runs: RunLog[]): string {
         run.elevationGainM,
         run.averageHeartRate,
         run.notes,
+        run.runPlanSnapshot?.date,
+        run.runPlanSnapshot?.title,
+      ]),
+    );
+  }
+
+  return `${lines.join('\n')}\n`;
+}
+
+const PLAN_COLUMNS = [
+  'datum',
+  'reihenfolge',
+  'art',
+  'name',
+  'soll_km',
+  'soll_dauer_min',
+  'soll_hm',
+  'soll_puls',
+  'soll_pace',
+  'notiz',
+  'status',
+];
+
+type PlanStatus = 'erledigt' | 'offen' | 'verstrichen';
+
+/**
+ * Status eines Termins: erledigt, sonst nach Datum. Ein belegter Termin (laufende
+ * Session) zählt wie ein unbelegter - er ist noch nicht trainiert.
+ */
+function planStatus(entry: PlanEntry, links: ReturnType<typeof buildPlanLinks>, today: string): PlanStatus {
+  if (planEntryState(entry.id, links) === 'erledigt') {
+    return 'erledigt';
+  }
+
+  return entry.date >= today ? 'offen' : 'verstrichen';
+}
+
+function planRows(input: AnalysisExportInput) {
+  const links = buildPlanLinks(input.sessions, input.runs);
+  const today = toDateInputValue(input.exportedAt);
+  const templateNames = Object.fromEntries(input.templates.map((item) => [item.id, item.name]));
+  const templatesById = new Map(input.templates.map((item) => [item.id, item]));
+
+  return sortPlanEntries(input.planEntries).map((entry) => {
+    const template = entry.templateId ? templatesById.get(entry.templateId) : undefined;
+    const art =
+      entry.kind === 'run'
+        ? 'lauf'
+        : resolveWorkoutCategory(template?.category) === 'mobility'
+          ? 'mobility'
+          : 'kraft';
+
+    return { entry, art, name: planEntryName(entry, templateNames, links), status: planStatus(entry, links, today) };
+  });
+}
+
+/**
+ * Alle Termine des Plans, auch künftige - das Planungsprojekt braucht gerade
+ * die. Nach Datum und Reihenfolge im Tag; `soll_*` nur bei Läufen gefüllt.
+ */
+function buildPlanCsv(input: AnalysisExportInput): string {
+  const lines = [PLAN_COLUMNS.join(CSV_SEPARATOR)];
+
+  for (const { entry, art, name, status } of planRows(input)) {
+    lines.push(
+      csvLine([
+        entry.date,
+        entry.orderInDay,
+        art,
+        name,
+        entry.targetDistanceKm,
+        entry.targetDurationSeconds === undefined
+          ? undefined
+          : Math.round((entry.targetDurationSeconds / 60) * 10) / 10,
+        entry.targetElevationGainM,
+        entry.targetAverageHeartRate,
+        entry.targetPaceSecondsPerKm === undefined ? undefined : formatPace(entry.targetPaceSecondsPerKm),
+        entry.notes,
+        status,
       ]),
     );
   }
@@ -873,9 +972,21 @@ function buildMetaJson(input: AnalysisExportInput, context: MetaContext): string
         .sort((left, right) => left.orderIndex - right.orderIndex)
         .map((band) => band.name),
       laeufe: { anzahl: input.runs.length },
+      plan: (() => {
+        const statuses = planRows(input).map((row) => row.status);
+        const count = (status: PlanStatus) => statuses.filter((item) => item === status).length;
+
+        return {
+          anzahl: statuses.length,
+          erledigt: count('erledigt'),
+          offen: count('offen'),
+          verstrichen: count('verstrichen'),
+        };
+      })(),
       hinweise: [
         'kraft_dauer_min ist die Session-Dauer von Start bis Abschluss, inklusive Pausen.',
         'wochen.csv zählt nur abgeschlossene Sessions; abgebrochene stehen in sessions.csv, aber nicht in den Wochensummen.',
+        'verstrichen heißt: vergangen und keiner Session oder keinem Lauf zugeordnet – nicht zwingend ausgelassen.',
       ],
       verworfeneSessions: context.discarded,
     },
@@ -940,6 +1051,12 @@ export function buildAnalysisPasteText(
     '',
     '```csv',
     files.runsCsv.trimEnd(),
+    '```',
+    '',
+    '## plan.csv',
+    '',
+    '```csv',
+    files.planCsv.trimEnd(),
     '```',
     '',
   ].join('\n');

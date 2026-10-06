@@ -755,7 +755,7 @@ export async function exportDatabaseSnapshot(options: ExportOptions = {}): Promi
 }
 
 /**
- * Die sechs Dateien und ihr Zeitstempel - gemeinsame Grundlage beider Wege
+ * Die sieben Dateien und ihr Zeitstempel - gemeinsame Grundlage beider Wege
  * nach draußen (Archiv und Zwischenablage).
  *
  * Ausdrücklich **keine Sicherung**, und das gilt für beide: hier fehlt
@@ -778,6 +778,8 @@ async function loadAnalysisFiles(): Promise<{ files: AnalysisExportFiles; export
     programWeeks,
     settings,
     runs,
+    planEntries,
+    templates,
   ] =
     await Promise.all([
       db.exercises.toArray(),
@@ -790,6 +792,8 @@ async function loadAnalysisFiles(): Promise<{ files: AnalysisExportFiles; export
       db.programWeeks.toArray(),
       db.appSettings.get('app-settings'),
       db.runLogs.toArray(),
+      db.planEntries.toArray(),
+      db.workoutTemplates.toArray(),
     ]);
 
   const program = settings?.activeProgramId
@@ -804,6 +808,8 @@ async function loadAnalysisFiles(): Promise<{ files: AnalysisExportFiles; export
     bandLevels,
     tests,
     runs,
+    planEntries,
+    templates,
     program,
     // Dieselbe Auflösung wie Start, Home und Einstellungen - die Rangfolge der
     // Woche hat genau eine Stelle, und der Export darf keine zweite werden.
@@ -818,7 +824,7 @@ async function loadAnalysisFiles(): Promise<{ files: AnalysisExportFiles; export
   return { files, exportedAt };
 }
 
-/** Der Analyse-Export als Archiv - sechs Dateien, ein Teilen-Vorgang. */
+/** Der Analyse-Export als Archiv - sieben Dateien, ein Teilen-Vorgang. */
 export async function exportAnalysisSnapshot(options: ExportOptions = {}): Promise<ExportResult> {
   const { files, exportedAt } = await loadAnalysisFiles();
 
@@ -829,6 +835,7 @@ export async function exportAnalysisSnapshot(options: ExportOptions = {}): Promi
       { name: 'tests.csv', content: files.testsCsv },
       { name: 'wochen.csv', content: files.weeksCsv },
       { name: 'laeufe.csv', content: files.runsCsv },
+      { name: 'plan.csv', content: files.planCsv },
       { name: 'meta.json', content: files.metaJson },
     ],
     exportedAt,
