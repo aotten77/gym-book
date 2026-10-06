@@ -66,6 +66,8 @@ function emptyState(overrides: Partial<LibraryImportState> = {}): LibraryImportS
     templateExercises: [],
     bandLevels: [],
     progressionRules: [],
+    planEntries: [],
+    takenPlanEntryIds: new Set(),
     ...overrides,
   };
 }
@@ -165,6 +167,8 @@ function applyPlan(
     templateExercises: templateExercises.filter((item) => !removedIds.has(item.id)),
     bandLevels,
     progressionRules: state.progressionRules.filter((rule) => !removedIds.has(rule.templateExerciseId)),
+    planEntries: state.planEntries,
+    takenPlanEntryIds: state.takenPlanEntryIds,
   };
 }
 
@@ -1042,6 +1046,9 @@ describe('planLibraryImport - Idempotenz', () => {
       createdBandLevels: 0,
       updatedBandLevels: 0,
       removedAssignments: 0,
+      createdPlanEntries: 0,
+      updatedPlanEntries: 0,
+      removedPlanEntries: 0,
     });
     expect(second.templateOrder).toHaveLength(0);
     expect(second.bandOrder).toBeNull();

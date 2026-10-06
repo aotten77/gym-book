@@ -473,3 +473,142 @@ describe('applyLibraryImport - Workout ersetzen', () => {
     expect((await listLibraryImports())[0].removedAssignments).toBe(1);
   });
 });
+
+describe('applyLibraryImport - Termine', () => {
+  const stamp = '2026-02-01T09:00:00.000Z';
+
+  async function seedPlan() {
+    await seedLibrary();
+    await db.planEntries.bulkAdd([
+      // Montag: ein schon gelaufener Lauf, den die Datei nicht nennt, und Einheit B, die sie nennt.
+      { id: 'p-run', date: '2026-10-05', orderInDay: 1, kind: 'run', title: 'Locker', createdAt: stamp, updatedAt: stamp },
+      { id: 'p-b', date: '2026-10-05', orderInDay: 2, kind: 'workout', templateId: 't1', notes: 'früh', createdAt: stamp, updatedAt: stamp },
+      // Mittwoch: offen und nicht genannt - fällt mit planRange weg.
+      { id: 'p-open', date: '2026-10-07', orderInDay: 1, kind: 'workout', templateId: 't1', createdAt: stamp, updatedAt: stamp },
+      // Donnerstag: belegt durch eine abgeschlossene Session - bleibt.
+      { id: 'p-taken', date: '2026-10-08', orderInDay: 1, kind: 'workout', templateId: 't1', createdAt: stamp, updatedAt: stamp },
+      // Außerhalb des Zeitraums.
+      { id: 'p-later', date: '2026-10-20', orderInDay: 1, kind: 'workout', templateId: 't1', createdAt: stamp, updatedAt: stamp },
+    ]);
+    await db.workoutSessions.add({
+      id: 's-taken',
+      templateId: 't1',
+      templateNameSnapshot: 'Einheit B',
+      resolvedProgramWeek: 1,
+      startedAt: '2026-10-08T09:00:00.000Z',
+      completedAt: '2026-10-08T10:00:00.000Z',
+      status: 'completed',
+      planEntryId: 'p-taken',
+    });
+    await db.runLogs.add({
+      id: 'run-1',
+      date: '2026-10-05',
+      distanceKm: 5,
+      durationSeconds: 1800,
+      planEntryId: 'p-run',
+      createdAt: stamp,
+      updatedAt: stamp,
+    });
+  }
+
+  const PLAN_PAYLOAD = parseLibraryImportPayload(
+    JSON.stringify({
+      schemaVersion: 1,
+      templates: [{ name: 'Mobility' }],
+      planRange: { from: '2026-10-05', to: '2026-10-11' },
+      planEntries: [
+        { date: '2026-10-05', workout: 'Mobility' },
+        { date: '2026-10-05', workout: 'Einheit B', notes: null },
+        {
+          date: '2026-10-06',
+          run: { title: 'Intervalle 6×400', targetDistanceKm: 7, targetPaceSecondsPerKm: 300 },
+          notes: 'Bahn',
+        },
+      ],
+    }),
+  );
+
+  it('legt an, ändert, entfernt und nummeriert die berührten Tage dicht', async () => {
+    await seedPlan();
+
+    const { plan, log } = await applyLibraryImport(PLAN_PAYLOAD, 'plan.json');
+
+    expect(plan.summary).toMatchObject({
+      createdPlanEntries: 2,
+      updatedPlanEntries: 1,
+      removedPlanEntries: 1,
+    });
+    expect(log).toMatchObject({ createdPlanEntries: 2, updatedPlanEntries: 1, removedPlanEntries: 1 });
+
+    const mobility = await db.workoutTemplates.where('name').equals('Mobility').first();
+    const monday = await db.planEntries.where('date').equals('2026-10-05').sortBy('orderInDay');
+
+    expect(monday.map((entry) => [entry.title ?? entry.templateId, entry.orderInDay])).toEqual([
+      ['Locker', 1],
+      [mobility?.id, 2],
+      ['t1', 3],
+    ]);
+    // `null` leert - die Eigenschaft ist weg, nicht `undefined`.
+    expect('notes' in (monday[2] ?? {})).toBe(false);
+    expect(monday[2]?.createdAt).toBe(stamp);
+
+    const tuesday = await db.planEntries.where('date').equals('2026-10-06').toArray();
+    expect(tuesday).toHaveLength(1);
+    expect(tuesday[0]).toMatchObject({
+      kind: 'run',
+      title: 'Intervalle 6×400',
+      targetDistanceKm: 7,
+      targetPaceSecondsPerKm: 300,
+      notes: 'Bahn',
+      orderInDay: 1,
+    });
+
+    expect(await db.planEntries.get('p-open')).toBeUndefined();
+    expect(await db.planEntries.get('p-taken')).toBeDefined();
+    expect(await db.planEntries.get('p-later')).toBeDefined();
+  });
+
+  it('schreibt beim zweiten Lauf nichts mehr', async () => {
+    await seedPlan();
+    await applyLibraryImport(PLAN_PAYLOAD);
+
+    const before = await db.planEntries.toArray();
+    const plan = await buildLibraryImportPlan(PLAN_PAYLOAD);
+
+    expect(plan.planEntries.every((entry) => entry.kind === 'unchanged')).toBe(true);
+
+    await applyLibraryImport(PLAN_PAYLOAD);
+    expect(await db.planEntries.toArray()).toEqual(before);
+  });
+
+  it('ändert einen belegten Termin nicht, auch wenn die Datei ihn nennt', async () => {
+    await seedPlan();
+
+    const payload = parseLibraryImportPayload(
+      JSON.stringify({
+        schemaVersion: 1,
+        planEntries: [{ date: '2026-10-08', workout: 'Einheit B', notes: 'neu' }],
+      }),
+    );
+    const { plan } = await applyLibraryImport(payload);
+
+    expect(plan.planEntries[0]).toMatchObject({ id: 'p-taken', kind: 'unchanged', taken: true });
+    expect((await db.planEntries.get('p-taken'))?.notes).toBeUndefined();
+  });
+
+  it('rollt alles zurück, wenn ein Termin ungültig ist', async () => {
+    await seedPlan();
+
+    const payload = parseLibraryImportPayload(
+      JSON.stringify({
+        schemaVersion: 1,
+        templates: [{ name: 'Mobility' }],
+        planEntries: [{ date: '2026-10-05', workout: 'Einheit Z' }],
+      }),
+    );
+
+    await expect(applyLibraryImport(payload)).rejects.toThrow(/Termin 1/);
+    expect(await db.workoutTemplates.count()).toBe(1);
+    expect(await db.planEntries.count()).toBe(5);
+  });
+});

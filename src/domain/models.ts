@@ -513,6 +513,11 @@ export interface LibraryImportLog {
   updatedBandLevels: number;
   /** Zuordnungen, die ein ersetztes Workout verloren hat. Fehlt bei älteren Zeilen. */
   removedAssignments?: number;
+  /** Termine aus der Datei; fehlen bei älteren Zeilen. */
+  createdPlanEntries?: number;
+  updatedPlanEntries?: number;
+  /** Offene Termine in `planRange`, die die Datei nicht nannte. */
+  removedPlanEntries?: number;
 }
 
 export interface SessionBundle {

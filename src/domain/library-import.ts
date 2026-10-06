@@ -1,10 +1,22 @@
 import { z } from 'zod';
 import { normalizeImportKey } from '@/domain/import-key';
+import {
+  describeImportValue,
+  diffImportField,
+  type ImportFieldChange,
+} from '@/domain/import-diff';
+import {
+  importPlanEntrySchema,
+  planPlanEntries,
+  planRangeSchema,
+  type PlanEntryPlanEntry,
+} from '@/domain/plan-import';
 import { describeWorkoutCategory, normalizeWorkoutCategory } from '@/domain/workout-category';
 import type {
   BandLevel,
   Exercise,
   LoadKind,
+  PlanEntry,
   ProgressionRule,
   TrackingMode,
   WorkoutTemplate,
@@ -17,8 +29,8 @@ import { formatNumber } from '@/lib/format';
 export { normalizeImportKey };
 
 /*
- * Der Bibliotheks-Import: Übungen, Workouts, Zuordnungen und Bänder aus einer
- * JSON-Datei, ohne einen einzigen Trainingsdatensatz anzufassen.
+ * Der Bibliotheks-Import: Übungen, Workouts, Zuordnungen, Bänder und Termine
+ * aus einer JSON-Datei, ohne einen einzigen Trainingsdatensatz anzufassen.
  *
  * Drei Regeln tragen die ganze Datei:
  *
@@ -30,7 +42,8 @@ export { normalizeImportKey };
  *    Update-Semantik über `undefined` sonst gespeicherte Werte vernichtet.
  * 3. Gelöscht wird nur, was die Datei **ausdrücklich** verlangt: eine Zuordnung
  *    in einem Workout mit `replaceAssignments: true`, die die Datei nicht mehr
- *    nennt - samt ihrer Wochenregeln, wie beim Löschen von Hand. Übungen,
+ *    nennt - samt ihrer Wochenregeln, wie beim Löschen von Hand -, und ein
+ *    offener Termin in `planRange`, den die Datei nicht nennt. Übungen,
  *    Workouts und Bänder selbst entfernt der Import nie; das bleibt eine
  *    Handlung in der Oberfläche, wo man sieht, was daran hängt.
  *
@@ -107,6 +120,13 @@ const libraryImportPayloadSchema = z.object({
   templates: z.array(importTemplateSchema).optional().default([]),
   templateAssignments: z.array(importAssignmentSchema).optional().default([]),
   bandLevels: z.array(importBandLevelSchema).optional().default([]),
+  /*
+   * Termine: bewusst ohne `.default([])`. Eine Datei ohne Termine soll
+   * denselben Hash behalten wie vor diesem Block - der Hash beantwortet
+   * "dieselbe Datei wie neulich", und ein still ergänztes `[]` verneinte das.
+   */
+  planRange: planRangeSchema.optional(),
+  planEntries: z.array(importPlanEntrySchema).optional(),
 });
 
 export type ImportExerciseInput = z.infer<typeof importExerciseSchema>;
@@ -123,17 +143,15 @@ export interface LibraryImportState {
   bandLevels: BandLevel[];
   /** Nur gezählt: welche Wochenregeln mit einer entfernten Zuordnung gehen. */
   progressionRules: ProgressionRule[];
+  planEntries: PlanEntry[];
+  /** Termine, auf die eine laufende oder abgeschlossene Session oder ein Lauf zeigt. */
+  takenPlanEntryIds: ReadonlySet<string>;
 }
 
-/** `removed` gibt es nur für Zuordnungen eines ersetzten Workouts. */
+/** `removed` gibt es für Zuordnungen eines ersetzten Workouts und für Termine in `planRange`. */
 export type ImportEntryKind = 'new' | 'update' | 'unchanged' | 'removed';
 
-/** Eine Zeile der Vorschau: "Erfassung: Zeit → Wiederholungen + Gewicht". */
-export interface ImportFieldChange {
-  field: string;
-  from: string;
-  to: string;
-}
+export type { ImportFieldChange };
 
 interface PlanEntryBase {
   kind: ImportEntryKind;
@@ -200,6 +218,9 @@ export interface LibraryImportSummary {
   createdBandLevels: number;
   updatedBandLevels: number;
   removedAssignments: number;
+  createdPlanEntries: number;
+  updatedPlanEntries: number;
+  removedPlanEntries: number;
 }
 
 export interface LibraryImportPlan {
@@ -207,6 +228,7 @@ export interface LibraryImportPlan {
   templates: TemplatePlanEntry[];
   assignments: AssignmentPlanEntry[];
   bandLevels: BandLevelPlanEntry[];
+  planEntries: PlanEntryPlanEntry[];
   templateOrder: TemplateOrderPlan[];
   /** Zielreihenfolge des Band-Katalogs, oder `null`, wenn er unberührt bleibt. */
   bandOrder: string[] | null;
@@ -294,6 +316,8 @@ const BLOCK_LABELS: Record<string, string> = {
   templates: 'Workout',
   templateAssignments: 'Zuordnung',
   bandLevels: 'Band',
+  planEntries: 'Termin',
+  planRange: 'planRange',
 };
 
 function describeIssuePath(path: Array<string | number>) {
@@ -312,42 +336,8 @@ function describeIssuePath(path: Array<string | number>) {
   return field ? `${label} ${index + 1}, Feld "${String(field)}"` : `${label} ${index + 1}`;
 }
 
-function describeValue(value: unknown): string {
-  if (value === undefined || value === null || value === '') {
-    return '—';
-  }
-
-  if (typeof value === 'boolean') {
-    return value ? 'ja' : 'nein';
-  }
-
-  if (typeof value === 'number') {
-    return formatNumber(value);
-  }
-
-  return String(value);
-}
-
-/**
- * Sammelt eine Änderung, wenn sich der Wert unterscheidet.
- *
- * Gibt zurück, ob geschrieben werden muss - so entstehen Vorschauzeile und
- * Schreibwert aus einer Entscheidung statt aus zwei.
- */
-function diffField(
-  changes: ImportFieldChange[],
-  field: string,
-  current: unknown,
-  next: unknown,
-  format: (value: unknown) => string = describeValue,
-) {
-  if (current === next) {
-    return false;
-  }
-
-  changes.push({ field, from: format(current), to: format(next) });
-  return true;
-}
+const describeValue = describeImportValue;
+const diffField = diffImportField;
 
 function describeTrackingMode(value: unknown) {
   return typeof value === 'string' && value in TRACKING_MODE_LABELS
@@ -1286,7 +1276,46 @@ function planBandLevels(
   return { entries, bandOrder: touched ? slots.map((slot) => slot.id) : null };
 }
 
-function countKind(entries: PlanEntryBase[], kind: ImportEntryKind) {
+/**
+ * Die Termine der Datei. Die Workouts kommen aus dem Bestand **und** aus
+ * dieser Datei - ein Termin darf auf ein Workout zeigen, das derselbe Import
+ * erst anlegt. Die Regeln selbst stehen in [plan-import.ts].
+ */
+function planImportedPlanEntries(
+  payload: LibraryImportPayload,
+  state: LibraryImportState,
+  templateEntries: TemplatePlanEntry[],
+  problems: string[],
+) {
+  if (!payload.planEntries && !payload.planRange) {
+    return [];
+  }
+
+  const templateIdByKey = new Map<string, string>();
+  const templateNames: Record<string, string> = {};
+
+  for (const template of state.templates) {
+    templateIdByKey.set(normalizeImportKey(template.name), template.id);
+    templateNames[template.id] = template.name;
+  }
+
+  for (const entry of templateEntries) {
+    templateIdByKey.set(normalizeImportKey(entry.label), entry.id);
+    templateNames[entry.id] = entry.label;
+  }
+
+  return planPlanEntries({
+    range: payload.planRange,
+    entries: payload.planEntries ?? [],
+    existing: state.planEntries,
+    takenIds: state.takenPlanEntryIds,
+    templateIdByKey,
+    templateNames,
+    problems,
+  });
+}
+
+function countKind(entries: Array<{ kind: ImportEntryKind }>, kind: ImportEntryKind) {
   return entries.filter((entry) => entry.kind === kind).length;
 }
 
@@ -1313,6 +1342,7 @@ export function planLibraryImport(
     problems,
   );
   const { entries: bandLevels, bandOrder } = planBandLevels(payload, state, problems);
+  const planEntries = planImportedPlanEntries(payload, state, templates, problems);
 
   if (problems.length > 0) {
     throw new Error(problems.slice(0, 5).join('\n'));
@@ -1323,6 +1353,7 @@ export function planLibraryImport(
     templates,
     assignments,
     bandLevels,
+    planEntries,
     templateOrder,
     bandOrder,
     payloadHash: hashImportPayload(payload),
@@ -1336,6 +1367,9 @@ export function planLibraryImport(
       createdBandLevels: countKind(bandLevels, 'new'),
       updatedBandLevels: countKind(bandLevels, 'update'),
       removedAssignments: countKind(assignments, 'removed'),
+      createdPlanEntries: countKind(planEntries, 'new'),
+      updatedPlanEntries: countKind(planEntries, 'update'),
+      removedPlanEntries: countKind(planEntries, 'removed'),
     },
   };
 }
@@ -1346,6 +1380,7 @@ export function planHasChanges(plan: LibraryImportPlan) {
     plan.exercises.some((entry) => entry.kind !== 'unchanged') ||
     plan.templates.some((entry) => entry.kind !== 'unchanged') ||
     plan.assignments.some((entry) => entry.kind !== 'unchanged') ||
-    plan.bandLevels.some((entry) => entry.kind !== 'unchanged')
+    plan.bandLevels.some((entry) => entry.kind !== 'unchanged') ||
+    plan.planEntries.some((entry) => entry.kind !== 'unchanged')
   );
 }

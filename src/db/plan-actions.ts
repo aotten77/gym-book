@@ -5,6 +5,7 @@ import {
   type PlanEntryValues,
   expandSeries,
   planEntryKey,
+  planEntryToValues,
   toPlanEntryFields,
   validatePlanEntryValues,
 } from '@/domain/plan';
@@ -104,22 +105,6 @@ async function assertNoDuplicate(values: PlanEntryValues, name: string, ignoreId
   }
 }
 
-function toValues(entry: PlanEntry): PlanEntryValues {
-  return {
-    date: entry.date,
-    kind: entry.kind,
-    templateId: entry.templateId ?? null,
-    title: entry.title ?? null,
-    targetDistanceKm: entry.targetDistanceKm ?? null,
-    targetDurationSeconds: entry.targetDurationSeconds ?? null,
-    targetElevationGainM: entry.targetElevationGainM ?? null,
-    targetAverageHeartRate: entry.targetAverageHeartRate ?? null,
-    targetPaceSecondsPerKm: entry.targetPaceSecondsPerKm ?? null,
-    instructions: entry.instructions ?? null,
-    notes: entry.notes ?? null,
-  };
-}
-
 /** Schreibt einen Tag dicht ab 1 neu, in der bisherigen Reihenfolge. */
 export async function renumberPlanDay(date: string) {
   const entries = (await db.planEntries.where('date').equals(date).toArray()).sort(
@@ -170,7 +155,7 @@ export async function updatePlanEntry(
 
     await assertNotTaken(id);
 
-    const base = toValues(existing);
+    const base = planEntryToValues(existing);
     const merged: PlanEntryValues = { ...base };
 
     for (const key of Object.keys(changes) as (keyof PlanEntryValues)[]) {

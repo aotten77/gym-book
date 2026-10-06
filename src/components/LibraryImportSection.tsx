@@ -19,7 +19,7 @@ import { cn } from '@/lib/utils';
 import { formatDateTime, formatNumber } from '@/lib/format';
 
 /**
- * Übungen, Workouts, Zuordnungen und Bänder aus einer JSON-Datei.
+ * Übungen, Workouts, Zuordnungen, Bänder und Termine aus einer JSON-Datei.
  *
  * Zwei Wege hinein, weil zwei Geräte gemeint sind: am Rechner die Datei, auf
  * dem iPhone der eingefügte Text - dort ist die Datei-Auswahl einer
@@ -44,6 +44,8 @@ interface PreviewRow {
   detail?: string;
   note?: string;
   changes: Array<{ field: string; from: string; to: string }>;
+  /** Auch zwischen den unveränderten sichtbar - belegte Termine, die die Datei nicht ändern kann. */
+  pinned?: boolean;
 }
 
 function toRows(plan: LibraryImportPlan) {
@@ -80,6 +82,18 @@ function toRows(plan: LibraryImportPlan) {
       })),
     },
     {
+      title: 'Termine',
+      rows: plan.planEntries.map((entry): PreviewRow => ({
+        key: `p-${entry.id}`,
+        kind: entry.kind,
+        label: entry.label,
+        // Belegt heißt: Geschichte. Die Datei kann ihn weder ändern noch entfernen.
+        note: entry.taken ? 'erledigt, bleibt' : undefined,
+        changes: entry.changes,
+        pinned: entry.taken,
+      })),
+    },
+    {
       title: 'Bänder',
       rows: plan.bandLevels.map((entry): PreviewRow => ({
         key: `b-${entry.id}`,
@@ -103,24 +117,44 @@ function describePreviewIntro(plan: LibraryImportPlan, hasChanges: boolean) {
   }
 
   const removed = plan.summary.removedAssignments;
+  const removedEntries = plan.summary.removedPlanEntries;
 
-  if (removed === 0) {
+  if (removed === 0 && removedEntries === 0) {
     return 'Es wird nichts gelöscht. Bestehende Einträge behalten ihre Position; genannt werden nur die Felder aus der Datei.';
   }
 
-  const count =
-    removed === 1
-      ? '1 Zuordnung wird entfernt'
-      : `${formatNumber(removed)} Zuordnungen werden entfernt`;
+  const parts: string[] = [];
 
-  return `${count}, samt ihrer Wochenregeln. Ersetzte Workouts übernehmen Reihenfolge und Supersätze aus der Datei; Werte, die die Datei nicht nennt, bleiben stehen.`;
+  if (removed > 0) {
+    const count =
+      removed === 1
+        ? '1 Zuordnung wird entfernt'
+        : `${formatNumber(removed)} Zuordnungen werden entfernt`;
+
+    parts.push(
+      `${count}, samt ihrer Wochenregeln. Ersetzte Workouts übernehmen Reihenfolge und Supersätze aus der Datei; Werte, die die Datei nicht nennt, bleiben stehen.`,
+    );
+  }
+
+  if (removedEntries > 0) {
+    const count =
+      removedEntries === 1
+        ? '1 offener Termin im Zeitraum fehlt in der Datei und wird entfernt.'
+        : `${formatNumber(removedEntries)} offene Termine im Zeitraum fehlen in der Datei und werden entfernt.`;
+
+    parts.push(`${count} Erledigte Termine bleiben.`);
+  }
+
+  return parts.join(' ');
 }
 
 function PreviewGroup({ title, rows }: { title: string; rows: PreviewRow[] }) {
   const [showUnchanged, setShowUnchanged] = useState(false);
   const changed = rows.filter((row) => row.kind !== 'unchanged');
-  const unchanged = rows.filter((row) => row.kind === 'unchanged');
-  const visible = showUnchanged ? rows : changed;
+  const unchanged = rows.filter((row) => row.kind === 'unchanged' && !row.pinned);
+  const visible = showUnchanged
+    ? rows
+    : rows.filter((row) => row.kind !== 'unchanged' || row.pinned);
 
   return (
     <div className="rounded-panel border border-line bg-surface p-4">
@@ -240,10 +274,12 @@ export function LibraryImportSection() {
     try {
       /*
        * Sicherheitsnetz wie vor dem Restore in Settings: ein ersetztes Workout
-       * nimmt Wochenregeln mit, und die lassen sich nicht wieder importieren.
+       * nimmt Wochenregeln mit, ein Zeitraum entfernt offene Termine, und
+       * beides lässt sich nicht wieder importieren.
        * Scheitert die Sicherung, wird gar nicht erst geschrieben.
        */
-      const backedUp = pending.plan.summary.removedAssignments > 0;
+      const backedUp =
+        pending.plan.summary.removedAssignments > 0 || pending.plan.summary.removedPlanEntries > 0;
 
       if (backedUp) {
         await exportDatabaseSnapshot();
@@ -258,7 +294,13 @@ export function LibraryImportSection() {
           `${formatNumber(summary.createdTemplates)} Workouts · ` +
           `${formatNumber(summary.createdAssignments)} Zuordnungen, ` +
           `${formatNumber(summary.removedAssignments)} entfernt · ` +
-          `${formatNumber(summary.createdBandLevels)} Bänder.` +
+          `${formatNumber(summary.createdBandLevels)} Bänder` +
+          (summary.createdPlanEntries + summary.updatedPlanEntries + summary.removedPlanEntries > 0
+            ? ` · ${formatNumber(summary.createdPlanEntries)} Termine neu, ` +
+              `${formatNumber(summary.updatedPlanEntries)} geändert, ` +
+              `${formatNumber(summary.removedPlanEntries)} entfernt`
+            : '') +
+          '.' +
           (backedUp ? ' Ein Backup des vorherigen Stands wurde heruntergeladen.' : ''),
       );
       setError(null);
@@ -282,7 +324,7 @@ export function LibraryImportSection() {
   return (
     <SectionCard
       title="Bibliothek importieren"
-      subtitle="Übungen, Workouts, Zuordnungen und Bänder aus einer JSON-Datei - Trainingsdaten bleiben unberührt."
+      subtitle="Übungen, Workouts, Zuordnungen, Bänder und Termine aus einer JSON-Datei - Trainingsdaten bleiben unberührt."
     >
       <div className="space-y-4">
         <input
@@ -387,6 +429,9 @@ export function LibraryImportSection() {
                   <p className="mt-0.5 text-content-muted">
                     {formatNumber(entry.createdExercises)} Übungen ·{' '}
                     {formatNumber(entry.createdAssignments)} Zuordnungen ·{' '}
+                    {entry.createdPlanEntries
+                      ? `${formatNumber(entry.createdPlanEntries)} Termine · `
+                      : null}
                     {formatNumber(entry.updatedExercises + entry.updatedAssignments)} geändert ·{' '}
                     {entry.payloadHash}
                   </p>

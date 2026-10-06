@@ -209,6 +209,10 @@ const libraryImportLogSchema = z.object({
   createdBandLevels: z.number().int().nonnegative(),
   updatedBandLevels: z.number().int().nonnegative(),
   removedAssignments: z.number().int().nonnegative().optional(),
+  // Additiv wie `removedAssignments` - ohne Eintrag hier verwürfe Zod die Felder.
+  createdPlanEntries: z.number().int().nonnegative().optional(),
+  updatedPlanEntries: z.number().int().nonnegative().optional(),
+  removedPlanEntries: z.number().int().nonnegative().optional(),
 });
 
 const programWeekSchema = z.object({

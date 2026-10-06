@@ -64,6 +64,23 @@ export interface PlanEntryValues {
   notes: string | null;
 }
 
+/** Ein gespeicherter Termin als Werte - fehlende Felder als `null`. */
+export function planEntryToValues(entry: PlanEntry): PlanEntryValues {
+  return {
+    date: entry.date,
+    kind: entry.kind,
+    templateId: entry.templateId ?? null,
+    title: entry.title ?? null,
+    targetDistanceKm: entry.targetDistanceKm ?? null,
+    targetDurationSeconds: entry.targetDurationSeconds ?? null,
+    targetElevationGainM: entry.targetElevationGainM ?? null,
+    targetAverageHeartRate: entry.targetAverageHeartRate ?? null,
+    targetPaceSecondsPerKm: entry.targetPaceSecondsPerKm ?? null,
+    instructions: entry.instructions ?? null,
+    notes: entry.notes ?? null,
+  };
+}
+
 /** Nur ein Datum, das sich unverändert zurückschreibt, ist ein echter Kalendertag (`2026-02-30` rollt in den März). */
 export function isValidLocalDate(value: string): boolean {
   const parsed = parseLocalDate(value);

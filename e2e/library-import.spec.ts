@@ -103,6 +103,59 @@ test.describe('Bibliotheks-Import', () => {
   });
 
   /*
+   * Termine aus der Datei: Dienstag und Mittwoch dieser Woche, weil die
+   * Beispieldaten Montag und Donnerstag schon belegen und der Programm-Tab
+   * ohne Startdatum die laufende Kalenderwoche zeigt.
+   */
+  test('legt Termine aus planRange an und zeigt sie im Programm-Tab', async ({ page }) => {
+    const [tuesday, wednesday] = await page.evaluate(() => {
+      const day = (offset: number) => {
+        const now = new Date();
+        now.setDate(now.getDate() - ((now.getDay() + 6) % 7) + offset);
+
+        const month = `${now.getMonth() + 1}`.padStart(2, '0');
+        const date = `${now.getDate()}`.padStart(2, '0');
+
+        return `${now.getFullYear()}-${month}-${date}`;
+      };
+
+      return [day(1), day(2)];
+    });
+
+    await pasteAndPreview(
+      page,
+      JSON.stringify({
+        schemaVersion: 1,
+        planRange: { from: tuesday, to: wednesday },
+        planEntries: [
+          { date: tuesday, workout: 'Einheit A' },
+          {
+            date: wednesday,
+            run: { title: 'Intervalle 6×400', targetDistanceKm: 7, targetPaceSecondsPerKm: 300 },
+            notes: 'Bahn',
+          },
+        ],
+      }),
+    );
+
+    await expect(page.getByText(/^Termine · /)).toBeVisible();
+    await expect(page.getByRole('listitem').filter({ hasText: 'NEU' })).toHaveCount(2);
+    await expect(page.getByRole('listitem').filter({ hasText: 'Intervalle 6×400' })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Import bestätigen' }).click();
+    await page.waitForTimeout(900);
+    await expect(page.getByRole('status').filter({ hasText: 'Eingespielt' })).toContainText(
+      '2 Termine',
+    );
+
+    await page.goto('./#/programs');
+    await page.waitForTimeout(1200);
+
+    await expect(page.locator(`[data-plan-day="${tuesday}"]`)).toContainText('Einheit A');
+    await expect(page.locator(`[data-plan-day="${wednesday}"]`)).toContainText('Intervalle 6×400');
+  });
+
+  /*
    * Das Beispiel-Workout "Einheit A" trägt Front Squat, Bulgarian Split Squat
    * und Nordic Curl Iso. Die Datei beschreibt es vollständig neu: zwei
    * Übungen, umgekehrt, als Supersatz - der Split Squat muss gehen.
