@@ -596,6 +596,44 @@ describe('applyLibraryImport - Termine', () => {
     expect((await db.planEntries.get('p-taken'))?.notes).toBeUndefined();
   });
 
+  it('lässt einen erledigten Termin bei der wiederholten Wochendatei an seinem Platz', async () => {
+    await seedLibrary();
+
+    const payload = parseLibraryImportPayload(
+      JSON.stringify({
+        schemaVersion: 1,
+        planEntries: [
+          { date: '2026-10-12', run: { title: 'Lauf' } },
+          { date: '2026-10-12', workout: 'Einheit B' },
+        ],
+      }),
+    );
+
+    await applyLibraryImport(payload);
+
+    const done = (await db.planEntries.where('templateId').equals('t1').toArray())[0];
+    await db.workoutSessions.add({
+      id: 's-done',
+      templateId: 't1',
+      templateNameSnapshot: 'Einheit B',
+      resolvedProgramWeek: 1,
+      startedAt: '2026-10-12T09:00:00.000Z',
+      completedAt: '2026-10-12T10:00:00.000Z',
+      status: 'completed',
+      planEntryId: done?.id,
+    });
+
+    const before = await db.planEntries.toArray();
+    const { plan } = await applyLibraryImport(payload);
+
+    expect(plan.planEntries.map((entry) => [entry.kind, entry.changes])).toEqual([
+      ['unchanged', []],
+      ['unchanged', []],
+    ]);
+    expect(done?.orderInDay).toBe(2);
+    expect(await db.planEntries.toArray()).toEqual(before);
+  });
+
   it('rollt alles zurück, wenn ein Termin ungültig ist', async () => {
     await seedPlan();
 

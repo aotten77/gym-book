@@ -176,34 +176,66 @@ function diffValues(current: PlanEntryValues, next: PlanEntryValues, isNew: bool
 }
 
 /**
- * Die Zielreihenfolge eines Tages: zuerst, was die Datei nicht als offenen
- * Termin nennt (nicht genannte und belegte Termine, in bisheriger
- * Reihenfolge), dahinter die offenen und neuen Termine der Datei in
- * Dateireihenfolge. `dayEntries` sind die Termine des Tages, wie sie dann
- * stehen; entfernte fallen heraus.
+ * Die Zielreihenfolge eines Tages.
  *
- * Planung und Schreiben rufen beide diese Funktion, damit die Vorschau genau
- * die Reihenfolge nennt, die hinterher steht.
+ * Belegte Termine sind Geschichte und bleiben, wo sie stehen: ihr Platz unter
+ * den bleibenden Terminen des Tages ist fest, auch wenn die Datei sie an
+ * anderer Stelle nennt. Die übrigen Plätze füllen, in dieser Reihenfolge, die
+ * offenen Termine, die die Datei nicht nennt (bisherige Reihenfolge), und die
+ * offenen und neuen Termine der Datei (Dateireihenfolge).
+ *
+ * `existing` ist der Bestand **vor** dem Import, `planned` der Plan in
+ * Dateireihenfolge. Planung und Schreiben rufen beide diese Funktion mit
+ * denselben Daten, damit die Vorschau genau die Reihenfolge nennt, die
+ * hinterher steht.
  */
-export function orderPlanDay(dayEntries: PlanEntry[], planned: PlanEntryPlanEntry[]): string[] {
-  const plannedById = new Map(planned.map((entry) => [entry.id, entry]));
+export function orderPlanDay(
+  date: string,
+  existing: PlanEntry[],
+  planned: PlanEntryPlanEntry[],
+  takenIds: ReadonlySet<string>,
+): string[] {
   const removed = new Set(planned.filter((entry) => entry.kind === 'removed').map((entry) => entry.id));
-  const remaining = sortPlanEntries(dayEntries).filter((entry) => !removed.has(entry.id));
-  const fromFile = (id: string) => {
-    const entry = plannedById.get(id);
+  const survivors = sortPlanEntries(
+    existing.filter((entry) => entry.date === date && !removed.has(entry.id)),
+  );
+  const fileIds = planned
+    .filter((entry) => !entry.taken && entry.kind !== 'removed' && entry.values?.date === date)
+    .map((entry) => entry.id);
+  const fromFile = new Set(fileIds);
+  const pinned = survivors
+    .map((entry, index) => ({ id: entry.id, index }))
+    .filter(({ id }) => takenIds.has(id));
+  const flowing = [
+    ...survivors
+      .filter((entry) => !takenIds.has(entry.id) && !fromFile.has(entry.id))
+      .map((entry) => entry.id),
+    ...fileIds,
+  ];
+  const total = pinned.length + flowing.length;
+  const slots: Array<string | undefined> = new Array<string | undefined>(total).fill(undefined);
+  let last = -1;
 
-    return entry !== undefined && !entry.taken;
-  };
+  pinned.forEach(({ id, index }, position) => {
+    // Aufsteigend und mit Platz für die belegten dahinter - bei dichter
+    // Nummerierung ist das genau der bisherige Platz.
+    const slot = Math.min(Math.max(index, last + 1), total - (pinned.length - position));
 
-  const rest = remaining.filter((entry) => !fromFile(entry.id));
-  const file = remaining
-    .filter((entry) => fromFile(entry.id))
-    .sort(
-      (left, right) =>
-        (plannedById.get(left.id)?.orderInDay ?? 0) - (plannedById.get(right.id)?.orderInDay ?? 0),
-    );
+    slots[slot] = id;
+    last = slot;
+  });
 
-  return [...rest, ...file].map((entry) => entry.id);
+  let next = 0;
+
+  for (const id of flowing) {
+    while (slots[next] !== undefined) {
+      next += 1;
+    }
+
+    slots[next] = id;
+  }
+
+  return slots.filter((id): id is string => id !== undefined);
 }
 
 const VALUE_KEYS = Object.keys(emptyValues('', 'workout')) as Array<keyof PlanEntryValues>;
@@ -419,64 +451,33 @@ export function planPlanEntries(input: {
     }
   }
 
-  assignDayOrder(planned, input.entries, input.existing);
+  assignDayOrder(planned, input.entries, input.existing, takenIds);
 
   return planned;
 }
 
 /**
- * Setzt `orderInDay` der Termine aus der Datei nach `orderPlanDay` und
- * meldet bei bestehenden offenen Terminen, wenn sie dabei die Position
- * wechseln. Gezählt wird gegen den Tag ohne die entfernten Termine - deren
- * Lücke ist keine Verschiebung.
+ * Setzt `orderInDay` jedes geplanten Termins auf den Tagen der Datei nach
+ * `orderPlanDay` und meldet bei bestehenden offenen Terminen, wenn sie dabei
+ * die Position wechseln. Gezählt wird gegen den Tag ohne die entfernten
+ * Termine - deren Lücke ist keine Verschiebung.
  */
 function assignDayOrder(
   planned: PlanEntryPlanEntry[],
   inputs: ImportPlanEntryInput[],
   existing: PlanEntry[],
+  takenIds: ReadonlySet<string>,
 ) {
   const removed = new Set(planned.filter((entry) => entry.kind === 'removed').map((entry) => entry.id));
-  const dates = new Set(inputs.map((item) => item.date));
+  const byId = new Map(planned.map((entry) => [entry.id, entry]));
 
-  for (const date of dates) {
-    const dayExisting = existing.filter((entry) => entry.date === date);
-    const dayPlanned = planned.filter(
-      (entry) => entry.kind !== 'removed' && entry.values?.date === date,
-    );
-
-    if (dayPlanned.length === 0) {
-      continue;
-    }
-
-    // Neue Termine gibt es noch nicht - für die Reihenfolge reicht ein Platzhalter.
-    const withNew = [
-      ...dayExisting,
-      ...dayPlanned
-        .filter((entry) => entry.kind === 'new')
-        .map(
-          (entry): PlanEntry => ({
-            id: entry.id,
-            date,
-            kind: entry.values?.kind ?? 'workout',
-            orderInDay: Number.MAX_SAFE_INTEGER,
-            createdAt: '',
-            updatedAt: '',
-          }),
-        ),
-    ];
-
-    // Dateireihenfolge: `planned` steht in Dateireihenfolge, der Index ist die Position.
-    dayPlanned.forEach((entry, index) => {
-      entry.orderInDay = index + 1;
-    });
-
-    const target = orderPlanDay(withNew, planned);
-    const current = sortPlanEntries(dayExisting)
+  for (const date of new Set(inputs.map((item) => item.date))) {
+    const current = sortPlanEntries(existing.filter((entry) => entry.date === date))
       .filter((entry) => !removed.has(entry.id))
       .map((entry) => entry.id);
 
-    target.forEach((id, index) => {
-      const entry = planned.find((item) => item.id === id);
+    orderPlanDay(date, existing, planned, takenIds).forEach((id, index) => {
+      const entry = byId.get(id);
 
       if (!entry) {
         return;
@@ -485,9 +486,7 @@ function assignDayOrder(
       const position = index + 1;
 
       if (entry.kind !== 'new' && !entry.taken) {
-        const currentPosition = current.indexOf(id) + 1;
-
-        if (diffImportField(entry.changes, 'Position', currentPosition, position)) {
+        if (diffImportField(entry.changes, 'Position', current.indexOf(id) + 1, position)) {
           entry.kind = 'update';
         }
       }

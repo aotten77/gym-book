@@ -78,7 +78,8 @@ export async function applyLibraryImport(
       db.runLogs,
     ],
     async () => {
-      const current = planLibraryImport(payload, await loadLibraryImportState());
+      const state = await loadLibraryImportState();
+      const current = planLibraryImport(payload, state);
       plan = current;
 
       for (const entry of current.exercises) {
@@ -178,7 +179,7 @@ export async function applyLibraryImport(
         );
       }
 
-      await writePlanEntries(current, now);
+      await writePlanEntries(current, state, now);
 
       log = {
         id: createId(),
@@ -217,7 +218,7 @@ export async function applyLibraryImport(
  * mit `undefined`), entfernt gelöscht; belegte bleiben unberührt. Danach
  * wird jeder berührte Tag dicht nach der Zielreihenfolge nummeriert.
  */
-async function writePlanEntries(plan: LibraryImportPlan, now: string) {
+async function writePlanEntries(plan: LibraryImportPlan, state: LibraryImportState, now: string) {
   const touchedDays = new Set<string>();
 
   for (const entry of plan.planEntries) {
@@ -243,12 +244,19 @@ async function writePlanEntries(plan: LibraryImportPlan, now: string) {
   }
 
   for (const date of touchedDays) {
-    const day = await db.planEntries.where('date').equals(date).toArray();
-    const byId = new Map(day.map((entry) => [entry.id, entry]));
+    // Die Zielreihenfolge aus dem Bestand *vor* dem Schreiben - dieselben
+    // Daten, mit denen die Planung sie berechnet hat.
+    const target = orderPlanDay(date, state.planEntries, plan.planEntries, state.takenPlanEntryIds);
+    const byId = new Map(
+      (await db.planEntries.where('date').equals(date).toArray()).map((entry) => [entry.id, entry]),
+    );
 
-    for (const [index, id] of orderPlanDay(day, plan.planEntries).entries()) {
+    for (const [index, id] of target.entries()) {
       const entry = byId.get(id);
 
+      // Die einzige Schreibung an einem belegten Termin: die dichte Nummer
+      // seiner Anzeigereihenfolge, nachdem davor ein Termin entfernt wurde.
+      // Sein Platz unter den bleibenden Terminen ändert sich nie.
       if (entry && entry.orderInDay !== index + 1) {
         await db.planEntries.put({ ...entry, orderInDay: index + 1 });
       }

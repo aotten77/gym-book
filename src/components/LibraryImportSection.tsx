@@ -88,7 +88,9 @@ function toRows(plan: LibraryImportPlan) {
         kind: entry.kind,
         label: entry.label,
         // Belegt heißt: Geschichte. Die Datei kann ihn weder ändern noch entfernen.
-        note: entry.taken ? 'erledigt, bleibt' : undefined,
+        // "belegt", nicht "erledigt": auch eine laufende Session belegt, und der
+        // Plan unterscheidet die beiden nicht.
+        note: entry.taken ? 'belegt, bleibt' : undefined,
         changes: entry.changes,
         pinned: entry.taken,
       })),
@@ -142,7 +144,7 @@ function describePreviewIntro(plan: LibraryImportPlan, hasChanges: boolean) {
         ? '1 offener Termin im Zeitraum fehlt in der Datei und wird entfernt.'
         : `${formatNumber(removedEntries)} offene Termine im Zeitraum fehlen in der Datei und werden entfernt.`;
 
-    parts.push(`${count} Erledigte Termine bleiben.`);
+    parts.push(`${count} Belegte Termine bleiben.`);
   }
 
   return parts.join(' ');
@@ -432,7 +434,15 @@ export function LibraryImportSection() {
                     {entry.createdPlanEntries
                       ? `${formatNumber(entry.createdPlanEntries)} Termine · `
                       : null}
-                    {formatNumber(entry.updatedExercises + entry.updatedAssignments)} geändert ·{' '}
+                    {formatNumber(
+                      entry.updatedExercises +
+                        entry.updatedAssignments +
+                        (entry.updatedPlanEntries ?? 0),
+                    )}{' '}
+                    geändert ·{' '}
+                    {(entry.removedAssignments ?? 0) + (entry.removedPlanEntries ?? 0) > 0
+                      ? `${formatNumber((entry.removedAssignments ?? 0) + (entry.removedPlanEntries ?? 0))} entfernt · `
+                      : null}
                     {entry.payloadHash}
                   </p>
                 </li>

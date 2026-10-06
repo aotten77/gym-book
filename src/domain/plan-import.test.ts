@@ -57,7 +57,11 @@ function plan(input: {
 }
 
 /** Wendet einen Plan wie `applyLibraryImport` auf einen Bestand an - ohne Datenbank. */
-function applyPlan(existing: PlanEntry[], entries: PlanEntryPlanEntry[]): PlanEntry[] {
+function applyPlan(
+  existing: PlanEntry[],
+  entries: PlanEntryPlanEntry[],
+  takenIds: ReadonlySet<string> = new Set(),
+): PlanEntry[] {
   const removed = new Set(entries.filter((e) => e.kind === 'removed').map((e) => e.id));
   const byId = new Map(existing.filter((e) => !removed.has(e.id)).map((e) => [e.id, e]));
 
@@ -87,14 +91,11 @@ function applyPlan(existing: PlanEntry[], entries: PlanEntryPlanEntry[]): PlanEn
     byId.set(entry.id, record);
   }
 
-  const result = [...byId.values()];
-  const days = new Set(result.map((e) => e.date));
+  const days = new Set([...byId.values()].map((e) => e.date));
 
   for (const day of days) {
-    const ordered = orderPlanDay(
-      result.filter((e) => e.date === day),
-      entries,
-    );
+    // Wie `applyLibraryImport`: die Zielreihenfolge kommt aus dem Bestand *vor* dem Schreiben.
+    const ordered = orderPlanDay(day, existing, entries, takenIds);
 
     ordered.forEach((id, index) => {
       const item = byId.get(id);
@@ -231,6 +232,80 @@ describe('planPlanEntries', () => {
     });
 
     expect(second.entries.map((entry) => entry.kind)).toEqual(['unchanged', 'unchanged']);
+  });
+
+  /*
+   * Die realistischste Wiederholung: dieselbe Wochendatei, nachdem am Montag
+   * trainiert wurde. Der erledigte Termin darf weder wandern noch einen
+   * offenen Termin des Tages verschieben.
+   */
+  it('lässt einen erledigten Termin beim zweiten Lauf an seinem Platz', () => {
+    const file = [
+      { date: '2026-10-05', run: { title: 'Lauf' } },
+      { date: '2026-10-05', workout: 'Einheit A' },
+    ];
+    const first = plan({ entries: file });
+    const afterFirst = applyPlan([], first.entries);
+    const done = afterFirst.find((entry) => entry.templateId === 'tA');
+
+    expect(done?.orderInDay).toBe(2);
+
+    const second = plan({ entries: file, existing: afterFirst, takenIds: [done?.id ?? ''] });
+
+    expect(second.problems).toEqual([]);
+    expect(second.entries.map((entry) => [entry.kind, entry.changes])).toEqual([
+      ['unchanged', []],
+      ['unchanged', []],
+    ]);
+    expect(second.entries[1]).toMatchObject({ id: done?.id, taken: true, orderInDay: 2 });
+
+    const afterSecond = applyPlan(afterFirst, second.entries, new Set([done?.id ?? '']));
+
+    expect(afterSecond.find((entry) => entry.id === done?.id)?.orderInDay).toBe(2);
+    expect(afterSecond.find((entry) => entry.title === 'Lauf')?.orderInDay).toBe(1);
+  });
+
+  it('hält belegte Termine an ihrem Platz, auch gegen die Dateireihenfolge', () => {
+    const existing = [
+      buildEntry({ id: 'done', date: '2026-10-05', templateId: 'tA', orderInDay: 1 }),
+      buildEntry({ id: 'run', date: '2026-10-05', kind: 'run', title: 'Lauf', orderInDay: 2 }),
+    ];
+    const { entries } = plan({
+      entries: [
+        { date: '2026-10-05', run: { title: 'Lauf' } },
+        { date: '2026-10-05', workout: 'Einheit A' },
+        { date: '2026-10-05', workout: 'Einheit B' },
+      ],
+      existing,
+      takenIds: ['done'],
+    });
+
+    expect(entries.map((entry) => [entry.id === 'done' || entry.id === 'run' ? entry.id : 'neu', entry.kind, entry.orderInDay])).toEqual([
+      ['run', 'unchanged', 2],
+      ['done', 'unchanged', 1],
+      ['neu', 'new', 3],
+    ]);
+  });
+
+  it('verschiebt einen nicht genannten belegten Termin nicht', () => {
+    const existing = [
+      buildEntry({ id: 'run', date: '2026-10-05', kind: 'run', title: 'Lauf', orderInDay: 1 }),
+      buildEntry({ id: 'done', date: '2026-10-05', templateId: 'tA', orderInDay: 2 }),
+    ];
+    const { entries } = plan({
+      entries: [
+        { date: '2026-10-05', run: { title: 'Lauf' } },
+        { date: '2026-10-05', workout: 'Einheit B' },
+      ],
+      existing,
+      takenIds: ['done'],
+    });
+    const after = applyPlan(existing, entries, new Set(['done']));
+
+    expect(entries[0]).toMatchObject({ id: 'run', kind: 'unchanged' });
+    expect(
+      [...after].sort((left, right) => left.orderInDay - right.orderInDay).map((entry) => entry.id === 'run' || entry.id === 'done' ? entry.id : 'neu'),
+    ).toEqual(['run', 'done', 'neu']);
   });
 
   it('entfernt mit planRange offene fehlende Termine, belässt belegte und die außerhalb', () => {
