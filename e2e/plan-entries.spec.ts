@@ -318,8 +318,8 @@ test.describe('Termine im Programm-Tab', () => {
   });
 });
 
-test.describe('Terminliste außerhalb der Programmspanne', () => {
-  test('ein abgelaufenes Programm blättert frei ab dieser Woche', async ({ page }) => {
+test.describe('Terminliste nach Programmende', () => {
+  test('nach Programmende folgt die Liste der Auswahl im Raster', async ({ page }) => {
     const errors = collectPageErrors(page);
 
     await resetDatabase(page);
@@ -327,12 +327,16 @@ test.describe('Terminliste außerhalb der Programmspanne', () => {
     // Acht Programmwochen ab Januar 2020 sind lange vorbei.
     await setProgramStart(page, '2020-01-06');
 
+    await expect(page.getByRole('tab', { name: /· W\d/ })).toHaveCount(0);
+
     const week = page.locator('[data-plan-week]');
     await expect(week).toHaveAttribute('data-plan-week', await localDay(page, 0, true));
-    await expect(page.getByRole('button', { name: 'Vorherige Woche' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Vorherige Woche' })).toHaveCount(0);
 
-    await page.getByRole('button', { name: 'Nächste Woche' }).click();
-    await expect(week).toHaveAttribute('data-plan-week', await localDay(page, 7, true));
+    const nextMonday = await localDay(page, 7, true);
+
+    await page.locator(`[data-calendar-week="${nextMonday}"]`).click();
+    await expect(week).toHaveAttribute('data-plan-week', nextMonday);
 
     expect(errors).toEqual([]);
   });

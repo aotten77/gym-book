@@ -16,6 +16,18 @@ test.describe('Programm-Wochenansicht', () => {
   test.beforeEach(async ({ page }) => {
     await resetDatabase(page);
     await seedSampleData(page);
+    // Programmwochen ("W2") gibt es im Raster nur mit Startdatum: Woche 1 = diese Woche.
+    await page.goto('./#/settings');
+    await page.waitForTimeout(1200);
+    await page.getByLabel('Programmstart').fill(
+      await page.evaluate(() => {
+        const now = new Date();
+        now.setDate(now.getDate() - ((now.getDay() + 6) % 7));
+
+        return `${now.getFullYear()}-${`${now.getMonth() + 1}`.padStart(2, '0')}-${`${now.getDate()}`.padStart(2, '0')}`;
+      }),
+    );
+    await page.waitForTimeout(900);
   });
 
   test('zeigt je Woche die Vorgaben, die der Sessionstart schreiben würde', async ({ page }) => {

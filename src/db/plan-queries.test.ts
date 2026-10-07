@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { db } from '@/db/appDb';
-import { loadRunDatesBetween } from '@/db/history-queries';
 import { loadPlanBetween, loadRunPlanOptions, loadUpcomingPlan } from '@/db/plan-queries';
 import type { PlanEntry } from '@/domain/models';
 
@@ -112,18 +111,5 @@ describe('loadRunPlanOptions, eigener Termin', () => {
     const options = await loadRunPlanOptions('2026-10-07', 'mine');
 
     expect(options.map((entry) => entry.id)).toEqual(['mo', 'far']);
-  });
-});
-
-describe('loadRunDatesBetween', () => {
-  it('liefert id und Datum, inklusive der Grenzen', async () => {
-    await addRun('a', '2026-10-05');
-    await addRun('b', '2026-10-11');
-    await addRun('c', '2026-10-12');
-
-    const runs = await loadRunDatesBetween('2026-10-05', '2026-10-11');
-
-    expect(runs.map((run) => run.id).sort()).toEqual(['a', 'b']);
-    expect(runs[0]).toEqual({ id: expect.any(String), date: expect.any(String) });
   });
 });

@@ -182,8 +182,9 @@ export async function loadWeekSummary(sinceIso: string): Promise<WeekSummary> {
  * Die abgeschlossenen Einheiten eines Zeitraums, älteste zuerst.
  *
  * Für den Trainingskalender: er braucht je Tag nur, *was* abgeschlossen wurde,
- * kein Volumen. `loadWeekSummary` zöge dafür alle Satzzeilen des Zeitraums, und
- * über acht Programmwochen wäre das teuer und ungenutzt.
+ * kein Volumen - das der gewählten Woche kommt aus `loadSessionVolumes`.
+ * `loadWeekSummary` zöge dafür alle Satzzeilen des Fensters, und das wäre teuer
+ * und ungenutzt.
  *
  * Läuft über den `completedAt`-Index und filtert `status === 'completed'`: eine
  * **abgebrochene** Einheit trägt ebenfalls ein `completedAt`, weil
@@ -220,7 +221,8 @@ export async function loadRunsBetween(from: string, to: string): Promise<RunLog[
  *
  * Bewusst getrennt von `loadCompletedSessionsBetween`: die zieht das ganze
  * Fenster und braucht kein Volumen; hier werden nur die Sätze der gefragten
- * Sessions gelesen. Zählt abgehakte Arbeitssätze, über dieselbe Regel wie die
+ * Sessions gelesen. Gefiltert wird nach der Art nicht - Mobility-Sessions
+ * kommen mit, die Liste zeigt für sie nur kein Volumen. Zählt abgehakte Arbeitssätze, über dieselbe Regel wie die
  * Wochenrechnung (`sessionExerciseVolume`).
  */
 export async function loadSessionVolumes(sessionIds: string[]): Promise<Record<string, number>> {
@@ -253,16 +255,6 @@ export async function loadSessionVolumes(sessionIds: string[]): Promise<Record<s
   }
 
   return volumes;
-}
-
-/** Welche Läufe zwischen zwei Tagen (`YYYY-MM-DD`, beide eingeschlossen) liegen - der Kalender braucht nur Id und Tag. */
-export async function loadRunDatesBetween(
-  from: string,
-  to: string,
-): Promise<{ id: string; date: string }[]> {
-  const runs = await db.runLogs.where('date').between(from, to, true, true).toArray();
-
-  return runs.map((run) => ({ id: run.id, date: run.date }));
 }
 
 /**
