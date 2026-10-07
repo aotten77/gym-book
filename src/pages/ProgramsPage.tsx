@@ -62,14 +62,6 @@ import { cn } from '@/lib/utils';
  */
 export function ProgramsPage() {
   /*
-   * Die Wochenauswahl ist reiner Oberflächenzustand - nie `weekOverride`, nie
-   * IndexedDB. Woche 5 *ansehen* darf nicht Woche 5 *trainieren*: ein
-   * Override schlägt Startdatum und Programm-Woche, bis ihn jemand
-   * zurücknimmt, und genau dieser Fehler stand auf einem echten Gerät
-   * wochenlang. Es gibt einen Schreiber auf `weekOverride`, und der sitzt in
-   * den Einstellungen.
-   */
-  /*
    * Fenster und Wochenauswahl sind reiner Oberflächenzustand - nie
    * `weekOverride`, nie IndexedDB. Woche 5 *ansehen* darf nicht Woche 5
    * *trainieren*: ein Override schlägt Startdatum und Programm-Woche, bis ihn
@@ -163,12 +155,14 @@ export function ProgramsPage() {
     [templates],
   );
 
+  /* Nur der lokale Tag zählt; ein Tageswechsel bei offener Seite ändert die Abhängigkeit. */
+  const today = useMemo(() => parseLocalDate(todayKey) ?? new Date(), [todayKey]);
   const calendarRows = useMemo(
     () =>
       buildCalendarWeeks({
         firstMonday,
         weeks: CALENDAR_WINDOW_WEEKS,
-        today: new Date(),
+        today,
         program,
         programWeeks: weeks ?? [],
         planEntries: planInRange?.entries ?? [],
@@ -178,9 +172,7 @@ export function ProgramsPage() {
         runs: runsInRange ?? [],
         testDates: testDates ?? [],
       }),
-    // `todayKey`: ein Tageswechsel bei offener Seite greift beim nächsten Rendern.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [firstMonday, program, weeks, planInRange, templates, completedSessions, runsInRange, testDates, todayKey],
+    [firstMonday, today, program, weeks, planInRange, templates, completedSessions, runsInRange, testDates],
   );
   const selectedRow = calendarRows.find((row) => row.key === selectedWeek);
   const selectedProgramWeek = selectedRow?.programWeek
@@ -357,7 +349,7 @@ export function ProgramsPage() {
             onShiftWindow={handleShiftWindow}
           />
 
-          <WeekVolumeTiles week={weekVolume} />
+          <WeekVolumeTiles week={weekVolume} weekKey={selectedWeek} />
 
           {/*
             Der Testtermin steht nur in der *gewählten* Woche, nicht als
@@ -416,7 +408,7 @@ export function ProgramsPage() {
               key={block.templateId}
               block={block}
               bandNameById={bandNameById}
-              onEditEntry={selectedProgramWeek ? handleEditEntry : undefined}
+              onEditEntry={handleEditEntry}
             />
           ))
         )}
@@ -438,7 +430,7 @@ export function ProgramsPage() {
       */}
       <Sheet
         open={editingEntry !== null && selectedProgramWeek !== undefined}
-        label={`Woche ${selectedWeek} · ${editingEntry?.exerciseName ?? ''}`}
+        label={`Woche ${selectedProgramWeek?.weekNumber ?? ''} · ${editingEntry?.exerciseName ?? ''}`}
         closeLabel="Bearbeiten schließen"
         onClose={() => setEditingEntry(null)}
         header={

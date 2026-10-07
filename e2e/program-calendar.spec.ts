@@ -113,6 +113,7 @@ test.describe('Trainingskalender', () => {
 
     await page.locator(`[data-calendar-week="${nextMonday}"]`).click();
     await expect(page.locator('[data-plan-week]')).toHaveAttribute('data-plan-week', nextMonday);
+    await expect(page.locator('[data-week-volume]')).toHaveAttribute('data-week-volume', nextMonday);
 
     await page.getByRole('button', { name: 'Spätere Wochen' }).click();
     await page.getByRole('button', { name: 'Spätere Wochen' }).click();
@@ -128,6 +129,7 @@ test.describe('Trainingskalender', () => {
       'true',
     );
     await expect(page.locator('[data-plan-week]')).toHaveAttribute('data-plan-week', farMonday);
+    await expect(page.locator('[data-week-volume]')).toHaveAttribute('data-week-volume', farMonday);
 
     await page.getByRole('button', { name: 'Frühere Wochen' }).click();
 

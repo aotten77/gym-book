@@ -222,8 +222,9 @@ export async function loadRunsBetween(from: string, to: string): Promise<RunLog[
  * Bewusst getrennt von `loadCompletedSessionsBetween`: die zieht das ganze
  * Fenster und braucht kein Volumen; hier werden nur die Sätze der gefragten
  * Sessions gelesen. Gefiltert wird nach der Art nicht - Mobility-Sessions
- * kommen mit, die Liste zeigt für sie nur kein Volumen. Zählt abgehakte Arbeitssätze, über dieselbe Regel wie die
- * Wochenrechnung (`sessionExerciseVolume`).
+ * kommen mit, die Liste zeigt für sie nur kein Volumen. Zählt abgehakte
+ * Arbeitssätze, über dieselbe Regel wie die Wochenrechnung
+ * (`sessionExerciseVolume`).
  */
 export async function loadSessionVolumes(sessionIds: string[]): Promise<Record<string, number>> {
   if (sessionIds.length === 0) {

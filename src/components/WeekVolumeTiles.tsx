@@ -15,12 +15,12 @@ const TILES: { kind: CalendarUnitKind; title: string; key: 'strength' | 'mobilit
  * Einspaltig bis 480px: die Texte ("1 Einheit · 0:52 h · 4.210 kg · 12 Sätze")
  * passen bei 320px nicht dreispaltig.
  */
-export function WeekVolumeTiles({ week }: { week?: WeekVolume }) {
+export function WeekVolumeTiles({ week, weekKey }: { week?: WeekVolume; weekKey?: string }) {
   const texts = week ? describeWeekVolume(week) : {};
 
   return (
     <section
-      data-week-volume=""
+      data-week-volume={weekKey ?? ''}
       className="rounded-card border border-line bg-surface p-4 shadow-soft"
     >
       <h2 className="mb-3 text-[11px] font-bold uppercase tracking-[0.16em] text-content-muted">

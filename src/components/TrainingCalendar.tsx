@@ -162,7 +162,8 @@ function CalendarWeekButton({
   );
 }
 
-const MARK_CIRCLE = 'flex h-6 w-6 items-center justify-center rounded-full';
+const MARK_CIRCLE =
+  'flex h-[22px] w-[22px] min-[360px]:h-6 min-[360px]:w-6 items-center justify-center rounded-full';
 
 /** Eine Zelle je Tag: höchstens zwei Marken untereinander, sonst eine und "+n". */
 function CalendarDayCell({ day }: { day: CalendarWeekDay }) {
