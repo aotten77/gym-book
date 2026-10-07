@@ -755,7 +755,7 @@ export async function exportDatabaseSnapshot(options: ExportOptions = {}): Promi
 }
 
 /**
- * Die sieben Dateien und ihr Zeitstempel - gemeinsame Grundlage beider Wege
+ * Die acht Dateien und ihr Zeitstempel - gemeinsame Grundlage beider Wege
  * nach draußen (Archiv und Zwischenablage).
  *
  * Ausdrücklich **keine Sicherung**, und das gilt für beide: hier fehlt
@@ -780,6 +780,8 @@ async function loadAnalysisFiles(): Promise<{ files: AnalysisExportFiles; export
     runs,
     planEntries,
     templates,
+    templateExercises,
+    progressionRules,
   ] =
     await Promise.all([
       db.exercises.toArray(),
@@ -794,6 +796,8 @@ async function loadAnalysisFiles(): Promise<{ files: AnalysisExportFiles; export
       db.runLogs.toArray(),
       db.planEntries.toArray(),
       db.workoutTemplates.toArray(),
+      db.workoutTemplateExercises.toArray(),
+      db.progressionRules.toArray(),
     ]);
 
   const program = settings?.activeProgramId
@@ -810,6 +814,9 @@ async function loadAnalysisFiles(): Promise<{ files: AnalysisExportFiles; export
     runs,
     planEntries,
     templates,
+    templateExercises,
+    programWeeks,
+    progressionRules,
     program,
     // Dieselbe Auflösung wie Start, Home und Einstellungen - die Rangfolge der
     // Woche hat genau eine Stelle, und der Export darf keine zweite werden.
@@ -824,7 +831,7 @@ async function loadAnalysisFiles(): Promise<{ files: AnalysisExportFiles; export
   return { files, exportedAt };
 }
 
-/** Der Analyse-Export als Archiv - sieben Dateien, ein Teilen-Vorgang. */
+/** Der Analyse-Export als Archiv - acht Dateien, ein Teilen-Vorgang. */
 export async function exportAnalysisSnapshot(options: ExportOptions = {}): Promise<ExportResult> {
   const { files, exportedAt } = await loadAnalysisFiles();
 
@@ -837,6 +844,7 @@ export async function exportAnalysisSnapshot(options: ExportOptions = {}): Promi
       { name: 'laeufe.csv', content: files.runsCsv },
       { name: 'plan.csv', content: files.planCsv },
       { name: 'meta.json', content: files.metaJson },
+      { name: 'bestand.json', content: files.inventoryJson },
     ],
     exportedAt,
   );

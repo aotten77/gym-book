@@ -95,6 +95,9 @@ function build(input: Partial<AnalysisExportInput>) {
     runs: [],
     planEntries: [],
     templates: [],
+    templateExercises: [],
+    programWeeks: [],
+    progressionRules: [],
     weekControl,
     ...input,
   });
@@ -625,7 +628,25 @@ describe('buildAnalysisPasteText', () => {
     expect(text.match(/```csv/g)).toHaveLength(6);
   });
 
-  it('trägt den Inhalt aller sieben Dateien', () => {
+  it('bestand.json: Workouts mit Zuordnungen, auch ohne ein einziges Training', () => {
+    const files = build({
+      exercises: [libraryExercise({ id: 'x1', name: 'Front Squat LH' })],
+      templates: [template({ id: 'tpl-a', name: 'Einheit A' })],
+      templateExercises: [
+        { id: 'a1', templateId: 'tpl-a', exerciseId: 'x1', orderIndex: 1, workSetCount: 4, targetReps: 5 },
+      ],
+    });
+    const inventory = JSON.parse(files.inventoryJson);
+    const meta = JSON.parse(files.metaJson);
+
+    expect(inventory.schemaVersion).toBeUndefined();
+    expect(inventory.templateAssignments).toEqual([
+      { template: 'Einheit A', exercise: 'Front Squat LH', orderIndex: 1, workSetCount: 4, targetReps: 5 },
+    ]);
+    expect(meta.hinweise.some((text: string) => text.includes('bestand.json'))).toBe(true);
+  });
+
+  it('trägt den Inhalt aller acht Dateien', () => {
     const files = build({
       sessions: [session({ id: 's1' })],
       sessionExercises: [sessionExercise({ id: 'e1', sessionId: 's1' })],
@@ -642,6 +663,7 @@ describe('buildAnalysisPasteText', () => {
       files.runsCsv,
       files.planCsv,
       files.metaJson,
+      files.inventoryJson,
     ]) {
       expect(text).toContain(content.trimEnd());
     }
@@ -847,7 +869,7 @@ describe('Läufe und Wochensummen', () => {
 
   it('Zwischenablage: wochen.csv und laeufe.csv nach tests.csv', () => {
     const text = buildAnalysisPasteText(build({}), new Date('2026-08-28T09:00:00'));
-    const order = ['meta.json', 'sessions.csv', 'progression.csv', 'tests.csv', 'wochen.csv', 'laeufe.csv', 'plan.csv'].map(
+    const order = ['meta.json', 'sessions.csv', 'progression.csv', 'tests.csv', 'wochen.csv', 'laeufe.csv', 'plan.csv', 'bestand.json'].map(
       (name) => text.indexOf(`## ${name}`),
     );
 

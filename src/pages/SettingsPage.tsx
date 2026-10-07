@@ -152,7 +152,7 @@ export function SettingsPage() {
       setAnalysisMessage(
         result === 'cancelled'
           ? 'Analyse-Export abgebrochen.'
-          : 'Analyse-Export erstellt (sessions.csv, progression.csv, tests.csv, meta.json).',
+          : 'Analyse-Export erstellt.',
       );
     } catch (error) {
       setAnalysisMessage(
@@ -978,8 +978,8 @@ export function SettingsPage() {
                   {isExportingAnalysis ? 'Analyse-Export läuft...' : 'Analyse-Export'}
                 </p>
                 <p className="mt-1 text-sm text-content-muted">
-                  Ein ZIP mit sieben kleinen Dateien zum Auswerten: eine Zeile je Einheit, Übung und
-                  Seite, dazu die Tests. Ohne Bilder, ohne Ids, ohne leere Sätze - und deshalb{' '}
+                  Ein ZIP mit acht kleinen Dateien zum Auswerten: eine Zeile je Einheit, Übung und
+                  Seite, dazu Tests, Läufe, Plan und der Stand der Workouts. Ohne Bilder, ohne Ids, ohne leere Sätze - und deshalb{' '}
                   <span className="font-medium">keine Sicherung</span>.
                 </p>
               </div>
@@ -1002,7 +1002,7 @@ export function SettingsPage() {
                   {isCopyingAnalysis ? 'Wird kopiert...' : 'Analyse kopieren'}
                 </p>
                 <p className="mt-1 text-sm text-content-muted">
-                  Dieselben sieben Dateien als Text in der Zwischenablage - zum Einfügen in ein
+                  Dieselben acht Dateien als Text in der Zwischenablage - zum Einfügen in ein
                   Gespräch, ohne Datei und ohne Anhang.
                 </p>
               </div>

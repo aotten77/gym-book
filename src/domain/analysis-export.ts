@@ -6,6 +6,8 @@ import type {
   ExerciseTest,
   PlanEntry,
   Program,
+  ProgramWeek,
+  ProgressionRule,
   RunLog,
   Side,
   TrackingMode,
@@ -13,7 +15,9 @@ import type {
   WorkoutSessionExercise,
   WorkoutSetLog,
   WorkoutTemplate,
+  WorkoutTemplateExercise,
 } from '@/domain/models';
+import { buildLibraryInventory } from '@/domain/library-inventory';
 import { buildPlanLinks, planEntryName, planEntryState, sortPlanEntries } from '@/domain/plan';
 import { toDateInputValue, type WeekControl } from '@/domain/program';
 import { formatPace, paceSecondsPerKm } from '@/domain/run';
@@ -112,8 +116,16 @@ export interface AnalysisExportInput {
    * `meta.json` leitet sich aus Sessions ab und würde sie abschneiden.
    */
   planEntries: PlanEntry[];
-  /** Für Name und Art der Workout-Termine (`kraft` / `mobility`). */
+  /** Für Name und Art der Workout-Termine (`kraft` / `mobility`) und für `bestand.json`. */
   templates: WorkoutTemplate[];
+  /**
+   * Zusammensetzung der Workouts, Programmwochen und Wochenregeln - nur für
+   * `bestand.json`, den heutigen Stand der Bibliothek. Siehe
+   * [library-inventory.ts]: alles andere hier beschreibt, was trainiert wurde.
+   */
+  templateExercises: WorkoutTemplateExercise[];
+  programWeeks: ProgramWeek[];
+  progressionRules: ProgressionRule[];
   /** Siehe [DEFAULT_REFERENCE_TEMPLATE_NAME]. */
   referenceTemplateName?: string;
 }
@@ -126,6 +138,7 @@ export interface AnalysisExportFiles {
   weeksCsv: string;
   runsCsv: string;
   planCsv: string;
+  inventoryJson: string;
 }
 
 /** Was den Export einer Session verhindert hat - eine Zeile in `meta.json`. */
@@ -560,6 +573,19 @@ export function buildAnalysisExport(input: AnalysisExportInput): AnalysisExportF
     weeksCsv: buildWeeksCsv(input, rows),
     runsCsv: buildRunsCsv(input.runs),
     planCsv: buildPlanCsv(input),
+    inventoryJson: `${JSON.stringify(
+      buildLibraryInventory({
+        exercises: input.exercises,
+        templates: input.templates,
+        templateExercises: input.templateExercises,
+        bandLevels: input.bandLevels,
+        program: input.program,
+        programWeeks: input.programWeeks,
+        progressionRules: input.progressionRules,
+      }),
+      null,
+      2,
+    )}\n`,
     metaJson: buildMetaJson(input, {
       rows,
       discarded,
@@ -987,6 +1013,7 @@ function buildMetaJson(input: AnalysisExportInput, context: MetaContext): string
         'kraft_dauer_min ist die Session-Dauer von Start bis Abschluss, inklusive Pausen.',
         'wochen.csv zählt nur abgeschlossene Sessions; abgebrochene stehen in sessions.csv, aber nicht in den Wochensummen.',
         'verstrichen heißt: vergangen und keiner Session oder keinem Lauf zugeordnet – nicht zwingend ausgelassen.',
+        'bestand.json ist der heutige Stand der Bibliothek (Übungen, Workouts mit Zuordnungen und Zielwerten, Bänder, Wochenregeln) in den Feldnamen des Bibliotheks-Imports – Plan, nicht Training.',
       ],
       verworfeneSessions: context.discarded,
     },
@@ -996,7 +1023,7 @@ function buildMetaJson(input: AnalysisExportInput, context: MetaContext): string
 }
 
 /**
- * Dieselben sechs Dateien als ein Text zum Einfügen.
+ * Dieselben acht Dateien als ein Text zum Einfügen.
  *
  * Das ZIP ist auf dem Telefon der längere Weg: sichern, App wechseln, Anhang
  * suchen - und ein Archiv wird am anderen Ende oft gar nicht ausgepackt. Über
@@ -1057,6 +1084,12 @@ export function buildAnalysisPasteText(
     '',
     '```csv',
     files.planCsv.trimEnd(),
+    '```',
+    '',
+    '## bestand.json',
+    '',
+    '```json',
+    files.inventoryJson.trimEnd(),
     '```',
     '',
   ].join('\n');
