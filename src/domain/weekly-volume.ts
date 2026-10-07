@@ -61,6 +61,18 @@ function emptyWeek(weekStart: Date): WeekVolume {
   };
 }
 
+/**
+ * Kraftvolumen einer Übung in einer Session: Kilo mal Wiederholungen, und nur
+ * dort, wo Wiederholungen gezählt werden - Kilo mal Sekunden ist keine
+ * bewegte Masse. Wochen- und Sessionvolumen teilen sich diese eine Regel.
+ */
+export function sessionExerciseVolume(
+  exercise: Pick<WorkoutSessionExercise, 'trackingMode'>,
+  completedWorkLogs: WorkoutSetLog[],
+): number {
+  return supportsReps(exercise.trackingMode) ? sumWorkVolume(completedWorkLogs) : 0;
+}
+
 export function buildWeeklyVolume(input: WeeklyVolumeInput): WeekVolume[] {
   const first = startOfCalendarWeek(input.from);
   const last = startOfCalendarWeek(input.to);
@@ -139,9 +151,7 @@ export function buildWeeklyVolume(input: WeeklyVolumeInput): WeekVolume[] {
 
       week.strength.workSets += logs.length;
 
-      if (supportsReps(exercise.trackingMode)) {
-        week.strength.volumeKg += sumWorkVolume(logs);
-      }
+      week.strength.volumeKg += sessionExerciseVolume(exercise, logs);
     }
   }
 

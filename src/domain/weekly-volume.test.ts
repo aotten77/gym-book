@@ -11,6 +11,7 @@ import {
   describeWeekCounts,
   describeWeekVolume,
   hasTraining,
+  sessionExerciseVolume,
   type WeekVolume,
 } from '@/domain/weekly-volume';
 
@@ -305,5 +306,14 @@ describe('describeWeekCounts', () => {
         week({ running: { runs: 1, distanceKm: 1, elevationGainM: 0, elevationIncomplete: false, durationSeconds: 0 } }),
       ),
     ).toBe('1 Lauf');
+  });
+});
+
+describe('sessionExerciseVolume', () => {
+  const log = { weight: 50, reps: 4, seconds: 30 } as unknown as WorkoutSetLog;
+
+  it('zählt nur Modi mit Wiederholungen', () => {
+    expect(sessionExerciseVolume({ trackingMode: 'reps_weight' }, [log, log])).toBe(400);
+    expect(sessionExerciseVolume({ trackingMode: 'time' }, [log])).toBe(0);
   });
 });

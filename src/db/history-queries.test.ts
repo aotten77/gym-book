@@ -3,12 +3,15 @@ import { db } from '@/db/appDb';
 import {
   loadCompletedSessionsBetween,
   loadExercisesTrainedSince,
+  loadRunsBetween,
+  loadSessionVolumes,
   loadTemplateRecency,
   loadTestDatesBetween,
   loadWeekSummary,
   loadWeeklyVolume,
 } from '@/db/history-queries';
 import type { SessionStatus } from '@/domain/models';
+import type { WorkoutCategory } from '@/domain/workout-category';
 
 interface SessionSeed {
   id: string;
@@ -16,9 +19,19 @@ interface SessionSeed {
   status: SessionStatus;
   completedAt?: string;
   templateName?: string;
+  category?: WorkoutCategory;
+  planEntryId?: string;
 }
 
-async function addSession({ id, templateId, status, completedAt, templateName }: SessionSeed) {
+async function addSession({
+  id,
+  templateId,
+  status,
+  completedAt,
+  templateName,
+  category,
+  planEntryId,
+}: SessionSeed) {
   await db.workoutSessions.add({
     id,
     templateId,
@@ -27,6 +40,8 @@ async function addSession({ id, templateId, status, completedAt, templateName }:
     startedAt: '2026-08-01T08:00:00.000Z',
     completedAt,
     status,
+    ...(category ? { templateCategorySnapshot: category } : {}),
+    ...(planEntryId ? { planEntryId } : {}),
   });
 }
 
@@ -317,6 +332,103 @@ describe('loadCompletedSessionsBetween', () => {
     );
 
     expect(sessions.map((session) => session.id)).toEqual(['first', 'second']);
+  });
+});
+
+describe('loadCompletedSessionsBetween: Details', () => {
+  it('liefert Start, Art und Termin', async () => {
+    await addSession({
+      id: 'mit',
+      templateId: 't',
+      status: 'completed',
+      completedAt: '2026-08-04T10:00:00.000Z',
+      category: 'mobility',
+      planEntryId: 'p1',
+    });
+    await addSession({
+      id: 'ohne',
+      templateId: 't',
+      status: 'completed',
+      completedAt: '2026-08-05T10:00:00.000Z',
+    });
+
+    const sessions = await loadCompletedSessionsBetween(
+      '2026-08-01T00:00:00.000Z',
+      '2026-08-10T00:00:00.000Z',
+    );
+
+    expect(sessions[0]).toMatchObject({
+      startedAt: '2026-08-01T08:00:00.000Z',
+      templateCategorySnapshot: 'mobility',
+      planEntryId: 'p1',
+    });
+    expect(sessions[1].startedAt).toBe('2026-08-01T08:00:00.000Z');
+    expect(sessions[1]).not.toHaveProperty('templateCategorySnapshot');
+    expect(sessions[1]).not.toHaveProperty('planEntryId');
+  });
+});
+
+describe('loadRunsBetween', () => {
+  it('liefert die Läufe beider Grenztage aufsteigend', async () => {
+    for (const [id, date] of [
+      ['d', '2026-10-12'],
+      ['b', '2026-10-05'],
+      ['a', '2026-10-04'],
+      ['c', '2026-10-11'],
+    ]) {
+      await db.runLogs.add({
+        id,
+        date,
+        distanceKm: 5,
+        durationSeconds: 1800,
+        createdAt: '2026-10-01T10:00:00.000Z',
+        updatedAt: '2026-10-01T10:00:00.000Z',
+      });
+    }
+
+    const runs = await loadRunsBetween('2026-10-05', '2026-10-11');
+
+    expect(runs.map((run) => run.id)).toEqual(['b', 'c']);
+    expect(runs[0].distanceKm).toBe(5);
+  });
+});
+
+describe('loadSessionVolumes', () => {
+  it('summiert nur abgehakte Arbeitssätze von Modi mit Wiederholungen', async () => {
+    await addSession({ id: 's', templateId: 't', status: 'completed', completedAt: '2026-08-04T10:00:00.000Z' });
+    await addSessionExercise({ id: 'e1', sessionId: 's', exerciseId: 'x1' });
+    await db.workoutSessionExercises.add({
+      id: 'e2',
+      sessionId: 's',
+      exerciseId: 'x2',
+      exerciseNameSnapshot: 'x2',
+      trackingMode: 'time',
+      unilateral: false,
+      orderIndex: 2,
+      wasSkipped: false,
+      addedInSession: false,
+      workSetCount: 1,
+    });
+    await addSetLog({ id: 'l1', sessionExerciseId: 'e1', weight: 60, reps: 5 });
+    await addSetLog({ id: 'l2', sessionExerciseId: 'e1', weight: 60, reps: 5 });
+    await addSetLog({ id: 'l3', sessionExerciseId: 'e1', weight: 60, reps: 5, completed: false });
+    await addSetLog({ id: 'l4', sessionExerciseId: 'e1', weight: 20, reps: 10, setKind: 'warmup' });
+    await db.workoutSetLogs.add({
+      id: 'l5',
+      sessionExerciseId: 'e2',
+      setKind: 'work',
+      side: 'both',
+      setNumber: 1,
+      weight: 20,
+      seconds: 30,
+      completed: true,
+    });
+
+    expect(await loadSessionVolumes(['s'])).toEqual({ s: 600 });
+  });
+
+  it('liefert für eine leere Liste ein leeres Objekt', async () => {
+    expect(await loadSessionVolumes([])).toEqual({});
   });
 });
 

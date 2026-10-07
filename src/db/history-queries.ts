@@ -6,11 +6,12 @@ import {
   type ExerciseExecution,
   type LastSetValues,
 } from '@/domain/history';
-import type { WorkoutSetLog } from '@/domain/models';
+import type { RunLog, WorkoutSetLog } from '@/domain/models';
+import type { CalendarSession } from '@/domain/training-calendar';
 import { startOfCalendarWeek } from '@/domain/calendar-week';
 import { toDateInputValue } from '@/domain/program';
 import { sumWorkVolume } from '@/domain/volume';
-import { buildWeeklyVolume, type WeekVolume } from '@/domain/weekly-volume';
+import { buildWeeklyVolume, sessionExerciseVolume, type WeekVolume } from '@/domain/weekly-volume';
 
 /**
  * Alle abgeschlossenen Ausführungen einer Übung, älteste zuerst.
@@ -192,7 +193,7 @@ export async function loadWeekSummary(sinceIso: string): Promise<WeekSummary> {
 export async function loadCompletedSessionsBetween(
   fromIso: string,
   toIso: string,
-): Promise<WeekSummarySession[]> {
+): Promise<CalendarSession[]> {
   const sessions = await db.workoutSessions.where('completedAt').between(fromIso, toIso, true, true).toArray();
 
   return sessions
@@ -201,9 +202,57 @@ export async function loadCompletedSessionsBetween(
       id: session.id,
       templateId: session.templateId,
       templateName: session.templateNameSnapshot,
+      startedAt: session.startedAt,
       completedAt: session.completedAt!,
+      ...(session.templateCategorySnapshot ? { templateCategorySnapshot: session.templateCategorySnapshot } : {}),
+      ...(session.planEntryId ? { planEntryId: session.planEntryId } : {}),
     }))
     .sort((left, right) => left.completedAt.localeCompare(right.completedAt));
+}
+
+/** Die Läufe zwischen zwei Tagen (`YYYY-MM-DD`, beide eingeschlossen), aufsteigend nach Tag. */
+export async function loadRunsBetween(from: string, to: string): Promise<RunLog[]> {
+  return db.runLogs.where('date').between(from, to, true, true).sortBy('date');
+}
+
+/**
+ * Kraftvolumen (kg) je Session - für die *gewählte* Woche des Kalenders.
+ *
+ * Bewusst getrennt von `loadCompletedSessionsBetween`: die zieht das ganze
+ * Fenster und braucht kein Volumen; hier werden nur die Sätze der gefragten
+ * Sessions gelesen. Zählt abgehakte Arbeitssätze, über dieselbe Regel wie die
+ * Wochenrechnung (`sessionExerciseVolume`).
+ */
+export async function loadSessionVolumes(sessionIds: string[]): Promise<Record<string, number>> {
+  if (sessionIds.length === 0) {
+    return {};
+  }
+
+  const exercises = await db.workoutSessionExercises.where('sessionId').anyOf(sessionIds).toArray();
+  const logs =
+    exercises.length === 0
+      ? []
+      : await db.workoutSetLogs.where('sessionExerciseId').anyOf(exercises.map((exercise) => exercise.id)).toArray();
+
+  const logsByExercise = new Map<string, WorkoutSetLog[]>();
+
+  for (const log of logs) {
+    if (log.setKind !== 'work' || !log.completed) {
+      continue;
+    }
+
+    const list = logsByExercise.get(log.sessionExerciseId) ?? [];
+    list.push(log);
+    logsByExercise.set(log.sessionExerciseId, list);
+  }
+
+  const volumes: Record<string, number> = Object.fromEntries(sessionIds.map((id) => [id, 0]));
+
+  for (const exercise of exercises) {
+    volumes[exercise.sessionId] += sessionExerciseVolume(exercise, logsByExercise.get(exercise.id) ?? []);
+  }
+
+  return volumes;
 }
 
 /** Welche Läufe zwischen zwei Tagen (`YYYY-MM-DD`, beide eingeschlossen) liegen - der Kalender braucht nur Id und Tag. */
