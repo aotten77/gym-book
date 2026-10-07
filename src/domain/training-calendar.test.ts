@@ -448,6 +448,18 @@ describe('buildCalendarWeeks', () => {
     expect(unit.ref).toEqual({ type: 'active-session', sessionId: 'live' });
   });
 
+  it('vergangener Termin mit laufender Session bleibt stehen', () => {
+    const rows = build({ planEntries: [entry('mo', '2026-10-05')] }, [
+      { id: 'live', planEntryId: 'mo', status: 'active', templateNameSnapshot: 'Einheit A' },
+    ]);
+    const day = dayOf(rows, '2026-10-05');
+
+    expect(day.units).toHaveLength(1);
+    expect(day.units[0].state).toBe('geplant');
+    expect(day.units[0].ref).toEqual({ type: 'active-session', sessionId: 'live' });
+    expect(day.state).toBe('geplant');
+  });
+
   it('Art einer Einheit', () => {
     const rows = build({
       templates: [

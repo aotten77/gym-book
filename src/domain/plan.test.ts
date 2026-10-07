@@ -453,6 +453,14 @@ describe('describeTodayStatus', () => {
     expect(describeTodayStatus([a], links, today, names)).toBe('erledigt');
   });
 
+  it('nennt bei Erledigtem und Offenem nur das Offene', () => {
+    const a = entry({ id: 'a', date: today, orderInDay: 1 });
+    const run = entry({ id: 'r', date: today, orderInDay: 2, kind: 'run', templateId: undefined, title: 'Dauerlauf' });
+    const links = buildPlanLinks([sessionFor('a', 'completed')], []);
+
+    expect(describeTodayStatus([a, run], links, today, names)).toBe('Dauerlauf');
+  });
+
   it('nennt einen belegten Termin mit seinem Namen', () => {
     const a = entry({ id: 'a', date: today });
     const links = buildPlanLinks([sessionFor('a', 'active')], []);

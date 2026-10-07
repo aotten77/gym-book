@@ -405,7 +405,7 @@ function resolveDayState({
  * Eine Einheit ist entweder erledigt (aus dem Verlauf: abgeschlossene Session
  * am lokalen Tag ihres `completedAt`, Lauf an seinem `date`) oder geplant (ein
  * offener oder belegter Termin, heute oder später). Ein vergangener offener
- * Termin verschwindet - der Kalender zeigt, was war und was kommt.
+ * Termin verschwindet (ein belegter nicht) - der Kalender zeigt, was war und was kommt.
  * ---------------------------------------------------------------------------
  */
 
@@ -603,11 +603,16 @@ export function buildCalendarWeeks({
       const dayKey = toDateInputValue(date);
       const dated = entriesByDay.get(dayKey) ?? [];
       const doneUnits = doneByDay.get(dayKey) ?? [];
-      const plannedUnits =
-        dayKey < todayKey
-          ? []
-          : dated
-              .filter((entry) => planEntryState(entry.id, planLinks) !== 'erledigt')
+      /*
+       * Offene Termine zählen ab heute; ein belegter (laufende Session) bleibt
+       * auch dann auf seinem Tag stehen, wenn dieser zurückliegt - er läuft ja.
+       */
+      const plannedUnits = dated
+              .filter((entry) => {
+                const state = planEntryState(entry.id, planLinks);
+
+                return state === 'belegt' || (state === 'offen' && dayKey >= todayKey);
+              })
               .map<CalendarUnit>((entry) => {
                 const link = planLinks[entry.id];
                 const template = entry.templateId ? templateById.get(entry.templateId) : undefined;
