@@ -4,6 +4,7 @@ import {
   PLAN_MESSAGES,
   buildPlanLinks,
   describeRunTarget,
+  describeTodayStatus,
   doneDayOf,
   expandSeries,
   findMatchingPlanEntry,
@@ -423,5 +424,43 @@ describe('planWeekdayMigration', () => {
     expect(plan.entries.some((entry) => entry.date === '2026-10-22' && entry.templateId === 'ta')).toBe(
       false,
     );
+  });
+});
+
+describe('describeTodayStatus', () => {
+  const names = { A: 'Einheit A' };
+  const today = '2026-10-07';
+  const sessionFor = (planEntryId: string, status: 'active' | 'completed') => ({
+    id: `s-${planEntryId}`,
+    planEntryId,
+    status,
+    completedAt: status === 'completed' ? new Date(2026, 9, 7, 9).toISOString() : undefined,
+    templateNameSnapshot: 'Einheit A',
+  });
+
+  it('nennt die offenen Termine von heute in der Reihenfolge des Tages', () => {
+    const run = entry({ id: 'r', date: today, orderInDay: 2, kind: 'run', templateId: undefined, title: 'Intervalle 6×400' });
+    const a = entry({ id: 'a', date: today, orderInDay: 1 });
+    const other = entry({ id: 'x', date: '2026-10-08' });
+
+    expect(describeTodayStatus([run, other, a], {}, today, names)).toBe('Einheit A, Intervalle 6×400');
+  });
+
+  it('sagt "erledigt", wenn heute nur Erledigtes dasteht', () => {
+    const a = entry({ id: 'a', date: today });
+    const links = buildPlanLinks([sessionFor('a', 'completed')], []);
+
+    expect(describeTodayStatus([a], links, today, names)).toBe('erledigt');
+  });
+
+  it('nennt einen belegten Termin mit seinem Namen', () => {
+    const a = entry({ id: 'a', date: today });
+    const links = buildPlanLinks([sessionFor('a', 'active')], []);
+
+    expect(describeTodayStatus([a], links, today, names)).toBe('Einheit A');
+  });
+
+  it('sagt "frei", wenn heute nichts ansteht', () => {
+    expect(describeTodayStatus([entry({ id: 'x', date: '2026-10-08' })], {}, today, names)).toBe('frei');
   });
 });
