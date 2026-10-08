@@ -153,3 +153,31 @@ export function collectPageErrors(page: Page) {
 
   return errors;
 }
+
+/**
+ * Öffnet das Sheet „Termin“ über „+ Termin“ am morgigen Tag des Programm-Tabs.
+ * Für heute gibt es dort kein „+ Termin“ (heute trainiert man über „+ Einheit“);
+ * wer einen heutigen Termin braucht, setzt im Sheet das Feld „Datum“ um.
+ * An einem Sonntag liegt morgen in der nächsten Woche - die Zeile wird gewählt.
+ */
+export async function openAddEntryTomorrow(page: Page) {
+  const { tomorrow, monday } = await page.evaluate(() => {
+    const iso = (date: Date) =>
+      `${date.getFullYear()}-${`${date.getMonth() + 1}`.padStart(2, '0')}-${`${date.getDate()}`.padStart(2, '0')}`;
+    const next = new Date();
+
+    next.setDate(next.getDate() + 1);
+
+    const start = new Date(next);
+
+    start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
+
+    return { tomorrow: iso(next), monday: iso(start) };
+  });
+
+  await page.locator(`[data-calendar-week="${monday}"]`).click();
+  await page
+    .locator(`[data-plan-day="${tomorrow}"]`)
+    .getByRole('button', { name: /^Termin am .* hinzufügen$/ })
+    .click();
+}

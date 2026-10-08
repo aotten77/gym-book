@@ -74,8 +74,36 @@ async function clearPlanEntries(page: Page) {
   );
 }
 
-async function addRun(page: Page, title: string, extra?: { distance?: string; pace?: string }) {
-  await page.getByRole('button', { name: 'Termin hinzufügen' }).click();
+/** Wählt im Raster die Wochenzeile, in der `day` liegt - an einem Sonntag ist morgen schon die nächste Woche. */
+async function selectWeekOf(page: Page, day: string) {
+  const monday = await page.evaluate((value) => {
+    const [year, month, date] = value.split('-').map(Number);
+    const parsed = new Date(year, month - 1, date);
+
+    parsed.setDate(parsed.getDate() - ((parsed.getDay() + 6) % 7));
+
+    return `${parsed.getFullYear()}-${`${parsed.getMonth() + 1}`.padStart(2, '0')}-${`${parsed.getDate()}`.padStart(2, '0')}`;
+  }, day);
+
+  await page.locator(`[data-calendar-week="${monday}"]`).click();
+  await expect(page.locator('[data-plan-week]')).toHaveAttribute('data-plan-week', monday);
+}
+
+/** Öffnet das Sheet „Termin“ über „+ Termin“ des (künftigen) Tages. */
+async function openAddEntry(page: Page, day: string) {
+  await selectWeekOf(page, day);
+  await page
+    .locator(`[data-plan-day="${day}"]`)
+    .getByRole('button', { name: /^Termin am .* hinzufügen$/ })
+    .click();
+}
+
+async function addRun(
+  page: Page,
+  title: string,
+  extra?: { distance?: string; pace?: string; day?: string },
+) {
+  await openAddEntry(page, extra?.day ?? (await localDay(page, 1)));
 
   const sheet = page.locator('[data-sheet]');
   await sheet.getByRole('button', { name: 'Lauf', exact: true }).click();
@@ -92,6 +120,19 @@ async function addRun(page: Page, title: string, extra?: { distance?: string; pa
   await sheet.getByRole('button', { name: 'Termin speichern' }).click();
 }
 
+/** Legt einen Workout-Termin „Einheit A“ für heute an: über morgen, dann das Datum auf heute setzen. */
+async function addTodayWorkoutEntry(page: Page) {
+  const today = await localDay(page);
+
+  await openAddEntry(page, await localDay(page, 1));
+  const sheet = page.locator('[data-sheet]');
+  await sheet.getByLabel('Workout', { exact: true }).selectOption({ label: 'Einheit A' });
+  await sheet.getByLabel('Datum', { exact: true }).fill(today);
+  await sheet.getByRole('button', { name: 'Termin speichern' }).click();
+  await expect(sheet).toHaveCount(0);
+  await selectWeekOf(page, today);
+}
+
 test.describe('Termine im Programm-Tab', () => {
   test.beforeEach(async ({ page }) => {
     await resetDatabase(page);
@@ -103,14 +144,13 @@ test.describe('Termine im Programm-Tab', () => {
   test('legt einen Lauf-Termin an und zeigt die Vorgabe', async ({ page }) => {
     const errors = collectPageErrors(page);
 
-    await expect(page.getByText('Keine Termine in dieser Woche')).toBeVisible();
-
     await addRun(page, 'Intervalle 6×400', { distance: '7', pace: '5:00' });
 
     const entry = page.locator('[data-plan-entry]').filter({ hasText: 'Intervalle 6×400' });
     await expect(entry).toBeVisible();
     await expect(entry).toContainText('7 km · 5:00 /km');
     await expect(entry).toHaveAttribute('data-plan-entry-state', 'offen');
+    await expect(entry).toHaveAttribute('data-day-unit', 'run');
     await expect(page.locator('[data-plan-week]')).toHaveCount(1);
 
     expect(errors).toEqual([]);
@@ -167,7 +207,7 @@ test.describe('Termine im Programm-Tab', () => {
   });
 
   test('zeigt den Fehler einer Dauer von 0', async ({ page }) => {
-    await page.getByRole('button', { name: 'Termin hinzufügen' }).click();
+    await openAddEntry(page, await localDay(page, 1));
 
     const sheet = page.locator('[data-sheet]');
     await sheet.getByRole('button', { name: 'Lauf', exact: true }).click();
@@ -183,11 +223,7 @@ test.describe('Termine im Programm-Tab', () => {
   test('ein laufender Termin führt in die laufende Session', async ({ page }) => {
     const errors = collectPageErrors(page);
 
-    await page.getByRole('button', { name: 'Termin hinzufügen' }).click();
-    const entrySheet = page.locator('[data-sheet]');
-    await entrySheet.getByLabel('Workout', { exact: true }).selectOption({ label: 'Einheit A' });
-    await entrySheet.getByRole('button', { name: 'Termin speichern' }).click();
-    await expect(entrySheet).toHaveCount(0);
+    await addTodayWorkoutEntry(page);
 
     await page.goto('./');
     await page.waitForTimeout(800);
@@ -199,13 +235,8 @@ test.describe('Termine im Programm-Tab', () => {
     await page.waitForTimeout(1000);
     const entry = page.locator('[data-plan-entry]').filter({ hasText: 'Einheit A' });
     await expect(entry).toHaveAttribute('data-plan-entry-state', 'belegt');
-    await entry.getByRole('button').first().click();
-
-    const sheet = page.locator('[data-sheet]');
-    await expect(sheet).toContainText('Läuft gerade');
-    // Ein belegter Termin zeigt nie das Formular, auch nicht kurz.
-    await expect(sheet.getByRole('button', { name: 'Termin speichern' })).toHaveCount(0);
-    await sheet.getByRole('link', { name: 'Zur Session' }).click();
+    // Die belegte Zeile führt direkt in die laufende Session, kein Sheet dazwischen.
+    await entry.click();
     await page.waitForURL(/#\/session\//);
     expect(page.url()).toBe(sessionUrl);
 
@@ -233,10 +264,7 @@ test.describe('Termine im Programm-Tab', () => {
   test('Home startet den heutigen Termin und markiert ihn erledigt', async ({ page }) => {
     const errors = collectPageErrors(page);
 
-    await page.getByRole('button', { name: 'Termin hinzufügen' }).click();
-    const sheet = page.locator('[data-sheet]');
-    await sheet.getByLabel('Workout', { exact: true }).selectOption({ label: 'Einheit A' });
-    await sheet.getByRole('button', { name: 'Termin speichern' }).click();
+    await addTodayWorkoutEntry(page);
     await expect(page.locator('[data-plan-entry]').filter({ hasText: 'Einheit A' })).toHaveAttribute(
       'data-plan-entry-state',
       'offen',
@@ -259,6 +287,26 @@ test.describe('Termine im Programm-Tab', () => {
     await expect(
       page.locator('[data-plan-entry]').filter({ hasText: 'Einheit A' }),
     ).toHaveAttribute('data-plan-entry-state', 'erledigt');
+
+    expect(errors).toEqual([]);
+  });
+
+  test('heute geplantes Workout startet aus der Liste', async ({ page }) => {
+    const errors = collectPageErrors(page);
+    const today = await localDay(page);
+
+    await addTodayWorkoutEntry(page);
+
+    const row = page.locator(`[data-plan-day="${today}"] [data-plan-entry]`).filter({ hasText: 'Einheit A' });
+    await expect(row).toHaveAttribute('data-plan-entry-state', 'offen');
+    await row.click();
+    await page.waitForURL(/#\/session\//);
+
+    await page.goto('./#/programs');
+    await page.waitForTimeout(1000);
+    await expect(
+      page.locator(`[data-plan-day="${today}"] [data-plan-entry]`).filter({ hasText: 'Einheit A' }),
+    ).toHaveAttribute('data-plan-entry-state', 'belegt');
 
     expect(errors).toEqual([]);
   });

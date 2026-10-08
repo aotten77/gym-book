@@ -373,8 +373,8 @@ export function ProgramsPage() {
           ) : null}
         </div>
 
-        {/* Übergang: ohne Pfeile, die Liste folgt der Auswahl im Raster. */}
-        <PlanWeekSection weekStart={parseLocalDate(selectedWeek) ?? startOfCalendarWeek(new Date())} />
+        {/* Ohne Pfeile: die Liste folgt der Auswahl im Raster. */}
+        {selectedRow ? <PlanWeekSection week={selectedRow} /> : null}
 
         {selectedProgramWeek && overrideCount === 0 && blocks.some((block) => block.entries.length > 0) ? (
           /*

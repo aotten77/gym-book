@@ -103,9 +103,10 @@ test.describe('Bibliotheks-Import', () => {
   });
 
   /*
-   * Termine aus der Datei: Dienstag und Mittwoch dieser Woche, weil die
-   * Beispieldaten Montag und Donnerstag schon belegen und der Programm-Tab
-   * ohne Startdatum die laufende Kalenderwoche zeigt.
+   * Termine aus der Datei: Dienstag und Mittwoch der nächsten Woche. Die
+   * Beispieldaten belegen Montag und Donnerstag, und offene Termine vergangener
+   * Tage zeigt die Liste nicht mehr - dieser Woche läge der Dienstag je nach
+   * Wochentag schon dahinter.
    */
   test('legt Termine aus planRange an und zeigt sie im Programm-Tab', async ({ page }) => {
     const [tuesday, wednesday] = await page.evaluate(() => {
@@ -119,7 +120,7 @@ test.describe('Bibliotheks-Import', () => {
         return `${now.getFullYear()}-${month}-${date}`;
       };
 
-      return [day(1), day(2)];
+      return [day(8), day(9)];
     });
 
     await pasteAndPreview(
@@ -150,6 +151,14 @@ test.describe('Bibliotheks-Import', () => {
 
     await page.goto('./#/programs');
     await page.waitForTimeout(1200);
+    await page
+      .locator(`[data-calendar-week="${await page.evaluate(() => {
+        const now = new Date();
+        now.setDate(now.getDate() - ((now.getDay() + 6) % 7) + 7);
+
+        return `${now.getFullYear()}-${`${now.getMonth() + 1}`.padStart(2, '0')}-${`${now.getDate()}`.padStart(2, '0')}`;
+      })}"]`)
+      .click();
 
     await expect(page.locator(`[data-plan-day="${tuesday}"]`)).toContainText('Einheit A');
     await expect(page.locator(`[data-plan-day="${wednesday}"]`)).toContainText('Intervalle 6×400');

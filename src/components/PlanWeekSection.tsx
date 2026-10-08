@@ -1,64 +1,81 @@
 import { useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Dumbbell } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { ChevronDown, ChevronRight, ChevronUp } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Empty } from '@/components/Empty';
+import { Alert } from '@/components/Alert';
 import { PlanEntrySheet } from '@/components/PlanEntrySheet';
 import { PlanSeriesSheet } from '@/components/PlanSeriesSheet';
-import { RunIcon } from '@/components/icons/RunIcon';
+import { RunLogSheet } from '@/components/RunLogSheet';
+import { TodayUnitSheet } from '@/components/TodayUnitSheet';
+import { UnitKindIcon } from '@/components/icons/UnitKindIcon';
 import { Button, IconButton } from '@/components/ui/Button';
-import { DoneRow } from '@/components/ui/StatusCard';
+import { DONE_SURFACE } from '@/components/ui/StatusCard';
 import { db } from '@/db/appDb';
 import { countTemplatesWithWeekdays } from '@/db/data-fix-actions';
+import { loadSessionVolumes } from '@/db/history-queries';
 import { movePlanEntryInDay } from '@/db/plan-actions';
 import { loadPlanBetween } from '@/db/plan-queries';
+import { startSessionFromTemplate } from '@/db/session-actions';
 import type { PlanEntry } from '@/domain/models';
-import { describeRunTarget, planEntryName, planEntryState } from '@/domain/plan';
+import { planEntryState } from '@/domain/plan';
 import { toDateInputValue } from '@/domain/program';
+import {
+  describeCalendarUnitDetail,
+  describeWeekRange,
+  type CalendarUnit,
+  type CalendarWeek,
+} from '@/domain/training-calendar';
 import { formatRunDate } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
 interface PlanWeekSectionProps {
-  weekStart: Date;
-  /** Nur gesetzt, wenn keine Programmwoche die Woche bestimmt. */
-  onShiftWeek?: (delta: -1 | 1) => void;
+  /** Die im Raster gewählte Woche; die Liste hat keine eigenen Pfeile. */
+  week: CalendarWeek;
 }
 
-function weekEnd(weekStart: Date): Date {
-  const end = new Date(weekStart.getTime());
-
-  end.setDate(end.getDate() + 6);
-
-  return end;
-}
+const ROW_BASE =
+  'flex min-h-[3.625rem] w-full min-w-0 flex-1 items-center gap-3 rounded-panel px-3 py-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent';
 
 /**
- * Die Termine einer Kalenderwoche, nach Tagen gruppiert. Anlegen, bearbeiten,
- * verschieben und Serien laufen über Sheets; die Zeile ist das Tippziel.
+ * Die Tagesliste: Plan und Wirklichkeit einer Kalenderwoche zusammen. Jede
+ * Zeile ist selbst das Tippziel (Link oder Knopf) und trägt deshalb nur
+ * Zier-Marken; geschrieben wird über die Sheets und `startSessionFromTemplate`.
  */
-export function PlanWeekSection({ weekStart, onShiftWeek }: PlanWeekSectionProps) {
-  const fromDay = toDateInputValue(weekStart);
-  const toDay = toDateInputValue(weekEnd(weekStart));
+export function PlanWeekSection({ week }: PlanWeekSectionProps) {
+  const navigate = useNavigate();
+  const fromDay = week.key;
+  const toDay = toDateInputValue(week.end);
   const todayKey = toDateInputValue(new Date());
-  // Heute, wenn es in der Woche liegt, sonst deren Montag - für Termin *und*
-  // Serie: eine Serie ab Montag legte mittwochs zwei Termine in die Vergangenheit.
-  const defaultDate = todayKey >= fromDay && todayKey <= toDay ? todayKey : fromDay;
+  // Heute, wenn es in der Woche liegt; den Montag, wenn die Woche künftig ist;
+  // sonst heute - eine Serie ab Montag legte mittwochs zwei Termine in die Vergangenheit.
+  const seriesStart = todayKey >= fromDay && todayKey <= toDay ? todayKey : fromDay > todayKey ? fromDay : todayKey;
 
   const [editing, setEditing] = useState<PlanEntry | undefined>(undefined);
+  const [entryDefaultDate, setEntryDefaultDate] = useState(todayKey);
   const [entrySheetOpen, setEntrySheetOpen] = useState(false);
   const [seriesOpen, setSeriesOpen] = useState(false);
-  const [moveError, setMoveError] = useState<string | null>(null);
+  const [todaySheetOpen, setTodaySheetOpen] = useState(false);
+  const [runSheetOpen, setRunSheetOpen] = useState(false);
+  const [runEntryId, setRunEntryId] = useState<string | undefined>(undefined);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [isStarting, setIsStarting] = useState(false);
 
+  // Die Verweise (offen/belegt/erledigt) kommen aus derselben Abfrage wie überall.
   const plan = useLiveQuery(() => loadPlanBetween(fromDay, toDay), [fromDay, toDay]);
-  const templates = useLiveQuery(() => db.workoutTemplates.toArray(), []);
-  const templateNames = useMemo(
-    () =>
-      (templates ?? []).reduce<Record<string, string>>((names, template) => {
-        names[template.id] = template.name;
-        return names;
-      }, {}),
-    [templates],
+  const links = plan?.links ?? {};
+
+  const sessionIds = week.days.flatMap((day) =>
+    day.units.flatMap((unit) => (unit.ref.type === 'session' ? [unit.ref.sessionId] : [])),
   );
+  const volumes = useLiveQuery(() => loadSessionVolumes(sessionIds), [sessionIds.join()]);
+  const exerciseCounts = useLiveQuery(async () => {
+    const rows = await db.workoutTemplateExercises.toArray();
+
+    return rows.reduce<Record<string, number>>((counts, row) => {
+      counts[row.templateId] = (counts[row.templateId] ?? 0) + 1;
+      return counts;
+    }, {});
+  }, []);
 
   /*
    * Solange ein Workout noch feste Wochentage trägt, fehlen deren Termine hier -
@@ -68,54 +85,161 @@ export function PlanWeekSection({ weekStart, onShiftWeek }: PlanWeekSectionProps
   const templatesWithWeekdays = useLiveQuery(() => countTemplatesWithWeekdays(), []);
   const hasUnmigratedWeekdays = (templatesWithWeekdays ?? 0) > 0;
 
-  const entries = plan?.entries ?? [];
-  const links = plan?.links ?? {};
-  const days = useMemo(() => {
-    const byDay = new Map<string, PlanEntry[]>();
+  const todayDay = week.days.find((day) => day.isToday);
+  // Das Sheet erwartet nur die heute noch offenen Workout-Termine.
+  const plannedToday = useMemo(
+    () =>
+      (todayDay?.units ?? []).flatMap((unit) =>
+        unit.ref.type === 'entry' && unit.ref.entry.kind === 'workout' ? [unit.ref.entry] : [],
+      ),
+    [todayDay],
+  );
 
-    for (const entry of plan?.entries ?? []) {
-      byDay.set(entry.date, [...(byDay.get(entry.date) ?? []), entry]);
-    }
-
-    return [...byDay.entries()];
-  }, [plan]);
-
-  function openEntry(entry: PlanEntry | undefined) {
+  function openEntry(entry: PlanEntry | undefined, defaultDate: string) {
     setEditing(entry);
+    setEntryDefaultDate(defaultDate);
     setEntrySheetOpen(true);
   }
 
+  async function handleStart(entry: PlanEntry) {
+    if (!entry.templateId || isStarting) {
+      return;
+    }
+
+    setIsStarting(true);
+    setActionError(null);
+
+    try {
+      const sessionId = await startSessionFromTemplate(entry.templateId, { planEntryId: entry.id });
+
+      navigate(`/session/${sessionId}`);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Session konnte nicht gestartet werden.');
+      setIsStarting(false);
+    }
+  }
+
   async function handleMove(entry: PlanEntry, direction: -1 | 1) {
-    setMoveError(null);
+    setActionError(null);
 
     try {
       await movePlanEntryInDay(entry.id, direction);
     } catch (error) {
-      setMoveError(error instanceof Error ? error.message : 'Der Termin ließ sich nicht verschieben.');
+      setActionError(error instanceof Error ? error.message : 'Der Termin ließ sich nicht verschieben.');
     }
   }
 
-  const rangeLabel = `${formatRunDate(fromDay)} – ${formatRunDate(toDay)}`;
+  function renderUnit(unit: CalendarUnit, isToday: boolean, key: string) {
+    const entryState = unit.planEntryId ? planEntryState(unit.planEntryId, links) : undefined;
+    const detail = describeCalendarUnitDetail(unit, {
+      volumeKg: unit.ref.type === 'session' ? volumes?.[unit.ref.sessionId] : undefined,
+      exerciseCount:
+        unit.ref.type === 'entry' && unit.ref.entry.templateId
+          ? exerciseCounts?.[unit.ref.entry.templateId]
+          : undefined,
+    });
+    const done = unit.state === 'erledigt';
+    const startMark =
+      isToday && unit.ref.type === 'entry' ? (unit.kind === 'run' ? 'Eintragen' : 'Starten') : undefined;
+    const className = cn(
+      ROW_BASE,
+      done ? DONE_SURFACE : 'border border-line bg-surface',
+    );
+    const content = (
+      <>
+        <UnitKindIcon
+          kind={unit.kind}
+          size={24}
+          className={cn('shrink-0', done ? 'text-success-contrast' : 'text-content-secondary')}
+        />
+        <span className="min-w-0 flex-1">
+          <span className={cn('block truncate text-sm font-semibold', done ? '' : 'text-content')}>
+            {unit.name}
+          </span>
+          {detail ? (
+            <span className={cn('block truncate text-xs', done ? 'opacity-75' : 'text-content-muted')}>
+              {detail}
+            </span>
+          ) : null}
+        </span>
+        {startMark ? (
+          <span
+            aria-hidden="true"
+            className="shrink-0 rounded-control bg-accent px-3 py-1 text-xs font-semibold text-accent-contrast"
+          >
+            {startMark}
+          </span>
+        ) : (
+          <ChevronRight size={18} aria-hidden="true" className="shrink-0 opacity-60" />
+        )}
+      </>
+    );
+    const anchors = {
+      'data-day-unit': unit.kind,
+      'data-unit-state': unit.state,
+      'data-plan-entry': unit.planEntryId,
+      'data-plan-entry-state': entryState,
+    };
+    const ref = unit.ref;
+
+    if (ref.type === 'session') {
+      return (
+        <Link key={key} to={`/history/session/${ref.sessionId}`} className={className} {...anchors}>
+          {content}
+        </Link>
+      );
+    }
+
+    if (ref.type === 'run') {
+      return (
+        <Link key={key} to={`/runs/${ref.runId}`} className={className} {...anchors}>
+          {content}
+        </Link>
+      );
+    }
+
+    if (ref.type === 'active-session') {
+      return (
+        <Link key={key} to={`/session/${ref.sessionId}`} className={className} {...anchors}>
+          {content}
+        </Link>
+      );
+    }
+
+    const entry = ref.entry;
+
+    return (
+      <button
+        key={key}
+        type="button"
+        disabled={isStarting}
+        className={className}
+        {...anchors}
+        onClick={() => {
+          if (!isToday) {
+            openEntry(entry, entry.date);
+          } else if (entry.kind === 'workout') {
+            void handleStart(entry);
+          } else {
+            setRunEntryId(entry.id);
+            setRunSheetOpen(true);
+          }
+        }}
+      >
+        {content}
+      </button>
+    );
+  }
+
+  const weekLabel = `Woche ${describeWeekRange(week.start, week.end)}${
+    week.programWeek ? ` · W${week.programWeek.number}` : ''
+  }`;
 
   return (
     <section data-plan-week={fromDay} aria-label="Termine der Woche" className="space-y-3">
-      <div className="flex items-center justify-between gap-2">
-        {onShiftWeek ? (
-          <IconButton label="Vorherige Woche" onClick={() => onShiftWeek(-1)}>
-            <ChevronLeft size={20} aria-hidden="true" />
-          </IconButton>
-        ) : null}
-        <div className="min-w-0 flex-1 px-1">
-          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-content-muted">
-            Termine
-          </p>
-          <p className="truncate text-sm font-semibold text-content">{rangeLabel}</p>
-        </div>
-        {onShiftWeek ? (
-          <IconButton label="Nächste Woche" onClick={() => onShiftWeek(1)}>
-            <ChevronRight size={20} aria-hidden="true" />
-          </IconButton>
-        ) : null}
+      <div className="min-w-0 px-1">
+        <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-content-muted">Termine</p>
+        <p className="truncate text-sm font-semibold text-content">{weekLabel}</p>
       </div>
 
       {hasUnmigratedWeekdays ? (
@@ -131,111 +255,108 @@ export function PlanWeekSection({ weekStart, onShiftWeek }: PlanWeekSectionProps
         </Link>
       ) : null}
 
-      {entries.length === 0 ? (
-        <Empty
-          title="Keine Termine in dieser Woche"
-          description="Lege einen Termin an oder eine Serie für mehrere Wochen."
-        />
-      ) : (
-        days.map(([date, dayEntries]) => (
-          <div key={date} data-plan-day={date} className="space-y-2">
-            <p className="px-1 text-xs font-semibold text-content-muted">{formatRunDate(date)}</p>
-            {dayEntries.map((entry, index) => {
-              const state = planEntryState(entry.id, links);
-              const name = planEntryName(entry, templateNames, links);
-              const detail =
-                entry.kind === 'run' ? describeRunTarget(entry) || entry.notes : entry.notes;
-              const Icon = entry.kind === 'run' ? RunIcon : Dumbbell;
-              const canMove = dayEntries.length >= 2 && state === 'offen';
+      {week.days.map((day) => {
+        const entryUnits = day.units.filter((unit) => unit.ref.type === 'entry');
+        const canMove = !day.isToday && !day.isPast && entryUnits.length >= 2;
+
+        return (
+          <div key={day.key} data-plan-day={day.key} className="space-y-2">
+            <div className="flex items-center gap-2 px-1">
+              <p className="text-xs font-semibold text-content-muted">{formatRunDate(day.key)}</p>
+              {day.isToday ? (
+                <span className="rounded-control bg-accent px-2 py-0.5 text-[11px] font-semibold text-accent-contrast">
+                  Heute
+                </span>
+              ) : null}
+              {day.units.length === 0 ? (
+                <span className="text-xs text-content-muted">frei</span>
+              ) : null}
+            </div>
+
+            {day.units.map((unit, index) => {
+              const entryIndex = entryUnits.indexOf(unit);
+              const key = `${unit.planEntryId ?? unit.ref.type}-${index}`;
+              const row = renderUnit(unit, day.isToday, key);
+
+              if (!canMove || entryIndex < 0 || unit.ref.type !== 'entry') {
+                return row;
+              }
+
+              const entry = unit.ref.entry;
 
               return (
-                <div
-                  key={entry.id}
-                  data-plan-entry={entry.id}
-                  data-plan-entry-state={state}
-                  className="flex items-stretch gap-2"
-                >
-                  <button
-                    type="button"
-                    onClick={() => openEntry(entry)}
-                    className="min-h-touch min-w-0 flex-1 rounded-panel text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                  >
-                    {state === 'erledigt' ? (
-                      <DoneRow
-                        title={name}
-                        meta={entry.kind === 'run' ? detail : undefined}
-                        icon={<Icon size={18} aria-hidden="true" />}
-                      />
-                    ) : (
-                      <span
-                        className={cn(
-                          'flex min-h-touch items-center gap-2.5 rounded-panel border border-line bg-surface px-4 py-3',
-                        )}
-                      >
-                        <Icon size={18} className="shrink-0 text-content-secondary" aria-hidden="true" />
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-sm font-semibold text-content">
-                            {name}
-                          </span>
-                          {detail ? (
-                            <span className="block truncate text-xs text-content-muted">{detail}</span>
-                          ) : null}
-                        </span>
-                        {state === 'belegt' ? (
-                          <span className="shrink-0 text-xs text-content-muted">Läuft</span>
-                        ) : null}
-                      </span>
-                    )}
-                  </button>
-                  {canMove ? (
-                    <div className="flex shrink-0 gap-1">
-                      <IconButton
-                        label="Früher am Tag"
-                        disabled={index === 0}
-                        onClick={() => void handleMove(entry, -1)}
-                      >
-                        <ChevronUp size={18} aria-hidden="true" />
-                      </IconButton>
-                      <IconButton
-                        label="Später am Tag"
-                        disabled={index === dayEntries.length - 1}
-                        onClick={() => void handleMove(entry, 1)}
-                      >
-                        <ChevronDown size={18} aria-hidden="true" />
-                      </IconButton>
-                    </div>
-                  ) : null}
+                <div key={key} className="flex items-stretch gap-2">
+                  {row}
+                  <div className="flex shrink-0 gap-1">
+                    <IconButton
+                      label="Früher am Tag"
+                      disabled={entryIndex === 0}
+                      onClick={() => void handleMove(entry, -1)}
+                    >
+                      <ChevronUp size={18} aria-hidden="true" />
+                    </IconButton>
+                    <IconButton
+                      label="Später am Tag"
+                      disabled={entryIndex === entryUnits.length - 1}
+                      onClick={() => void handleMove(entry, 1)}
+                    >
+                      <ChevronDown size={18} aria-hidden="true" />
+                    </IconButton>
+                  </div>
                 </div>
               );
             })}
+
+            {day.isToday ? (
+              <Button variant="primary" size="md" fullWidth onClick={() => setTodaySheetOpen(true)}>
+                + Einheit
+              </Button>
+            ) : !day.isPast ? (
+              <Button
+                variant="ghost"
+                size="md"
+                fullWidth
+                aria-label={`Termin am ${formatRunDate(day.key)} hinzufügen`}
+                onClick={() => openEntry(undefined, day.key)}
+              >
+                + Termin
+              </Button>
+            ) : null}
           </div>
-        ))
-      )}
+        );
+      })}
 
-      {moveError ? (
-        <p role="alert" className="text-sm text-danger">
-          {moveError}
-        </p>
-      ) : null}
+      {actionError ? <Alert>{actionError}</Alert> : null}
 
-      <div className="grid grid-cols-2 gap-2">
-        <Button variant="primary" size="md" onClick={() => openEntry(undefined)}>
-          Termin hinzufügen
-        </Button>
-        <Button variant="ghost" size="md" onClick={() => setSeriesOpen(true)}>
-          Serie anlegen
-        </Button>
-      </div>
+      <Button variant="ghost" size="md" fullWidth onClick={() => setSeriesOpen(true)}>
+        Serie anlegen
+      </Button>
 
+      <TodayUnitSheet
+        open={todaySheetOpen}
+        plannedToday={plannedToday}
+        onClose={() => setTodaySheetOpen(false)}
+        onLogRun={() => {
+          // Nie zwei Sheets übereinander: erst schließen, dann das Lauf-Sheet öffnen.
+          setTodaySheetOpen(false);
+          setRunEntryId(undefined);
+          setRunSheetOpen(true);
+        }}
+      />
+      <RunLogSheet
+        open={runSheetOpen}
+        initialPlanEntryId={runEntryId}
+        onClose={() => setRunSheetOpen(false)}
+      />
       <PlanEntrySheet
         open={entrySheetOpen}
         entry={editing}
-        defaultDate={defaultDate}
+        defaultDate={entryDefaultDate}
         onClose={() => setEntrySheetOpen(false)}
       />
       <PlanSeriesSheet
         open={seriesOpen}
-        defaultStartDate={defaultDate}
+        defaultStartDate={seriesStart}
         onClose={() => setSeriesOpen(false)}
       />
     </section>

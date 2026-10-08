@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { resetDatabase, seedSampleData } from './helpers';
+import { openAddEntryTomorrow, resetDatabase, seedSampleData } from './helpers';
 
 /*
  * Ein Lauf über Heute: Sheet, Pace-Zeile, Sprung über die Tastaturleiste.
@@ -130,7 +130,7 @@ test.describe('Lauf-Sheet und Termine', () => {
       return `${now.getFullYear()}-${month}-${day}`;
     });
 
-    await page.getByRole('button', { name: 'Termin hinzufügen' }).click();
+    await openAddEntryTomorrow(page);
     const entrySheet = page.locator('[data-sheet]');
     await entrySheet.getByRole('button', { name: 'Lauf', exact: true }).click();
     await entrySheet.getByLabel('Datum').fill(today);
@@ -164,10 +164,17 @@ test.describe('Lauf bearbeiten und Termine', () => {
   async function addTodayRunEntry(page: Page, title: string) {
     await page.goto('./#/programs');
     await page.waitForTimeout(1000);
-    await page.getByRole('button', { name: 'Termin hinzufügen' }).click();
+    await openAddEntryTomorrow(page);
 
     const sheet = page.locator('[data-sheet]');
     await sheet.getByRole('button', { name: 'Lauf', exact: true }).click();
+    await sheet.getByLabel('Datum', { exact: true }).fill(
+      await page.evaluate(() => {
+        const now = new Date();
+
+        return `${now.getFullYear()}-${`${now.getMonth() + 1}`.padStart(2, '0')}-${`${now.getDate()}`.padStart(2, '0')}`;
+      }),
+    );
     await sheet.getByLabel('Titel').fill(title);
     await sheet.getByRole('button', { name: 'Termin speichern' }).click();
     await expect(sheet).toHaveCount(0);

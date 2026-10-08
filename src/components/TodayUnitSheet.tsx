@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Alert } from '@/components/Alert';
@@ -33,6 +33,13 @@ export function TodayUnitSheet({ open, plannedToday, onClose, onLogRun }: TodayU
   const navigate = useNavigate();
   const [isStarting, setIsStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
+
+  // Bei jedem Öffnen frisch: nach einem Fehler oder einem Start wäre sonst alles gesperrt.
+  useEffect(() => {
+    if (open) {
+      setIsStarting(false);
+    }
+  }, [open]);
 
   const templates = useLiveQuery(() => db.workoutTemplates.toArray(), []);
   const recency = useLiveQuery(() => loadTemplateRecency(), []);
