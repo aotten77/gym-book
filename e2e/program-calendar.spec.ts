@@ -283,7 +283,7 @@ test.describe('Tagesliste: Einheit und Termin', () => {
     await page.locator(`[data-calendar-week="${await mondayOf(page, tomorrow)}"]`).click();
     await page
       .locator(`[data-plan-day="${tomorrow}"]`)
-      .getByRole('button', { name: /^Termin am .* hinzufügen$/ })
+      .getByRole('button', { name: /^\+ Termin am .* hinzufügen$/ })
       .click();
 
     const sheet = page.locator('[data-sheet]');

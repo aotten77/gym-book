@@ -148,8 +148,8 @@ export default function Home() {
   }
 
   /*
-   * Dieselbe Ableitung wie die Karte "Heute" im Programm-Tab: `pickTodayPlan`
-   * über die Termine ab heute, damit beide Seiten nie verschiedener Meinung sind.
+   * `pickTodayPlan` über die Termine ab heute; die Karte "Heute" im Programm-Tab
+   * liest dieselben Termine über `describeTodayStatus`, damit beide Seiten sich nicht widersprechen.
    */
   const templateNames = useMemo(
     () =>

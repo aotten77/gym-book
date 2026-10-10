@@ -178,6 +178,6 @@ export async function openAddEntryTomorrow(page: Page) {
   await page.locator(`[data-calendar-week="${monday}"]`).click();
   await page
     .locator(`[data-plan-day="${tomorrow}"]`)
-    .getByRole('button', { name: /^Termin am .* hinzufügen$/ })
+    .getByRole('button', { name: /^\+ Termin am .* hinzufügen$/ })
     .click();
 }

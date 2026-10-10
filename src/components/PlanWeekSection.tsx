@@ -9,7 +9,6 @@ import { RunLogSheet } from '@/components/RunLogSheet';
 import { TodayUnitSheet } from '@/components/TodayUnitSheet';
 import { UnitKindIcon } from '@/components/icons/UnitKindIcon';
 import { Button, IconButton } from '@/components/ui/Button';
-import { DONE_SURFACE } from '@/components/ui/StatusCard';
 import { db } from '@/db/appDb';
 import { countTemplatesWithWeekdays } from '@/db/data-fix-actions';
 import { loadSessionVolumes } from '@/db/history-queries';
@@ -143,7 +142,7 @@ export function PlanWeekSection({ week }: PlanWeekSectionProps) {
       isToday && unit.ref.type === 'entry' ? (unit.kind === 'run' ? 'Eintragen' : 'Starten') : undefined;
     const className = cn(
       ROW_BASE,
-      done ? DONE_SURFACE : 'border border-line bg-surface',
+      done ? 'bg-success text-success-contrast' : 'border border-line bg-surface',
     );
     const content = (
       <>
@@ -164,7 +163,6 @@ export function PlanWeekSection({ week }: PlanWeekSectionProps) {
         </span>
         {startMark ? (
           <span
-            aria-hidden="true"
             className="shrink-0 rounded-control bg-accent px-3 py-1 text-xs font-semibold text-accent-contrast"
           >
             {startMark}
@@ -316,7 +314,7 @@ export function PlanWeekSection({ week }: PlanWeekSectionProps) {
                 variant="ghost"
                 size="md"
                 fullWidth
-                aria-label={`Termin am ${formatRunDate(day.key)} hinzufügen`}
+                aria-label={`+ Termin am ${formatRunDate(day.key)} hinzufügen`}
                 onClick={() => openEntry(undefined, day.key)}
               >
                 + Termin

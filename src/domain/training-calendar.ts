@@ -34,7 +34,8 @@ import {
  * die Läufe, die tatsächlich stattfanden - pur und ohne Dexie.
  *
  * `WorkoutTemplate.scheduledWeekdays` ist nicht mehr der Plan - das Feld bleibt
- * im Datenmodell (und `normalizeScheduledWeekdays` für die Serien), aber der
+ * im Datenmodell (und `normalizeScheduledWeekdays` für `WeekdayPicker`, die Umwandlung in
+ * `data-fix-actions` und `plan.ts`), aber der
  * Kalender fragt es nicht mehr.
  *
  * - **Erledigt kommt aus dem Verlauf, nie aus dem Plan.** Eine abgeschlossene
@@ -462,6 +463,32 @@ export function keepSelectionInWindow(selected: string, firstMonday: Date, weeks
   const last = toDateInputValue(shiftWindow(firstMonday, weeks - 1));
 
   return selected >= first && selected <= last ? selected : first;
+}
+
+/**
+ * Der Tag hat gewechselt, die Seite blieb offen. War die bis dahin aktuelle
+ * Woche gewählt, folgt der Kalender dem Heute (Fenster und Auswahl); sonst
+ * bleiben Fenster und Auswahl, denn die hat der Nutzer selbst gewählt. Die
+ * Auswahl liegt in beiden Fällen im Fenster.
+ */
+export function rollCalendarToToday(
+  state: { firstMonday: Date; selectedWeek: string; previousToday: string },
+  now: Date,
+): { firstMonday: Date; selectedWeek: string } {
+  const previousDay = parseLocalDate(state.previousToday);
+  const previousMonday = toDateInputValue(startOfCalendarWeek(previousDay ?? now));
+
+  if (state.selectedWeek === previousMonday) {
+    return {
+      firstMonday: defaultFirstMonday(now),
+      selectedWeek: toDateInputValue(startOfCalendarWeek(now)),
+    };
+  }
+
+  return {
+    firstMonday: state.firstMonday,
+    selectedWeek: keepSelectionInWindow(state.selectedWeek, state.firstMonday, CALENDAR_WINDOW_WEEKS),
+  };
 }
 
 /** `05.–11.10.`, bei Monats- oder Jahreswechsel `28.09.–04.10.`. */

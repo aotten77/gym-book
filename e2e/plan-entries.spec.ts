@@ -94,7 +94,7 @@ async function openAddEntry(page: Page, day: string) {
   await selectWeekOf(page, day);
   await page
     .locator(`[data-plan-day="${day}"]`)
-    .getByRole('button', { name: /^Termin am .* hinzufügen$/ })
+    .getByRole('button', { name: /^\+ Termin am .* hinzufügen$/ })
     .click();
 }
 

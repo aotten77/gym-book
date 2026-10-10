@@ -38,12 +38,21 @@ export function TodayUnitSheet({ open, plannedToday, onClose, onLogRun }: TodayU
   useEffect(() => {
     if (open) {
       setIsStarting(false);
+      setStartError(null);
     }
   }, [open]);
 
-  const templates = useLiveQuery(() => db.workoutTemplates.toArray(), []);
-  const recency = useLiveQuery(() => loadTemplateRecency(), []);
+  const templates = useLiveQuery(
+    () => (open ? db.workoutTemplates.toArray() : Promise.resolve(undefined)),
+    [open],
+  );
+  const recency = useLiveQuery(
+    () => (open ? loadTemplateRecency() : Promise.resolve(undefined)),
+    [open],
+  );
 
+  // Erst wenn beide Abfragen da sind: sonst stünde kurz nur „Lauf eintragen" und die Zeilen sprängen darunter.
+  const loaded = templates !== undefined && recency !== undefined;
   const today = new Date();
   const { planned, others } = buildTodayUnitOptions({
     templates: templates ?? [],
@@ -105,28 +114,32 @@ export function TodayUnitSheet({ open, plannedToday, onClose, onLogRun }: TodayU
       <div className="space-y-4">
         {startError ? <Alert variant="error">{startError}</Alert> : null}
 
-        {planned.length > 0 ? (
-          <section className="space-y-2">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-content-muted">
-              Geplant
-            </h3>
-            <ul className="space-y-2">{planned.map((option) => renderOption(option, true))}</ul>
-          </section>
-        ) : null}
+        {loaded ? (
+          <>
+            {planned.length > 0 ? (
+              <section className="space-y-2">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-content-muted">
+                  Geplant
+                </h3>
+                <ul className="space-y-2">{planned.map((option) => renderOption(option, true))}</ul>
+              </section>
+            ) : null}
 
-        {others.length > 0 ? (
-          <section className="space-y-2">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-content-muted">
-              {planned.length > 0 ? 'Weitere Workouts' : 'Workouts'}
-            </h3>
-            <ul className="space-y-2">{others.map((option) => renderOption(option, false))}</ul>
-          </section>
-        ) : null}
+            {others.length > 0 ? (
+              <section className="space-y-2">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-content-muted">
+                  {planned.length > 0 ? 'Weitere Workouts' : 'Workouts'}
+                </h3>
+                <ul className="space-y-2">{others.map((option) => renderOption(option, false))}</ul>
+              </section>
+            ) : null}
 
-        <button type="button" className={ROW_CLASSES} disabled={isStarting} onClick={onLogRun}>
-          <RunIcon size={20} className="shrink-0 text-content-secondary" aria-hidden="true" />
-          <span className="min-w-0 flex-1 truncate font-semibold text-content">Lauf eintragen</span>
-        </button>
+            <button type="button" className={ROW_CLASSES} disabled={isStarting} onClick={onLogRun}>
+              <RunIcon size={20} className="shrink-0 text-content-secondary" aria-hidden="true" />
+              <span className="min-w-0 flex-1 truncate font-semibold text-content">Lauf eintragen</span>
+            </button>
+          </>
+        ) : null}
       </div>
     </Sheet>
   );

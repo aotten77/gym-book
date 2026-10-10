@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { deriveProgramWeek } from '@/domain/program';
+import { deriveProgramWeek, toDateInputValue } from '@/domain/program';
 import type { PlanEntry, ProgramWeek } from '@/domain/models';
 import { buildPlanLinks } from '@/domain/plan';
 import {
   buildCalendarWeeks,
+  CALENDAR_WINDOW_WEEKS,
   cellMarks,
   countWeekProgress,
   defaultFirstMonday,
@@ -13,6 +14,7 @@ import {
   keepSelectionInWindow,
   normalizeScheduledWeekdays,
   programWeekStart,
+  rollCalendarToToday,
   shiftWindow,
   type BuildCalendarWeeksInput,
   type CalendarSession,
@@ -471,5 +473,52 @@ describe('describeCalendarUnitDetail', () => {
         {},
       ),
     ).toBe('Läuft gerade');
+  });
+});
+
+describe('rollCalendarToToday', () => {
+  const d = (y: number, m: number, day: number) => new Date(y, m - 1, day, 9);
+  const inWindow = (r: { firstMonday: Date; selectedWeek: string }) =>
+    keepSelectionInWindow(r.selectedWeek, r.firstMonday, CALENDAR_WINDOW_WEEKS) === r.selectedWeek;
+
+  it('lässt alles beim selben Tag', () => {
+    const firstMonday = defaultFirstMonday(d(2026, 10, 7));
+    const r = rollCalendarToToday({ firstMonday, selectedWeek: '2026-10-05', previousToday: '2026-10-07' }, d(2026, 10, 7));
+
+    expect(r).toEqual({ firstMonday, selectedWeek: '2026-10-05' });
+  });
+
+  it('behält Fenster und Auswahl bei neuem Tag in derselben Woche', () => {
+    const firstMonday = defaultFirstMonday(d(2026, 10, 7));
+    const r = rollCalendarToToday({ firstMonday, selectedWeek: '2026-10-05', previousToday: '2026-10-07' }, d(2026, 10, 8));
+
+    expect(r.firstMonday).toEqual(firstMonday);
+    expect(r.selectedWeek).toBe('2026-10-05');
+  });
+
+  it('folgt dem Heute, wenn die aktuelle Woche gewählt war und die Woche wechselt', () => {
+    const firstMonday = defaultFirstMonday(d(2026, 10, 25));
+    const r = rollCalendarToToday({ firstMonday, selectedWeek: '2026-10-19', previousToday: '2026-10-25' }, d(2026, 10, 26));
+
+    expect(r.selectedWeek).toBe('2026-10-26');
+    expect(r.firstMonday).toEqual(defaultFirstMonday(d(2026, 10, 26)));
+    expect(inWindow(r)).toBe(true);
+  });
+
+  it('lässt ein vom Nutzer verschobenes Fenster samt Auswahl unverändert', () => {
+    const firstMonday = shiftWindow(defaultFirstMonday(d(2026, 10, 7)), 3);
+    const selectedWeek = toDateInputValue(shiftWindow(firstMonday, 2));
+    const r = rollCalendarToToday({ firstMonday, selectedWeek, previousToday: '2026-10-11' }, d(2026, 10, 12));
+
+    expect(r.firstMonday).toEqual(firstMonday);
+    expect(r.selectedWeek).toBe(selectedWeek);
+    expect(inWindow(r)).toBe(true);
+  });
+
+  it('hält die Auswahl im Fenster, auch über die Zeitumstellung', () => {
+    const firstMonday = defaultFirstMonday(d(2026, 10, 20));
+    const r = rollCalendarToToday({ firstMonday, selectedWeek: '2026-10-19', previousToday: '2026-10-25' }, d(2026, 10, 26));
+
+    expect(inWindow(r)).toBe(true);
   });
 });

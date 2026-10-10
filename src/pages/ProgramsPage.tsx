@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { AppShell } from '@/components/AppShell';
@@ -28,6 +28,7 @@ import {
   CALENDAR_WINDOW_WEEKS,
   defaultFirstMonday,
   keepSelectionInWindow,
+  rollCalendarToToday,
   shiftWindow,
 } from '@/domain/training-calendar';
 import type { ProgramWeek } from '@/domain/models';
@@ -56,9 +57,11 @@ import { cn } from '@/lib/utils';
  * Diese Seite beantwortet die Frage, für die es den Reiter gibt, und zwar mit
  * `buildWeekPlan`, also mit derselben Faltung, die der Sessionstart schreibt.
  *
- * Was sie bewusst nicht kann: ein Training starten. Es gibt im Datenmodell
- * keine Verbindung Woche → Workout - alle Workouts laufen in jeder Woche -
- * und die Seite sagt das offen, statt eine Reihenfolge zu erfinden.
+ * Was sie bewusst nicht kann: neben den Wochenvorgaben ein Training starten.
+ * Es gibt im Datenmodell keine Verbindung Woche → Workout - alle Workouts
+ * laufen in jeder Woche - und die Seite sagt das offen, statt eine
+ * Reihenfolge zu erfinden. Gestartet wird nur aus der Tagesliste und dem
+ * Sheet „Heute trainieren".
  */
 export function ProgramsPage() {
   /*
@@ -104,7 +107,50 @@ export function ProgramsPage() {
 
   const weekControl = resolveWeekControl(settings?.weekOverride, program, weeks ?? []);
 
-  const todayKey = toDateInputValue(new Date());
+  /*
+   * Der lokale Tag als Zustand: eine installierte App bleibt über Nacht offen,
+   * und ohne Neulesen stünde morgens noch gestern als „Heute · Starten" da.
+   */
+  const [todayKey, setTodayKey] = useState(() => toDateInputValue(new Date()));
+  const dayState = useRef({ todayKey, firstMonday, selectedWeek });
+  dayState.current = { todayKey, firstMonday, selectedWeek };
+  useEffect(() => {
+    function checkDay() {
+      const now = new Date();
+      const nextKey = toDateInputValue(now);
+      const current = dayState.current;
+
+      if (nextKey === current.todayKey) {
+        return;
+      }
+
+      const rolled = rollCalendarToToday(
+        { firstMonday: current.firstMonday, selectedWeek: current.selectedWeek, previousToday: current.todayKey },
+        now,
+      );
+
+      dayState.current = { todayKey: nextKey, ...rolled };
+      setTodayKey(nextKey);
+      setFirstMonday(rolled.firstMonday);
+      setSelectedWeek(rolled.selectedWeek);
+    }
+
+    function handleVisibility() {
+      if (document.visibilityState === 'visible') {
+        checkDay();
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('focus', checkDay);
+    const interval = window.setInterval(checkDay, 60_000);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('focus', checkDay);
+      window.clearInterval(interval);
+    };
+  }, []);
   const range = useMemo(() => {
     const lastMonday = shiftWindow(firstMonday, CALENDAR_WINDOW_WEEKS - 1);
     const toDay = new Date(lastMonday.getTime());
@@ -245,8 +291,8 @@ export function ProgramsPage() {
   function handleEditEntry(entry: WeekPlanEntry) {
     /*
      * Bearbeitet wird der **Plan**, nie eine laufende Ausführung: von hier
-     * führt kein Weg zu einer `WorkoutSessionExercise`. Deshalb gibt es auf
-     * dieser Seite auch keinen Startknopf - der Start löst die Woche über
+     * führt kein Weg zu einer `WorkoutSessionExercise`. Deshalb gibt es
+     * neben den Wochenvorgaben keinen Startknopf - der Start löst die Woche über
      * `resolveWeekControl` auf und nicht über die Auswahl oben.
      */
     if (!selectedProgramWeek) {

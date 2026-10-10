@@ -268,8 +268,8 @@ export function buildPlanLinks(
 }
 
 /**
- * Der Kalendertag, an dem ein Termin erledigt wurde - die eine Regel dafür,
- * für Raster und Sheet. Läufe tragen schon den Tag (`YYYY-MM-DD`, durch
+ * Der Kalendertag, an dem ein Termin erledigt wurde - die eine Regel dafür
+ * (heute liest sie das Termin-Sheet). Läufe tragen schon den Tag (`YYYY-MM-DD`, durch
  * `new Date` gelesen wäre das UTC-Mitternacht und westlich von Greenwich der
  * Vortag), Sessions einen Zeitstempel, der auf den lokalen Tag fällt.
  */
