@@ -8,7 +8,9 @@ import {
   describeSetRow,
   describeSetRowValues,
   describeSetTarget,
+  lastSecondsOffer,
   setRowFallback,
+  setRowPlaceholders,
   summarizeCompletedExercise,
   summarizeExerciseAsymmetry,
   summarizeSessionProgress,
@@ -344,6 +346,63 @@ describe('setRowFallback', () => {
       25,
     );
     expect(setRowFallback(exercise({ id: 'a', targetHeightCm: 20 })).heightCm).toBe(20);
+  });
+
+  it('stellt bei der Zeit den Plan vor die gehaltene Zeit der letzten Ausführung', () => {
+    // 30 s gehalten bei 20 s Soll: die Überzeit ist Leistung, kein neuer Plan.
+    expect(
+      setRowFallback(exercise({ id: 'a', trackingMode: 'time', targetSeconds: 20 }), {
+        seconds: 30,
+      }).seconds,
+    ).toBe(20);
+  });
+
+  it('nimmt ohne Zeit-Soll die Zeit der letzten Ausführung', () => {
+    expect(
+      setRowFallback(exercise({ id: 'a', trackingMode: 'time' }), { seconds: 30 }).seconds,
+    ).toBe(30);
+  });
+});
+
+describe('setRowPlaceholders', () => {
+  it('ersetzt nur die Sekunden der letzten Ausführung durch das Soll', () => {
+    expect(
+      setRowPlaceholders(exercise({ id: 'a', trackingMode: 'time_weight', targetSeconds: 20 }), {
+        seconds: 30,
+        weight: 5,
+      }),
+    ).toEqual({ seconds: 20, weight: 5 });
+  });
+
+  it('trägt das Zeit-Soll auch ohne letzte Ausführung', () => {
+    expect(
+      setRowPlaceholders(exercise({ id: 'a', trackingMode: 'time', targetSeconds: 20 })),
+    ).toEqual({ seconds: 20 });
+  });
+
+  it('lässt ohne Zeit-Soll alles, wie es war', () => {
+    const last = { reps: 5, weight: 60 };
+
+    expect(setRowPlaceholders(exercise({ id: 'a', targetReps: 8 }), last)).toBe(last);
+    expect(setRowPlaceholders(exercise({ id: 'a', targetReps: 8 }))).toBeUndefined();
+  });
+});
+
+describe('lastSecondsOffer', () => {
+  const timed = exercise({ id: 'a', trackingMode: 'time', targetSeconds: 20 });
+
+  it('bietet die Zeit der letzten Ausführung an, wenn sie vom Soll abweicht', () => {
+    expect(lastSecondsOffer(timed, { seconds: 30 })).toBe(30);
+    expect(lastSecondsOffer(timed, { seconds: 15 })).toBe(15);
+  });
+
+  it('schweigt, wenn sie dem Soll entspricht oder nichts zu ersetzen ist', () => {
+    expect(lastSecondsOffer(timed, { seconds: 20 })).toBeUndefined();
+    expect(lastSecondsOffer(timed)).toBeUndefined();
+    // Ohne Soll steht die letzte Zeit ohnehin schon im Feld.
+    expect(
+      lastSecondsOffer(exercise({ id: 'a', trackingMode: 'time' }), { seconds: 30 }),
+    ).toBeUndefined();
   });
 });
 

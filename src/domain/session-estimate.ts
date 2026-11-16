@@ -92,9 +92,11 @@ interface PlannedRound {
  * Eingetragenes schlägt Vorgabe schlägt Rückfall -, damit die Schätzung
  * dieselbe Zahl annimmt, die der Timer nachher tatsächlich stellt.
  *
- * Als Vorgabe steht hier das Ziel der Übung, nicht der Platzhalter der
- * letzten Woche wie im Satz-Editor: die Schätzung fragt bewusst keine
- * Historie ab. Beide treffen sich, sobald etwas im Satz steht.
+ * Als Vorgabe steht hier das Ziel der Übung. Bei der Zeit ist das auch im
+ * Satz-Editor die Vorgabe, sobald es ein Soll gibt (`setRowFallback`); nur
+ * ohne Soll nimmt der Editor die letzte Woche, die Schätzung dagegen den
+ * Rückfall - sie fragt bewusst keine Historie ab. Beide treffen sich, sobald
+ * etwas im Satz steht.
  */
 function rowWorkSeconds(exercise: WorkoutSessionExercise, log: WorkoutSetLog) {
   const isTimed =

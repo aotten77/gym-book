@@ -45,10 +45,12 @@ export function clampSetTimerSeconds(seconds: number) {
  * angepasst wird. Erst danach greift die Vorgabe der Zeile - und zuletzt ein
  * fester Rückfall, damit die Taste nie ins Leere läuft.
  *
- * `plannedSeconds` ist ausdrücklich die Vorgabe, die auch im Feld steht, nicht
- * zwingend `exercise.targetSeconds`: im Satz-Editor ist das `setRowFallback`
- * (letzte Woche schlägt Übungsziel), sonst würde der Countdown eine andere
- * Zahl stellen als der Platzhalter zeigt.
+ * `plannedSeconds` ist ausdrücklich die Vorgabe, die auch im Feld steht: im
+ * Satz-Editor ist das `setRowFallback` - das Zeit-Soll, ohne Soll die Zeit vom
+ * letzten Mal -, sonst würde der Countdown eine andere Zahl stellen als der
+ * Platzhalter zeigt. Die gehaltene Zeit vom letzten Mal ist bewusst nicht die
+ * Vorgabe, sobald ein Soll steht: mit der Überzeit würde sie die Uhr sonst von
+ * Mal zu Mal still höher stellen.
  */
 export function resolveSetTimerSeconds(enteredSeconds?: number, plannedSeconds?: number) {
   const candidate = [enteredSeconds, plannedSeconds].find(

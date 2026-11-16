@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import {
   Check,
   ChevronDown,
@@ -42,7 +42,9 @@ import {
   describeSetRow,
   describeSetRowValues,
   describeSetTarget,
+  lastSecondsOffer,
   setRowFallback,
+  setRowPlaceholders,
   type SetRowFallback,
 } from '@/domain/session-summary';
 import {
@@ -65,7 +67,7 @@ import {
 import { buildExerciseGuide } from '@/domain/exercise-guide';
 import { supportsBand, supportsSeconds } from '@/domain/tracking';
 import { moveFieldFocus } from '@/lib/field-navigation';
-import { formatSideLabel, formatTimer } from '@/lib/format';
+import { formatNumber, formatSideLabel, formatTimer } from '@/lib/format';
 import { isTimerSpeechSupported } from '@/lib/speech';
 import { parseNumberInput, toInputValue } from '@/lib/number-input';
 import { cn } from '@/lib/utils';
@@ -232,15 +234,24 @@ function ActiveSetEditor({
    * Feld, Knopf und Timer nicht drei Quellen haben.
    */
   const rowFallback = setRowFallback(exercise, lastValues);
+  /*
+   * Was in den leeren Feldern steht und beim Abhaken übernommen wird - die
+   * letzte Ausführung, bei der Zeit aber das Soll (siehe `setRowFallback`).
+   * Liest das Feld etwas anderes als die Uhr, muss die Zahl wieder getippt
+   * werden.
+   */
+  const placeholders = setRowPlaceholders(exercise, lastValues);
+  // "zuletzt 30 s": das letzte Mal, einen Tap entfernt, wenn es vom Plan abweicht.
+  const offeredLastSeconds = lastSecondsOffer(exercise, lastValues);
 
   const isTimerRunning = Boolean(setTimer);
   const parsedSeconds = parseNumberInput(draft.seconds);
   /*
    * Der Timer läuft über das, was im Feld steht - eingetragen oder als
-   * Platzhalter vorbelegt. Nur `exercise.targetSeconds` zu nehmen war genau
-   * die Stelle, an der die vorbelegte Zeit erneut getippt werden musste,
-   * damit der Countdown sie zeigt: letzte Woche schlägt das Übungsziel, hier
-   * wie in `setRowFallback` und beim Abhaken.
+   * Platzhalter vorbelegt. Beide kommen aus derselben Regel: das Zeit-Soll,
+   * ohne Soll die Zeit vom letzten Mal (`setRowFallback`). Liefen Feld und Uhr
+   * auseinander, müsste die vorbelegte Zeit erneut getippt werden, damit der
+   * Countdown sie zeigt - genau dieser Fehler stand hier schon einmal.
    */
   const timerSeconds = resolveSetTimerSeconds(
     parsedSeconds.status === 'valid' ? parsedSeconds.value : undefined,
@@ -251,7 +262,8 @@ function ActiveSetEditor({
    * Verschiebt einen Wert in Schritten, damit dafür keine Tastatur aufgeht.
    *
    * Ist das Feld leer, zählt die Vorgabe als Ausgangspunkt - der Platzhalter
-   * der letzten Woche, sonst das Ziel der Übung. Ein "+" auf einem leeren Feld
+   * der letzten Woche, sonst das Ziel der Übung, bei der Zeit zuerst das Soll
+   * (siehe `setRowFallback`). Ein "+" auf einem leeren Feld
    * soll bei dem landen, was ohnehin geplant war, und nicht bei 2,5 kg.
    */
   function adjustField(key: SetLogFieldKey, delta: number) {
@@ -293,8 +305,8 @@ function ActiveSetEditor({
      * dem Umbau nicht mehr: übernommen wird, was gemessen wurde.
      */
     let effectiveDraft =
-      willComplete && lastValues
-        ? adoptPlaceholders(draft, lastValues, trackingMode, loadKind, tracksHeight)
+      willComplete && placeholders
+        ? adoptPlaceholders(draft, placeholders, trackingMode, loadKind, tracksHeight)
         : draft;
 
     /*
@@ -328,13 +340,13 @@ function ActiveSetEditor({
     draft,
     hasInvalidInput,
     isTimerRunning,
-    lastValues,
     loadKind,
     log.completed,
     log.id,
     onCompleted,
     onStopTimer,
     persist,
+    placeholders,
     trackingMode,
     tracksHeight,
   ]);
@@ -476,152 +488,195 @@ function ActiveSetEditor({
           {activeFields.map(({ key }, index) => {
             const isInvalid = invalidFields.includes(key);
             const fieldId = `${log.id}-${key}`;
-            // Zeigt, was beim letzten Mal in genau diesem Satz stand.
-            const placeholder = toInputValue(lastValues?.[key]);
+            // Zeigt, was beim letzten Mal in genau diesem Satz stand - bei der
+            // Zeit das Soll, weil die Uhr darauf läuft.
+            const placeholder = toInputValue(placeholders?.[key]);
             const step = STEP_BY_FIELD[key];
             /*
              * Nur am Arbeitssatz: die Vorgabe "3 × 8–10" beschreibt
              * `workSetCount`. Ein "Soll 8–10" über der Aufwärmzeile behauptete
              * etwas, das der Plan an dieser Stelle nicht sagt.
              */
+            /*
+             * Bei der Zeit *ist* der Platzhalter das Soll - solange nichts
+             * eingetragen ist, stünde die Klammer als dieselbe Zahl daneben.
+             * Sie kommt zurück, sobald ein Wert im Feld steht und es wieder
+             * etwas zu vergleichen gibt.
+             */
             const targetLabel =
-              log.setKind === 'work' ? describeSetTarget(exercise, key) : undefined;
+              log.setKind === 'work' && !(key === 'seconds' && !draft.seconds.trim())
+                ? describeSetTarget(exercise, key)
+                : undefined;
+            const showLastSecondsOffer =
+              key === 'seconds' &&
+              !disabled &&
+              typeof offeredLastSeconds === 'number' &&
+              !draft.seconds.trim();
 
             return (
-              <div key={key} className="grid grid-cols-[3.25rem_minmax(0,1fr)_3.25rem] gap-2">
-                <StepButton
-                  label={`${SET_LOG_FIELD_LABELS[key]} um ${step} verringern`}
-                  onClick={() => adjustField(key, -step)}
-                  disabled={disabled}
-                >
-                  <Minus size={20} />
-                </StepButton>
-                {/*
-                  Der eingetragene Wert ist das, was im Training aus einem Meter
-                  Entfernung lesbar sein muss - er trägt deshalb das Gewicht der
-                  Zeile, nicht seine Beschriftung. Die Einheit steht als echtes
-                  `<label>` daneben, damit das Feld einen Namen behält.
-                */}
-                <div
-                  className={cn(
-                    // Weiß, nicht die versenkte Fläche: die Bühne liegt selbst
-                    // auf einem hellen Grau, und ein Feld, das sich davon kaum
-                    // abhebt, sieht im Studio nicht mehr wie ein Feld aus.
-                    'relative flex min-h-[3.25rem] items-baseline justify-center gap-1.5 rounded-panel bg-surface px-2',
-                    isInvalid && 'ring-2 ring-inset ring-danger-border',
-                  )}
-                >
+              <Fragment key={key}>
+                <div className="grid grid-cols-[3.25rem_minmax(0,1fr)_3.25rem] gap-2">
+                  <StepButton
+                    label={`${SET_LOG_FIELD_LABELS[key]} um ${step} verringern`}
+                    onClick={() => adjustField(key, -step)}
+                    disabled={disabled}
+                  >
+                    <Minus size={20} />
+                  </StepButton>
                   {/*
-                    Das Soll, direkt neben der Zahl, mit der man es vergleicht.
-
-                    Im Feld steht als Platzhalter, was beim letzten Mal in genau
-                    diesem Satz stand - genau darauf schaut man im Training, und
-                    genau deshalb übersieht man, was eigentlich geplant war. Das
-                    Ziel stand bisher nur einmal klein im Kopf der Bühne, einen
-                    halben Bildschirm entfernt.
-
-                    Nur die Zahl in Klammern, ohne das Wort davor: eine Klammer
-                    neben einem Wert sagt bereits "das ist die Vorgabe", und ein
-                    zweizeiliges Etikett machte aus der Box ein Formular.
-
-                    Absolut gesetzt, damit die große Zahl genau dort steht, wo
-                    sie ohne Soll stünde. Sie ist das, was aus einem Meter
-                    Entfernung getroffen werden muss - eine Randnotiz, die den
-                    Hauptdarsteller aus der Mitte schiebt, hat den Rang
-                    vertauscht.
-
-                    Ruhig, ohne Zustandsfarbe: den Vergleich macht das Auge. Eine
-                    Marke bei Abweichung bräuchte eine Regel, wann eine Spanne
-                    als getroffen gilt - bei 8–10 wären 8 Wdh sonst fälschlich
-                    ein Fehler, und "Decke erreicht" beantwortet der
-                    Steigerungshinweis darüber bereits.
+                    Der eingetragene Wert ist das, was im Training aus einem Meter
+                    Entfernung lesbar sein muss - er trägt deshalb das Gewicht der
+                    Zeile, nicht seine Beschriftung. Die Einheit steht als echtes
+                    `<label>` daneben, damit das Feld einen Namen behält.
                   */}
-                  {targetLabel ? (
-                    <span
-                      id={`${fieldId}-target`}
-                      data-set-target={key}
+                  <div
+                    className={cn(
+                      // Weiß, nicht die versenkte Fläche: die Bühne liegt selbst
+                      // auf einem hellen Grau, und ein Feld, das sich davon kaum
+                      // abhebt, sieht im Studio nicht mehr wie ein Feld aus.
+                      'relative flex min-h-[3.25rem] items-baseline justify-center gap-1.5 rounded-panel bg-surface px-2',
+                      isInvalid && 'ring-2 ring-inset ring-danger-border',
+                    )}
+                  >
+                    {/*
+                      Das Soll, direkt neben der Zahl, mit der man es vergleicht.
+
+                      Im Feld steht als Platzhalter, was beim letzten Mal in genau
+                      diesem Satz stand - genau darauf schaut man im Training, und
+                      genau deshalb übersieht man, was eigentlich geplant war. Das
+                      Ziel stand bisher nur einmal klein im Kopf der Bühne, einen
+                      halben Bildschirm entfernt.
+
+                      Nur die Zahl in Klammern, ohne das Wort davor: eine Klammer
+                      neben einem Wert sagt bereits "das ist die Vorgabe", und ein
+                      zweizeiliges Etikett machte aus der Box ein Formular.
+
+                      Absolut gesetzt, damit die große Zahl genau dort steht, wo
+                      sie ohne Soll stünde. Sie ist das, was aus einem Meter
+                      Entfernung getroffen werden muss - eine Randnotiz, die den
+                      Hauptdarsteller aus der Mitte schiebt, hat den Rang
+                      vertauscht.
+
+                      Ruhig, ohne Zustandsfarbe: den Vergleich macht das Auge. Eine
+                      Marke bei Abweichung bräuchte eine Regel, wann eine Spanne
+                      als getroffen gilt - bei 8–10 wären 8 Wdh sonst fälschlich
+                      ein Fehler, und "Decke erreicht" beantwortet der
+                      Steigerungshinweis darüber bereits.
+                    */}
+                    {targetLabel ? (
+                      <span
+                        id={`${fieldId}-target`}
+                        data-set-target={key}
+                        /*
+                          Kleiner nur auf sehr schmalen Geräten: bei 320px bleiben
+                          neben "82,5 kg" in 28px keine 40px übrig, und die
+                          Klammer stieße an die Zahl, die mittig stehen bleiben
+                          soll. Ab 360px - jedes iPhone ab der SE 2 - trägt sie
+                          ihre volle Größe.
+                        */
+                        className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 font-display text-[12px] font-bold tabular-nums text-content-muted min-[360px]:text-[15px]"
+                      >
+                        ({targetLabel})
+                      </span>
+                    ) : null}
+                    <input
+                      id={fieldId}
+                      value={draft[key]}
+                      onChange={(event) =>
+                        setDraft((current) => ({
+                          ...current,
+                          [key]: event.target.value,
+                        }))
+                      }
+                      onBlur={() => {
+                        if (!hasInvalidInput) {
+                          void persist();
+                        }
+                      }}
                       /*
-                        Kleiner nur auf sehr schmalen Geräten: bei 320px bleiben
-                        neben "82,5 kg" in 28px keine 40px übrig, und die
-                        Klammer stieße an die Zahl, die mittig stehen bleiben
-                        soll. Ab 360px - jedes iPhone ab der SE 2 - trägt sie
-                        ihre volle Größe.
+                        Die Return-Taste tut dasselbe wie das "›" der Leiste im
+                        Fuß - nur gibt es sie auf dem Zahlenblock von iOS gar
+                        nicht. Das hier ist für Hardware-Tastatur und Schreibtisch;
+                        am Telefon trägt die Leiste den Sprung.
                       */
-                      className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 font-display text-[12px] font-bold tabular-nums text-content-muted min-[360px]:text-[15px]"
+                      enterKeyHint={index < activeFields.length - 1 ? 'next' : 'done'}
+                      onKeyDown={(event) => {
+                        if (event.key !== 'Enter') {
+                          return;
+                        }
+
+                        event.preventDefault();
+
+                        if (!moveFieldFocus(event.currentTarget.closest('[data-sheet]'), 1)) {
+                          event.currentTarget.blur();
+                        }
+                      }}
+                      inputMode={key === 'reps' ? 'numeric' : 'decimal'}
+                      placeholder={placeholder || '–'}
+                      aria-invalid={isInvalid}
+                      aria-label={
+                        sideLabel
+                          ? `${SET_LOG_FIELD_LABELS[key]} ${sideLabel}`
+                          : SET_LOG_FIELD_LABELS[key]
+                      }
+                      /*
+                        Das Soll hängt als Beschreibung am Feld, nicht an seinem
+                        Namen: der zugängliche Name ist die Fassung, an der die
+                        e2e mit `exact: true` greifen.
+                      */
+                      aria-describedby={targetLabel ? `${fieldId}-target` : undefined}
+                      disabled={disabled}
+                      size={4}
+                      className={cn(
+                        'min-w-0 max-w-[6rem] bg-transparent py-2 text-right font-display text-[28px] font-extrabold tabular-nums tracking-tight text-content',
+                        'outline-none transition placeholder:font-semibold placeholder:text-content-muted',
+                        'focus-visible:ring-2 focus-visible:ring-accent',
+                        'disabled:cursor-not-allowed disabled:opacity-60',
+                      )}
+                    />
+                    <label
+                      htmlFor={fieldId}
+                      className="shrink-0 whitespace-nowrap text-xs font-bold text-content-muted"
                     >
-                      ({targetLabel})
-                    </span>
-                  ) : null}
-                  <input
-                    id={fieldId}
-                    value={draft[key]}
-                    onChange={(event) =>
+                      {SET_LOG_FIELD_UNITS[key]}
+                    </label>
+                  </div>
+                  <StepButton
+                    label={`${SET_LOG_FIELD_LABELS[key]} um ${step} erhöhen`}
+                    onClick={() => adjustField(key, step)}
+                    disabled={disabled}
+                  >
+                    <Plus size={20} />
+                  </StepButton>
+                </div>
+                {/*
+                  Das letzte Mal, einen Tap entfernt. Die Uhr steht auf dem Plan,
+                  weil sonst jede Überzeit still zur nächsten Vorgabe würde; wer
+                  bewusst wieder so lange halten will, holt die Zeit hierüber ins
+                  Feld, und beide Startknöpfe laufen dann darauf - mit oder ohne
+                  Ansage bleibt eine eigene Wahl. Neutral weiß wie die Schritt-
+                  Knöpfe: es ist ein Angebot, kein Zustand.
+                */}
+                {showLastSecondsOffer ? (
+                  <button
+                    type="button"
+                    data-last-seconds={offeredLastSeconds}
+                    onClick={() =>
                       setDraft((current) => ({
                         ...current,
-                        [key]: event.target.value,
+                        seconds: toInputValue(offeredLastSeconds),
                       }))
                     }
-                    onBlur={() => {
-                      if (!hasInvalidInput) {
-                        void persist();
-                      }
-                    }}
-                    /*
-                      Die Return-Taste tut dasselbe wie das "›" der Leiste im
-                      Fuß - nur gibt es sie auf dem Zahlenblock von iOS gar
-                      nicht. Das hier ist für Hardware-Tastatur und Schreibtisch;
-                      am Telefon trägt die Leiste den Sprung.
-                    */
-                    enterKeyHint={index < activeFields.length - 1 ? 'next' : 'done'}
-                    onKeyDown={(event) => {
-                      if (event.key !== 'Enter') {
-                        return;
-                      }
-
-                      event.preventDefault();
-
-                      if (!moveFieldFocus(event.currentTarget.closest('[data-sheet]'), 1)) {
-                        event.currentTarget.blur();
-                      }
-                    }}
-                    inputMode={key === 'reps' ? 'numeric' : 'decimal'}
-                    placeholder={placeholder || '–'}
-                    aria-invalid={isInvalid}
-                    aria-label={
-                      sideLabel
-                        ? `${SET_LOG_FIELD_LABELS[key]} ${sideLabel}`
-                        : SET_LOG_FIELD_LABELS[key]
-                    }
-                    /*
-                      Das Soll hängt als Beschreibung am Feld, nicht an seinem
-                      Namen: der zugängliche Name ist die Fassung, an der die
-                      e2e mit `exact: true` greifen.
-                    */
-                    aria-describedby={targetLabel ? `${fieldId}-target` : undefined}
-                    disabled={disabled}
-                    size={4}
                     className={cn(
-                      'min-w-0 max-w-[6rem] bg-transparent py-2 text-right font-display text-[28px] font-extrabold tabular-nums tracking-tight text-content',
-                      'outline-none transition placeholder:font-semibold placeholder:text-content-muted',
-                      'focus-visible:ring-2 focus-visible:ring-accent',
-                      'disabled:cursor-not-allowed disabled:opacity-60',
+                      'flex min-h-touch w-fit items-center gap-2 rounded-full border border-line bg-surface px-4 text-sm font-semibold text-content transition',
+                      'hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
                     )}
-                  />
-                  <label
-                    htmlFor={fieldId}
-                    className="shrink-0 whitespace-nowrap text-xs font-bold text-content-muted"
                   >
-                    {SET_LOG_FIELD_UNITS[key]}
-                  </label>
-                </div>
-                <StepButton
-                  label={`${SET_LOG_FIELD_LABELS[key]} um ${step} erhöhen`}
-                  onClick={() => adjustField(key, step)}
-                  disabled={disabled}
-                >
-                  <Plus size={20} />
-                </StepButton>
-              </div>
+                    <span className="tabular-nums">zuletzt {formatNumber(offeredLastSeconds)} s</span>
+                    <span className="text-content-muted">übernehmen</span>
+                  </button>
+                ) : null}
+              </Fragment>
             );
           })}
 

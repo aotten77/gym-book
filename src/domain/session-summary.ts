@@ -1,4 +1,4 @@
-import { sortSetLogs } from '@/domain/history';
+import { sortSetLogs, type SetValues } from '@/domain/history';
 import type { SetKind, WorkoutSessionExercise, WorkoutSetLog } from '@/domain/models';
 import { calculateAsymmetryPercent } from '@/domain/session';
 import type { SetLogFieldKey } from '@/domain/set-log-draft';
@@ -160,6 +160,17 @@ export interface SetRowFallback {
  * sie beim Abhaken übernommen werden (siehe `adoptPlaceholders`). Der große
  * Knopf verspricht damit das, was er auch schreibt.
  *
+ * Mit einer Ausnahme: bei der **Zeit** schlägt das Soll das letzte Mal. Das
+ * Sekundenfeld ist dort zugleich die Einstellung der Uhr und das Ergebnis, und
+ * seit die Uhr über die Vorgabe hinaus zählt, kann das Ergebnis die Einstellung
+ * übersteigen. Würde es zur nächsten Vorgabe, stellte sich die Uhr nach 30 s
+ * gehaltener Standwaage bei 20 s Soll beim nächsten Mal auf 30 - eine stille
+ * Steigerung, eine Ratsche, und genau die Automatik, die v1 ausschließt. Die
+ * Überzeit bleibt Leistung im Verlauf; ob die Zeit wachsen soll, sagt
+ * "Steigerung möglich" und entscheidet der Plan. Ohne Zeit-Soll bleibt es beim
+ * letzten Mal - es gibt dann keinen Plan, auf den die Uhr fallen könnte. Was
+ * im Feld steht, liefert `setRowPlaceholders`, aus derselben Regel.
+ *
  * Hier stand einmal die Warnung, ein Steigerungs*vorschlag* dürfe nicht in
  * diesen Fallback geraten, weil er beim Abhaken ungefragt gespeichert würde.
  * Die Frage stellt sich nicht mehr: `hasProgressionHint` liefert keinen Wert,
@@ -182,11 +193,54 @@ export function setRowFallback(
 ): SetRowFallback {
   return {
     reps: lastValues?.reps ?? exercise.targetReps,
-    seconds: lastValues?.seconds ?? exercise.targetSeconds,
+    seconds: exercise.targetSeconds ?? lastValues?.seconds,
     weight: lastValues?.weight ?? exercise.targetWeight,
     heightCm: lastValues?.heightCm ?? exercise.targetHeightCm,
     bandNameSnapshot: lastValues?.bandNameSnapshot ?? exercise.targetBandNameSnapshot,
   };
+}
+
+/**
+ * Was in den leeren Feldern als Platzhalter steht - und beim Abhaken
+ * übernommen wird.
+ *
+ * Die Werte der letzten Ausführung, nur die Sekunden durch das Zeit-Soll
+ * ersetzt: dieselbe Ausnahme wie in `setRowFallback`, sonst zeigte das Feld 30,
+ * während die Uhr auf 20 läuft, und der Knopf schriebe beim Abhaken ohne Timer
+ * wieder die 30, die er gerade nicht versprochen hat. Steht ein Zeit-Soll, gilt
+ * es auch ohne letzte Ausführung - der Platzhalter ist dann der Plan, und genau
+ * den stellt die Uhr.
+ */
+export function setRowPlaceholders(
+  exercise: Pick<WorkoutSessionExercise, 'targetSeconds'>,
+  lastValues?: SetValues,
+): SetValues | undefined {
+  if (typeof exercise.targetSeconds !== 'number') {
+    return lastValues;
+  }
+
+  return { ...lastValues, seconds: exercise.targetSeconds };
+}
+
+/**
+ * Die Zeit der letzten Ausführung, wenn sie vom Zeit-Soll abweicht.
+ *
+ * Das Gegenstück zur Ausnahme in `setRowFallback`: der Plan ist die Vorgabe,
+ * das letzte Mal bleibt einen Tap entfernt ("zuletzt 30 s"). Ohne Soll gibt es
+ * nichts anzubieten - dann steht die letzte Zeit ohnehin schon im Feld - und
+ * bei Gleichstand auch nicht, weil der Tap nichts ändern würde.
+ */
+export function lastSecondsOffer(
+  exercise: Pick<WorkoutSessionExercise, 'targetSeconds'>,
+  lastValues?: Pick<SetValues, 'seconds'>,
+): number | undefined {
+  const last = lastValues?.seconds;
+
+  if (typeof exercise.targetSeconds !== 'number' || typeof last !== 'number') {
+    return undefined;
+  }
+
+  return last === exercise.targetSeconds ? undefined : last;
 }
 
 /**
@@ -344,6 +398,10 @@ export function describeRepRange(targetReps: number, targetRepsMax?: number): st
  * schlägt das Ziel) und damit genau die Zahl, die als Platzhalter im Feld
  * steht. Genau daneben soll das Geplante stehen, sonst zeigten beide dasselbe
  * und der Vergleich, um den es geht, wäre unmöglich.
+ *
+ * Bei der Zeit zeigen sie es doch: dort schlägt das Soll das letzte Mal, der
+ * Platzhalter *ist* also das Geplante. Die Wertebox lässt die Klammer deshalb
+ * weg, solange das Sekundenfeld leer ist.
  */
 export function describeSetTarget(
   exercise: Pick<

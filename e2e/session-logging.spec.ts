@@ -118,6 +118,35 @@ test.describe('Satz-Timer', () => {
     await expect(startButton(page)).toHaveAccessibleName(`${expected} starten`);
   });
 
+  test('stellt die Uhr auf das Soll und bietet das letzte Mal an', async ({ page }) => {
+    await startSampleSession(page);
+    await openExerciseSheet(page, 'Nordic Curl Iso');
+    /*
+     * Satz 1 hielt in der Beispiel-Session 17 s, das Soll der Woche ist
+     * 8 + 2 × Woche - immer gerade, also nie 17. Die gehaltene Zeit darf die
+     * Uhr nicht still auf sich stellen: sonst wird jede Überzeit zur nächsten
+     * Vorgabe.
+     */
+    await selectSetRow(page, 'Satz 1');
+
+    const sheet = page.locator('[data-sheet]');
+    const seconds = sheet.locator('input[id$="-seconds"]').first();
+    const placeholder = Number(await seconds.getAttribute('placeholder'));
+    expect(placeholder).not.toBe(17);
+    expect(placeholder % 2).toBe(0);
+    // Der Platzhalter *ist* das Soll - eine Klammer daneben wäre dieselbe Zahl.
+    await expect(sheet.locator('[data-set-target="seconds"]')).toHaveCount(0);
+
+    const offer = sheet.getByRole('button', { name: 'zuletzt 17 s übernehmen' });
+    await expect(offer).toBeVisible();
+    await offer.click();
+
+    await expect(seconds).toHaveValue('17');
+    await expect(offer).toBeHidden();
+    await expect(sheet.locator('[data-set-target="seconds"]')).toHaveText(`(${placeholder})`);
+    await expect(startButton(page)).toHaveAccessibleName('00:17 starten');
+  });
+
   test('läuft nach einem Reload weiter und übernimmt die gehaltene Zeit', async ({ page }) => {
     await startSampleSession(page);
     // Die Zeitübung steht im Beispielprogramm an dritter Stelle.
