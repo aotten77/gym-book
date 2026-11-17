@@ -11,6 +11,7 @@ import type { CalendarSession } from '@/domain/training-calendar';
 import { startOfCalendarWeek } from '@/domain/calendar-week';
 import { toDateInputValue } from '@/domain/program';
 import { sumWorkVolume } from '@/domain/volume';
+import { estimateTemplateMinutes } from '@/domain/today-units';
 import { buildWeeklyVolume, sessionExerciseVolume, type WeekVolume } from '@/domain/weekly-volume';
 
 /**
@@ -112,6 +113,55 @@ export async function loadTemplateRecency(): Promise<Record<string, string>> {
   }
 
   return recency;
+}
+
+/**
+ * Grobe Dauer je Workout in Minuten (siehe `estimateTemplateMinutes`) -
+ * die Quelle der Kurz-Kacheln im Jetzt-Sheet. Ein Workout ohne Übungen fehlt
+ * im Ergebnis.
+ */
+export async function loadTemplateMinutes(): Promise<Record<string, number>> {
+  const [rows, exercises] = await Promise.all([
+    db.workoutTemplateExercises.toArray(),
+    db.exercises.toArray(),
+  ]);
+  const unilateralById = new Map(exercises.map((exercise) => [exercise.id, exercise.unilateral]));
+  const byTemplate = new Map<string, typeof rows>();
+
+  for (const row of rows) {
+    const bucket = byTemplate.get(row.templateId) ?? [];
+    bucket.push(row);
+    byTemplate.set(row.templateId, bucket);
+  }
+
+  const minutes: Record<string, number> = {};
+
+  for (const [templateId, items] of byTemplate) {
+    minutes[templateId] = estimateTemplateMinutes(
+      [...items]
+        .sort((a, b) => a.orderIndex - b.orderIndex)
+        .map((item) => ({
+          workSetCount: item.workSetCount,
+          targetReps: item.targetReps,
+          targetSeconds: item.targetSeconds,
+          restSeconds: item.restSeconds,
+          includeWarmup: item.includeWarmup,
+          unilateral: unilateralById.get(item.exerciseId) ?? false,
+        })),
+    );
+  }
+
+  return minutes;
+}
+
+/** Übungen je Workout - für die Kacheln „8 min · 5 Übungen". */
+export async function loadTemplateExerciseCounts(): Promise<Record<string, number>> {
+  const rows = await db.workoutTemplateExercises.toArray();
+
+  return rows.reduce<Record<string, number>>((counts, row) => {
+    counts[row.templateId] = (counts[row.templateId] ?? 0) + 1;
+    return counts;
+  }, {});
 }
 
 export interface WeekSummarySession {

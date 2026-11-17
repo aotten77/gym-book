@@ -1,4 +1,11 @@
 import type { PlanEntry, WorkoutTemplate } from '@/domain/models';
+import {
+  FALLBACK_WORK_SECONDS,
+  ROW_OVERHEAD_SECONDS,
+  SECONDS_PER_REP,
+  SIDE_SWITCH_SECONDS,
+  WARMUP_REST_FACTOR,
+} from '@/domain/session-estimate';
 import { isoWeekday, weekdayShortLabel } from '@/domain/training-calendar';
 import { resolveWorkoutCategory } from '@/domain/workout-category';
 import { formatShortDate } from '@/lib/format';
@@ -8,6 +15,81 @@ export interface TodayUnitOption {
   name: string;
   kind: 'strength' | 'mobility';
   lastTrained: string;
+  /** Grobe Dauer, siehe `estimateTemplateMinutes`; 0 heißt „nicht schätzbar". */
+  minutes: number;
+  exerciseCount: number;
+  /** Nur bei einem heute geplanten Workout: der Termin, der beim Start mitgegeben wird. */
+  planEntryId?: string;
+}
+
+/** Bis hierhin gilt ein Workout als „kurz & spontan". */
+export const SHORT_WORKOUT_MAX_MINUTES = 15;
+
+export type NowFilter = 'all' | 'short' | 'mobility' | 'strength';
+
+export interface TemplateEstimateItem {
+  workSetCount: number;
+  targetReps?: number;
+  targetSeconds?: number;
+  restSeconds?: number;
+  includeWarmup?: boolean;
+  unilateral: boolean;
+}
+
+/**
+ * Grobe Dauer eines Workouts in Minuten - nur für den Filter „Kurz".
+ *
+ * Bewusst die einfache Planzeit ohne Tempo und Historie: das Jetzt-Sheet will
+ * 8 min von 40 min unterscheiden, nicht den Feierabend vorhersagen (das tut
+ * `session-estimate.ts` für die laufende Einheit). Die Konstanten kommen von
+ * dort, damit es keine zweite Wahrheit über „eine Zeile kostet 20 s" gibt.
+ */
+export function estimateTemplateMinutes(items: TemplateEstimateItem[]): number {
+  const rounds: { seconds: number; rest: number }[] = [];
+
+  for (const item of items) {
+    const work =
+      item.targetSeconds ??
+      (item.targetReps ? item.targetReps * SECONDS_PER_REP : FALLBACK_WORK_SECONDS);
+    const row = work + ROW_OVERHEAD_SECONDS;
+    const roundSeconds = item.unilateral ? 2 * row + SIDE_SWITCH_SECONDS : row;
+    const rest = item.restSeconds ?? 0;
+
+    if (item.includeWarmup !== false) {
+      rounds.push({ seconds: roundSeconds, rest: rest * WARMUP_REST_FACTOR });
+    }
+
+    for (let set = 0; set < item.workSetCount; set += 1) {
+      rounds.push({ seconds: roundSeconds, rest });
+    }
+  }
+
+  if (rounds.length === 0) {
+    return 0;
+  }
+
+  // Nach der allerletzten Runde wartet niemand mehr eine Pause ab.
+  const total = rounds.reduce(
+    (sum, round, index) => sum + round.seconds + (index < rounds.length - 1 ? round.rest : 0),
+    0,
+  );
+
+  return Math.ceil(total / 60);
+}
+
+export function filterNowOptions(options: TodayUnitOption[], filter: NowFilter): TodayUnitOption[] {
+  switch (filter) {
+    case 'short':
+      return options.filter(
+        (option) => option.minutes > 0 && option.minutes <= SHORT_WORKOUT_MAX_MINUTES,
+      );
+    case 'mobility':
+      return options.filter((option) => option.kind === 'mobility');
+    case 'strength':
+      return options.filter((option) => option.kind === 'strength');
+    default:
+      return options;
+  }
 }
 
 function startOfLocalDay(date: Date): Date {
@@ -53,7 +135,7 @@ export function describeLastTrained(completedAt: string | undefined, today: Date
 }
 
 /**
- * Die Auswahl für „Heute trainieren": zuerst die Workouts der heutigen Termine
+ * Die Auswahl für „Jetzt trainieren": zuerst die Workouts der heutigen Termine
  * (je Workout einmal, in Tagesreihenfolge), danach alle übrigen nach Name.
  * Ein Termin ist ein Angebot, kein Schloss - deshalb bleibt jedes Workout wählbar.
  */
@@ -61,6 +143,9 @@ export function buildTodayUnitOptions(input: {
   templates: Pick<WorkoutTemplate, 'id' | 'name' | 'category'>[];
   plannedToday: PlanEntry[];
   recency: Record<string, string>;
+  minutesByTemplate: Record<string, number>;
+  /** Optional: nur die Kacheln brauchen die Zahl; ohne sie steht 0. */
+  exerciseCountByTemplate?: Record<string, number>;
   today: Date;
 }): { planned: TodayUnitOption[]; others: TodayUnitOption[] } {
   const byId = new Map(input.templates.map((template) => [template.id, template]));
@@ -70,6 +155,8 @@ export function buildTodayUnitOptions(input: {
     name: template.name,
     kind: resolveWorkoutCategory(template.category),
     lastTrained: describeLastTrained(input.recency[template.id], input.today),
+    minutes: input.minutesByTemplate[template.id] ?? 0,
+    exerciseCount: input.exerciseCountByTemplate?.[template.id] ?? 0,
   });
 
   const plannedIds = new Set<string>();
@@ -88,7 +175,7 @@ export function buildTodayUnitOptions(input: {
     }
 
     plannedIds.add(template.id);
-    planned.push(toOption(template));
+    planned.push({ ...toOption(template), planEntryId: entry.id });
   }
 
   const others = input.templates

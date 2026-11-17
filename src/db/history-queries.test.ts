@@ -6,6 +6,8 @@ import {
   loadRunsBetween,
   loadSyncActivitySince,
   loadSessionVolumes,
+  loadTemplateExerciseCounts,
+  loadTemplateMinutes,
   loadTemplateRecency,
   loadTestDatesBetween,
   loadWeekSummary,
@@ -545,5 +547,23 @@ describe('loadSyncActivitySince', () => {
     expect(activity.sessionsCompletedAt).toEqual(['2026-08-10T10:00:00.000Z']);
     expect(activity.runDates).toEqual(['2026-08-12']);
     expect(activity.testRecordedAt).toEqual(['2026-08-13T10:00:00.000Z']);
+  });
+});
+
+describe('loadTemplateMinutes', () => {
+  it('schätzt je Workout aus Zeilen und Unilateral-Flag der Übung', async () => {
+    const stamp = new Date().toISOString();
+    await db.exercises.bulkAdd([
+      { id: 'ex1', name: 'Planke', unilateral: true, createdAt: stamp, updatedAt: stamp },
+      { id: 'ex2', name: 'Dehnung', unilateral: false, createdAt: stamp, updatedAt: stamp },
+    ] as never);
+    await db.workoutTemplateExercises.bulkAdd([
+      { id: 'r1', templateId: 't1', exerciseId: 'ex1', orderIndex: 1, workSetCount: 2, targetSeconds: 30, restSeconds: 0, includeWarmup: false },
+      { id: 'r2', templateId: 't2', exerciseId: 'ex2', orderIndex: 1, workSetCount: 3, targetReps: 10, restSeconds: 60, includeWarmup: false },
+    ] as never);
+
+    // t1: 2 × (2 × 50 + 20) = 240 s; t2: 3 × 50 + 2 × 60 = 270 s; t3 hat keine Übungen
+    expect(await loadTemplateMinutes()).toEqual({ t1: 4, t2: 5 });
+    expect(await loadTemplateExerciseCounts()).toEqual({ t1: 1, t2: 1 });
   });
 });

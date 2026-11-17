@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { ChevronDown, ChevronRight, ChevronUp } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
@@ -6,7 +6,6 @@ import { Alert } from '@/components/Alert';
 import { PlanEntrySheet } from '@/components/PlanEntrySheet';
 import { PlanSeriesSheet } from '@/components/PlanSeriesSheet';
 import { RunLogSheet } from '@/components/RunLogSheet';
-import { TodayUnitSheet } from '@/components/TodayUnitSheet';
 import { UnitKindIcon } from '@/components/icons/UnitKindIcon';
 import { Button, IconButton } from '@/components/ui/Button';
 import { db } from '@/db/appDb';
@@ -26,6 +25,7 @@ import {
 } from '@/domain/training-calendar';
 import { formatRunDate } from '@/lib/format';
 import { cn } from '@/lib/utils';
+import { useUiStore } from '@/store/ui-store';
 
 interface PlanWeekSectionProps {
   /** Die im Raster gewählte Woche; die Liste hat keine eigenen Pfeile. */
@@ -42,6 +42,7 @@ const ROW_BASE =
  */
 export function PlanWeekSection({ week }: PlanWeekSectionProps) {
   const navigate = useNavigate();
+  const setNowSheetOpen = useUiStore((state) => state.setNowSheetOpen);
   const fromDay = week.key;
   const toDay = toDateInputValue(week.end);
   const todayKey = toDateInputValue(new Date());
@@ -53,7 +54,6 @@ export function PlanWeekSection({ week }: PlanWeekSectionProps) {
   const [entryDefaultDate, setEntryDefaultDate] = useState(todayKey);
   const [entrySheetOpen, setEntrySheetOpen] = useState(false);
   const [seriesOpen, setSeriesOpen] = useState(false);
-  const [todaySheetOpen, setTodaySheetOpen] = useState(false);
   const [runSheetOpen, setRunSheetOpen] = useState(false);
   const [runEntryId, setRunEntryId] = useState<string | undefined>(undefined);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -83,16 +83,6 @@ export function PlanWeekSection({ week }: PlanWeekSectionProps) {
    */
   const templatesWithWeekdays = useLiveQuery(() => countTemplatesWithWeekdays(), []);
   const hasUnmigratedWeekdays = (templatesWithWeekdays ?? 0) > 0;
-
-  const todayDay = week.days.find((day) => day.isToday);
-  // Das Sheet erwartet nur die heute noch offenen Workout-Termine.
-  const plannedToday = useMemo(
-    () =>
-      (todayDay?.units ?? []).flatMap((unit) =>
-        unit.ref.type === 'entry' && unit.ref.entry.kind === 'workout' ? [unit.ref.entry] : [],
-      ),
-    [todayDay],
-  );
 
   function openEntry(entry: PlanEntry | undefined, defaultDate: string) {
     setEditing(entry);
@@ -306,7 +296,7 @@ export function PlanWeekSection({ week }: PlanWeekSectionProps) {
             })}
 
             {day.isToday ? (
-              <Button variant="primary" size="md" fullWidth onClick={() => setTodaySheetOpen(true)}>
+              <Button variant="primary" size="md" fullWidth onClick={() => setNowSheetOpen(true)}>
                 + Einheit
               </Button>
             ) : !day.isPast ? (
@@ -330,17 +320,6 @@ export function PlanWeekSection({ week }: PlanWeekSectionProps) {
         Serie anlegen
       </Button>
 
-      <TodayUnitSheet
-        open={todaySheetOpen}
-        plannedToday={plannedToday}
-        onClose={() => setTodaySheetOpen(false)}
-        onLogRun={() => {
-          // Nie zwei Sheets übereinander: erst schließen, dann das Lauf-Sheet öffnen.
-          setTodaySheetOpen(false);
-          setRunEntryId(undefined);
-          setRunSheetOpen(true);
-        }}
-      />
       <RunLogSheet
         open={runSheetOpen}
         initialPlanEntryId={runEntryId}

@@ -25,6 +25,11 @@ interface UiStoreState {
    * Ruhemodus steht wieder offen.
    */
   minimizedRestKey: string | null;
+  /**
+   * Ob das Jetzt-Sheet („Jetzt trainieren") offen ist. Flüchtig wie
+   * [openSessionBlockKey]: nach einem Neustart steht man in der Übersicht.
+   */
+  isNowSheetOpen: boolean;
   isOnline: boolean;
   isOfflineReady: boolean;
   isUpdateAvailable: boolean;
@@ -34,6 +39,7 @@ interface UiStoreState {
   setActiveSessionExerciseId: (sessionExerciseId: string | null) => void;
   setOpenSessionBlockKey: (blockKey: string | null) => void;
   setMinimizedRestKey: (restKey: string | null) => void;
+  setNowSheetOpen: (open: boolean) => void;
   setOnlineStatus: (isOnline: boolean) => void;
   setOfflineReady: (isOfflineReady: boolean) => void;
   setUpdateAvailable: (isUpdateAvailable: boolean) => void;
@@ -53,6 +59,7 @@ export const useUiStore = create<UiStoreState>((set) => ({
   activeSessionExerciseId: null,
   openSessionBlockKey: null,
   minimizedRestKey: null,
+  isNowSheetOpen: false,
   isOnline: true,
   isOfflineReady: false,
   isUpdateAvailable: false,
@@ -61,6 +68,7 @@ export const useUiStore = create<UiStoreState>((set) => ({
   setActiveSessionExerciseId: (activeSessionExerciseId) => set({ activeSessionExerciseId }),
   setOpenSessionBlockKey: (openSessionBlockKey) => set({ openSessionBlockKey }),
   setMinimizedRestKey: (minimizedRestKey) => set({ minimizedRestKey }),
+  setNowSheetOpen: (isNowSheetOpen) => set({ isNowSheetOpen }),
   setOnlineStatus: (isOnline) => set({ isOnline }),
   setOfflineReady: (isOfflineReady) => set({ isOfflineReady }),
   setUpdateAvailable: (isUpdateAvailable) => set({ isUpdateAvailable }),

@@ -17,6 +17,7 @@ import {
   X,
 } from 'lucide-react';
 import { ActiveSessionBar } from '@/components/ActiveSessionBar';
+import { NowSheet } from '@/components/NowSheet';
 import { Button, IconButton } from '@/components/ui/Button';
 import { db } from '@/db/appDb';
 import { ACCESS_LOGIN_PATH } from '@/lib/access-session';
@@ -349,6 +350,9 @@ export function AppShell({ title, eyebrow, children }: AppShellProps) {
             {children}
           </div>
         </main>
+
+        {/* Kein Sheet über einer laufenden Einheit: dort liegt schon das Fokus-Sheet. */}
+        {!inSession ? <NowSheet /> : null}
 
         {!inSession ? (
           /*
