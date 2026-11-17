@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { db } from '@/db/appDb';
-import { markBackupCreated } from '@/db/settings-actions';
+import { markAnalysisCopied, markBackupCreated } from '@/db/settings-actions';
 import {
   buildAnalysisExport,
   buildAnalysisPasteText,
@@ -265,6 +265,7 @@ const appSettingsSchema = z.object({
   weekOverride: z.number().int().positive().optional(),
   // Additiv wie includeWarmup: ältere Backups kennen die Schlüssel nicht.
   lastBackupAt: z.string().optional(),
+  lastAnalysisCopiedAt: z.string().optional(),
   timerSoundEnabled: z.boolean().optional(),
   keepScreenAwakeEnabled: z.boolean().optional(),
   exportSchemaVersion: z.number().int().positive(),
@@ -873,6 +874,11 @@ export async function exportAnalysisSnapshot(options: ExportOptions = {}): Promi
  * unterstützt Promises genau an dieser Stelle. Wer das hier zu einer
  * `async`-Funktion mit `await` davor "vereinfacht", nimmt dem iPhone die
  * Funktion, ohne dass ein Test es merkt.
+ *
+ * Der Zeitstempel `lastAnalysisCopiedAt` hängt **nach** dem erfolgreichen
+ * Schreiben in der Promise-Kette: ein gescheitertes Kopieren setzt ihn nicht,
+ * und der synchrone `write`-Aufruf bleibt unberührt. Es ist ein eigenes Feld
+ * und nicht `lastBackupAt` - der Export ist kein Backup.
  */
 export function copyAnalysisSnapshot(): Promise<void> {
   const text = loadAnalysisFiles().then(({ files, exportedAt }) =>
@@ -880,13 +886,17 @@ export function copyAnalysisSnapshot(): Promise<void> {
   );
 
   if (typeof ClipboardItem === 'function') {
-    return navigator.clipboard.write([
-      new ClipboardItem({
-        'text/plain': text.then((value) => new Blob([value], { type: 'text/plain' })),
-      }),
-    ]);
+    return navigator.clipboard
+      .write([
+        new ClipboardItem({
+          'text/plain': text.then((value) => new Blob([value], { type: 'text/plain' })),
+        }),
+      ])
+      .then(() => markAnalysisCopied());
   }
 
   // Ohne `ClipboardItem` gibt es die Geste-Einschränkung auch nicht.
-  return text.then((value) => navigator.clipboard.writeText(value));
+  return text
+    .then((value) => navigator.clipboard.writeText(value))
+    .then(() => markAnalysisCopied());
 }

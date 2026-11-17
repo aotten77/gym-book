@@ -94,3 +94,14 @@ export async function setKeepScreenAwakeEnabled(enabled: boolean) {
 export async function markBackupCreated(backupAt = new Date().toISOString()) {
   await updateSettings({ lastBackupAt: backupAt });
 }
+
+/**
+ * Merkt sich, dass der Analyse-Export für Claude kopiert wurde.
+ *
+ * Bewusst ein eigenes Feld und nicht `lastBackupAt`: der Export wirft Bilder
+ * und Ids weg und kann keinen Datenverlust rückgängig machen, würde er die
+ * Backup-Erinnerung zurücksetzen, schwiege die einzige Warnung dagegen.
+ */
+export async function markAnalysisCopied(copiedAt = new Date().toISOString()) {
+  await updateSettings({ lastAnalysisCopiedAt: copiedAt });
+}

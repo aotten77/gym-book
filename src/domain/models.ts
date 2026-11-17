@@ -470,6 +470,14 @@ export interface AppSettings {
    */
   lastBackupAt?: string;
   /**
+   * Zeitpunkt, an dem der Analyse-Export zuletzt für Claude kopiert wurde.
+   *
+   * Kein Backup, siehe Analyse-Export: ein eigenes Feld, damit das Kopieren
+   * die Backup-Erinnerung nicht stilllegt. Grundlage des Abgleich-Status
+   * "Seitdem: ...".
+   */
+  lastAnalysisCopiedAt?: string;
+  /**
    * Signalton beim Ablauf der Timer.
    *
    * Additiv wie `includeWarmup`: `undefined` zählt als eingeschaltet, damit
