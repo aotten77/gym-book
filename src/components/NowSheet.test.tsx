@@ -6,7 +6,7 @@ import { useUiStore } from '@/store/ui-store';
 
 let go: (path: string) => void = () => undefined;
 
-function Navigator() {
+function Navigator(): null {
   const navigate = useNavigate();
   go = (path) => navigate(path);
   return null;
