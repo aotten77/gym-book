@@ -4,6 +4,7 @@ import {
   loadCompletedSessionsBetween,
   loadExercisesTrainedSince,
   loadRunsBetween,
+  loadSyncActivitySince,
   loadSessionVolumes,
   loadTemplateRecency,
   loadTestDatesBetween,
@@ -490,5 +491,59 @@ describe('loadWeeklyVolume', () => {
     expect(weeks[1].strength.sessions).toBe(1);
     expect(weeks[1].running.runs).toBe(1);
     expect(weeks.reduce((sum, week) => sum + week.running.runs, 0)).toBe(1);
+  });
+});
+
+describe('loadSyncActivitySince', () => {
+  async function seed() {
+    await addSession({ id: 'old', templateId: 't', status: 'completed', completedAt: '2026-08-01T10:00:00.000Z' });
+    await addSession({ id: 'new', templateId: 't', status: 'completed', completedAt: '2026-08-10T10:00:00.000Z' });
+    // Abgebrochen trägt auch ein `completedAt`, zählt aber nicht als trainiert.
+    await addSession({ id: 'abort', templateId: 't', status: 'aborted', completedAt: '2026-08-11T10:00:00.000Z' });
+    await addSession({ id: 'live', templateId: 't', status: 'active' });
+    await db.runLogs.bulkAdd(
+      ['2026-08-02', '2026-08-12'].map((date) => ({
+        id: `run-${date}`,
+        date,
+        distanceKm: 5,
+        durationSeconds: 1800,
+        createdAt: '2026-08-01T10:00:00.000Z',
+        updatedAt: '2026-08-01T10:00:00.000Z',
+      })),
+    );
+    await db.exerciseTests.bulkAdd(
+      ['2026-08-03T10:00:00.000Z', '2026-08-13T10:00:00.000Z'].map((recordedAt, index) => ({
+        id: `test-${index}`,
+        exerciseId: 'hip',
+        exerciseNameSnapshot: 'Hüfte',
+        recordedAt,
+        leftValue: 30,
+        rightValue: 28,
+        asymmetryPercent: 6.7,
+      })),
+    );
+  }
+
+  it('liefert ohne Zeitpunkt alles Abgeschlossene, ohne abgebrochene und laufende Einheiten', async () => {
+    await seed();
+
+    const activity = await loadSyncActivitySince();
+
+    expect(activity.sessionsCompletedAt.sort()).toEqual([
+      '2026-08-01T10:00:00.000Z',
+      '2026-08-10T10:00:00.000Z',
+    ]);
+    expect(activity.runDates.sort()).toEqual(['2026-08-02', '2026-08-12']);
+    expect(activity.testRecordedAt).toHaveLength(2);
+  });
+
+  it('lässt mit Zeitpunkt vorab weg, was davor liegt', async () => {
+    await seed();
+
+    const activity = await loadSyncActivitySince('2026-08-05T00:00:00.000Z');
+
+    expect(activity.sessionsCompletedAt).toEqual(['2026-08-10T10:00:00.000Z']);
+    expect(activity.runDates).toEqual(['2026-08-12']);
+    expect(activity.testRecordedAt).toEqual(['2026-08-13T10:00:00.000Z']);
   });
 });

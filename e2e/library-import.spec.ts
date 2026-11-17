@@ -41,7 +41,7 @@ test.describe('Bibliotheks-Import', () => {
   test.beforeEach(async ({ page }) => {
     await resetDatabase(page);
     await seedSampleData(page);
-    await page.goto('./#/settings');
+    await page.goto('./#/sync');
     await page.waitForTimeout(900);
   });
 
@@ -59,7 +59,7 @@ test.describe('Bibliotheks-Import', () => {
     await page.waitForTimeout(700);
     await expect(page.getByText('Einbeiniges RDL')).toHaveCount(0);
 
-    await page.goto('./#/settings');
+    await page.goto('./#/sync');
     await page.waitForTimeout(900);
     await pasteAndPreview(page, PAYLOAD);
     await page.getByRole('button', { name: 'Import bestätigen' }).click();
@@ -73,7 +73,7 @@ test.describe('Bibliotheks-Import', () => {
 
     // Zweiter Lauf derselben Nutzlast: nichts mehr zu tun, und der Knopf ist
     // gar nicht erst bedienbar.
-    await page.goto('./#/settings');
+    await page.goto('./#/sync');
     await page.waitForTimeout(900);
     await pasteAndPreview(page, PAYLOAD);
 
@@ -210,7 +210,7 @@ test.describe('Bibliotheks-Import', () => {
     await expect(page.locator('p').filter({ hasText: /^2\. Front Squat$/ })).toBeVisible();
     await expect(page.locator('p').filter({ hasText: /Bulgarian Split Squat$/ })).toHaveCount(0);
 
-    await page.goto('./#/settings');
+    await page.goto('./#/sync');
     await page.waitForTimeout(900);
     await pasteAndPreview(page, replace);
 

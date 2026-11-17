@@ -474,3 +474,37 @@ export async function loadWeeklyVolume(from: Date, to: Date): Promise<WeekVolume
 
   return buildWeeklyVolume({ sessions, sessionExercises, setLogs, runs, from, to });
 }
+
+/**
+ * Was seit dem letzten Senden an Claude dazugekommen sein kann, als Rohlisten.
+ *
+ * Die Feinregel (Läufe zählen am Senden-Tag mit, Einheiten und Tests nur
+ * danach) liegt in `describeSyncStatus`; hier wird nur grob vorgefiltert.
+ * Abgeschlossen heißt `status === 'completed'`: eine abgebrochene Einheit
+ * trägt auch ein `completedAt` und ist nichts, was Claude wissen müsste. Der
+ * Lauf-Filter geht über den lokalen Tag von `since`, weil `date` ein lokaler
+ * Kalendertag ist und kein Zeitstempel.
+ */
+export async function loadSyncActivitySince(since?: string): Promise<{
+  sessionsCompletedAt: string[];
+  runDates: string[];
+  testRecordedAt: string[];
+}> {
+  const sessions = since
+    ? await db.workoutSessions.where('completedAt').aboveOrEqual(since).toArray()
+    : await db.workoutSessions.toArray();
+  const runs = since
+    ? await db.runLogs.where('date').aboveOrEqual(toDateInputValue(new Date(since))).toArray()
+    : await db.runLogs.toArray();
+  const tests = since
+    ? await db.exerciseTests.where('recordedAt').aboveOrEqual(since).toArray()
+    : await db.exerciseTests.toArray();
+
+  return {
+    sessionsCompletedAt: sessions.flatMap((session) =>
+      session.status === 'completed' && session.completedAt ? [session.completedAt] : [],
+    ),
+    runDates: runs.map((run) => run.date),
+    testRecordedAt: tests.map((test) => test.recordedAt),
+  };
+}

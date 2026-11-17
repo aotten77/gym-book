@@ -264,6 +264,8 @@ The picture belongs to the exercise form, not to a second step afterwards: `crea
 
 ### The analysis export — a second export that throws things away
 
+Both entry points — "Analyse kopieren" and "Als ZIP teilen" — live on the reconciliation page `/sync` ([SyncPage.tsx](src/pages/SyncPage.tsx), "Abgleich"), no longer in Settings: the plan is written in a claude.ai project, so the loop is one tap to copy, then paste into the thread, and the import comes back the same way. The page reads `loadSyncActivitySince` (raw lists, the fine rule stays in `describeSyncStatus`) and only writes through `copyAnalysisSnapshot` and the import.
+
 The backup answers "can I restore this?". It cannot answer "am I stagnating?": 5,2 MB of it are 25 images as base64 data URLs, 85 % of the set logs are empty placeholder rows from sessions that were started and abandoned, and every question begins with three joins over 36-character UUIDs. Net, five trainable sessions.
 
 Beside it therefore sits **`exportAnalysisSnapshot`** ([lib/export.ts](src/lib/export.ts)) — a ZIP with eight files: `sessions.csv`, `progression.csv`, `tests.csv`, `wochen.csv`, `laeufe.csv`, `plan.csv`, `meta.json` and `bestand.json`, built by the pure `buildAnalysisExport` ([domain/analysis-export.ts](src/domain/analysis-export.ts)), split the same way `library-import.ts` is split from its actions. It is **deliberately lossy and not reimportable**, and the two rules that keep it honest are:
@@ -292,6 +294,8 @@ Beside the archive stands **`copyAnalysisSnapshot`** — the same eight files as
 The archive is written by [lib/zip.ts](src/lib/zip.ts), store-only and dependency-free: eight files are one share sheet on iOS instead of eight, and at this size deflate would buy nothing that a dependency does not cost back. `createZipBytes` stands beside `createZipArchive` because jsdom's `Blob` has no `arrayBuffer()`, so the structure would otherwise only be checkable in a browser.
 
 ### The library import — a second, much smaller import
+
+The import section sits on `/sync` ("Abgleich"), not in Settings, beside "Analyse kopieren": the project in claude.ai is where the file comes from, and the same page sends the current state back. The last five `LibraryImportLog` rows are listed under it ("Letzte Importe").
 
 The backup restore replaces everything. The **library import** ([domain/library-import.ts](src/domain/library-import.ts) + [db/library-import-actions.ts](src/db/library-import-actions.ts), UI in [LibraryImportSection.tsx](src/components/LibraryImportSection.tsx)) adds to what is there: exercises, workouts, their assignments, band levels and dated plan entries, out of a hand-written JSON file. Set logs, tests and settings are not even in its transaction — what it cannot reach, it cannot damage — and sessions and runs are in it only to be *read*, because which plan entries are taken is derived from them. Ready payloads live **outside the repository**, under `~/Documents/gym-book-daten/import/`: this repository is public, and the payloads carry exercise instructions with medical reasoning (injury history, contraindications) — as does the analysis context beside them. `.gitignore` still lists `docs/import/` as a tripwire in case someone recreates it here. The same rule is why they were never in `public/`, which would deploy and precache them. If you need an example payload in the repo, write a synthetic one; do not un-ignore the directory.
 

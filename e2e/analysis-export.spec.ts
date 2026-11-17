@@ -12,10 +12,10 @@ test.describe('Analyse-Export', () => {
   test('lädt ein ZIP mit den acht Dateien herunter', async ({ page }) => {
     await resetDatabase(page);
     await seedSampleData(page);
-    await page.goto('./#/settings');
+    await page.goto('./#/sync');
 
     const downloadPromise = page.waitForEvent('download');
-    await page.getByRole('button', { name: /Analyse-Export/ }).click();
+    await page.getByRole('button', { name: 'Als ZIP teilen' }).click();
     const download = await downloadPromise;
 
     expect(download.suggestedFilename()).toMatch(/^gym-book-analyse-\d{4}-\d{2}-\d{2}\.zip$/);
@@ -47,12 +47,10 @@ test.describe('Analyse-Export', () => {
   test('rührt das Datum der letzten Sicherung nicht an', async ({ page }) => {
     await resetDatabase(page);
     await seedSampleData(page);
-    await page.goto('./#/settings');
-
-    await expect(page.getByText('Noch nie gesichert')).toBeVisible();
+    await page.goto('./#/sync');
 
     const downloadPromise = page.waitForEvent('download');
-    await page.getByRole('button', { name: /Analyse-Export/ }).click();
+    await page.getByRole('button', { name: 'Als ZIP teilen' }).click();
     await downloadPromise;
 
     await expect(page.getByText(/Analyse-Export erstellt/)).toBeVisible();
@@ -61,6 +59,8 @@ test.describe('Analyse-Export', () => {
      * Erinnerung auf der Startseite abgeschaltet - ausgerechnet von einer
      * Datei, die einen Datenverlust nicht rückgängig machen könnte.
      */
+    // Die Anzeige steht in den Einstellungen, nicht mehr auf dem Abgleich.
+    await page.goto('./#/settings');
     await expect(page.getByText('Noch nie gesichert')).toBeVisible();
   });
 });
