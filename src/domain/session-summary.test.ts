@@ -8,6 +8,7 @@ import {
   describeSetRow,
   describeSetRowValues,
   describeSetTarget,
+  findNextOpenBlock,
   lastSecondsOffer,
   setRowFallback,
   setRowPlaceholders,
@@ -477,5 +478,72 @@ describe('describeSetRow', () => {
     expect(describeSetRow(log({ id: '2', sessionExerciseId: 'a', setKind: 'warmup', setNumber: 0 }))).toBe(
       'Aufwärmen',
     );
+  });
+});
+
+
+describe('findNextOpenBlock', () => {
+  const single = (id: string, overrides: Partial<WorkoutSessionExercise> = {}) =>
+    ({ kind: 'single', exercise: exercise({ id, ...overrides }) }) as const;
+  const open = (id: string) => [log({ id: `${id}-1`, sessionExerciseId: id })];
+  const done = (id: string) => [log({ id: `${id}-1`, sessionExerciseId: id, completed: true })];
+
+  it('nimmt den nächsten Block in Reihenfolge, der noch offene Sätze hat', () => {
+    const progress = buildSessionBlockProgress(
+      [single('a'), single('b'), single('c')],
+      { a: done('a'), b: done('b'), c: open('c') },
+    );
+
+    const next = findNextOpenBlock(progress, 'a');
+
+    expect(next?.block.key).toBe('c');
+    expect(next?.exercise.id).toBe('c');
+  });
+
+  it('überspringt ausgelassene Übungen, auch mit offenen Sätzen', () => {
+    const progress = buildSessionBlockProgress(
+      [single('a'), single('b', { wasSkipped: true }), single('c')],
+      { a: done('a'), b: open('b'), c: open('c') },
+    );
+
+    expect(findNextOpenBlock(progress, 'a')?.block.key).toBe('c');
+  });
+
+  it('sucht nach dem Ende von vorn weiter, damit ein früher offener Block nicht liegen bleibt', () => {
+    const progress = buildSessionBlockProgress(
+      [single('a'), single('b'), single('c')],
+      { a: open('a'), b: done('b'), c: done('c') },
+    );
+
+    expect(findNextOpenBlock(progress, 'c')?.block.key).toBe('a');
+  });
+
+  it('liefert nichts, wenn außer dem eigenen Block nichts mehr offen ist', () => {
+    const progress = buildSessionBlockProgress(
+      [single('a'), single('b')],
+      { a: done('a'), b: done('b') },
+    );
+
+    expect(findNextOpenBlock(progress, 'a')).toBeUndefined();
+    // Der eigene Block zählt nie als "danach", auch wenn er wieder offen ist.
+    const reopened = buildSessionBlockProgress([single('a'), single('b')], {
+      a: open('a'),
+      b: done('b'),
+    });
+    expect(findNextOpenBlock(reopened, 'a')).toBeUndefined();
+  });
+
+  it('öffnet im Supersatz das erste Mitglied, an dem noch etwas offen ist', () => {
+    const first = exercise({ id: 'g1', supersetGroupId: 'group' });
+    const second = exercise({ id: 'g2', supersetGroupId: 'group' });
+    const progress = buildSessionBlockProgress(
+      [single('a'), { kind: 'group', groupId: 'group', exercises: [first, second] }],
+      { a: done('a'), g1: done('g1'), g2: open('g2') },
+    );
+
+    const next = findNextOpenBlock(progress, 'a');
+
+    expect(next?.block.key).toBe('group');
+    expect(next?.exercise.id).toBe('g2');
   });
 });

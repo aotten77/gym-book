@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { CheckCircle2, Clock3, Plus, Timer, X } from 'lucide-react';
+import { ArrowRight, CheckCircle2, Clock3, Plus, Timer, X } from 'lucide-react';
 import { Alert } from '@/components/Alert';
 import { AppShell } from '@/components/AppShell';
 import { RestMode } from '@/components/RestMode';
@@ -13,6 +13,7 @@ import { Button, IconButton } from '@/components/ui/Button';
 import { CheckboxField, SelectField, TextArea } from '@/components/ui/Field';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { SessionBlockCard } from '@/components/SessionBlockCard';
+import { SessionBlockFinished } from '@/components/SessionBlockFinished';
 import {
   SessionExerciseStage,
   SessionPartnerRow,
@@ -78,6 +79,7 @@ import {
   describeRepTargetDeviation,
   describeSetRow,
   describeSetRowValues,
+  findNextOpenBlock,
   setRowFallback,
   summarizeSessionProgress,
   type SessionExerciseProgress,
@@ -152,6 +154,21 @@ const REST_PRUNE_INTERVAL_MS = 30_000;
 function byRestTrackEnd(left: RestTimerTrack, right: RestTimerTrack) {
   return left.endsAt - right.endsAt;
 }
+
+/*
+ * Der große Knopf im Fuß des Sheets - "abhaken" wie "Weiter: …".
+ *
+ * 62px statt 52. Der Knopf wird mit ausgestrecktem Daumen getroffen, oft im
+ * letzten Satz einer Serie, und 52px waren gerade eben über dem Mindestmaß -
+ * großzügig ist das nicht. Die Zeile "82,5 kg × 5 abhaken" bekommt damit auch
+ * den Platz, den sie auf 320px vorher kürzen musste.
+ */
+const SHEET_ACTION_CLASS = cn(
+  'flex min-h-[3.875rem] w-full items-center justify-center rounded-full px-4',
+  'bg-accent text-[15px] font-bold text-accent-contrast transition hover:opacity-90',
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface',
+  'disabled:cursor-not-allowed disabled:opacity-50',
+);
 
 interface PendingSetLogDelete {
   log: WorkoutSetLog;
@@ -517,6 +534,31 @@ export function SessionPage() {
   const sessionProgress = useMemo(() => summarizeSessionProgress(setLogs ?? []), [setLogs]);
   const openBlock = blockProgress.find((block) => block.key === openSessionBlockKey);
   /*
+   * Der Block, dessen letzter Satz gerade *im Sheet* abgehakt wurde.
+   *
+   * Dann bleibt das Sheet offen und zeigt die Übung als fertig, mit "Weiter: …"
+   * im Fuß. Ein gespeicherter Schlüssel statt einer Ableitung aus dem Status,
+   * aus zwei Gründen: eine fertige Übung, die man *aus der Liste* öffnet, soll
+   * weiter ihre Bühne zeigen - dort korrigiert man Werte und ergänzt Sätze -,
+   * und die Live-Query trägt den letzten Haken erst einen Emit später. Hinge
+   * die Ansicht am Status, stünde für diesen Moment die Bühne der nächsten
+   * Übung im Sheet, denn der Fokus ist schon weitergezogen. Flüchtig wie das
+   * Sheet selbst: nach einem Reload ist beides zu.
+   *
+   * Der zweite Fall fängt das Zurückkommen auf die Seite ab: der offene Block
+   * liegt im ui-store und überlebt einen Seitenwechsel, dieser State nicht.
+   * Ein fertiger Block, in dem der Fokus nicht mehr steht, ist genau das
+   * Fertig-Bild - wer ihn aus der Liste öffnet, zieht den Fokus
+   * hinein und bekommt die Bühne.
+   */
+  const [finishedBlockKey, setFinishedBlockKey] = useState<string | null>(null);
+  const isOpenBlockFinished =
+    openBlock !== undefined &&
+    (openBlock.key === finishedBlockKey ||
+      (openBlock.status === 'done' &&
+        !openBlock.exercises.some((item) => item.exercise.id === activeSessionExerciseId)));
+  const nextOpenBlock = openBlock ? findNextOpenBlock(blockProgress, openBlock.key) : undefined;
+  /*
    * Welcher Satz auf der Bühne groß liegt.
    *
    * Überwiegend abgeleitet statt gespeichert: normalerweise ist es die nächste
@@ -647,10 +689,27 @@ export function SessionPage() {
    * Der Satz-Timer bleibt bewusst außen vor. Der Ruhemodus ist der Zustand des
    * Wartens - während ein Satz auf Zeit läuft, wartet man nicht, sondern hält,
    * und die Zeit dafür steht auf der Bühne im Sheet, wo auch der Satz steht.
+   *
+   * Nach dem letzten Satz eines Blocks steht der Fokus schon auf der nächsten
+   * Übung, und dort läuft keine Pause - gewartet wird aber auf die gerade
+   * begonnene des fertigen Blocks. Deshalb dann dessen zuletzt endende Spur.
+   * Nur, wenn danach noch etwas kommt: nach dem allerletzten Satz wartet man
+   * auf nichts mehr, und die Pause steht als Chip im Fuß.
    */
-  const activeRestTrack = activeSetLog
-    ? findRestTrack(restTimers, activeSetLog.sessionExerciseId, activeSetLog.side)
-    : undefined;
+  const finishedBlockRestTrack =
+    isOpenBlockFinished && nextOpenBlock && openBlock
+      ? restTimers
+          .filter((track) =>
+            openBlock.exercises.some((item) => item.exercise.id === track.sessionExerciseId),
+          )
+          .sort(byRestTrackEnd)
+          .at(-1)
+      : undefined;
+  const activeRestTrack = isOpenBlockFinished
+    ? finishedBlockRestTrack
+    : activeSetLog
+      ? findRestTrack(restTimers, activeSetLog.sessionExerciseId, activeSetLog.side)
+      : undefined;
   const activeRestSeconds = remainingRestSeconds(activeRestTrack, now);
   /*
    * Der Schlüssel gilt nur, solange die Pause läuft. Abgelaufene Spuren bleiben
@@ -717,6 +776,19 @@ export function SessionPage() {
           bandLevels,
         })
       : false;
+  /*
+   * Nach dem letzten Satz eines Blocks ist die anstehende Zeile die einer
+   * anderen Übung - "Satz 1" allein hieße dann, es gehe hier weiter. Der Name
+   * davor ist derselbe, den der Knopf "Weiter: …" im Fuß trägt.
+   */
+  const isActiveSetOutsideOpenBlock =
+    Boolean(openBlock) &&
+    !openBlock?.exercises.some((item) => item.exercise.id === activeSetExercise?.id);
+  const restModeNextLabel = activeSetLog
+    ? isActiveSetOutsideOpenBlock && activeSetExercise
+      ? `${activeSetExercise.exerciseNameSnapshot} · ${describeSetRow(activeSetLog)}`
+      : describeSetRow(activeSetLog)
+    : undefined;
   const isReadOnly = session?.status !== 'active';
   const selectedExistingExercise = (availableExercises ?? []).find(
     (exercise) => exercise.id === exerciseForm.exerciseId,
@@ -751,12 +823,21 @@ export function SessionPage() {
     // Wer eine Übung öffnet, will bei dem Satz landen, der dran ist - nicht
     // bei dem, den er beim letzten Besuch angetippt hat.
     setSelectedSetLogId(null);
+    // Und auf ihrer Bühne, auch wenn sie fertig ist: siehe `finishedBlockKey`.
+    setFinishedBlockKey(null);
   }
 
   /** Wechsel auf das andere Mitglied des Supersatzes, ohne das Sheet zu verlassen. */
   function handleSelectSheetMember(sessionExerciseId: string) {
     setActiveSessionExerciseId(sessionExerciseId);
     setSelectedSetLogId(null);
+    setFinishedBlockKey(null);
+  }
+
+  /** Zurück in die Liste - per Schließer, Wischen, Escape oder "Zur Übersicht". */
+  function handleCloseExerciseSheet() {
+    setOpenSessionBlockKey(null);
+    setFinishedBlockKey(null);
   }
 
   /**
@@ -1042,20 +1123,42 @@ export function SessionPage() {
     setSelectedSetLogId(null);
 
     /*
-     * Das Sheet schließt sich, sobald sein Block keine offene Zeile mehr hat.
+     * Hat der Block keine offene Zeile mehr, bleibt das Sheet offen und zeigt
+     * ihn als fertig - mit "Weiter: …" im Fuß, solange noch etwas offen ist.
      *
-     * Bewusst kein Selbstsprung in den nächsten Block: zwischen zwei Übungen
-     * wird umgebaut, getrunken, gelaufen - dafür ist die Liste der richtige
-     * Ort. Der Wechsel *innerhalb* eines Supersatzes bleibt dagegen im Sheet,
-     * denn genau dort geht es ohne Pause weiter.
+     * Früher schloss es sich hier, und die nächste Übung musste man in der
+     * Liste suchen. Gesprungen wird trotzdem nicht: zwischen zwei Übungen wird
+     * umgebaut, getrunken, gelaufen, und erst der Tap auf den Knopf wechselt.
+     * Der Wechsel *innerhalb* eines Supersatzes bleibt davon unberührt, denn
+     * dort geht es ohne Pause weiter.
+     *
+     * Der Stand wird aus `effectiveLogs` neu berechnet, nicht aus
+     * `blockProgress` gelesen - aus demselben Grund wie oben.
      */
-    const openMembers = openBlock?.exercises.map((item) => item.exercise.id) ?? [];
+    const effectiveBlocks = buildSessionBlockProgress(
+      sessionBlocks,
+      groupLogsByExercise(effectiveLogs),
+    );
+    const finishedBlock = effectiveBlocks.find(
+      (block) =>
+        block.key === openSessionBlockKey &&
+        block.status === 'done' &&
+        block.exercises.some((item) => item.exercise.id === sessionExerciseId),
+    );
 
-    if (
-      openMembers.includes(sessionExerciseId) &&
-      !effectiveLogs.some((log) => openMembers.includes(log.sessionExerciseId) && !log.completed)
-    ) {
-      setOpenSessionBlockKey(null);
+    if (finishedBlock) {
+      setFinishedBlockKey(finishedBlock.key);
+
+      /*
+       * Der Fokus geht auf das, was der Knopf verspricht. `resolveNextFocus`
+       * zieht ihn zwar ohnehin weiter, zählt aber eine Übung ohne Sätze als
+       * offen - der Ruhemodus nennt unter "Danach" dieselbe Zeile wie der Fuß.
+       */
+      const following = findNextOpenBlock(effectiveBlocks, finishedBlock.key);
+
+      if (following) {
+        setActiveSessionExerciseId(following.exercise.id);
+      }
     }
 
     try {
@@ -1313,7 +1416,7 @@ export function SessionPage() {
                   <Clock3 size={12} aria-hidden="true" />
                   <span className="max-w-[8rem] truncate">{description}</span>
                   <span
-                    {...(index === 0 && !hasRunningSetTimer
+                    {...(index === 0 && (!hasRunningSetTimer || isOpenBlockFinished)
                       ? { role: 'timer', 'aria-live': 'off' as const }
                       : {})}
                   >
@@ -1325,24 +1428,40 @@ export function SessionPage() {
           </div>
         </div>
 
-        {activeSetAction ? (
+        {isOpenBlockFinished ? (
+          /*
+            Derselbe Knopf an derselben Stelle, nur mit neuer Handlung: wer
+            gerade den letzten Satz abgehakt hat, hat den Daumen genau hier.
+            Er öffnet den nächsten offenen Block - im Supersatz den ganzen -,
+            oder führt zurück in die Liste, wo die Einheit beendet wird.
+          */
+          <button
+            type="button"
+            data-sheet-continue=""
+            onClick={() =>
+              nextOpenBlock
+                ? handleOpenExerciseSheet(nextOpenBlock.exercise.id)
+                : handleCloseExerciseSheet()
+            }
+            className={SHEET_ACTION_CLASS}
+          >
+            {nextOpenBlock ? (
+              <>
+                <span className="truncate">
+                  Weiter: {nextOpenBlock.exercise.exerciseNameSnapshot}
+                </span>
+                <ArrowRight size={18} aria-hidden="true" className="ml-2 shrink-0" />
+              </>
+            ) : (
+              <span className="truncate">Zur Übersicht</span>
+            )}
+          </button>
+        ) : activeSetAction ? (
           <button
             type="button"
             onClick={() => void activeSetAction.run()}
             disabled={activeSetAction.disabled}
-            className={cn(
-              /*
-                62px statt 52. Der Knopf wird mit ausgestrecktem Daumen
-                getroffen, oft im letzten Satz einer Serie, und 52px waren
-                gerade eben über dem Mindestmaß - großzügig ist das nicht.
-                Die Zeile "82,5 kg × 5 abhaken" bekommt damit auch den Platz,
-                den sie auf 320px vorher kürzen musste.
-              */
-              'flex min-h-[3.875rem] w-full items-center justify-center rounded-full px-4',
-              'bg-accent text-[15px] font-bold text-accent-contrast transition hover:opacity-90',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface',
-              'disabled:cursor-not-allowed disabled:opacity-50',
-            )}
+            className={SHEET_ACTION_CLASS}
           >
             <span className="truncate">{activeSetAction.label}</span>
           </button>
@@ -1799,7 +1918,7 @@ export function SessionPage() {
                 */}
                 <p className="truncate text-[10px] font-bold uppercase tracking-[0.16em] text-content-muted">
                   {openBlock.isSuperset ? 'Supersatz' : 'Einzelübung'}
-                  {roundLabel ? ` · ${roundLabel}` : ''}
+                  {roundLabel && !isOpenBlockFinished ? ` · ${roundLabel}` : ''}
                 </p>
                 {/*
                   Rechts daneben, wo im Streifen der Liste "Noch" und "Ende"
@@ -1809,12 +1928,27 @@ export function SessionPage() {
                   320px teilt sich der Kopf die Breite mit dem Schließer.
                 */}
                 <div className="mt-0.5 flex items-end justify-between gap-3">
-                  <p className="min-w-0 flex-1 truncate font-display text-2xl font-extrabold leading-none tabular-nums tracking-tight">
-                    Satz {Math.min(sessionProgress.completedCount + 1, sessionProgress.totalCount)}
-                    <span className="ml-1.5 text-sm font-semibold text-content-muted">
-                      von {sessionProgress.totalCount}
-                    </span>
-                  </p>
+                  {isOpenBlockFinished ? (
+                    /*
+                      Statt des Zählers der Zustand: der nächste Satz gehört
+                      schon zu einer anderen Übung, und "Satz 9 von 14" über
+                      einer fertigen Übung hieße, er stünde hier.
+                    */
+                    <p className="min-w-0 flex-1 truncate font-display text-2xl font-extrabold leading-none tracking-tight">
+                      {!nextOpenBlock
+                        ? 'Alle Übungen fertig'
+                        : openBlock.isSuperset
+                          ? 'Supersatz fertig'
+                          : 'Übung fertig'}
+                    </p>
+                  ) : (
+                    <p className="min-w-0 flex-1 truncate font-display text-2xl font-extrabold leading-none tabular-nums tracking-tight">
+                      Satz {Math.min(sessionProgress.completedCount + 1, sessionProgress.totalCount)}
+                      <span className="ml-1.5 text-sm font-semibold text-content-muted">
+                        von {sessionProgress.totalCount}
+                      </span>
+                    </p>
+                  )}
                   <SessionOutlook
                     session={session}
                     blocks={sessionBlocks}
@@ -1828,7 +1962,7 @@ export function SessionPage() {
                 dieser Übung noch aussteht - eine Zahl, die im Satz selbst
                 niemand nachzählen will.
               */}
-              {focusedRounds.length > 1 ? (
+              {focusedRounds.length > 1 && !isOpenBlockFinished ? (
                 <div aria-hidden="true" className="flex gap-1">
                   {focusedRounds.map((round, index) => (
                     <span
@@ -1856,17 +1990,21 @@ export function SessionPage() {
           Return-Taste; deshalb bringt der Fuß hier seine eigene mit.
         */
         fieldNavigation
-        onClose={() => setOpenSessionBlockKey(null)}
+        onClose={handleCloseExerciseSheet}
       >
-        <div className="space-y-2">
-          {openBlock?.exercises.map((item, index) =>
-            renderSheetMember(item, {
-              isFirst: index === 0,
-              isLast: index === (openBlock?.exercises.length ?? 1) - 1,
-              isSupersetMember: openBlock.isSuperset,
-            }),
-          )}
-        </div>
+        {openBlock && isOpenBlockFinished ? (
+          <SessionBlockFinished block={openBlock} next={nextOpenBlock?.block} />
+        ) : (
+          <div className="space-y-2">
+            {openBlock?.exercises.map((item, index) =>
+              renderSheetMember(item, {
+                isFirst: index === 0,
+                isLast: index === (openBlock?.exercises.length ?? 1) - 1,
+                isSupersetMember: openBlock.isSuperset,
+              }),
+            )}
+          </div>
+        )}
       </Sheet>
 
       {/*
@@ -1885,7 +2023,7 @@ export function SessionPage() {
           seconds={activeRestSeconds}
           total={activeRestTrack.durationSeconds}
           restLabel={describeRestTrack(activeRestTrack)}
-          nextLabel={activeSetLog ? describeSetRow(activeSetLog) : undefined}
+          nextLabel={restModeNextLabel}
           nextValues={nextValues}
           nextTargetReps={nextTargetReps}
           nextHint={nextHint}

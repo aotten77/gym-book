@@ -90,6 +90,43 @@ export function buildSessionBlockProgress(
   });
 }
 
+export interface NextOpenBlock {
+  block: SessionBlockProgress;
+  /** Das erste Mitglied, an dem noch etwas offen ist - dorthin geht der Fokus. */
+  exercise: WorkoutSessionExercise;
+}
+
+/**
+ * Der Block, den der Knopf "Weiter: …" im Sheet öffnet, wenn der eigene fertig ist.
+ *
+ * Gesucht wird hinter dem eigenen Block und danach von vorn, wie bei
+ * `findNextOpenExercise` - eine weiter oben ausgelassene oder nachträglich
+ * ergänzte Übung soll nicht liegen bleiben. Der eigene Block kommt nie in
+ * Frage, auch wenn er wieder offen ist: "danach" heißt *ein anderer*.
+ * Ausgelassene Übungen zählen als fertig (`isDone`) und fallen damit heraus.
+ */
+export function findNextOpenBlock(
+  blocks: SessionBlockProgress[],
+  currentKey: string,
+): NextOpenBlock | undefined {
+  const currentIndex = blocks.findIndex((block) => block.key === currentKey);
+  const ordered = [...blocks.slice(currentIndex + 1), ...blocks.slice(0, Math.max(currentIndex, 0))];
+
+  for (const block of ordered) {
+    if (block.status === 'done') {
+      continue;
+    }
+
+    const open = block.exercises.find((item) => !item.isDone);
+
+    if (open) {
+      return { block, exercise: open.exercise };
+    }
+  }
+
+  return undefined;
+}
+
 /**
  * Eine Runde einer Übung: alles, was zu *einer* Satznummer gehört.
  *

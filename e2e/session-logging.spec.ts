@@ -456,12 +456,14 @@ test.describe('Sätze und Reihenfolge', () => {
     await startSampleSession(page);
     await openExerciseSheet(page, 'Front Squat');
 
-    // Aufwärmsatz plus drei Arbeitssätze - danach schließt sich das Sheet von
-    // selbst, weil der Block keine offene Zeile mehr hat.
+    // Aufwärmsatz plus drei Arbeitssätze - danach zeigt das Sheet die Übung
+    // als fertig, und von dort geht es zurück in die Liste.
     for (let index = 0; index < 4; index += 1) {
       await completeActiveSet(page);
     }
 
+    await expect(page.locator('[data-sheet-finished]')).toBeVisible();
+    await closeExerciseSheet(page);
     await expect(page.locator('[data-sheet]')).toHaveCount(0);
 
     /*
@@ -564,9 +566,10 @@ test.describe('Aktive Übung', () => {
       await completeActiveSet(page);
     }
 
-    // Beim letzten Satz schließt sich das Sheet von selbst - der Block ist
-    // fertig, und der nächste wird nicht ungefragt aufgerissen.
-    await expect(page.getByRole('dialog')).toBeHidden();
+    // Beim letzten Satz zeigt das Sheet den Block als fertig - der nächste
+    // wird nicht ungefragt aufgerissen, nur angeboten.
+    await expect(page.locator('[data-sheet-finished]')).toBeVisible();
+    await expect(page.locator('[data-sheet] [data-set-row]')).toHaveCount(0);
 
     /*
      * Beim letzten Satz muss der Sprung kommen. Die Live-Query hinkt dem

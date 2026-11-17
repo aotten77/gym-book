@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import {
+  closeExerciseSheet,
   collectPageErrors,
   completeActiveSet,
   minimizeRestMode,
@@ -57,11 +58,13 @@ async function trainRamp(page: Page, reps: [number, number, number]) {
   }
 
   /*
-   * Zugeklappt hat sich das Sheet mit dem letzten Satz von selbst - das ist
-   * sein Vertrag, sobald im Block nichts mehr offen ist. Nur die Pause liegt
-   * noch darüber und muss weg, bevor die Liste wieder bedienbar ist.
+   * Nach dem letzten Satz bleibt das Sheet offen und zeigt die Übung als
+   * fertig; beendet wird die Einheit in der Liste. Die Pause liegt noch
+   * darüber und muss weg, bevor das Sheet sich schließen lässt.
    */
   await minimizeRestMode(page);
+  await expect(page.locator('[data-sheet-finished]')).toBeVisible();
+  await closeExerciseSheet(page);
   await expect(page.locator('[data-sheet]')).toHaveCount(0);
 
   await page.getByRole('button', { name: 'Session abschließen' }).click();
