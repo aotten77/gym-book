@@ -61,7 +61,7 @@ import { cn } from '@/lib/utils';
  * Es gibt im Datenmodell keine Verbindung Woche → Workout - alle Workouts
  * laufen in jeder Woche - und die Seite sagt das offen, statt eine
  * Reihenfolge zu erfinden. Gestartet wird nur aus der Tagesliste und dem
- * Sheet „Heute trainieren".
+ * `NowSheet` („Jetzt trainieren").
  */
 export function ProgramsPage() {
   /*

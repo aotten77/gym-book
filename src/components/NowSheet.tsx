@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Play } from 'lucide-react';
 import { Alert } from '@/components/Alert';
@@ -24,7 +24,7 @@ import {
   type NowFilter,
   type TodayUnitOption,
 } from '@/domain/today-units';
-import { formatRunDate } from '@/lib/format';
+import { formatNumber, formatRunDate } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { useUiStore } from '@/store/ui-store';
 
@@ -56,12 +56,25 @@ const SECTION_LABEL_CLASSES = 'text-xs font-semibold uppercase tracking-wide tex
  */
 export function NowSheet() {
   const navigate = useNavigate();
+  const location = useLocation();
   const open = useUiStore((state) => state.isNowSheetOpen);
   const setOpen = useUiStore((state) => state.setNowSheetOpen);
   const [filter, setFilter] = useState<NowFilter>('all');
   const [isStarting, setIsStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
   const [runSheetOpen, setRunSheetOpen] = useState(false);
+
+  /*
+   * Das Flag liegt global im ui-store, aber jede Seite mountet ihr eigenes
+   * AppShell. Wechselt die Route bei offenem Sheet, ohne dass jemand
+   * `setOpen(false)` aufruft (Zurück-Geste, ein Start, der in `/session/`
+   * führt), bliebe es gesetzt und das Sheet spränge auf dem nächsten Screen
+   * wieder auf. Jeder Routenwechsel schließt es deshalb. Beim ersten Mount ist
+   * das ein No-op.
+   */
+  useEffect(() => {
+    setOpen(false);
+  }, [location.pathname, setOpen]);
 
   // Bei jedem Öffnen frisch: Filter zurück auf „Alle", nach Fehler oder Start nichts gesperrt.
   useEffect(() => {
@@ -255,7 +268,8 @@ export function NowSheet() {
                             </span>
                           </span>
                           <span className="text-sm text-content-muted">
-                            {option.minutes} min · {option.exerciseCount} Übungen
+                            {formatNumber(option.minutes)} min · {formatNumber(option.exerciseCount)}{' '}
+                            {option.exerciseCount === 1 ? 'Übung' : 'Übungen'}
                           </span>
                         </button>
                       </li>

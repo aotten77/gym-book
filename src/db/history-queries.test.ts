@@ -562,7 +562,9 @@ describe('loadTemplateMinutes', () => {
       { id: 'r2', templateId: 't2', exerciseId: 'ex2', orderIndex: 1, workSetCount: 3, targetReps: 10, restSeconds: 60, includeWarmup: false },
     ] as never);
 
-    // t1: 2 × (2 × 50 + 20) = 240 s; t2: 3 × 50 + 2 × 60 = 270 s; t3 hat keine Übungen
+    // t1: 2 × (2 × 50 + 20) = 240 s; t2: 3 × 50 + 2 × 60 = 270 s; t3 hat keine Übungen und fehlt
+    await db.workoutTemplates.add({ id: 't3', name: 'Leer', createdAt: stamp, updatedAt: stamp } as never);
+
     expect(await loadTemplateMinutes()).toEqual({ t1: 4, t2: 5 });
     expect(await loadTemplateExerciseCounts()).toEqual({ t1: 1, t2: 1 });
   });
