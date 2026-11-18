@@ -1,6 +1,6 @@
 # Navigation neu: Zeitstrahl, Jetzt, Abgleich, Bestand
 
-Stand: 17.11.2026 · Status: Konzept abgestimmt, Umsetzungsplan steht aus
+Stand: 17.11.2026 · Status: Etappe 1 umgesetzt
 
 ## Ausgangslage
 
@@ -111,11 +111,9 @@ Wochensummen (`buildWeeklyVolume`, `WeeklyVolumeList`), „Steigerung möglich�
 
 ## Offen für den Umsetzungsplan
 
-1. Gilt der direkte Sprung ins Fokus-Sheet für jeden Start oder nur über „Jetzt“?
 2. Wie weit reicht der Strahl? Vorschlag: nach vorn bis Programmende bzw. 4 Wochen, nach hinten unbegrenzt mit Nachladen.
 3. Termine in der App nur lesen, oder minimal verschieben/löschen für spontane Änderungen?
 4. Bleibt die Wochenregel-Bearbeitung irgendwo (Bestand) oder kommt sie nur noch per Import?
-5. Etappen: Vorschlag (1) Abgleich-Tab + Jetzt-Sheet (kleiner Umbau, sofort nützlich), (2) Plan-Zeitstrahl + Wochen-Sheet ersetzen Heute und Programm, (3) Fortschritt, (4) Bestand und Aufräumen der Einstellungen, (5) Meditation.
 6. Welche Abschnitte in CLAUDE.md umgeschrieben werden müssen: Home-Fälle, Programm-Tab/Kalender, „Never automatically on session start“, Tab-Labels, e2e-Anker.
 
 ## Mockups
