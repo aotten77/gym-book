@@ -14,6 +14,7 @@ import { loadSessionVolumes } from '@/db/history-queries';
 import { movePlanEntryInDay } from '@/db/plan-actions';
 import { loadPlanBetween } from '@/db/plan-queries';
 import { startSessionFromTemplate } from '@/db/session-actions';
+import { navigateToStartedSession } from '@/lib/session-navigation';
 import type { PlanEntry } from '@/domain/models';
 import { planEntryState } from '@/domain/plan';
 import { toDateInputValue } from '@/domain/program';
@@ -101,7 +102,7 @@ export function PlanWeekSection({ week }: PlanWeekSectionProps) {
     try {
       const sessionId = await startSessionFromTemplate(entry.templateId, { planEntryId: entry.id });
 
-      navigate(`/session/${sessionId}`);
+      navigateToStartedSession(navigate, sessionId);
     } catch (error) {
       setActionError(error instanceof Error ? error.message : 'Session konnte nicht gestartet werden.');
       setIsStarting(false);

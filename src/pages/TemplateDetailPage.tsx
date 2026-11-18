@@ -33,6 +33,7 @@ import { TemplateProgressionSection } from '@/components/TemplateProgressionSect
 import { db } from '@/db/appDb';
 import { clearExerciseMedia, replaceExerciseMedia } from '@/db/media-actions';
 import { startSessionFromTemplate } from '@/db/session-actions';
+import { navigateToStartedSession } from '@/lib/session-navigation';
 import {
   deleteTemplate,
   deleteTemplateExercise,
@@ -458,7 +459,7 @@ export function TemplateDetailPage() {
     try {
       const sessionId = await startSessionFromTemplate(template.id);
       setStartError(null);
-      navigate(`/session/${sessionId}`);
+      navigateToStartedSession(navigate, sessionId);
     } catch (error) {
       setStartError(
         error instanceof Error ? error.message : 'Session konnte nicht gestartet werden.',

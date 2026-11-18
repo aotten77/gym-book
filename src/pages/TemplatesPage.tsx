@@ -13,6 +13,7 @@ import { DoneRow, NowCard } from '@/components/ui/StatusCard';
 import { db } from '@/db/appDb';
 import { loadTemplateRecency, loadWeekSummary } from '@/db/history-queries';
 import { startSessionFromTemplate } from '@/db/session-actions';
+import { navigateToStartedSession } from '@/lib/session-navigation';
 import { createTemplate } from '@/db/template-actions';
 import { startOfCalendarWeek } from '@/domain/calendar-week';
 import type { WorkoutTemplateExercise } from '@/domain/models';
@@ -75,7 +76,7 @@ export function TemplatesPage() {
     try {
       const sessionId = await startSessionFromTemplate(templateId);
       setStartError(null);
-      navigate(`/session/${sessionId}`);
+      navigateToStartedSession(navigate, sessionId);
     } catch (error) {
       setStartError(
         error instanceof Error ? error.message : 'Session konnte nicht gestartet werden.',

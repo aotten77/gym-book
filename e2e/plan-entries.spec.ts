@@ -3,7 +3,6 @@ import {
   collectPageErrors,
   completeActiveSet,
   closeExerciseSheet,
-  openExerciseSheet,
   resetDatabase,
   seedSampleData,
 } from './helpers';
@@ -276,7 +275,8 @@ test.describe('Termine im Programm-Tab', () => {
     await page.waitForURL(/#\/session\//);
     await page.waitForTimeout(600);
 
-    await openExerciseSheet(page);
+    // Der frische Start hat das Fokus-Sheet schon geöffnet.
+    await expect(page.locator('[data-sheet]')).toBeVisible();
     await completeActiveSet(page);
     await closeExerciseSheet(page);
     await page.getByRole('button', { name: 'Session abschließen' }).first().click();

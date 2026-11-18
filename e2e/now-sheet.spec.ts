@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { collectPageErrors, resetDatabase, seedSampleData } from './helpers';
+import { closeExerciseSheet, collectPageErrors, resetDatabase, seedSampleData } from './helpers';
 
 /*
  * Das Jetzt-Sheet ("Jetzt trainieren") öffnet über den mittleren Tab-Knopf mit
@@ -118,6 +118,9 @@ test.describe('Jetzt-Sheet', () => {
     await page.locator('[data-sheet]').getByRole('button', { name: /Einheit A/ }).click();
     await page.waitForURL(/#\/session\//);
     const firstUrl = page.url();
+
+    // Der frische Start hat das Fokus-Sheet geöffnet; es muss weg, bevor der Minimieren-Knopf erreichbar ist.
+    await closeExerciseSheet(page);
 
     // Raus aus der Session (minimieren), dann das zweite Workout über das Sheet starten:
     // `startSessionFromTemplate` gibt die laufende Session zurück, die URL bleibt dieselbe.

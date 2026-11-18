@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { ArrowRight, CheckCircle2, Clock3, Plus, Timer, X } from 'lucide-react';
 import { Alert } from '@/components/Alert';
@@ -99,6 +99,7 @@ import {
   formatTrackingMode,
 } from '@/lib/format';
 import { optionalNumberInput } from '@/lib/number-input';
+import { readOpenFocusState } from '@/lib/session-navigation';
 import { playTimerChime, primeTimerSound } from '@/lib/sound';
 import { primeTimerSpeech, speakTimerAnnouncement } from '@/lib/speech';
 import { cn } from '@/lib/utils';
@@ -197,6 +198,7 @@ function groupLogsByExercise(setLogs: WorkoutSetLog[]) {
 export function SessionPage() {
   const { sessionId = '' } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   // Selektoren statt des ganzen Stores: sonst rendert jede Netzwerk- oder
   // Update-Statusänderung diese Seite komplett neu.
   const activeSessionExerciseId = useUiStore((state) => state.activeSessionExerciseId);
@@ -826,6 +828,40 @@ export function SessionPage() {
     // Und auf ihrer Bühne, auch wenn sie fertig ist: siehe `finishedBlockKey`.
     setFinishedBlockKey(null);
   }
+
+  /*
+   * Ein frischer Start öffnet das Sheet auf dem ersten offenen Block.
+   *
+   * Die Bitte kommt als Navigationsstate von `navigateToStartedSession`. Sie
+   * wartet, bis Übungen *und* Sätze geladen sind - die beiden Live-Queries
+   * melden sich nacheinander, und Blöcke ohne Sätze gelten als erledigt, die
+   * Suche fände dann nichts -, und wird danach *in jedem Fall*
+   * verbraucht - auch wenn nichts mehr offen ist oder schon ein Sheet steht:
+   * sonst brächte Reload oder Zurück das Sheet ein zweites Mal hoch. Die
+   * Rückkehr über den Streifen trägt keinen State und öffnet nie etwas.
+   *
+   * Steht dieser Effekt hinter dem, der einen veralteten Block-Schlüssel
+   * nachzieht, gewinnt beim Öffnen der spätere `setOpenSessionBlockKey`-Aufruf.
+   * Der Ruhemodus bleibt unberührt, denn zum Start ist nichts abgehakt.
+   */
+  useEffect(() => {
+    if (blockProgress.length === 0 || !setLogs || !readOpenFocusState(location.state)) {
+      return;
+    }
+
+    if (!openBlock) {
+      const first = findNextOpenBlock(blockProgress, '');
+
+      if (first) {
+        handleOpenExerciseSheet(first.exercise.id);
+      }
+    }
+
+    navigate(location.pathname, { replace: true, state: null });
+    // `handleOpenExerciseSheet` ist pro Render neu, liest aber nur Werte, die
+    // schon in den Abhängigkeiten stehen oder Setter sind.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [blockProgress, location.pathname, location.state, navigate, openBlock, setLogs]);
 
   /** Wechsel auf das andere Mitglied des Supersatzes, ohne das Sheet zu verlassen. */
   function handleSelectSheetMember(sessionExerciseId: string) {

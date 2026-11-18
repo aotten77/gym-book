@@ -15,6 +15,7 @@ import {
 } from '@/db/history-queries';
 import { loadUpcomingPlan } from '@/db/plan-queries';
 import { startSessionFromTemplate } from '@/db/session-actions';
+import { navigateToStartedSession } from '@/lib/session-navigation';
 import { pickTodayPlan } from '@/domain/plan';
 import { toDateInputValue } from '@/domain/program';
 import {
@@ -151,8 +152,7 @@ export function NowSheet() {
       );
       setStartError(null);
       setOpen(false);
-      // Task 5 ersetzt das durch `navigateToStartedSession`.
-      navigate(`/session/${sessionId}`);
+      navigateToStartedSession(navigate, sessionId);
     } catch (error) {
       setStartError(
         error instanceof Error ? error.message : 'Session konnte nicht gestartet werden.',

@@ -40,13 +40,25 @@ export async function seedSampleData(page: Page) {
   }
 }
 
-/** Startet eine Session aus der Beispielvorlage und liefert deren URL. */
+/**
+ * Startet eine Session aus der Beispielvorlage und liefert deren URL.
+ *
+ * Ein frischer Start öffnet das Fokus-Sheet von selbst. Die meisten Specs
+ * gehen aber von der Liste aus und öffnen das Sheet über `openExerciseSheet`,
+ * deshalb wird es hier wieder geschlossen. Dass der Start es öffnet, prüft
+ * allein `session-start-focus.spec.ts`.
+ */
 export async function startSampleSession(page: Page) {
   await page.goto('./');
   await page.waitForTimeout(600);
   await page.getByRole('button', { name: 'Einheit A' }).first().click();
   await page.waitForURL(/#\/session\//);
   await page.waitForTimeout(600);
+
+  if (await page.locator('[data-sheet]').isVisible()) {
+    await closeExerciseSheet(page);
+  }
+
   return page.url();
 }
 
@@ -57,9 +69,10 @@ export async function startSampleSession(page: Page) {
  * an ein Eingabefeld will, muss es also erst öffnen. Ohne Namen wird die erste
  * Übung genommen; das ist die, die beim Start ohnehin dran ist.
  *
- * Bewusst kein automatisches Öffnen beim Sessionstart: ob das Sheet offen ist,
- * ist reiner Oberflächenzustand und überlebt kein `page.reload()`. Genau das
- * müssen die Tests nachstellen können.
+ * Ein frischer Start öffnet das Sheet von selbst (`startSampleSession` schließt
+ * es wieder, damit die Tests von der Liste ausgehen). Reload und Rückkehr
+ * öffnen es nie: ob es offen ist, ist reiner Oberflächenzustand und überlebt
+ * kein `page.reload()`. Genau das müssen die Tests nachstellen können.
  */
 export async function openExerciseSheet(page: Page, exerciseName?: string) {
   await minimizeRestMode(page);

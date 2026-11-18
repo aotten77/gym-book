@@ -14,6 +14,7 @@ import { db } from '@/db/appDb';
 import { loadUpcomingPlan } from '@/db/plan-queries';
 import { loadTemplateRecency, loadWeekSummary, loadWeeklyVolume } from '@/db/history-queries';
 import { startSessionFromTemplate } from '@/db/session-actions';
+import { navigateToStartedSession } from '@/lib/session-navigation';
 import { evaluateBackupStatus } from '@/domain/backup';
 import { startOfCalendarWeek } from '@/domain/calendar-week';
 import { pickNextTemplate } from '@/domain/next-workout';
@@ -196,7 +197,7 @@ export default function Home() {
     try {
       const sessionId = await startSessionFromTemplate(templateId, planEntryId ? { planEntryId } : {});
       setStartError(null);
-      navigate(`/session/${sessionId}`);
+      navigateToStartedSession(navigate, sessionId);
     } catch (error) {
       // Häufigster Fall: das Template zeigt auf eine Übung, die es nicht
       // mehr gibt. Ohne Meldung wirkt der Tap einfach wirkungslos.
