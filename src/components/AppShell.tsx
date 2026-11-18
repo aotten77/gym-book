@@ -392,18 +392,26 @@ export function AppShell({ title, eyebrow, children }: AppShellProps) {
             der Gerätebreite (unter 360px fallen die Beschriftungen weg), und
             ein danebengesetztes Element müsste sie kennen.
           */
-          <div className="fixed inset-x-0 bottom-0 z-20 mx-auto w-full max-w-md overflow-hidden rounded-t-card border border-b-0 border-line bg-surface-glass shadow-soft backdrop-blur-xl">
+          <div className="fixed inset-x-0 bottom-0 z-20 mx-auto w-full max-w-md rounded-t-card border border-b-0 border-line bg-surface-glass shadow-soft backdrop-blur-xl">
             {activeSession ? <ActiveSessionBar session={activeSession} /> : null}
             <nav aria-label="Hauptnavigation">
               <ul className="grid grid-cols-5 gap-1 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2">
                 {navigationItemsBefore.map(renderNavItem)}
                 <li className="flex items-start justify-center">
-                  {/* Ragt 16px über die Leiste: der Knopf ist die eine Aktion, die hier nicht navigiert. */}
+                  {/* Ragt 16px über die Leiste (8px Padding + 16px negativer Rand
+                      = -mt-6 gegenüber der Oberkante): der Knopf ist die eine
+                      Aktion, die hier nicht navigiert. Der Container beschneidet
+                      nicht, sonst fiele der Überstand weg. Unter dem Streifen der
+                      laufenden Einheit bleibt der Knopf bündig, damit er dessen
+                      Titel und Uhr nicht überdeckt. */}
                   <button
                     type="button"
                     aria-label="Jetzt trainieren"
                     onClick={() => setNowSheetOpen(true)}
-                    className="-mt-4 flex h-12 w-12 items-center justify-center rounded-full border border-line bg-accent text-accent-contrast shadow-soft transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
+                    className={cn(
+                      'flex h-12 w-12 items-center justify-center rounded-full border border-line bg-accent text-accent-contrast shadow-soft transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2',
+                      activeSession ? 'mt-0' : '-mt-6',
+                    )}
                   >
                     <Play size={20} fill="currentColor" />
                   </button>
