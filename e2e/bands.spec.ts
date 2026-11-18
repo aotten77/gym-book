@@ -23,7 +23,7 @@ test.describe('Band-Übungen', () => {
     // Beispieldaten zuerst: sie sind nur bei leerer Bibliothek möglich.
     await seedSampleData(page);
 
-    await page.goto('./#/settings');
+    await page.goto('./#/bands');
     await page.waitForTimeout(900);
 
     await page.getByRole('button', { name: 'Standard-Bänder einfügen' }).click();

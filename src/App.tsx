@@ -4,10 +4,12 @@ import Home from '@/pages/Home';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { bootstrapAppData } from '@/db/bootstrap';
 import { requestPersistentStorage } from '@/lib/storage';
+import { BandsPage } from '@/pages/BandsPage';
 import { ExercisesPage } from '@/pages/ExercisesPage';
 import { HistoryPage } from '@/pages/HistoryPage';
 import { HistorySessionPage } from '@/pages/HistorySessionPage';
 import { SyncPage } from '@/pages/SyncPage';
+import { LibraryPage } from '@/pages/LibraryPage';
 import { ProgramsManagePage } from '@/pages/ProgramsManagePage';
 import { ProgramsPage } from '@/pages/ProgramsPage';
 import { RunDetailPage } from '@/pages/RunDetailPage';
@@ -81,6 +83,8 @@ export default function App() {
           <Route path="/history" element={<HistoryPage />} />
           <Route path="/history/session/:sessionId" element={<HistorySessionPage />} />
           <Route path="/runs/:runId" element={<RunDetailPage />} />
+          <Route path="/library" element={<LibraryPage />} />
+          <Route path="/bands" element={<BandsPage />} />
           <Route path="/tests" element={<TestsPage />} />
           <Route path="/sync" element={<SyncPage />} />
           <Route path="/settings" element={<SettingsPage />} />

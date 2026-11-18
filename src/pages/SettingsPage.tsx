@@ -10,7 +10,6 @@ import {
 import { Link } from 'react-router-dom';
 import { AppShell } from '@/components/AppShell';
 import { Alert } from '@/components/Alert';
-import { BandLevelsSection } from '@/components/BandLevelsSection';
 import { Button } from '@/components/ui/Button';
 import { TextField, ToggleField } from '@/components/ui/Field';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
@@ -742,8 +741,6 @@ export function SettingsPage() {
             </p>
           </div>
         </SectionCard>
-
-        <BandLevelsSection />
 
         {/*
           Korrekturen an Daten, die schon auf dem Gerät liegen. Bewusst keine

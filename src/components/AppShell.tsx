@@ -1,16 +1,15 @@
 import { useEffect, type ReactNode } from 'react';
-import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
-  Activity,
   ArrowLeft,
+  ArrowLeftRight,
   BarChart3,
   CalendarRange,
   ChevronDown,
-  Dumbbell,
-  FlaskConical,
-  FolderKanban,
+  Library,
   LogIn,
+  Play,
   RefreshCcw,
   Settings,
   WifiOff,
@@ -21,26 +20,24 @@ import { NowSheet } from '@/components/NowSheet';
 import { Button, IconButton } from '@/components/ui/Button';
 import { db } from '@/db/appDb';
 import { ACCESS_LOGIN_PATH } from '@/lib/access-session';
+import { activeNavTab, type NavTab } from '@/lib/navigation';
 import { cn } from '@/lib/utils';
 import { keepScreenAwake } from '@/lib/wake-lock';
 import { useUiStore } from '@/store/ui-store';
 
 /*
- * Die Beschriftungen benennen die Ebenen der Domäne, statt sie zu vermischen:
- * "Plan" stand hier für die Programme und war zugleich der Eyebrow der
- * Vorlagen-Seite - zwei Tabs mit demselben Wort. "Vorlage" wiederum sagt
- * nichts darüber, dass dahinter eine Trainingseinheit steckt.
- *
- * Nur die Beschriftung ändert sich. Routen und Entitätsnamen
- * (`WorkoutTemplate`, `/templates`) bleiben, wie sie sind.
+ * Fünf Einträge, der Jetzt-Knopf sitzt als Knopf in der Mitte (kein Link: er
+ * öffnet das Sheet, er navigiert nicht). Welcher Tab aktiv ist, entscheidet
+ * `activeNavTab` über den Pfad - so bleibt "Bestand" aktiv, auch wenn man in
+ * einer Workout-Vorlage oder der Übungsliste steht.
  */
-const navigationItems = [
-  { to: '/', label: 'Heute', icon: Activity },
-  { to: '/programs', label: 'Programm', icon: CalendarRange },
-  { to: '/templates', label: 'Workouts', icon: FolderKanban },
-  { to: '/exercises', label: 'Übungen', icon: Dumbbell },
-  { to: '/history', label: 'Verlauf', icon: BarChart3 },
-  { to: '/tests', label: 'Tests', icon: FlaskConical },
+const navigationItemsBefore: { tab: NavTab; to: string; label: string; icon: typeof BarChart3 }[] = [
+  { tab: 'plan', to: '/', label: 'Plan', icon: CalendarRange },
+  { tab: 'progress', to: '/history', label: 'Fortschritt', icon: BarChart3 },
+];
+const navigationItemsAfter: { tab: NavTab; to: string; label: string; icon: typeof BarChart3 }[] = [
+  { tab: 'sync', to: '/sync', label: 'Abgleich', icon: ArrowLeftRight },
+  { tab: 'library', to: '/library', label: 'Bestand', icon: Library },
 ];
 
 interface AppShellProps {
@@ -53,6 +50,36 @@ interface AppShellProps {
 export function AppShell({ title, eyebrow, children }: AppShellProps) {
   const location = useLocation();
   const navigate = useNavigate();
+  const setNowSheetOpen = useUiStore((state) => state.setNowSheetOpen);
+  const currentTab = activeNavTab(location.pathname);
+
+  function renderNavItem({ tab, to, label, icon: Icon }: (typeof navigationItemsBefore)[number]) {
+    const isActive = currentTab === tab;
+
+    return (
+      <li key={tab}>
+        <Link
+          to={to}
+          aria-label={label}
+          aria-current={isActive ? 'page' : undefined}
+          className={cn(
+            // px-0.5 und tracking-tight: "Fortschritt" ist das längste Label
+            // und muss bei fünf Spalten auf 320px in eine Zelle passen.
+            'flex min-h-touch flex-col items-center justify-center gap-1 rounded-control px-0.5 py-2 text-[10px] font-medium leading-tight tracking-tight text-content-muted transition hover:bg-surface-raised hover:text-content',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+            // Gefüllt statt zart getönt: auf hellem Grund ist eine
+            // 6-Prozent-Tönung als aktiver Zustand nicht zu sehen.
+            isActive && 'bg-accent font-semibold text-accent-contrast',
+          )}
+        >
+          <Icon size={18} />
+          {/* Unterhalb von 360px reicht die Zellenbreite nicht für die
+              Beschriftung; das aria-label am Link trägt den Namen dann weiter. */}
+          <span className="hidden w-full truncate text-center xs:block">{label}</span>
+        </Link>
+      </li>
+    );
+  }
   const inSession = location.pathname.startsWith('/session/');
   /*
    * Die laufende Einheit gehört hierher, nicht auf eine einzelne Seite: sie
@@ -215,7 +242,7 @@ export function AppShell({ title, eyebrow, children }: AppShellProps) {
                 </button>
               ) : (
                 /*
-                  Die Bottom-Nav trägt sechs Einträge; Einstellungen werden
+                  Die Bottom-Nav trägt fünf Einträge; Einstellungen werden
                   selten gebraucht und sitzen deshalb hier statt dort.
                 */
                 <NavLink
@@ -358,7 +385,7 @@ export function AppShell({ title, eyebrow, children }: AppShellProps) {
           /*
             Die Leiste läuft bis an den Geräterand statt als schwebende
             Kachel darüber: der Home-Indicator sitzt ohnehin am Rand, und
-            die freie Randbreite ging zuvor den sechs Beschriftungen ab.
+            die freie Randbreite ging zuvor den Beschriftungen ab.
 
             Der Streifen der laufenden Einheit sitzt im selben Block, nicht
             als zweites schwebendes Element darüber: die Höhe der Nav hängt an
@@ -368,35 +395,20 @@ export function AppShell({ title, eyebrow, children }: AppShellProps) {
           <div className="fixed inset-x-0 bottom-0 z-20 mx-auto w-full max-w-md overflow-hidden rounded-t-card border border-b-0 border-line bg-surface-glass shadow-soft backdrop-blur-xl">
             {activeSession ? <ActiveSessionBar session={activeSession} /> : null}
             <nav aria-label="Hauptnavigation">
-              <ul className="grid grid-cols-6 gap-1 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2">
-                {navigationItems.map(({ to, label, icon: Icon }) => (
-                  <li key={to}>
-                    <NavLink
-                      to={to}
-                      aria-label={label}
-                      className={({ isActive }) =>
-                        cn(
-                          // px-0.5 und tracking-tight statt px-1: bei sechs
-                          // Spalten blieben pro Zelle 47px, "Programm" braucht
-                          // 51px. Die vier Pixel holt das Padding zurück, das
-                          // engere Tracking gibt allen Labels etwas Reserve -
-                          // "Workouts" lag zuvor exakt auf der Kante.
-                          'flex min-h-touch flex-col items-center justify-center gap-1 rounded-control px-0.5 py-2 text-[10px] font-medium leading-tight tracking-tight text-content-muted transition hover:bg-surface-raised hover:text-content',
-                          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
-                          // Gefüllt statt zart getönt: auf hellem Grund ist eine
-                          // 6-Prozent-Tönung als aktiver Zustand nicht zu sehen.
-                          isActive && 'bg-accent font-semibold text-accent-contrast',
-                        )
-                      }
-                    >
-                      <Icon size={18} />
-                      {/* Unterhalb von 360px reicht die Zellenbreite nicht für
-                          die Beschriftung; das aria-label am Link trägt den
-                          Namen dann weiter. */}
-                      <span className="hidden w-full truncate text-center xs:block">{label}</span>
-                    </NavLink>
-                  </li>
-                ))}
+              <ul className="grid grid-cols-5 gap-1 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2">
+                {navigationItemsBefore.map(renderNavItem)}
+                <li className="flex items-start justify-center">
+                  {/* Ragt 16px über die Leiste: der Knopf ist die eine Aktion, die hier nicht navigiert. */}
+                  <button
+                    type="button"
+                    aria-label="Jetzt trainieren"
+                    onClick={() => setNowSheetOpen(true)}
+                    className="-mt-4 flex h-12 w-12 items-center justify-center rounded-full border border-line bg-accent text-accent-contrast shadow-soft transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
+                  >
+                    <Play size={20} fill="currentColor" />
+                  </button>
+                </li>
+                {navigationItemsAfter.map(renderNavItem)}
               </ul>
             </nav>
           </div>

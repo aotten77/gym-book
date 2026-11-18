@@ -3,9 +3,7 @@ import { collectPageErrors, resetDatabase, seedSampleData } from './helpers';
 
 /*
  * Das Jetzt-Sheet ("Jetzt trainieren") öffnet über den mittleren Tab-Knopf mit
- * `aria-label="Jetzt trainieren"`. Den baut erst Task 4 ein - bis dahin gibt es
- * keinen Weg, das Sheet zu öffnen, und die Tests sind deshalb `fixme`.
- * wird in Task 4 aktiviert
+ * `aria-label="Jetzt trainieren"`.
  */
 
 /** Beispieldaten ohne Termine: sonst stünde "Einheit A" je nach Wochentag als Lime-Zeile oben. */
@@ -84,8 +82,7 @@ async function openNowSheet(page: Page) {
 }
 
 test.describe('Jetzt-Sheet', () => {
-  test.fixme('der Jetzt-Knopf öffnet das Sheet von jedem Tab aus', async ({ page }) => {
-    // wird in Task 4 aktiviert
+  test('der Jetzt-Knopf öffnet das Sheet von jedem Tab aus', async ({ page }) => {
     const errors = collectPageErrors(page);
 
     await startWithEmptyPlan(page);
@@ -95,8 +92,7 @@ test.describe('Jetzt-Sheet', () => {
     expect(errors).toEqual([]);
   });
 
-  test.fixme('der Filter „Mobility" blendet Einheit A aus', async ({ page }) => {
-    // wird in Task 4 aktiviert
+  test('der Filter „Mobility" blendet Einheit A aus', async ({ page }) => {
     await startWithEmptyPlan(page);
     await openNowSheet(page);
 
@@ -107,8 +103,7 @@ test.describe('Jetzt-Sheet', () => {
     await expect(sheet.getByRole('button', { name: /Einheit A/ })).toHaveCount(0);
   });
 
-  test.fixme('ein Tap auf Einheit A startet und führt in die Session', async ({ page }) => {
-    // wird in Task 4 aktiviert
+  test('ein Tap auf Einheit A startet und führt in die Session', async ({ page }) => {
     await startWithEmptyPlan(page);
     await openNowSheet(page);
 
@@ -116,8 +111,7 @@ test.describe('Jetzt-Sheet', () => {
     await page.waitForURL(/#\/session\//);
   });
 
-  test.fixme('ein zweiter Start bei laufender Session führt in dieselbe Session-URL', async ({ page }) => {
-    // wird in Task 4 aktiviert
+  test('ein zweiter Start bei laufender Session führt in dieselbe Session-URL', async ({ page }) => {
     await startWithEmptyPlan(page);
     await addSecondWorkout(page);
     await openNowSheet(page);

@@ -8,6 +8,9 @@ const ROUTES = [
   ['Workouts', './#/templates'],
   ['Übungen', './#/exercises'],
   ['Verlauf', './#/history'],
+  ['Bestand', './#/library'],
+  ['Bänder', './#/bands'],
+  ['Abgleich', './#/sync'],
   ['Tests', './#/tests'],
   ['Einstellungen', './#/settings'],
 ] as const;
@@ -91,7 +94,7 @@ async function findContrastViolations(page: Page) {
  *
  * Apple HIG empfiehlt 44x44pt; das ist der Maßstab für normale Bedienelemente.
  * Für die dichte Tab-Leiste gilt der normative WCAG-2.2-Wert von 24x24 CSS px
- * (SC 2.5.8, Level AA): auf einem 320px breiten Gerät sind sechs Zellen à 44px
+ * (SC 2.5.8, Level AA): auf einem 320px breiten Gerät sind fünf Zellen à 44px plus der überstehende Jetzt-Knopf
  * geometrisch unmöglich, die Zellen messen dort 43x51px.
  */
 async function findSmallTargets(page: Page) {
