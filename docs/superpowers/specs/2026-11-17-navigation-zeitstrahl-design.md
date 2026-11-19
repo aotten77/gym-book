@@ -1,6 +1,6 @@
 # Navigation neu: Zeitstrahl, Jetzt, Abgleich, Bestand
 
-Stand: 17.11.2026 · Status: Etappe 1 umgesetzt
+Stand: 19.11.2026 · Status: Etappe 1 umgesetzt, offene Fragen für Etappe 2 entschieden
 
 ## Ausgangslage
 
@@ -43,16 +43,17 @@ Der Streifen der laufenden Session über der Tab-Leiste bleibt (`ActiveSessionBa
 ## Plan (View 1)
 
 - **Eine Liste**: oben Vergangenheit (Protokoll), in der Mitte heute, unten Zukunft. Sie öffnet auf heute. Ein „↓ Heute“-Pill erscheint, sobald man wegscrollt.
+- **Reichweite**: nach vorn bis zum Ende der Woche, in der der letzte Termin liegt, mindestens bis Ende nächster Woche. Eine importierte 12-wöchige Laufvorbereitung ist damit vollständig sichtbar, ohne dass dahinter leere Wochen stehen. Nach hinten unbegrenzt mit Nachladen.
 - **Wochenkopf** über jedem Montag: `17.–23.11. · W3 · diese Woche   1 von 4 ▬▭▭▭ ›`. Er gliedert die Liste und **klebt** beim Scrollen oben. Ein Tap öffnet das Wochen-Sheet. Die laufende Woche hat einen Tinten-Rahmen. Der Zähler ist `countWeekProgress`.
 - **Tag**: Datumsspalte links, Einheiten rechts. Freie Tage als dünne gestrichelte Linie „frei“.
 - **Einheit** in drei Zuständen, wie im heutigen Kalender:
   - erledigt: Waldgrün, Detailzeile aus `describeCalendarUnitDetail` (Volumen · Dauer, km · Pace, „nicht geplant“ bzw. „spontan“). Ein Tap öffnet `/history/session/:id` bzw. `/runs/:id`.
-  - geplant: weiß mit Ring-Icon. Ein Tap öffnet den Termin (nur lesen, siehe unten).
+  - geplant: weiß mit Ring-Icon. Ein Tap öffnet den Termin **nur zum Lesen**: Termine werden in der App weder angelegt noch bearbeitet, verschoben oder gelöscht.
   - heute offen: **die erste** ist das eine Lime-Feld, die ganze Karte startet. Weitere offene von heute sind weiß mit „Start“/„Eintragen“ als Text. Eine laufende Session sagt „läuft · Satz 7 von 18“ und führt zurück.
 - **Heute ohne Plan**: kein Lime. Stattdessen eine gestrichelte Zeile „Heute trainieren“ mit dem Hinweis „am längsten her: …“, die das Jetzt-Sheet öffnet.
 - Vergangene offene Termine verschwinden wie heute. Erledigtes steht immer da, auch ungeplant.
 - Die Backup-Erinnerung wandert als schmale Zeile an den Kopf des Plans.
-- **Kein** „+ Termin“, **kein** „Serie anlegen“: geplant wird im Projekt.
+- **Kein** „+ Termin“, **kein** „Serie anlegen“, kein Bearbeiten: geplant wird im Projekt. Ändert sich der Plan, kommt eine neue Importdatei. Wer einen Termin an einem anderen Tag derselben Woche trainiert, wird über `findMatchingPlanEntry` trotzdem zugeordnet; ein ausgelassener Termin verschwindet nach seinem Tag wie bisher.
 
 ## Wochen-Sheet (View 3)
 
@@ -61,7 +62,7 @@ Der Streifen der laufenden Session über der Tab-Leiste bleibt (`ActiveSessionBa
 - **Kacheln** Kraft / Mobility / Laufen als „erledigt / geplant“ (`1 / 2`, darunter kg bzw. km). Waldgrün erst, wenn in der Kachel etwas erledigt ist. In einer künftigen Woche steht nur „geplant“.
 - **Testtermin** aus `ProgramWeek.kind === 'test'`, nur Anzeige. Waldgrün, sobald ein Test in der Woche liegt.
 - **Vorgaben der Programmwoche** pro Workout über `buildWeekPlan` / `foldProgressionRule`. Felder aus der Wochenregel tragen ein Abzeichen `W4`, unveränderte Übungen sind eingeklappt („+ 3 weitere wie im Workout“). Gezeigt werden **nur Workouts mit Termin in dieser Woche**. Hat die Woche keine Termine, werden als Fallback alle Workouts gezeigt.
-- **Nur lesen.** Wochenregeln kommen per Import. Das Bearbeiten-Sheet (heute `ProgressionRuleFields` im Programm-Tab) entfällt hier. Ob es im Bestand für kleine Korrekturen bleibt, entscheidet der Umsetzungsplan.
+- **Nur lesen.** Das Bearbeiten-Sheet (heute `ProgressionRuleFields` im Programm-Tab) entfällt mit Etappe 2. Zielbild: Programm, Programmwochen und Wochenregeln kommen per Import. **Heute kann der Import das nicht** (er legt weder Programme noch Wochen noch Regeln an, `bestand.json` exportiert sie nur zur Information). Bis die eigene Etappe „Programm-Import“ (siehe Später) umgesetzt ist, bleiben `TemplateProgressionSection` im Workout-Detail und `/programs/manage` als Übergangs-Editoren stehen.
 - Ohne Programmwoche (kein Programm, kein `startedOn`, außerhalb der Spanne) entfällt der Vorgaben-Block.
 
 ## Jetzt-Sheet
@@ -85,7 +86,7 @@ Mittlerer Tab-Knopf, von jedem Bildschirm aus erreichbar. Er ersetzt `TodayUnitS
 
 ## Bestand
 
-Workouts (Liste und Detail **ohne** Startknopf), Übungen (Formular, Bild, Anleitung), Programm (zusammengeführt aus `/programs/manage` und Einstellungen › Programm: aktives Programm, Startdatum, „Woche von Hand setzen“ als **einziger Schreiber** von `weekOverride`), Bänder. Wochenprogression „Übung × alle Wochen“ (`TemplateProgressionSection`) entweder hier im Workout-Detail oder gar nicht mehr, siehe oben.
+Workouts (Liste und Detail **ohne** Startknopf), Übungen (Formular, Bild, Anleitung), Programm (zusammengeführt aus `/programs/manage` und Einstellungen › Programm: aktives Programm, Startdatum, „Woche von Hand setzen“ als **einziger Schreiber** von `weekOverride`), Bänder. Wochenprogression „Übung × alle Wochen“ (`TemplateProgressionSection`) bleibt übergangsweise im Workout-Detail und entfällt mit dem Programm-Import, siehe oben.
 
 ## Fortschritt
 
@@ -107,13 +108,17 @@ Wochensummen (`buildWeeklyVolume`, `WeeklyVolumeList`), „Steigerung möglich�
 
 ## Später
 
+- **Programm-Import** (eigene Etappe nach dem Zeitstrahl, eigene Spec): Der Bibliothek-Import lernt Programm, Programmwochen (Label, `kind`) und Wochenregeln pro Workout × Übung × Woche. Danach entfallen die Editoren in der App (`TemplateProgressionSection`, Programm-CRUD in `/programs/manage`), Bestand › Programm zeigt nur noch an. Offen für deren Spec: ersetzt oder ergänzt ein zweiter Import, wer setzt `startedOn` (heute schreiben es bewusst nur die Einstellungen), was passiert mit einem in der App angelegten Programm.
 - **Meditation** als dritte Workout-Art neben Kraft und Mobility. Technisch ein Workout mit einer Übung auf Zeit, damit funktionieren Satz-Timer, Ansagen und Plan ohne neuen Mechanismus. Neu wären Kategorie, Icon (`UnitKindIcon`) und eine Spalte in `buildWeeklyVolume`.
+
+## Entschieden am 19.11.2026 (für Etappe 2)
+
+- **Reichweite des Strahls**: nach vorn bis zur Woche des letzten Termins, mindestens bis Ende nächster Woche; nach hinten unbegrenzt mit Nachladen. Nicht an das Programmende gekoppelt: Läufe hängen an keinem Programm, und eine Laufvorbereitung kommt als datierte Termine, nicht als Programm.
+- **Termine nur lesen.** Geplant wird ausschließlich in claude.ai. `PlanEntrySheet` wird zur reinen Anzeige, `PlanSeriesSheet` und „+ Termin“ entfallen.
+- **Wochenregeln**: Zielbild nur per Import, die App zeigt nur an. Weil der Import das heute nicht kann, kommt zuerst der Zeitstrahl (Etappe 2) und danach der Programm-Import als eigene Etappe; bis dahin bleiben `TemplateProgressionSection` und `/programs/manage` als Übergangs-Editoren.
 
 ## Offen für den Umsetzungsplan
 
-2. Wie weit reicht der Strahl? Vorschlag: nach vorn bis Programmende bzw. 4 Wochen, nach hinten unbegrenzt mit Nachladen.
-3. Termine in der App nur lesen, oder minimal verschieben/löschen für spontane Änderungen?
-4. Bleibt die Wochenregel-Bearbeitung irgendwo (Bestand) oder kommt sie nur noch per Import?
 6. Welche Abschnitte in CLAUDE.md umgeschrieben werden müssen: Home-Fälle, Programm-Tab/Kalender, „Never automatically on session start“, Tab-Labels, e2e-Anker.
 
 ## Mockups
