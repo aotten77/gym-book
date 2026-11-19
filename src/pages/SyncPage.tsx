@@ -9,44 +9,10 @@ import { DoneRow } from '@/components/ui/StatusCard';
 import { db } from '@/db/appDb';
 import { loadSyncActivitySince } from '@/db/history-queries';
 import { listLibraryImports } from '@/db/library-import-actions';
+import { describeImportCounts } from '@/domain/library-import-summary';
 import { describeSyncStatus } from '@/domain/sync-status';
 import { copyAnalysisSnapshot, exportAnalysisSnapshot } from '@/lib/export';
-import { formatDateTime, formatNumber, formatShortDate } from '@/lib/format';
-
-function describeImportCounts(log: {
-  createdExercises: number;
-  updatedExercises: number;
-  createdTemplates: number;
-  updatedTemplates: number;
-  createdAssignments: number;
-  updatedAssignments: number;
-  createdPlanEntries?: number;
-  updatedPlanEntries?: number;
-}) {
-  const workouts = log.createdTemplates + log.updatedTemplates;
-  const exercises = log.createdExercises + log.updatedExercises;
-  const assignments = log.createdAssignments + log.updatedAssignments;
-  const entries = (log.createdPlanEntries ?? 0) + (log.updatedPlanEntries ?? 0);
-  const parts: string[] = [];
-
-  if (workouts > 0) {
-    parts.push(`${formatNumber(workouts)} ${workouts === 1 ? 'Workout' : 'Workouts'}`);
-  }
-
-  if (exercises > 0) {
-    parts.push(`${formatNumber(exercises)} ${exercises === 1 ? 'Übung' : 'Übungen'}`);
-  }
-
-  if (assignments > 0) {
-    parts.push(`${formatNumber(assignments)} ${assignments === 1 ? 'Zuordnung' : 'Zuordnungen'}`);
-  }
-
-  if (entries > 0) {
-    parts.push(`${formatNumber(entries)} ${entries === 1 ? 'Termin' : 'Termine'}`);
-  }
-
-  return parts.length > 0 ? parts.join(', ') : 'keine Änderungen';
-}
+import { formatDateTime, formatShortDate } from '@/lib/format';
 
 /**
  * Der Abgleich mit dem claude.ai-Projekt: von dort kommt das Import-JSON, dorthin

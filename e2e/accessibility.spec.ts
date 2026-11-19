@@ -90,12 +90,11 @@ async function findContrastViolations(page: Page) {
 }
 
 /**
- * Prüft Trefferflächen gegen zwei Schwellen.
+ * Prüft Trefferflächen gegen 44x44 CSS px (Apple HIG empfiehlt 44x44pt).
  *
- * Apple HIG empfiehlt 44x44pt; das ist der Maßstab für normale Bedienelemente.
- * Für die dichte Tab-Leiste gilt der normative WCAG-2.2-Wert von 24x24 CSS px
- * (SC 2.5.8, Level AA): auf einem 320px breiten Gerät sind fünf Zellen à 44px plus der überstehende Jetzt-Knopf
- * geometrisch unmöglich, die Zellen messen dort 43x51px.
+ * Auch die Tab-Leiste hält das ein: fünf Spalten à rund 57px auf 320px Breite
+ * (Zellen ca. 57x51px) und der 48px große Jetzt-Knopf. Eine Ausnahme auf die
+ * 24px des WCAG-2.2-Minimums (SC 2.5.8) ist deshalb nicht nötig.
  */
 async function findSmallTargets(page: Page) {
   return page.evaluate(() =>
@@ -109,8 +108,7 @@ async function findSmallTargets(page: Page) {
         const box = element.getBoundingClientRect();
         if (box.width <= 1 || box.height === 0) return false;
 
-        const minimum = element.closest('nav') ? 24 : 44;
-        return box.height < minimum || box.width < minimum;
+        return box.height < 44 || box.width < 44;
       })
       .map((element) => ({
         label: (element.getAttribute('aria-label') || element.textContent || '').trim().slice(0, 30),

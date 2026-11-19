@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Play, ShieldAlert } from 'lucide-react';
+import { ActiveSessionHint } from '@/components/ActiveSessionHint';
 import { AppShell } from '@/components/AppShell';
 import { Empty } from '@/components/Empty';
 import { Alert } from '@/components/Alert';
@@ -334,19 +335,7 @@ export default function Home() {
           />
         )}
 
-        {activeSession ? (
-          /*
-            Der Rückweg in die laufende Einheit steht in der Leiste am unteren
-            Rand, auf jeder Seite. Was bleibt, ist die Auskunft, die der
-            Streifen nicht gibt: solange eine Session läuft, führt jeder
-            Workout-Tap dorthin zurück statt ein zweites Training zu starten.
-            Ohne den Satz wirkt das wie ein Defekt.
-          */
-          <p className="px-1 text-sm text-content-muted">
-            Ein Training läuft bereits - die Leiste unten führt zurück. Schließe es ab oder
-            brich es ab, um ein anderes Workout zu starten.
-          </p>
-        ) : null}
+        {activeSession ? <ActiveSessionHint /> : null}
 
         <Button
           variant="secondary"

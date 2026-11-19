@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Play } from 'lucide-react';
+import { ChevronRight, Play } from 'lucide-react';
+import { ActiveSessionHint } from '@/components/ActiveSessionHint';
 import { Alert } from '@/components/Alert';
-import { RunIcon } from '@/components/icons/RunIcon';
 import { UnitKindIcon } from '@/components/icons/UnitKindIcon';
 import { RunLogSheet } from '@/components/RunLogSheet';
 import { Sheet } from '@/components/ui/Sheet';
@@ -49,6 +49,11 @@ const SECTION_LABEL_CLASSES = 'text-xs font-semibold uppercase tracking-wide tex
  * Gestartet wird ohne `planEntryId`, außer bei einem heute geplanten offenen
  * Eintrag (wie Home): jedes andere Workout verknüpft die Zuordnungsregel
  * selbst. Jede Zeile ist ein Knopf; die Marken sind Zierde.
+ *
+ * Läuft schon eine Session, entfallen die Startoptionen: jeder Tap führte
+ * sonst stumm in die laufende Einheit zurück (`startSessionFromTemplate`
+ * startet keine zweite). Stattdessen steht die Rückkehr da, ehrlich als
+ * solche beschriftet und ohne Fokus-Sheet - man liest erst, wo man war.
  *
  * Das `RunLogSheet` wohnt hier, nicht in der AppShell: wer es öffnen kann,
  * besitzt es (Home, Plan, Laufdetail tun es genauso), und der Zustand „Lauf
@@ -110,8 +115,15 @@ export function NowSheet() {
     [open, todayKey],
   );
 
+  // `null` heißt „läuft keine", `undefined` „noch nicht geladen" - sonst blitzten die Startzeilen kurz auf.
+  const activeSession = useLiveQuery(
+    async () => (await db.workoutSessions.where('status').equals('active').first()) ?? null,
+    [],
+  );
+
   // Erst wenn alles da ist: sonst sprängen die Zeilen unter „Lauf eintragen" nach.
   const loaded =
+    activeSession !== undefined &&
     templates !== undefined &&
     recency !== undefined &&
     minutesByTemplate !== undefined &&
@@ -201,7 +213,32 @@ export function NowSheet() {
         <div className="space-y-4">
           {startError ? <Alert variant="error">{startError}</Alert> : null}
 
-          {loaded ? (
+          {loaded && activeSession ? (
+            <>
+              {/*
+                Tinte, nicht Lime: das ist eine Aktion („zurück"), kein „jetzt
+                dran". Ein Link ohne `state`, damit das Fokus-Sheet geschlossen
+                bleibt; der Routenwechsel schließt dieses Sheet selbst.
+              */}
+              <Link
+                to={`/session/${activeSession.id}`}
+                className="flex min-h-[3.625rem] w-full items-center gap-3 rounded-control bg-accent px-3 py-2 text-left text-accent-contrast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block text-xs font-bold uppercase tracking-wide">
+                    Training läuft · zurück
+                  </span>
+                  <span className="block truncate font-semibold">
+                    {activeSession.templateNameSnapshot}
+                  </span>
+                </span>
+                <ChevronRight size={20} aria-hidden="true" className="shrink-0" />
+              </Link>
+              <ActiveSessionHint />
+            </>
+          ) : null}
+
+          {loaded && !activeSession ? (
             <>
               {first ? (
                 <button
@@ -290,41 +327,47 @@ export function NowSheet() {
               {nothingToShow ? (
                 <p className="text-sm text-content-muted">Kein Workout passt zu diesem Filter.</p>
               ) : null}
-
-              <section className="space-y-2">
-                <h3 className={SECTION_LABEL_CLASSES}>Erfassen</h3>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    className={ROW_CLASSES}
-                    disabled={isStarting}
-                    onClick={() => {
-                      // Nie zwei Sheets übereinander: erst schließen, dann das Lauf-Sheet öffnen.
-                      setOpen(false);
-                      setRunSheetOpen(true);
-                    }}
-                  >
-                    <RunIcon size={20} className="shrink-0 text-content-secondary" aria-hidden="true" />
-                    <span className="min-w-0 flex-1 truncate font-semibold text-content">
-                      Lauf eintragen
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    className={ROW_CLASSES}
-                    disabled={isStarting}
-                    onClick={() => {
-                      setOpen(false);
-                      navigate('/tests');
-                    }}
-                  >
-                    <span className="min-w-0 flex-1 truncate font-semibold text-content">
-                      Test erfassen
-                    </span>
-                  </button>
-                </div>
-              </section>
             </>
+          ) : null}
+
+          {loaded ? (
+            <section className="space-y-2">
+              <h3 className={SECTION_LABEL_CLASSES}>Erfassen</h3>
+              {/*
+                Zwei Spalten à ~140px auf 320px: das Icon allein kostete 32px
+                und schnitt „Lauf eintragen" ab. Beide Knöpfe tragen deshalb
+                nur Text und brechen im Zweifel um, statt abzuschneiden.
+              */}
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  className={ROW_CLASSES}
+                  disabled={isStarting}
+                  onClick={() => {
+                    // Nie zwei Sheets übereinander: erst schließen, dann das Lauf-Sheet öffnen.
+                    setOpen(false);
+                    setRunSheetOpen(true);
+                  }}
+                >
+                  <span className="min-w-0 flex-1 break-words font-semibold text-content">
+                    Lauf eintragen
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className={ROW_CLASSES}
+                  disabled={isStarting}
+                  onClick={() => {
+                    setOpen(false);
+                    navigate('/tests');
+                  }}
+                >
+                  <span className="min-w-0 flex-1 break-words font-semibold text-content">
+                    Test erfassen
+                  </span>
+                </button>
+              </div>
+            </section>
           ) : null}
         </div>
       </Sheet>

@@ -16,6 +16,21 @@ import {
  * ignoriert Safari ein `min-height` und lässt das Feld auf 22px zusammenfallen.
  */
 test.describe('Band-Übungen', () => {
+  test('ohne Bänder führt der Hinweis im Übungsformular nach Bestand › Bänder', async ({ page }) => {
+    await resetDatabase(page);
+    await seedSampleData(page);
+    await page.goto('./#/exercises');
+    await page.waitForTimeout(900);
+
+    await page.getByRole('button', { name: 'Anlegen' }).first().click();
+    await page.getByLabel('Belastung').selectOption('band');
+
+    await expect(page.getByText('Noch keine Bänder angelegt - das machst du unter Bestand › Bänder.')).toBeVisible();
+    await expect(page.getByText(/in den Einstellungen/)).toHaveCount(0);
+    await page.getByRole('link', { name: 'Zu Bestand › Bänder' }).click();
+    await page.waitForURL(/#\/bands/);
+  });
+
   test('Katalog anlegen, Satz mit Band loggen, Historie prüfen', async ({ page }) => {
     const errors = collectPageErrors(page);
 

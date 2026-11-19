@@ -111,24 +111,58 @@ test.describe('Jetzt-Sheet', () => {
     await page.waitForURL(/#\/session\//);
   });
 
-  test('ein zweiter Start bei laufender Session führt in dieselbe Session-URL', async ({ page }) => {
+  test('bei laufender Session zeigt das Sheet „Training läuft“ statt der Startoptionen', async ({ page }) => {
     await startWithEmptyPlan(page);
     await addSecondWorkout(page);
     await openNowSheet(page);
     await page.locator('[data-sheet]').getByRole('button', { name: /Einheit A/ }).click();
     await page.waitForURL(/#\/session\//);
-    const firstUrl = page.url();
+    const sessionUrl = page.url();
 
     // Der frische Start hat das Fokus-Sheet geöffnet; es muss weg, bevor der Minimieren-Knopf erreichbar ist.
     await closeExerciseSheet(page);
-
-    // Raus aus der Session (minimieren), dann das zweite Workout über das Sheet starten:
-    // `startSessionFromTemplate` gibt die laufende Session zurück, die URL bleibt dieselbe.
     await page.getByRole('button', { name: 'Session minimieren' }).click();
     await openNowSheet(page);
-    await page.locator('[data-sheet]').getByRole('button', { name: /Einheit B/ }).click();
-    await page.waitForURL(/#\/session\//);
 
-    expect(page.url()).toBe(firstUrl);
+    const sheet = page.locator('[data-sheet]');
+    const back = sheet.getByRole('link', { name: /Training läuft · zurück/ });
+
+    // Kein stummer zweiter Start: weder Filter noch Kacheln noch Startzeilen, dafür der Satz dazu.
+    await expect(back).toBeVisible();
+    await expect(back).toContainText('Einheit A');
+    await expect(sheet.getByText('Ein Training läuft bereits')).toBeVisible();
+    await expect(sheet.getByRole('radiogroup')).toHaveCount(0);
+    await expect(sheet.getByRole('button', { name: /Einheit B/ })).toHaveCount(0);
+    await expect(sheet.getByText('Heute geplant')).toHaveCount(0);
+    // „Erfassen" sind keine Session-Starts und bleiben.
+    await expect(sheet.getByRole('button', { name: 'Lauf eintragen' })).toBeVisible();
+    await expect(sheet.getByRole('button', { name: 'Test erfassen' })).toBeVisible();
+
+    // Rückkehr, kein Start: dieselbe Session, ohne offenes Fokus-Sheet.
+    await back.click();
+    await page.waitForURL(/#\/session\//);
+    await page.waitForTimeout(800);
+
+    expect(page.url()).toBe(sessionUrl);
+    await expect(page.getByRole('button', { name: 'Session minimieren' })).toBeVisible();
+    await expect(page.locator('[data-sheet]')).toBeHidden();
+  });
+
+  test('bei 320px sind „Lauf eintragen“ und „Test erfassen“ nicht abgeschnitten', async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 700 });
+    await startWithEmptyPlan(page);
+    await openNowSheet(page);
+
+    // `truncate` schneidet still ab: sichtbar wird das nur als scrollWidth > clientWidth.
+    for (const name of ['Lauf eintragen', 'Test erfassen']) {
+      const label = page
+        .locator('[data-sheet]')
+        .getByRole('button', { name })
+        .locator('span')
+        .filter({ hasText: name });
+      const clipped = await label.evaluate((element) => element.scrollWidth - element.clientWidth);
+
+      expect(clipped, `${name} wird abgeschnitten`).toBeLessThanOrEqual(0);
+    }
   });
 });

@@ -1,11 +1,9 @@
 import { useRef, useState, type ChangeEvent } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
 import { ChevronDown, ChevronUp, FileJson, Upload } from 'lucide-react';
 import { Alert } from '@/components/Alert';
 import { SectionCard } from '@/components/SectionCard';
 import { Button } from '@/components/ui/Button';
 import { TextArea } from '@/components/ui/Field';
-import { db } from '@/db/appDb';
 import { applyLibraryImport, buildLibraryImportPlan } from '@/db/library-import-actions';
 import {
   parseLibraryImportPayload,
@@ -16,7 +14,7 @@ import {
 } from '@/domain/library-import';
 import { exportDatabaseSnapshot } from '@/lib/export';
 import { cn } from '@/lib/utils';
-import { formatDateTime, formatNumber } from '@/lib/format';
+import { formatNumber } from '@/lib/format';
 
 /**
  * Übungen, Workouts, Zuordnungen, Bänder und Termine aus einer JSON-Datei.
@@ -28,6 +26,9 @@ import { formatDateTime, formatNumber } from '@/lib/format';
  * Geschrieben wird erst nach der Vorschau. Ein Import, der eine bestehende
  * Übung anfasst, ohne dass vorher jemand gelesen hat *was* er ändert, ist auf
  * Daten, die es nur einmal gibt, keine Zumutung, die sich lohnt.
+ *
+ * Der Verlauf früherer Importe gehört nicht hierher, sondern in „Letzte
+ * Importe“ der Abgleich-Seite: eine Liste, ein Ort.
  */
 
 const KIND_LABELS: Record<ImportEntryKind, string> = {
@@ -226,10 +227,6 @@ export function LibraryImportSection() {
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const imports = useLiveQuery(
-    () => db.libraryImports.orderBy('importedAt').reverse().limit(5).toArray(),
-    [],
-  );
 
   async function preview(json: string, sourceName: string) {
     setIsBusy(true);
@@ -415,40 +412,6 @@ export function LibraryImportSection() {
           <Alert variant="error">
             <span className="whitespace-pre-line">{error}</span>
           </Alert>
-        ) : null}
-
-        {imports && imports.length > 0 ? (
-          <div className="rounded-panel bg-surface p-4">
-            <p className="text-xs uppercase tracking-[0.18em] text-content-muted">
-              Zuletzt importiert
-            </p>
-            <ul className="mt-3 space-y-2">
-              {imports.map((entry) => (
-                <li key={entry.id} className="text-sm">
-                  <p className="text-content-secondary">
-                    {formatDateTime(entry.importedAt)} · {entry.sourceName ?? 'Unbekannte Quelle'}
-                  </p>
-                  <p className="mt-0.5 text-content-muted">
-                    {formatNumber(entry.createdExercises)} Übungen ·{' '}
-                    {formatNumber(entry.createdAssignments)} Zuordnungen ·{' '}
-                    {entry.createdPlanEntries
-                      ? `${formatNumber(entry.createdPlanEntries)} Termine · `
-                      : null}
-                    {formatNumber(
-                      entry.updatedExercises +
-                        entry.updatedAssignments +
-                        (entry.updatedPlanEntries ?? 0),
-                    )}{' '}
-                    geändert ·{' '}
-                    {(entry.removedAssignments ?? 0) + (entry.removedPlanEntries ?? 0) > 0
-                      ? `${formatNumber((entry.removedAssignments ?? 0) + (entry.removedPlanEntries ?? 0))} entfernt · `
-                      : null}
-                    {entry.payloadHash}
-                  </p>
-                </li>
-              ))}
-            </ul>
-          </div>
         ) : null}
       </div>
     </SectionCard>

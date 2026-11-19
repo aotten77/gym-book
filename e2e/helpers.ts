@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 
 /**
  * Setzt die lokale Datenbank zurück.
@@ -53,11 +53,9 @@ export async function startSampleSession(page: Page) {
   await page.waitForTimeout(600);
   await page.getByRole('button', { name: 'Einheit A' }).first().click();
   await page.waitForURL(/#\/session\//);
-  await page.waitForTimeout(600);
-
-  if (await page.locator('[data-sheet]').isVisible()) {
-    await closeExerciseSheet(page);
-  }
+  // Ein frischer Start öffnet das Sheet immer; darauf warten statt blind zu raten.
+  await expect(page.locator('[data-sheet]')).toBeVisible();
+  await closeExerciseSheet(page);
 
   return page.url();
 }

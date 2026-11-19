@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Check, ChevronDown, ChevronUp, ImageOff, ImagePlus, Pencil, Plus, Trash2 } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
@@ -443,7 +444,7 @@ export function ExercisesPage() {
                   value={form.loadKind ?? 'weight'}
                   hint={
                     form.loadKind === 'band' && (bandLevels?.length ?? 0) === 0
-                      ? 'Noch keine Bänder angelegt - das machst du in den Einstellungen.'
+                      ? 'Noch keine Bänder angelegt - das machst du unter Bestand › Bänder.'
                       : 'Band-Übungen protokollieren statt Kilo eine Stufe aus deinem Band-Katalog.'
                   }
                   onChange={(event) =>
@@ -456,6 +457,18 @@ export function ExercisesPage() {
                   <option value="weight">Gewicht in kg</option>
                   <option value="band">Band</option>
                 </SelectField>
+              ) : null}
+
+              {/* Der Weg dorthin als Link: die Bänder liegen seit der neuen Navigation unter /bands, nicht mehr in den Einstellungen. */}
+              {supportsLoad(form.trackingMode) &&
+              form.loadKind === 'band' &&
+              (bandLevels?.length ?? 0) === 0 ? (
+                <Link
+                  to="/bands"
+                  className="flex min-h-touch items-center text-sm font-semibold text-accent underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                >
+                  Zu Bestand › Bänder
+                </Link>
               ) : null}
 
               {/*
