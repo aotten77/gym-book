@@ -5,6 +5,13 @@ import { buildPlanLinks } from '@/domain/plan';
 import {
   buildCalendarWeeks,
   CALENDAR_WINDOW_WEEKS,
+  TIMELINE_INITIAL_PAST_WEEKS,
+  TIMELINE_LOAD_STEP_WEEKS,
+  describeTimelineWeekHead,
+  pickTodayNowEntryId,
+  timelineFirstMonday,
+  timelineLastMonday,
+  timelineWeekCount,
   cellMarks,
   countWeekProgress,
   defaultFirstMonday,
@@ -233,7 +240,7 @@ describe('buildCalendarWeeks', () => {
     expect(sessionUnit.planEntryId).toBeUndefined();
     expect(runUnit.planEntryId).toBeUndefined();
     expect(runUnit.name).toBe('Lauf');
-    expect(describeCalendarUnitDetail(sessionUnit, {}).endsWith('nicht geplant')).toBe(true);
+    expect(describeCalendarUnitDetail(sessionUnit, {}).endsWith('spontan')).toBe(true);
   });
 
   it('über Mitternacht abgeschlossen zählt am Tag des Abschlusses', () => {
@@ -445,7 +452,7 @@ describe('describeCalendarUnitDetail', () => {
     ).toBe('7 km · 42:00 · 6:00 /km');
   });
 
-  it('geplant: Workout mit Art und Übungszahl, Lauf mit Vorgaben oder Notiz', () => {
+  it('geplant: Workout mit Übungszahl, Lauf mit Vorgaben oder Notiz', () => {
     const planned = (kind: CalendarUnit['kind'], e: PlanEntry): CalendarUnit => ({
       kind,
       state: 'geplant',
@@ -455,15 +462,48 @@ describe('describeCalendarUnitDetail', () => {
     });
 
     expect(describeCalendarUnitDetail(planned('mobility', entry('m', '2026-10-08')), { exerciseCount: 1 })).toBe(
-      'Mobility · 1 Übung',
+      '1 Übung',
     );
     expect(describeCalendarUnitDetail(planned('strength', entry('k', '2026-10-08')), { exerciseCount: 5 })).toBe(
-      'Kraft · 5 Übungen',
+      '5 Übungen',
     );
     expect(
       describeCalendarUnitDetail(planned('run', { ...entry('l', '2026-10-08', 'run'), notes: 'locker' }), {}),
     ).toBe('locker');
     expect(describeCalendarUnitDetail(planned('run', entry('l2', '2026-10-08', 'run')), {})).toBe('');
+  });
+
+  it('geplantes Workout mit Dauer: "6 Übungen · ~55 min"', () => {
+    const e = entry('k', '2026-10-08');
+    const unit: CalendarUnit = {
+      kind: 'strength',
+      state: 'geplant',
+      name: 'x',
+      ref: { type: 'entry', entry: e },
+      planEntryId: e.id,
+    };
+
+    expect(describeCalendarUnitDetail(unit, { exerciseCount: 6, minutes: 55 })).toBe('6 Übungen · ~55 min');
+  });
+
+  it('laufende Session mit Fortschritt: "läuft · Satz 7 von 18"', () => {
+    const unit: CalendarUnit = {
+      kind: 'strength',
+      state: 'geplant',
+      name: 'x',
+      ref: { type: 'active-session', sessionId: 's' },
+      planEntryId: 'p',
+    };
+
+    expect(describeCalendarUnitDetail(unit, { activeProgress: { completedCount: 6, totalCount: 18 } })).toBe(
+      'läuft · Satz 7 von 18',
+    );
+    expect(describeCalendarUnitDetail(unit, { activeProgress: { completedCount: 18, totalCount: 18 } })).toBe(
+      'läuft · Satz 18 von 18',
+    );
+    expect(describeCalendarUnitDetail(unit, { activeProgress: { completedCount: 0, totalCount: 0 } })).toBe(
+      'Läuft gerade',
+    );
   });
 
   it('laufende Session heißt "Läuft gerade"', () => {
@@ -520,5 +560,116 @@ describe('rollCalendarToToday', () => {
     const r = rollCalendarToToday({ firstMonday, selectedWeek: '2026-10-19', previousToday: '2026-10-25' }, d(2026, 10, 26));
 
     expect(inWindow(r)).toBe(true);
+  });
+});
+
+describe('Zeitstrahl', () => {
+  it('reicht nach vorn mindestens bis Ende nächster Woche', () => {
+    expect(toDateInputValue(timelineLastMonday(new Date(2026, 10, 19)))).toBe('2026-11-23');
+    expect(toDateInputValue(timelineLastMonday(new Date(2026, 10, 19), '2026-11-20'))).toBe('2026-11-23');
+    expect(toDateInputValue(timelineLastMonday(new Date(2026, 10, 19), 'kaputt'))).toBe('2026-11-23');
+  });
+
+  it('reicht bis zur Woche des letzten Termins', () => {
+    expect(toDateInputValue(timelineLastMonday(new Date(2026, 10, 19), '2027-02-10'))).toBe('2027-02-08');
+  });
+
+  it('beginnt vier Wochen vor der laufenden', () => {
+    expect(TIMELINE_INITIAL_PAST_WEEKS).toBe(4);
+    expect(TIMELINE_LOAD_STEP_WEEKS).toBe(4);
+    expect(toDateInputValue(timelineFirstMonday(new Date(2026, 10, 19)))).toBe('2026-10-19');
+  });
+
+  it('zählt Wochen über die Zeitumstellung', () => {
+    expect(timelineWeekCount(new Date(2026, 9, 19), new Date(2026, 10, 23))).toBe(6);
+    expect(timelineWeekCount(new Date(2026, 9, 19), new Date(2026, 10, 2))).toBe(3);
+  });
+
+  describe('describeTimelineWeekHead und pickTodayNowEntryId', () => {
+    const today = new Date(2026, 10, 19, 12); // Mittwoch
+    const entryAt = (id: string, date: string, orderInDay = 1) => entry(id, date, 'workout', orderInDay);
+
+    function buildWeeks(
+      planEntries: PlanEntry[],
+      sessions: Parameters<typeof buildPlanLinks>[0] = [],
+      completedSessions: CalendarSession[] = [],
+    ) {
+      return buildCalendarWeeks({
+        firstMonday: new Date(2026, 10, 16),
+        weeks: 2,
+        today,
+        program: { startedOn: '2026-11-02' },
+        programWeeks: [week(3), week(4, 'deload')],
+        planEntries,
+        planLinks: buildPlanLinks(sessions, []),
+        templates: [{ id: 'einheit-a', name: 'Einheit A' }],
+        completedSessions,
+        runs: [],
+        testDates: [],
+      });
+    }
+
+    const doneAt = new Date(2026, 10, 16, 18).toISOString();
+    const doneSession: CalendarSession = {
+      id: 's1',
+      templateId: 'einheit-a',
+      templateName: 'Einheit A',
+      startedAt: new Date(2026, 10, 16, 17).toISOString(),
+      completedAt: doneAt,
+      planEntryId: 'a',
+    };
+    const doneLink: Parameters<typeof buildPlanLinks>[0] = [
+      { id: 's1', planEntryId: 'a', status: 'completed', completedAt: doneAt, templateNameSnapshot: 'Einheit A' },
+    ];
+
+    it('nennt Programmwoche, laufende Woche und Zähler', () => {
+      const [current] = buildWeeks(
+        [entryAt('a', '2026-11-16'), entryAt('b', '2026-11-18'), entryAt('c', '2026-11-20'), entryAt('d', '2026-11-21')],
+        doneLink,
+        [doneSession],
+      );
+
+      expect(describeTimelineWeekHead(current)).toEqual({
+        title: '16.–22.11. · W3 · diese Woche',
+        done: 1,
+        planned: 4,
+        label: '16.–22.11. · W3 · diese Woche · 1 von 4 erledigt',
+      });
+    });
+
+    it('nennt die Art einer künftigen Woche', () => {
+      const [, next] = buildWeeks([]);
+
+      expect(describeTimelineWeekHead(next).title).toBe('23.–29.11. · W4 · Deload');
+    });
+
+    it('lässt den Zähler ohne Termine weg', () => {
+      const [current] = buildWeeks([]);
+      const head = describeTimelineWeekHead(current);
+
+      expect(head.planned).toBe(0);
+      expect(head.label).toBe(head.title);
+      expect(head.label).not.toContain('erledigt');
+    });
+
+    it('wählt die erste Termin-Einheit von heute', () => {
+      const [current] = buildWeeks(
+        [entryAt('a', '2026-11-19', 1), entryAt('b', '2026-11-19', 2), entryAt('c', '2026-11-19', 3)],
+        doneLink,
+        [{ ...doneSession, completedAt: new Date(2026, 10, 19, 8).toISOString(), startedAt: new Date(2026, 10, 19, 7).toISOString() }],
+      );
+      const day = current.days.find((candidate) => candidate.isToday)!;
+
+      expect(day.units[0].state).toBe('erledigt');
+      expect(pickTodayNowEntryId(day, false)).toBe('b');
+      expect(pickTodayNowEntryId(day, true)).toBeUndefined();
+    });
+
+    it('wählt nichts an einem anderen Tag', () => {
+      const [current] = buildWeeks([entryAt('a', '2026-11-20')]);
+      const friday = current.days.find((candidate) => candidate.key === '2026-11-20')!;
+
+      expect(pickTodayNowEntryId(friday, false)).toBeUndefined();
+    });
   });
 });

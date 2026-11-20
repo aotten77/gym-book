@@ -12,10 +12,10 @@ import {
   planEntryState,
   type PlanEntryLink,
 } from '@/domain/plan';
+import { describeWeekKind } from '@/domain/program-plan';
 import { toDateInputValue } from '@/domain/program';
 import { formatPace, formatRunDuration, paceSecondsPerKm } from '@/domain/run';
 import {
-  describeWorkoutCategory,
   resolveWorkoutCategory,
   type WorkoutCategory,
 } from '@/domain/workout-category';
@@ -166,6 +166,10 @@ export function countWeekProgress(row: { days: { dated: number; datedDone: numbe
 
 export const CALENDAR_WINDOW_WEEKS = 6;
 export const CALENDAR_WINDOW_STEP = 4;
+
+/** Der Zeitstrahl beginnt so viele Wochen vor der laufenden und lädt so viele nach. */
+export const TIMELINE_INITIAL_PAST_WEEKS = 4;
+export const TIMELINE_LOAD_STEP_WEEKS = 4;
 
 /** Eine abgeschlossene Session, so wie der Kalender sie braucht. */
 export interface CalendarSession {
@@ -457,6 +461,78 @@ export function shiftWindow(firstMonday: Date, weeks: number): Date {
   return shifted;
 }
 
+/** Der erste Montag des Zeitstrahls: die laufende Woche minus `TIMELINE_INITIAL_PAST_WEEKS`. */
+export function timelineFirstMonday(today: Date): Date {
+  return shiftWindow(startOfCalendarWeek(today), -TIMELINE_INITIAL_PAST_WEEKS);
+}
+
+/**
+ * Der letzte Montag des Zeitstrahls: der spätere von "nächste Woche" und der
+ * Woche des letzten Termins. Ein fehlendes oder ungültiges Datum zählt nicht.
+ */
+export function timelineLastMonday(today: Date, lastPlanDate?: string): Date {
+  const nextWeek = shiftWindow(startOfCalendarWeek(today), 1);
+  const parsed = lastPlanDate ? parseLocalDate(lastPlanDate) : undefined;
+
+  if (!parsed) {
+    return nextWeek;
+  }
+
+  const planWeek = startOfCalendarWeek(parsed);
+
+  return planWeek.getTime() > nextWeek.getTime() ? planWeek : nextWeek;
+}
+
+/** Wochen einschließlich beider Enden; `Math.round`, weil eine Woche an der Zeitumstellung 167 oder 169 Stunden hat. */
+export function timelineWeekCount(firstMonday: Date, lastMonday: Date): number {
+  const weekMs = DAYS_PER_WEEK * 24 * 60 * 60 * 1000;
+
+  return Math.round((lastMonday.getTime() - firstMonday.getTime()) / weekMs) + 1;
+}
+
+/** Der Kopf einer Woche im Zeitstrahl: Titel, Zähler und die zusammengesetzte Ansage. */
+export function describeTimelineWeekHead(week: CalendarWeek): {
+  title: string;
+  done: number;
+  planned: number;
+  label: string;
+} {
+  const { done, planned } = countWeekProgress(week);
+  const parts = [describeWeekRange(week.start, week.end)];
+
+  if (week.programWeek) {
+    parts.push(`W${week.programWeek.number}`);
+
+    if (week.programWeek.kind) {
+      parts.push(describeWeekKind(week.programWeek.kind));
+    }
+  }
+
+  if (week.isCurrent) {
+    parts.push('diese Woche');
+  }
+
+  const title = parts.join(' · ');
+
+  return {
+    title,
+    done,
+    planned,
+    label: planned > 0 ? `${title} · ${formatNumber(done)} von ${formatNumber(planned)} erledigt` : title,
+  };
+}
+
+/** Die Termin-Id, die heute "jetzt dran" ist: die erste Termin-Einheit, nur heute und nur ohne laufende Session. */
+export function pickTodayNowEntryId(day: CalendarWeekDay, hasActiveSession: boolean): string | undefined {
+  if (!day.isToday || hasActiveSession) {
+    return undefined;
+  }
+
+  const unit = day.units.find((candidate) => candidate.ref.type === 'entry');
+
+  return unit?.planEntryId;
+}
+
 /** Die Auswahl bleibt, solange ihr Montag im Fenster liegt; sonst springt sie auf den ersten Montag. */
 export function keepSelectionInWindow(selected: string, firstMonday: Date, weeks: number): string {
   const first = toDateInputValue(firstMonday);
@@ -503,7 +579,12 @@ export function describeWeekRange(start: Date, end: Date): string {
 /** Die Detailzeile einer Einheit; Teile mit " · " verbunden, leere entfallen. */
 export function describeCalendarUnitDetail(
   unit: CalendarUnit,
-  context: { volumeKg?: number; exerciseCount?: number },
+  context: {
+    volumeKg?: number;
+    exerciseCount?: number;
+    minutes?: number;
+    activeProgress?: { completedCount: number; totalCount: number };
+  },
 ): string {
   const parts: string[] = [];
 
@@ -536,10 +617,18 @@ export function describeCalendarUnitDetail(
     }
 
     if (!unit.planEntryId) {
-      parts.push('nicht geplant');
+      parts.push('spontan');
     }
   } else if (unit.ref.type === 'active-session') {
-    parts.push('Läuft gerade');
+    const progress = context.activeProgress;
+
+    if (progress && progress.totalCount > 0) {
+      parts.push(
+        `läuft · Satz ${formatNumber(Math.min(progress.completedCount + 1, progress.totalCount))} von ${formatNumber(progress.totalCount)}`,
+      );
+    } else {
+      parts.push('Läuft gerade');
+    }
   } else if (unit.ref.type === 'entry') {
     if (unit.kind === 'run') {
       const text = describeRunTarget(unit.ref.entry) || unit.ref.entry.notes || '';
@@ -548,12 +637,15 @@ export function describeCalendarUnitDetail(
         parts.push(text);
       }
     } else {
-      parts.push(describeWorkoutCategory(unit.kind === 'mobility' ? 'mobility' : 'strength'));
-
+      /* Die Art trägt das Icon, nicht der Text. */
       if (context.exerciseCount !== undefined) {
         parts.push(
           context.exerciseCount === 1 ? '1 Übung' : `${formatNumber(context.exerciseCount)} Übungen`,
         );
+      }
+
+      if (context.minutes !== undefined && context.minutes > 0) {
+        parts.push(`~${formatNumber(context.minutes)} min`);
       }
     }
   }

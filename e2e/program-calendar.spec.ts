@@ -269,7 +269,7 @@ test.describe('Tagesliste: Einheit und Termin', () => {
     await expect(
       cell.locator('[data-calendar-unit="strength"][data-unit-state="erledigt"]'),
     ).toHaveCount(1);
-    await expect(page.locator(`[data-plan-day="${today}"]`)).toContainText('nicht geplant');
+    await expect(page.locator(`[data-plan-day="${today}"]`)).toContainText('spontan');
 
     expect(errors).toEqual([]);
   });
