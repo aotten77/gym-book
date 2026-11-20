@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
-import Home from '@/pages/Home';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { bootstrapAppData } from '@/db/bootstrap';
 import { requestPersistentStorage } from '@/lib/storage';
@@ -10,6 +9,7 @@ import { HistoryPage } from '@/pages/HistoryPage';
 import { HistorySessionPage } from '@/pages/HistorySessionPage';
 import { SyncPage } from '@/pages/SyncPage';
 import { LibraryPage } from '@/pages/LibraryPage';
+import { PlanPage } from '@/pages/PlanPage';
 import { ProgramsManagePage } from '@/pages/ProgramsManagePage';
 import { ProgramsPage } from '@/pages/ProgramsPage';
 import { RunDetailPage } from '@/pages/RunDetailPage';
@@ -73,7 +73,7 @@ export default function App() {
     <ErrorBoundary>
       <HashRouter>
         <Routes>
-          <Route path="/" element={<Home />} />
+          <Route path="/" element={<PlanPage />} />
           <Route path="/programs" element={<ProgramsPage />} />
           <Route path="/programs/manage" element={<ProgramsManagePage />} />
           <Route path="/exercises" element={<ExercisesPage />} />

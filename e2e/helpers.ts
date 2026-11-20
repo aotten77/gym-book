@@ -43,6 +43,10 @@ export async function seedSampleData(page: Page) {
 /**
  * Startet eine Session aus der Beispielvorlage und liefert deren URL.
  *
+ * Gestartet wird über das Jetzt-Sheet, nicht über den Plan: je nach Wochentag
+ * steht „Einheit A“ dort als künftiger Termin, und ein Tap darauf öffnet nur
+ * die Anzeige.
+ *
  * Ein frischer Start öffnet das Fokus-Sheet von selbst. Die meisten Specs
  * gehen aber von der Liste aus und öffnen das Sheet über `openExerciseSheet`,
  * deshalb wird es hier wieder geschlossen. Dass der Start es öffnet, prüft
@@ -51,13 +55,25 @@ export async function seedSampleData(page: Page) {
 export async function startSampleSession(page: Page) {
   await page.goto('./');
   await page.waitForTimeout(600);
-  await page.getByRole('button', { name: 'Einheit A' }).first().click();
+  await page.getByRole('button', { name: 'Jetzt trainieren' }).click();
+  await page.locator('[data-sheet]').getByRole('button', { name: 'Einheit A' }).first().click();
   await page.waitForURL(/#\/session\//);
   // Ein frischer Start öffnet das Sheet immer; darauf warten statt blind zu raten.
   await expect(page.locator('[data-sheet]')).toBeVisible();
   await closeExerciseSheet(page);
 
   return page.url();
+}
+
+/**
+ * Öffnet das Lauf-Sheet über „Jetzt trainieren“ → „Lauf eintragen“. Die
+ * Startseite trägt keinen eigenen Knopf dafür mehr; das Jetzt-Sheet schließt
+ * sich, bevor das Lauf-Sheet aufgeht.
+ */
+export async function openRunLogFromNow(page: Page) {
+  await page.getByRole('button', { name: 'Jetzt trainieren' }).click();
+  await page.locator('[data-sheet]').getByRole('button', { name: 'Lauf eintragen' }).click();
+  await expect(page.locator('[data-sheet]').getByRole('button', { name: 'Lauf speichern' })).toBeVisible();
 }
 
 /**

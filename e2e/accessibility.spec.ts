@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { openExerciseSheet, resetDatabase, seedSampleData, startSampleSession } from './helpers';
 
 const ROUTES = [
-  ['Heute', './'],
+  ['Plan', './'],
   ['Programm', './#/programs'],
   ['Programm verwalten', './#/programs/manage'],
   ['Workouts', './#/templates'],

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { db } from '@/db/appDb';
-import { loadPlanBetween, loadRunPlanOptions, loadUpcomingPlan } from '@/db/plan-queries';
+import { loadLastPlanDate, loadPlanBetween, loadRunPlanOptions, loadUpcomingPlan } from '@/db/plan-queries';
 import type { PlanEntry } from '@/domain/models';
 
 const NOW = '2026-10-01T10:00:00.000Z';
@@ -111,5 +111,19 @@ describe('loadRunPlanOptions, eigener Termin', () => {
     const options = await loadRunPlanOptions('2026-10-07', 'mine');
 
     expect(options.map((entry) => entry.id)).toEqual(['mo', 'far']);
+  });
+});
+
+describe('loadLastPlanDate', () => {
+  it('ist leer ohne Termine', async () => {
+    await expect(loadLastPlanDate()).resolves.toBeUndefined();
+  });
+
+  it('liefert den spätesten Tag', async () => {
+    await addEntry('a', '2026-10-06', 'workout');
+    await addEntry('c', '2027-01-12', 'run');
+    await addEntry('b', '2026-12-01', 'workout');
+
+    await expect(loadLastPlanDate()).resolves.toBe('2027-01-12');
   });
 });

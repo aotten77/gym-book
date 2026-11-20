@@ -337,10 +337,11 @@ test.describe('Session-Lebenszyklus', () => {
     await startSampleSession(page);
     await page.goto('./');
     await page.waitForTimeout(800);
+    await page.getByRole('button', { name: 'Jetzt trainieren' }).click();
 
     // Früher führte ein Tap auf eine andere Vorlage stillschweigend in die
     // laufende Session - für den Nutzer sah das aus wie ein Defekt.
-    await expect(page.getByText('Ein Training läuft bereits')).toBeVisible();
+    await expect(page.locator('[data-sheet]').getByText('Ein Training läuft bereits')).toBeVisible();
   });
 });
 

@@ -12,7 +12,9 @@ test.describe('Session-Start öffnet das Fokus-Sheet', () => {
     await seedSampleData(page);
     await page.goto('./');
     await page.waitForTimeout(600);
-    await page.getByRole('button', { name: 'Einheit A' }).first().click();
+    // Über das Jetzt-Sheet: im Plan steht „Einheit A“ je nach Wochentag als künftiger Termin.
+    await page.getByRole('button', { name: 'Jetzt trainieren' }).click();
+    await page.locator('[data-sheet]').getByRole('button', { name: 'Einheit A' }).first().click();
     await page.waitForURL(/#\/session\//);
   });
 

@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { db } from '@/db/appDb';
 import {
+  loadActiveSessionProgress,
   loadCompletedSessionsBetween,
+  loadEarliestTimelineDate,
   loadExercisesTrainedSince,
   loadRunsBetween,
   loadSyncActivitySince,
@@ -574,5 +576,93 @@ describe('loadTemplateMinutes', () => {
 
     expect(await loadTemplateMinutes()).toEqual({ t1: 4, t2: 5 });
     expect(await loadTemplateExerciseCounts()).toEqual({ t1: 1, t2: 1 });
+  });
+});
+
+describe('loadEarliestTimelineDate', () => {
+  it('ist leer ohne Sessions, Läufe, Tests und Termine', async () => {
+    await expect(loadEarliestTimelineDate()).resolves.toBeUndefined();
+  });
+
+  it('liefert den frühesten lokalen Tag über alle vier Tabellen; eine abgebrochene Session zählt nicht', async () => {
+    await addSession({ id: 'aborted', templateId: 't1', status: 'aborted', completedAt: '2026-05-01T10:00:00.000Z' });
+    await addSession({ id: 'done', templateId: 't1', status: 'completed', completedAt: '2026-08-10T10:00:00.000Z' });
+    await db.runLogs.add({
+      id: 'run',
+      date: '2026-08-04',
+      distanceKm: 5,
+      durationSeconds: 1800,
+      createdAt: '2026-08-04T10:00:00.000Z',
+      updatedAt: '2026-08-04T10:00:00.000Z',
+    });
+    await db.planEntries.add({
+      id: 'entry',
+      date: '2026-08-07',
+      orderInDay: 1,
+      kind: 'workout',
+      templateId: 't1',
+      createdAt: '2026-08-01T10:00:00.000Z',
+      updatedAt: '2026-08-01T10:00:00.000Z',
+    });
+
+    await expect(loadEarliestTimelineDate()).resolves.toBe('2026-08-04');
+
+    await db.exerciseTests.add({
+      id: 'test',
+      exerciseId: 'hip',
+      exerciseNameSnapshot: 'Hüfte',
+      recordedAt: '2026-07-20T10:00:00.000Z',
+      leftValue: 30,
+      rightValue: 28,
+      asymmetryPercent: 6.7,
+    });
+
+    await expect(loadEarliestTimelineDate()).resolves.toBe('2026-07-20');
+
+    await db.planEntries.add({
+      id: 'early-entry',
+      date: '2026-07-01',
+      orderInDay: 1,
+      kind: 'workout',
+      templateId: 't1',
+      createdAt: '2026-07-01T10:00:00.000Z',
+      updatedAt: '2026-07-01T10:00:00.000Z',
+    });
+
+    await expect(loadEarliestTimelineDate()).resolves.toBe('2026-07-01');
+  });
+
+  it('nimmt eine abgeschlossene Session als lokalen Tag', async () => {
+    await addSession({ id: 'done', templateId: 't1', status: 'completed', completedAt: '2026-08-10T10:00:00.000Z' });
+
+    await expect(loadEarliestTimelineDate()).resolves.toBe('2026-08-10');
+  });
+});
+
+describe('loadActiveSessionProgress', () => {
+  it('ist leer ohne aktive Session', async () => {
+    await addSession({ id: 'done', templateId: 't1', status: 'completed', completedAt: '2026-08-10T10:00:00.000Z' });
+
+    await expect(loadActiveSessionProgress()).resolves.toBeUndefined();
+  });
+
+  it('zählt erledigte und alle Satzzeilen der aktiven Session', async () => {
+    await addSession({ id: 'active', templateId: 't1', status: 'active' });
+    await addSessionExercise({ id: 'se1', sessionId: 'active', exerciseId: 'ex1' });
+    await addSessionExercise({ id: 'se2', sessionId: 'active', exerciseId: 'ex2' });
+
+    for (let index = 0; index < 18; index += 1) {
+      await addSetLog({
+        id: `log-${index}`,
+        sessionExerciseId: index < 9 ? 'se1' : 'se2',
+        completed: index % 3 === 0,
+      });
+    }
+
+    await expect(loadActiveSessionProgress()).resolves.toEqual({
+      sessionId: 'active',
+      completedCount: 6,
+      totalCount: 18,
+    });
   });
 });

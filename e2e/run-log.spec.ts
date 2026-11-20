@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { importPlan, resetDatabase, seedSampleData } from './helpers';
+import { importPlan, openRunLogFromNow, resetDatabase, seedSampleData } from './helpers';
 
 /*
  * Ein Lauf über Heute: Sheet, Pace-Zeile, Sprung über die Tastaturleiste.
@@ -12,7 +12,7 @@ test.describe('Lauf eintragen', () => {
   });
 
   test('trägt einen Lauf über Heute ein', async ({ page }) => {
-    await page.getByRole('button', { name: 'Lauf eintragen' }).click();
+    await openRunLogFromNow(page);
 
     const sheet = page.locator('[data-sheet]');
     await expect(sheet).toBeVisible();
@@ -29,13 +29,14 @@ test.describe('Lauf eintragen', () => {
     await sheet.getByRole('button', { name: 'Lauf speichern' }).click();
     await expect(sheet).toHaveCount(0);
 
-    const body = page.locator('main');
-    await expect(body).toContainText('1 Lauf');
-    await expect(body).toContainText('10 km');
+    // Der Lauf steht im Plan als erledigte Einheit von heute.
+    const run = page.locator('[data-timeline-today] [data-day-unit="run"]');
+    await expect(run).toHaveAttribute('data-unit-state', 'erledigt');
+    await expect(run).toContainText('10 km');
   });
 
   test('sperrt Speichern ohne Dauer', async ({ page }) => {
-    await page.getByRole('button', { name: 'Lauf eintragen' }).click();
+    await openRunLogFromNow(page);
     const sheet = page.locator('[data-sheet]');
 
     await sheet.getByLabel('Strecke (km)').fill('10');
@@ -43,7 +44,7 @@ test.describe('Lauf eintragen', () => {
   });
 
   test('zeigt den Fehler bei Minuten über 59', async ({ page }) => {
-    await page.getByRole('button', { name: 'Lauf eintragen' }).click();
+    await openRunLogFromNow(page);
     const sheet = page.locator('[data-sheet]');
 
     const minutes = sheet.getByLabel('Min', { exact: true });
@@ -53,7 +54,7 @@ test.describe('Lauf eintragen', () => {
   });
 
   async function enterRun(page: Page, km: string, min: string) {
-    await page.getByRole('button', { name: 'Lauf eintragen' }).click();
+    await openRunLogFromNow(page);
     const sheet = page.locator('[data-sheet]');
     await sheet.getByLabel('Strecke (km)').fill(km);
     await sheet.getByLabel('Min', { exact: true }).fill(min);
@@ -200,7 +201,7 @@ test.describe('Lauf bearbeiten und Termine', () => {
   test('Bearbeiten eines unverknüpften Laufs verknüpft ihn nicht', async ({ page }) => {
     // Erst der Lauf, dann der Termin: der Lauf hängt an nichts.
     await page.goto('./');
-    await enterRunFromHome(page, '10', '52');
+    await enterRunFromNow(page, '10', '52');
     await addTodayRunEntry(page, 'Dauerlauf');
 
     await page.goto('./#/history');
@@ -241,8 +242,8 @@ test.describe('Lauf bearbeiten und Termine', () => {
   });
 });
 
-async function enterRunFromHome(page: Page, km: string, min: string) {
-  await page.getByRole('button', { name: 'Lauf eintragen' }).click();
+async function enterRunFromNow(page: Page, km: string, min: string) {
+  await openRunLogFromNow(page);
   const sheet = page.locator('[data-sheet]');
   await sheet.getByLabel('Strecke (km)').fill(km);
   await sheet.getByLabel('Min', { exact: true }).fill(min);

@@ -173,8 +173,9 @@ test.describe('Termine im Programm-Tab', () => {
     expect(errors).toEqual([]);
   });
 
-  test('Home startet den heutigen Termin und markiert ihn erledigt', async ({ page }) => {
+  test('die Lime-Karte startet den heutigen Termin und markiert ihn erledigt', async ({ page }) => {
     const errors = collectPageErrors(page);
+    const today = await localDay(page);
 
     await addTodayWorkoutEntry(page);
     await expect(page.locator('[data-plan-entry]').filter({ hasText: 'Einheit A' })).toHaveAttribute(
@@ -184,6 +185,7 @@ test.describe('Termine im Programm-Tab', () => {
 
     await page.goto('./');
     await page.waitForTimeout(800);
+    await expect(page.locator('[data-now-unit]')).toHaveCount(1);
     await page.getByRole('button', { name: /Heute · Einheit A/ }).click();
     await page.waitForURL(/#\/session\//);
     await page.waitForTimeout(600);
@@ -195,6 +197,12 @@ test.describe('Termine im Programm-Tab', () => {
     await page.getByRole('button', { name: 'Session abschließen' }).first().click();
     await page.waitForTimeout(1500);
 
+    await page.goto('./');
+    await page.waitForTimeout(800);
+    await expect(
+      page.locator(`[data-timeline-day="${today}"] [data-plan-entry]`).filter({ hasText: 'Einheit A' }),
+    ).toHaveAttribute('data-plan-entry-state', 'erledigt');
+
     await page.goto('./#/programs');
     await page.waitForTimeout(1000);
     await expect(
@@ -204,78 +212,14 @@ test.describe('Termine im Programm-Tab', () => {
     expect(errors).toEqual([]);
   });
 
-  test('heute geplantes Workout startet aus der Liste', async ({ page }) => {
-    const errors = collectPageErrors(page);
-    const today = await localDay(page);
-
-    await addTodayWorkoutEntry(page);
-
-    const row = page.locator(`[data-plan-day="${today}"] [data-plan-entry]`).filter({ hasText: 'Einheit A' });
-    await expect(row).toHaveAttribute('data-plan-entry-state', 'offen');
-    await row.click();
-    await page.waitForURL(/#\/session\//);
-
-    await page.goto('./#/programs');
-    await page.waitForTimeout(1000);
-    await expect(
-      page.locator(`[data-plan-day="${today}"] [data-plan-entry]`).filter({ hasText: 'Einheit A' }),
-    ).toHaveAttribute('data-plan-entry-state', 'belegt');
-
-    expect(errors).toEqual([]);
-  });
-
-  test('ohne Termine bleibt Am längsten her', async ({ page }) => {
+  test('ohne Termin heute steht „Heute trainieren“ mit „am längsten her“', async ({ page }) => {
     await page.goto('./');
     await page.waitForTimeout(800);
 
-    await expect(page.getByText('Am längsten her')).toBeVisible();
-    await expect(page.getByText('Nächster Termin')).toHaveCount(0);
-  });
-
-  test('an einem Tag ohne Termin bleibt jedes Workout startbar', async ({ page }) => {
-    // Heute ist nichts geplant, der nächste Termin liegt morgen.
-    await page.evaluate(
-      () =>
-        new Promise<void>((resolve, reject) => {
-          const iso = (date: Date) =>
-            `${date.getFullYear()}-${`${date.getMonth() + 1}`.padStart(2, '0')}-${`${date.getDate()}`.padStart(2, '0')}`;
-          const tomorrow = new Date();
-          tomorrow.setDate(tomorrow.getDate() + 1);
-          const open = indexedDB.open('gym-book-db');
-
-          open.onerror = () => reject(open.error);
-          open.onsuccess = () => {
-            const database = open.result;
-            const tx = database.transaction(['planEntries', 'workoutTemplates'], 'readwrite');
-            const templates = tx.objectStore('workoutTemplates').getAll();
-
-            templates.onsuccess = () => {
-              const stamp = new Date().toISOString();
-
-              tx.objectStore('planEntries').add({
-                id: 'morgen',
-                date: iso(tomorrow),
-                kind: 'workout',
-                templateId: templates.result[0].id,
-                orderInDay: 1,
-                createdAt: stamp,
-                updatedAt: stamp,
-              });
-            };
-            tx.oncomplete = () => {
-              database.close();
-              resolve();
-            };
-            tx.onerror = () => reject(tx.error);
-          };
-        }),
-    );
-
-    await page.goto('./');
-    await page.waitForTimeout(800);
-
-    await expect(page.getByText(/Nächster Termin/)).toBeVisible();
-    await expect(page.getByRole('button', { name: /Einheit A/ })).toBeVisible();
+    await expect(page.locator('[data-now-unit]')).toHaveCount(0);
+    const free = page.locator('[data-today-free]');
+    await expect(free).toContainText('Heute trainieren');
+    await expect(free).toContainText('am längsten her: Einheit A');
   });
 });
 

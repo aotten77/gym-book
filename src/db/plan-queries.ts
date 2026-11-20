@@ -45,6 +45,11 @@ export async function loadUpcomingPlan(today: string): Promise<PlanWithLinks> {
   return attachLinks(entries);
 }
 
+/** Der Tag des spätesten Termins (`YYYY-MM-DD`) - bis zu seiner Woche reicht der Zeitstrahl. Leer ohne Termine. */
+export async function loadLastPlanDate(): Promise<string | undefined> {
+  return (await db.planEntries.orderBy('date').last())?.date;
+}
+
 /**
  * Welche Lauf-Termine ein Lauf an `day` erfüllen kann: die offenen der
  * Kalenderwoche von `day` (Montag bis Sonntag) - plus der, auf den

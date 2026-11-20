@@ -10,6 +10,7 @@ import type { RunLog, WorkoutSetLog } from '@/domain/models';
 import type { CalendarSession, CalendarTest } from '@/domain/training-calendar';
 import { startOfCalendarWeek } from '@/domain/calendar-week';
 import { toDateInputValue } from '@/domain/program';
+import { summarizeSessionProgress } from '@/domain/session-summary';
 import { sumWorkVolume } from '@/domain/volume';
 import { estimateTemplateMinutes } from '@/domain/today-units';
 import { buildWeeklyVolume, sessionExerciseVolume, type WeekVolume } from '@/domain/weekly-volume';
@@ -323,6 +324,57 @@ export async function loadTestsBetween(fromIso: string, toIso: string): Promise<
     exerciseNameSnapshot,
     asymmetryPercent,
   }));
+}
+
+/**
+ * Der früheste lokale Tag, an dem der Zeitstrahl etwas zu zeigen hätte: über
+ * abgeschlossene Sessions (`completedAt`), Läufe (`date`), Seitenvergleiche
+ * (`recordedAt`) und Termine (`date`), je über den Index. Leer, wenn es nichts
+ * davon gibt. Eine abgebrochene Session trägt auch ein `completedAt`, zählt
+ * aber nicht - sie steht nirgends im Zeitstrahl.
+ */
+export async function loadEarliestTimelineDate(): Promise<string | undefined> {
+  const [session, run, test, entry] = await Promise.all([
+    db.workoutSessions
+      .orderBy('completedAt')
+      .filter((item) => item.status === 'completed')
+      .first(),
+    db.runLogs.orderBy('date').first(),
+    db.exerciseTests.orderBy('recordedAt').first(),
+    db.planEntries.orderBy('date').first(),
+  ]);
+  const days = [
+    session?.completedAt ? toDateInputValue(new Date(session.completedAt)) : undefined,
+    run?.date,
+    test?.recordedAt ? toDateInputValue(new Date(test.recordedAt)) : undefined,
+    entry?.date,
+  ].filter((day): day is string => Boolean(day));
+
+  return days.length > 0 ? days.reduce((earliest, day) => (day < earliest ? day : earliest)) : undefined;
+}
+
+/**
+ * Wie weit die laufende Session ist - die Detailzeile „läuft · Satz 7 von 18"
+ * im Zeitstrahl. Gezählt wird wie im Streifen (`summarizeSessionProgress`).
+ * Leer, wenn keine Session läuft.
+ */
+export async function loadActiveSessionProgress(): Promise<
+  { sessionId: string; completedCount: number; totalCount: number } | undefined
+> {
+  const session = await db.workoutSessions.where('status').equals('active').first();
+
+  if (!session) {
+    return undefined;
+  }
+
+  const exercises = await db.workoutSessionExercises.where('sessionId').equals(session.id).toArray();
+  const logs =
+    exercises.length === 0
+      ? []
+      : await db.workoutSetLogs.where('sessionExerciseId').anyOf(exercises.map((exercise) => exercise.id)).toArray();
+  const { completedCount, totalCount } = summarizeSessionProgress(logs);
+
+  return { sessionId: session.id, completedCount, totalCount };
 }
 
 /**

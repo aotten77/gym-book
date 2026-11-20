@@ -296,18 +296,18 @@ test.describe('Sicherung', () => {
 
     // Die Beispieldaten bringen ein abgeschlossenes Training mit - und es gibt
     // noch keine Sicherung.
-    await expect(page.getByText(/nicht gesichert/)).toBeVisible();
+    await expect(page.getByText(/ungesichert/)).toBeVisible();
 
     const download = page.waitForEvent('download');
-    await page.getByRole('button', { name: 'Jetzt sichern' }).click();
+    await page.getByRole('button', { name: 'Sichern' }).click();
     await download;
     await page.waitForTimeout(900);
 
-    await expect(page.getByText(/nicht gesichert/)).toBeHidden();
+    await expect(page.getByText(/ungesichert/)).toBeHidden();
 
     // Der Zeitpunkt liegt in IndexedDB, überlebt also einen Neustart.
     await page.reload();
     await page.waitForTimeout(1000);
-    await expect(page.getByText(/nicht gesichert/)).toBeHidden();
+    await expect(page.getByText(/ungesichert/)).toBeHidden();
   });
 });
