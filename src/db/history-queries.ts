@@ -7,7 +7,7 @@ import {
   type LastSetValues,
 } from '@/domain/history';
 import type { RunLog, WorkoutSetLog } from '@/domain/models';
-import type { CalendarSession } from '@/domain/training-calendar';
+import type { CalendarSession, CalendarTest } from '@/domain/training-calendar';
 import { startOfCalendarWeek } from '@/domain/calendar-week';
 import { toDateInputValue } from '@/domain/program';
 import { sumWorkVolume } from '@/domain/volume';
@@ -311,13 +311,18 @@ export async function loadSessionVolumes(sessionIds: string[]): Promise<Record<s
 /**
  * Wann in einem Zeitraum Seitenvergleiche gemessen wurden.
  *
- * Mehr als der Zeitpunkt interessiert den Kalender nicht: er beantwortet nur,
- * ob die Testwoche erledigt ist. Über den `recordedAt`-Index.
+ * Der Kalender zeigt jeden Seitenvergleich als erledigte Einheit und leitet
+ * daraus auch ab, ob die Testwoche erledigt ist. Über den `recordedAt`-Index.
  */
-export async function loadTestDatesBetween(fromIso: string, toIso: string): Promise<string[]> {
+export async function loadTestsBetween(fromIso: string, toIso: string): Promise<CalendarTest[]> {
   const tests = await db.exerciseTests.where('recordedAt').between(fromIso, toIso, true, true).toArray();
 
-  return tests.map((test) => test.recordedAt);
+  return tests.map(({ id, recordedAt, exerciseNameSnapshot, asymmetryPercent }) => ({
+    id,
+    recordedAt,
+    exerciseNameSnapshot,
+    asymmetryPercent,
+  }));
 }
 
 /**

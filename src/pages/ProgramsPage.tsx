@@ -15,7 +15,7 @@ import { db } from '@/db/appDb';
 import {
   loadCompletedSessionsBetween,
   loadRunsBetween,
-  loadTestDatesBetween,
+  loadTestsBetween,
   loadWeeklyVolume,
 } from '@/db/history-queries';
 import { loadPlanBetween } from '@/db/plan-queries';
@@ -181,8 +181,8 @@ export function ProgramsPage() {
     () => loadRunsBetween(range.fromDay, range.toDay),
     [range.fromDay, range.toDay],
   );
-  const testDates = useLiveQuery(
-    () => loadTestDatesBetween(range.fromIso, range.toIso),
+  const tests = useLiveQuery(
+    () => loadTestsBetween(range.fromIso, range.toIso),
     [range.fromIso, range.toIso],
   );
   const weekVolume = useLiveQuery(async () => {
@@ -216,9 +216,9 @@ export function ProgramsPage() {
         templates: templates ?? [],
         completedSessions: completedSessions ?? [],
         runs: runsInRange ?? [],
-        testDates: testDates ?? [],
+        tests: tests ?? [],
       }),
-    [firstMonday, today, program, weeks, planInRange, templates, completedSessions, runsInRange, testDates],
+    [firstMonday, today, program, weeks, planInRange, templates, completedSessions, runsInRange, tests],
   );
   const selectedRow = calendarRows.find((row) => row.key === selectedWeek);
   const selectedProgramWeek = selectedRow?.programWeek

@@ -1,5 +1,6 @@
 import { parseLocalDate, startOfCalendarWeek } from '@/domain/calendar-week';
 import type {
+  ExerciseTest,
   PlanEntry,
   Program,
   ProgramWeek,
@@ -187,7 +188,13 @@ export type CalendarRun = Pick<
   'id' | 'date' | 'distanceKm' | 'durationSeconds' | 'planEntryId' | 'runPlanSnapshot'
 >;
 
-export type CalendarUnitKind = 'strength' | 'mobility' | 'run';
+/** Ein Seitenvergleich, so wie der Kalender ihn braucht. */
+export type CalendarTest = Pick<
+  ExerciseTest,
+  'id' | 'recordedAt' | 'exerciseNameSnapshot' | 'asymmetryPercent'
+>;
+
+export type CalendarUnitKind = 'strength' | 'mobility' | 'run' | 'test';
 export type CalendarUnitState = 'geplant' | 'erledigt';
 
 /** Wohin ein Tipp auf die Einheit führt. */
@@ -195,6 +202,7 @@ export type CalendarUnitTarget =
   | { type: 'session'; sessionId: string }
   | { type: 'active-session'; sessionId: string }
   | { type: 'run'; runId: string }
+  | { type: 'test'; testId: string }
   | { type: 'entry'; entry: PlanEntry };
 
 export interface CalendarUnit {
@@ -206,6 +214,8 @@ export interface CalendarUnit {
   planEntryId?: string;
   durationSeconds?: number;
   distanceKm?: number;
+  /** Nur bei Seitenvergleichen. */
+  asymmetryPercent?: number;
 }
 
 export type CalendarDayStatus = 'leer' | 'geplant' | 'erledigt';
@@ -248,8 +258,8 @@ export interface BuildCalendarWeeksInput {
   templates: Pick<WorkoutTemplate, 'id' | 'name' | 'category'>[];
   completedSessions: CalendarSession[];
   runs: CalendarRun[];
-  /** `recordedAt` der Seitenvergleiche. */
-  testDates: string[];
+  /** Die Seitenvergleiche; sie stehen als erledigte Einheit am Tag ihres `recordedAt`. */
+  tests: CalendarTest[];
 }
 
 export function buildCalendarWeeks({
@@ -263,7 +273,7 @@ export function buildCalendarWeeks({
   templates,
   completedSessions,
   runs,
-  testDates,
+  tests,
 }: BuildCalendarWeeksInput): CalendarWeek[] {
   const todayKey = toDateInputValue(today);
   const templateNames: Record<string, string> = {};
@@ -280,7 +290,7 @@ export function buildCalendarWeeks({
     entriesByDay.set(entry.date, [...(entriesByDay.get(entry.date) ?? []), entry]);
   }
 
-  /* Erledigtes je Tag: Sessions nach `completedAt`, danach Läufe in Eingabereihenfolge. */
+  /* Erledigtes je Tag: Sessions nach `completedAt`, danach Läufe in Eingabereihenfolge, dann Tests nach `recordedAt`. */
   const doneByDay = new Map<string, CalendarUnit[]>();
   const addDone = (day: string, unit: CalendarUnit) => {
     doneByDay.set(day, [...(doneByDay.get(day) ?? []), unit]);
@@ -332,11 +342,21 @@ export function buildCalendarWeeks({
     }
   }
 
-  const testMoments = testDates.flatMap((value) => {
-    const at = new Date(value);
+  const datedTests = tests
+    .map((test) => ({ test, at: new Date(test.recordedAt) }))
+    .filter(({ at }) => !Number.isNaN(at.getTime()))
+    .sort((a, b) => a.at.getTime() - b.at.getTime());
+  const testMoments = datedTests.map(({ at }) => at.getTime());
 
-    return Number.isNaN(at.getTime()) ? [] : [at.getTime()];
-  });
+  for (const { test, at } of datedTests) {
+    addDone(toDateInputValue(at), {
+      kind: 'test',
+      state: 'erledigt',
+      name: test.exerciseNameSnapshot,
+      ref: { type: 'test', testId: test.id },
+      asymmetryPercent: test.asymmetryPercent,
+    });
+  }
 
   const rows: CalendarWeek[] = [];
 
@@ -606,6 +626,10 @@ export function describeCalendarUnitDetail(
       if (pace !== undefined) {
         parts.push(`${formatPace(pace)} /km`);
       }
+    } else if (unit.kind === 'test') {
+      if (unit.asymmetryPercent !== undefined) {
+        parts.push(`Seitenvergleich · ${formatNumber(unit.asymmetryPercent)} %`);
+      }
     } else {
       if (unit.kind === 'strength' && context.volumeKg !== undefined && context.volumeKg > 0) {
         parts.push(`${formatNumber(Math.round(context.volumeKg))} kg`);
@@ -616,7 +640,7 @@ export function describeCalendarUnitDetail(
       }
     }
 
-    if (!unit.planEntryId) {
+    if (!unit.planEntryId && unit.kind !== 'test') {
       parts.push('spontan');
     }
   } else if (unit.ref.type === 'active-session') {

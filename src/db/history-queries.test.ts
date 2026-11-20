@@ -9,7 +9,7 @@ import {
   loadTemplateExerciseCounts,
   loadTemplateMinutes,
   loadTemplateRecency,
-  loadTestDatesBetween,
+  loadTestsBetween,
   loadWeekSummary,
   loadWeeklyVolume,
 } from '@/db/history-queries';
@@ -435,8 +435,8 @@ describe('loadSessionVolumes', () => {
   });
 });
 
-describe('loadTestDatesBetween', () => {
-  it('liefert nur die Messzeitpunkte im Zeitraum', async () => {
+describe('loadTestsBetween', () => {
+  it('liefert nur die Tests im Zeitraum, mit den vier Feldern', async () => {
     await db.exerciseTests.bulkAdd([
       {
         id: 'test-old',
@@ -459,8 +459,15 @@ describe('loadTestDatesBetween', () => {
     ]);
 
     await expect(
-      loadTestDatesBetween('2026-08-01T00:00:00.000Z', '2026-08-10T00:00:00.000Z'),
-    ).resolves.toEqual(['2026-08-05T10:00:00.000Z']);
+      loadTestsBetween('2026-08-01T00:00:00.000Z', '2026-08-10T00:00:00.000Z'),
+    ).resolves.toEqual([
+      {
+        id: 'test-inside',
+        recordedAt: '2026-08-05T10:00:00.000Z',
+        exerciseNameSnapshot: 'Hüfte',
+        asymmetryPercent: 3.1,
+      },
+    ]);
   });
 });
 

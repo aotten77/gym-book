@@ -187,6 +187,14 @@ export function PlanWeekSection({ week }: PlanWeekSectionProps) {
       );
     }
 
+    if (ref.type === 'test') {
+      return (
+        <Link key={key} to="/tests" className={className} {...anchors}>
+          {content}
+        </Link>
+      );
+    }
+
     if (ref.type === 'active-session') {
       return (
         <Link key={key} to={`/session/${ref.sessionId}`} className={className} {...anchors}>
