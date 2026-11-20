@@ -1,8 +1,10 @@
 import { expect, test, type Page } from '@playwright/test';
 import {
+  clearPlanEntries,
   collectPageErrors,
   completeActiveSet,
   closeExerciseSheet,
+  importPlan,
   resetDatabase,
   seedSampleData,
 } from './helpers';
@@ -47,32 +49,6 @@ async function setStartToThisMonday(page: Page) {
   await setProgramStart(page, await localDay(page, 0, true));
 }
 
-/*
- * Die Beispieldaten bringen Termine für Einheit A mit. Diese Tests gehen von
- * einem leeren Plan aus, also räumen sie ihn vorher leer.
- */
-async function clearPlanEntries(page: Page) {
-  await page.evaluate(
-    () =>
-      new Promise<void>((resolve, reject) => {
-        const open = indexedDB.open('gym-book-db');
-
-        open.onerror = () => reject(open.error);
-        open.onsuccess = () => {
-          const database = open.result;
-          const tx = database.transaction('planEntries', 'readwrite');
-
-          tx.objectStore('planEntries').clear();
-          tx.oncomplete = () => {
-            database.close();
-            resolve();
-          };
-          tx.onerror = () => reject(tx.error);
-        };
-      }),
-  );
-}
-
 /** Wählt im Raster die Wochenzeile, in der `day` liegt - an einem Sonntag ist morgen schon die nächste Woche. */
 async function selectWeekOf(page: Page, day: string) {
   const monday = await page.evaluate((value) => {
@@ -88,47 +64,36 @@ async function selectWeekOf(page: Page, day: string) {
   await expect(page.locator('[data-plan-week]')).toHaveAttribute('data-plan-week', monday);
 }
 
-/** Öffnet das Sheet „Termin“ über „+ Termin“ des (künftigen) Tages. */
-async function openAddEntry(page: Page, day: string) {
-  await selectWeekOf(page, day);
-  await page
-    .locator(`[data-plan-day="${day}"]`)
-    .getByRole('button', { name: /^\+ Termin am .* hinzufügen$/ })
-    .click();
-}
-
-async function addRun(
+/** Legt einen Lauf-Termin per Import an und öffnet den Programm-Tab auf der Woche des Tages. */
+async function importRun(
   page: Page,
   title: string,
-  extra?: { distance?: string; pace?: string; day?: string },
+  extra?: { distance?: number; pace?: number; day?: string },
 ) {
-  await openAddEntry(page, extra?.day ?? (await localDay(page, 1)));
+  const day = extra?.day ?? (await localDay(page, 1));
 
-  const sheet = page.locator('[data-sheet]');
-  await sheet.getByRole('button', { name: 'Lauf', exact: true }).click();
-  await sheet.getByLabel('Titel').fill(title);
-
-  if (extra?.distance) {
-    await sheet.getByLabel('Strecke (km)').fill(extra.distance);
-  }
-
-  if (extra?.pace) {
-    await sheet.getByLabel('Pace (m:ss pro km)').fill(extra.pace);
-  }
-
-  await sheet.getByRole('button', { name: 'Termin speichern' }).click();
+  await importPlan(page, [
+    {
+      date: day,
+      run: {
+        title,
+        ...(extra?.distance ? { targetDistanceKm: extra.distance } : {}),
+        ...(extra?.pace ? { targetPaceSecondsPerKm: extra.pace } : {}),
+      },
+    },
+  ]);
+  await page.goto('./#/programs');
+  await page.waitForTimeout(1200);
+  await selectWeekOf(page, day);
 }
 
-/** Legt einen Workout-Termin „Einheit A“ für heute an: über morgen, dann das Datum auf heute setzen. */
+/** Legt einen Workout-Termin „Einheit A“ für heute per Import an. */
 async function addTodayWorkoutEntry(page: Page) {
   const today = await localDay(page);
 
-  await openAddEntry(page, await localDay(page, 1));
-  const sheet = page.locator('[data-sheet]');
-  await sheet.getByLabel('Workout', { exact: true }).selectOption({ label: 'Einheit A' });
-  await sheet.getByLabel('Datum', { exact: true }).fill(today);
-  await sheet.getByRole('button', { name: 'Termin speichern' }).click();
-  await expect(sheet).toHaveCount(0);
+  await importPlan(page, [{ date: today, workout: 'Einheit A' }]);
+  await page.goto('./#/programs');
+  await page.waitForTimeout(1200);
   await selectWeekOf(page, today);
 }
 
@@ -140,10 +105,10 @@ test.describe('Termine im Programm-Tab', () => {
     await setStartToThisMonday(page);
   });
 
-  test('legt einen Lauf-Termin an und zeigt die Vorgabe', async ({ page }) => {
+  test('ein importierter Lauf-Termin öffnet nur die Anzeige', async ({ page }) => {
     const errors = collectPageErrors(page);
 
-    await addRun(page, 'Intervalle 6×400', { distance: '7', pace: '5:00' });
+    await importRun(page, 'Intervalle 6×400', { distance: 7, pace: 300 });
 
     const entry = page.locator('[data-plan-entry]').filter({ hasText: 'Intervalle 6×400' });
     await expect(entry).toBeVisible();
@@ -152,71 +117,17 @@ test.describe('Termine im Programm-Tab', () => {
     await expect(entry).toHaveAttribute('data-day-unit', 'run');
     await expect(page.locator('[data-plan-week]')).toHaveCount(1);
 
-    expect(errors).toEqual([]);
-  });
-
-  test('Serie legt Termine an und meldet Duplikate', async ({ page }) => {
-    const errors = collectPageErrors(page);
-
-    const today = await localDay(page);
-    const monday = await localDay(page, 0, true);
-
-    async function createSeries() {
-      const sheet = page.locator('[data-sheet]');
-
-      // Vorgabe ist heute, nicht der Montag - sonst lägen Termine in der Vergangenheit.
-      await expect(sheet.getByLabel('Startdatum')).toHaveValue(today);
-
-      await sheet.getByLabel('Workout', { exact: true }).selectOption({ label: 'Einheit A' });
-      await sheet.getByRole('button', { name: 'Montag' }).click();
-      await sheet.getByRole('button', { name: 'Donnerstag' }).click();
-      // Ab Montag dieser Woche, damit es an jedem Wochentag genau vier sind.
-      await sheet.getByLabel('Startdatum').fill(monday);
-      await sheet.getByLabel('Wochen', { exact: true }).fill('2');
-      await sheet.getByRole('button', { name: 'Serie anlegen' }).click();
-      await page.waitForTimeout(600);
-    }
-
-    await page.getByRole('button', { name: 'Serie anlegen' }).click();
-    await createSeries();
-    await expect(page.locator('[data-sheet]').getByRole('status')).toHaveText(
-      '4 angelegt, 0 gab es schon',
-    );
-
-    // Zweiter Durchlauf: Wochentage und Startdatum stehen noch, nur die Meldung ändert sich.
-    await page.locator('[data-sheet]').getByLabel('Wochen', { exact: true }).fill('2');
-    await page.locator('[data-sheet]').getByRole('button', { name: 'Serie anlegen' }).click();
-    await expect(page.locator('[data-sheet]').getByRole('status')).toHaveText(
-      '0 angelegt, 4 gab es schon',
-    );
-
-    expect(errors).toEqual([]);
-  });
-
-  test('Doppelter Termin zeigt die Meldung', async ({ page }) => {
-    const errors = collectPageErrors(page);
-
-    await addRun(page, 'Dauerlauf');
-    await expect(page.locator('[data-plan-entry]').filter({ hasText: 'Dauerlauf' })).toBeVisible();
-
-    await addRun(page, 'Dauerlauf');
-    await expect(page.locator('[data-sheet]').getByRole('alert')).toContainText('schon im Plan');
-
-    expect(errors).toEqual([]);
-  });
-
-  test('zeigt den Fehler einer Dauer von 0', async ({ page }) => {
-    await openAddEntry(page, await localDay(page, 1));
+    await entry.click();
 
     const sheet = page.locator('[data-sheet]');
-    await sheet.getByRole('button', { name: 'Lauf', exact: true }).click();
-    await sheet.getByLabel('Titel').fill('Dauerlauf');
-    await sheet.getByLabel('Min', { exact: true }).fill('0');
-    await sheet.getByLabel('Sek', { exact: true }).fill('0');
-    await sheet.getByLabel('Sek', { exact: true }).blur();
+    await expect(sheet).toContainText('Termin');
+    await expect(sheet).toContainText('Intervalle 6×400');
+    await expect(sheet).toContainText('7 km · 5:00 /km');
+    await expect(sheet.getByRole('button', { name: 'Termin speichern' })).toHaveCount(0);
+    await expect(sheet.getByRole('button', { name: 'Termin löschen' })).toHaveCount(0);
+    await expect(sheet.getByRole('textbox')).toHaveCount(0);
 
-    await expect(sheet.getByRole('alert')).toHaveText('Dauer bitte über 0.');
-    await expect(sheet.getByRole('button', { name: 'Termin speichern' })).toBeDisabled();
+    expect(errors).toEqual([]);
   });
 
   test('ein laufender Termin führt in die laufende Session', async ({ page }) => {
@@ -246,11 +157,13 @@ test.describe('Termine im Programm-Tab', () => {
     const errors = collectPageErrors(page);
 
     await page.setViewportSize({ width: 320, height: 700 });
-    await addRun(page, 'Ein sehr langer Titel für einen Lauf am Wochenende im Wald', {
-      distance: '12,5',
-      pace: '5:30',
+    await importRun(page, 'Ein sehr langer Titel für einen Lauf am Wochenende im Wald', {
+      distance: 12.5,
+      pace: 330,
     });
     await expect(page.locator('[data-plan-entry]')).toHaveCount(1);
+    await page.locator('[data-plan-entry]').click();
+    await expect(page.locator('[data-sheet]')).toBeVisible();
 
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,

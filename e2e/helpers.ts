@@ -166,29 +166,42 @@ export function collectPageErrors(page: Page) {
 }
 
 /**
- * Öffnet das Sheet „Termin“ über „+ Termin“ am morgigen Tag des Programm-Tabs.
- * Für heute gibt es dort kein „+ Termin“ (heute trainiert man über „+ Einheit“);
- * wer einen heutigen Termin braucht, setzt im Sheet das Feld „Datum“ um.
- * An einem Sonntag liegt morgen in der nächsten Woche - die Zeile wird gewählt.
+ * Legt Termine über den Bibliothek-Import an - der einzige Weg, auf dem die App
+ * Einzeltermine schreibt. Ohne `planRange`: nichts wird entfernt, und es gibt
+ * keinen Sicherungs-Download. Die Beschriftung „Import bestätigen“ gibt es
+ * auch in den Einstellungen; auf `#/sync` steht nur dieser Abschnitt.
  */
-export async function openAddEntryTomorrow(page: Page) {
-  const { tomorrow, monday } = await page.evaluate(() => {
-    const iso = (date: Date) =>
-      `${date.getFullYear()}-${`${date.getMonth() + 1}`.padStart(2, '0')}-${`${date.getDate()}`.padStart(2, '0')}`;
-    const next = new Date();
+export async function importPlan(page: Page, planEntries: unknown[]) {
+  await page.goto('./#/sync');
+  await page.waitForTimeout(600);
+  await page.getByLabel('Oder JSON einfügen').fill(JSON.stringify({ schemaVersion: 1, planEntries }));
+  await page.getByRole('button', { name: 'Vorschau erzeugen' }).click();
+  await page.getByRole('button', { name: 'Import bestätigen' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Eingespielt' })).toBeVisible();
+}
 
-    next.setDate(next.getDate() + 1);
+/**
+ * Räumt die Termine der Beispieldaten weg - Tests, die den Plan selbst per
+ * `importPlan` aufbauen, gehen von einem leeren aus.
+ */
+export async function clearPlanEntries(page: Page) {
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve, reject) => {
+        const open = indexedDB.open('gym-book-db');
 
-    const start = new Date(next);
+        open.onerror = () => reject(open.error);
+        open.onsuccess = () => {
+          const database = open.result;
+          const tx = database.transaction('planEntries', 'readwrite');
 
-    start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
-
-    return { tomorrow: iso(next), monday: iso(start) };
-  });
-
-  await page.locator(`[data-calendar-week="${monday}"]`).click();
-  await page
-    .locator(`[data-plan-day="${tomorrow}"]`)
-    .getByRole('button', { name: /^\+ Termin am .* hinzufügen$/ })
-    .click();
+          tx.objectStore('planEntries').clear();
+          tx.oncomplete = () => {
+            database.close();
+            resolve();
+          };
+          tx.onerror = () => reject(tx.error);
+        };
+      }),
+  );
 }

@@ -35,7 +35,7 @@ import {
  * die Läufe, die tatsächlich stattfanden - pur und ohne Dexie.
  *
  * `WorkoutTemplate.scheduledWeekdays` ist nicht mehr der Plan - das Feld bleibt
- * im Datenmodell (und `normalizeScheduledWeekdays` für `WeekdayPicker`, die Umwandlung in
+ * im Datenmodell (und `normalizeScheduledWeekdays` für die Umwandlung in
  * `data-fix-actions` und `plan.ts`), aber der
  * Kalender fragt es nicht mehr.
  *

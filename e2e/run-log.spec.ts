@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { openAddEntryTomorrow, resetDatabase, seedSampleData } from './helpers';
+import { importPlan, resetDatabase, seedSampleData } from './helpers';
 
 /*
  * Ein Lauf über Heute: Sheet, Pace-Zeile, Sprung über die Tastaturleiste.
@@ -130,14 +130,9 @@ test.describe('Lauf-Sheet und Termine', () => {
       return `${now.getFullYear()}-${month}-${day}`;
     });
 
-    await openAddEntryTomorrow(page);
-    const entrySheet = page.locator('[data-sheet]');
-    await entrySheet.getByRole('button', { name: 'Lauf', exact: true }).click();
-    await entrySheet.getByLabel('Datum').fill(today);
-    await entrySheet.getByLabel('Titel').fill('Intervalle 6×400');
-    await entrySheet.getByLabel('Strecke (km)').fill('7');
-    await entrySheet.getByRole('button', { name: 'Termin speichern' }).click();
-    await expect(entrySheet).toHaveCount(0);
+    await importPlan(page, [
+      { date: today, run: { title: 'Intervalle 6×400', targetDistanceKm: 7 } },
+    ]);
 
     await page.goto('./');
     await page.waitForTimeout(800);
@@ -162,22 +157,16 @@ test.describe('Lauf-Sheet und Termine', () => {
 
 test.describe('Lauf bearbeiten und Termine', () => {
   async function addTodayRunEntry(page: Page, title: string) {
-    await page.goto('./#/programs');
-    await page.waitForTimeout(1000);
-    await openAddEntryTomorrow(page);
+    await importPlan(page, [
+      {
+        date: await page.evaluate(() => {
+          const now = new Date();
 
-    const sheet = page.locator('[data-sheet]');
-    await sheet.getByRole('button', { name: 'Lauf', exact: true }).click();
-    await sheet.getByLabel('Datum', { exact: true }).fill(
-      await page.evaluate(() => {
-        const now = new Date();
-
-        return `${now.getFullYear()}-${`${now.getMonth() + 1}`.padStart(2, '0')}-${`${now.getDate()}`.padStart(2, '0')}`;
-      }),
-    );
-    await sheet.getByLabel('Titel').fill(title);
-    await sheet.getByRole('button', { name: 'Termin speichern' }).click();
-    await expect(sheet).toHaveCount(0);
+          return `${now.getFullYear()}-${`${now.getMonth() + 1}`.padStart(2, '0')}-${`${now.getDate()}`.padStart(2, '0')}`;
+        }),
+        run: { title },
+      },
+    ]);
   }
 
   async function editRunHeartRate(page: Page, heartRate: string, planChoice?: string) {

@@ -1,17 +1,15 @@
 import { useState } from 'react';
-import { ChevronDown, ChevronRight, ChevronUp } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Alert } from '@/components/Alert';
 import { PlanEntrySheet } from '@/components/PlanEntrySheet';
-import { PlanSeriesSheet } from '@/components/PlanSeriesSheet';
 import { RunLogSheet } from '@/components/RunLogSheet';
 import { UnitKindIcon } from '@/components/icons/UnitKindIcon';
-import { Button, IconButton } from '@/components/ui/Button';
+import { Button } from '@/components/ui/Button';
 import { db } from '@/db/appDb';
 import { countTemplatesWithWeekdays } from '@/db/data-fix-actions';
 import { loadSessionVolumes } from '@/db/history-queries';
-import { movePlanEntryInDay } from '@/db/plan-actions';
 import { loadPlanBetween } from '@/db/plan-queries';
 import { startSessionFromTemplate } from '@/db/session-actions';
 import { navigateToStartedSession } from '@/lib/session-navigation';
@@ -46,15 +44,9 @@ export function PlanWeekSection({ week }: PlanWeekSectionProps) {
   const setNowSheetOpen = useUiStore((state) => state.setNowSheetOpen);
   const fromDay = week.key;
   const toDay = toDateInputValue(week.end);
-  const todayKey = toDateInputValue(new Date());
-  // Heute, wenn es in der Woche liegt; den Montag, wenn die Woche künftig ist;
-  // sonst heute - eine Serie ab Montag legte mittwochs zwei Termine in die Vergangenheit.
-  const seriesStart = todayKey >= fromDay && todayKey <= toDay ? todayKey : fromDay > todayKey ? fromDay : todayKey;
 
   const [editing, setEditing] = useState<PlanEntry | undefined>(undefined);
-  const [entryDefaultDate, setEntryDefaultDate] = useState(todayKey);
   const [entrySheetOpen, setEntrySheetOpen] = useState(false);
-  const [seriesOpen, setSeriesOpen] = useState(false);
   const [runSheetOpen, setRunSheetOpen] = useState(false);
   const [runEntryId, setRunEntryId] = useState<string | undefined>(undefined);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -85,9 +77,8 @@ export function PlanWeekSection({ week }: PlanWeekSectionProps) {
   const templatesWithWeekdays = useLiveQuery(() => countTemplatesWithWeekdays(), []);
   const hasUnmigratedWeekdays = (templatesWithWeekdays ?? 0) > 0;
 
-  function openEntry(entry: PlanEntry | undefined, defaultDate: string) {
+  function openEntry(entry: PlanEntry) {
     setEditing(entry);
-    setEntryDefaultDate(defaultDate);
     setEntrySheetOpen(true);
   }
 
@@ -106,16 +97,6 @@ export function PlanWeekSection({ week }: PlanWeekSectionProps) {
     } catch (error) {
       setActionError(error instanceof Error ? error.message : 'Session konnte nicht gestartet werden.');
       setIsStarting(false);
-    }
-  }
-
-  async function handleMove(entry: PlanEntry, direction: -1 | 1) {
-    setActionError(null);
-
-    try {
-      await movePlanEntryInDay(entry.id, direction);
-    } catch (error) {
-      setActionError(error instanceof Error ? error.message : 'Der Termin ließ sich nicht verschieben.');
     }
   }
 
@@ -214,7 +195,7 @@ export function PlanWeekSection({ week }: PlanWeekSectionProps) {
         {...anchors}
         onClick={() => {
           if (!isToday) {
-            openEntry(entry, entry.date);
+            openEntry(entry);
           } else if (entry.kind === 'workout') {
             void handleStart(entry);
           } else {
@@ -253,9 +234,6 @@ export function PlanWeekSection({ week }: PlanWeekSectionProps) {
       ) : null}
 
       {week.days.map((day) => {
-        const entryUnits = day.units.filter((unit) => unit.ref.type === 'entry');
-        const canMove = !day.isToday && !day.isPast && entryUnits.length >= 2;
-
         return (
           <div key={day.key} data-plan-day={day.key} className="space-y-2">
             <div className="flex items-center gap-2 px-1">
@@ -270,53 +248,13 @@ export function PlanWeekSection({ week }: PlanWeekSectionProps) {
               ) : null}
             </div>
 
-            {day.units.map((unit, index) => {
-              const entryIndex = entryUnits.indexOf(unit);
-              const key = `${unit.planEntryId ?? unit.ref.type}-${index}`;
-              const row = renderUnit(unit, day.isToday, key);
-
-              if (!canMove || entryIndex < 0 || unit.ref.type !== 'entry') {
-                return row;
-              }
-
-              const entry = unit.ref.entry;
-
-              return (
-                <div key={key} className="flex items-stretch gap-2">
-                  {row}
-                  <div className="flex shrink-0 gap-1">
-                    <IconButton
-                      label="Früher am Tag"
-                      disabled={entryIndex === 0}
-                      onClick={() => void handleMove(entry, -1)}
-                    >
-                      <ChevronUp size={18} aria-hidden="true" />
-                    </IconButton>
-                    <IconButton
-                      label="Später am Tag"
-                      disabled={entryIndex === entryUnits.length - 1}
-                      onClick={() => void handleMove(entry, 1)}
-                    >
-                      <ChevronDown size={18} aria-hidden="true" />
-                    </IconButton>
-                  </div>
-                </div>
-              );
-            })}
+            {day.units.map((unit, index) =>
+              renderUnit(unit, day.isToday, `${unit.planEntryId ?? unit.ref.type}-${index}`),
+            )}
 
             {day.isToday ? (
               <Button variant="primary" size="md" fullWidth onClick={() => setNowSheetOpen(true)}>
                 + Einheit
-              </Button>
-            ) : !day.isPast ? (
-              <Button
-                variant="ghost"
-                size="md"
-                fullWidth
-                aria-label={`+ Termin am ${formatRunDate(day.key)} hinzufügen`}
-                onClick={() => openEntry(undefined, day.key)}
-              >
-                + Termin
               </Button>
             ) : null}
           </div>
@@ -324,10 +262,6 @@ export function PlanWeekSection({ week }: PlanWeekSectionProps) {
       })}
 
       {actionError ? <Alert>{actionError}</Alert> : null}
-
-      <Button variant="ghost" size="md" fullWidth onClick={() => setSeriesOpen(true)}>
-        Serie anlegen
-      </Button>
 
       <RunLogSheet
         open={runSheetOpen}
@@ -337,13 +271,7 @@ export function PlanWeekSection({ week }: PlanWeekSectionProps) {
       <PlanEntrySheet
         open={entrySheetOpen}
         entry={editing}
-        defaultDate={entryDefaultDate}
         onClose={() => setEntrySheetOpen(false)}
-      />
-      <PlanSeriesSheet
-        open={seriesOpen}
-        defaultStartDate={seriesStart}
-        onClose={() => setSeriesOpen(false)}
       />
     </section>
   );

@@ -274,32 +274,6 @@ test.describe('Tagesliste: Einheit und Termin', () => {
     expect(errors).toEqual([]);
   });
 
-  test('+ Termin belegt das Datum vor', async ({ page }) => {
-    const errors = collectPageErrors(page);
-
-    await startWithEmptyPlan(page);
-    const tomorrow = await localDay(page, 1);
-
-    await page.locator(`[data-calendar-week="${await mondayOf(page, tomorrow)}"]`).click();
-    await page
-      .locator(`[data-plan-day="${tomorrow}"]`)
-      .getByRole('button', { name: /^\+ Termin am .* hinzufügen$/ })
-      .click();
-
-    const sheet = page.locator('[data-sheet]');
-    await expect(sheet.getByLabel('Datum', { exact: true })).toHaveValue(tomorrow);
-    await sheet.getByLabel('Workout', { exact: true }).selectOption({ label: 'Einheit A' });
-    await sheet.getByRole('button', { name: 'Termin speichern' }).click();
-    await expect(sheet).toHaveCount(0);
-
-    await expect(page.locator(`[data-calendar-day="${tomorrow}"]`)).toHaveAttribute(
-      'data-day-state',
-      'geplant',
-    );
-
-    expect(errors).toEqual([]);
-  });
-
   test('ein eingetragener Lauf führt zur Detailseite', async ({ page }) => {
     const errors = collectPageErrors(page);
 
