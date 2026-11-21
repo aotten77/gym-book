@@ -51,8 +51,17 @@ import { useUiStore } from '@/store/ui-store';
 const HEAD_LINE =
   'flex min-h-touch items-center gap-3 rounded-panel border px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent';
 
-/** Die untere Leiste samt Pill verdeckt den Rand des Bildes: so viel zählt für „heute ist im Bild“ nicht mit. */
-const TAB_BAR_RESERVE = 112;
+/**
+ * Wie viel die untere Leiste vom Bild verdeckt: das untere Padding der
+ * AppShell, das genau dafür da ist - mit Session-Streifen höher, dazu der
+ * Home-Indicator (`env(safe-area-inset-bottom)`). Gelesen statt nachgerechnet,
+ * damit es nicht von der AppShell wegdriftet.
+ */
+function bottomReserveOf(element: HTMLElement): number {
+  const shell = element.closest<HTMLElement>('[data-app-shell]');
+
+  return shell ? Number.parseFloat(getComputedStyle(shell).paddingBottom) || 0 : 0;
+}
 
 /**
  * Der Container, der die Seite scrollt. Im Hochformat das Dokument; im
@@ -240,9 +249,10 @@ export function PlanPage() {
   const showLoadEarlier = Boolean(head?.earliestDate && head.earliestDate < toDateInputValue(firstMonday));
   const nextTemplate = pickNextTemplate(templates ?? [], templateRecency ?? {});
 
-  function findWeekElement(key: string) {
-    return timelineRef.current?.querySelector<HTMLElement>(`[data-timeline-week="${key}"]`) ?? null;
-  }
+  const findWeekElement = useCallback(
+    (key: string) => timelineRef.current?.querySelector<HTMLElement>(`[data-timeline-week="${key}"]`) ?? null,
+    [],
+  );
 
   /*
    * Erst an den Anfang der laufenden Woche, dann - nur wenn heute dort unter
@@ -261,10 +271,10 @@ export function PlanPage() {
 
     const bottom = visibleTop(todayElement) + todayElement.offsetHeight;
 
-    if (bottom > scrollContainerOf(todayElement).clientHeight - TAB_BAR_RESERVE) {
+    if (bottom > scrollContainerOf(todayElement).clientHeight - bottomReserveOf(todayElement)) {
       todayElement.scrollIntoView({ block: 'start' });
     }
-  }, [currentWeekKey]);
+  }, [currentWeekKey, findWeekElement]);
 
   /* Öffnen auf heute: einmal pro Mount, sobald alles steht, was darüber liegt - ohne Animation. */
   useLayoutEffect(() => {
@@ -305,7 +315,7 @@ export function PlanPage() {
     if (rangeLoaded) {
       scrollAnchor.current = null;
     }
-  }, [firstMonday, weeks, rangeLoaded]);
+  }, [firstMonday, weeks, rangeLoaded, findWeekElement]);
 
   /* Die Pill steht, solange heute nicht im Bild ist. */
   useEffect(() => {

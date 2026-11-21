@@ -168,6 +168,8 @@ export function AppShell({ title, eyebrow, children }: AppShellProps) {
         Zum Inhalt springen
       </a>
       <div
+        // Der Plan liest hier sein unteres Padding: so viel verdeckt die Leiste unten.
+        data-app-shell=""
         className={cn(
           'mx-auto flex min-h-[100dvh] max-w-md flex-col px-4 pt-[max(1rem,env(safe-area-inset-top))]',
           // Platz für die Bottom-Nav samt Home-Indicator - aber nur dort, wo
