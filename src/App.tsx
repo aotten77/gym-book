@@ -11,7 +11,6 @@ import { SyncPage } from '@/pages/SyncPage';
 import { LibraryPage } from '@/pages/LibraryPage';
 import { PlanPage } from '@/pages/PlanPage';
 import { ProgramsManagePage } from '@/pages/ProgramsManagePage';
-import { ProgramsPage } from '@/pages/ProgramsPage';
 import { RunDetailPage } from '@/pages/RunDetailPage';
 import { SessionPage } from '@/pages/SessionPage';
 import { SettingsPage } from '@/pages/SettingsPage';
@@ -74,7 +73,7 @@ export default function App() {
       <HashRouter>
         <Routes>
           <Route path="/" element={<PlanPage />} />
-          <Route path="/programs" element={<ProgramsPage />} />
+          <Route path="/programs" element={<Navigate to="/" replace />} />
           <Route path="/programs/manage" element={<ProgramsManagePage />} />
           <Route path="/exercises" element={<ExercisesPage />} />
           <Route path="/templates" element={<TemplatesPage />} />

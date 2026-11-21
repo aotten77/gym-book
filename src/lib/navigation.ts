@@ -8,9 +8,9 @@ function isUnder(pathname: string, base: string) {
 /**
  * Welcher Tab der Leiste zu einer Route gehört.
  *
- * `/programs/manage` ist Bestand, `/programs` dagegen Plan - deshalb wird der
- * Bestand zuerst geprüft. Einstellungen sitzen im Kopf, nicht in der Leiste,
- * und markieren darum keinen Tab.
+ * `/programs/manage` ist Bestand; `/programs` selbst leitet auf `/` um und hat
+ * keinen eigenen Tab. Einstellungen sitzen im Kopf, nicht in der Leiste, und
+ * markieren darum keinen Tab.
  */
 export function activeNavTab(pathname: string): NavTab | null {
   if (
@@ -24,7 +24,7 @@ export function activeNavTab(pathname: string): NavTab | null {
     return 'library';
   }
 
-  if (pathname === '/' || pathname === '/programs') return 'plan';
+  if (pathname === '/') return 'plan';
   if (isUnder(pathname, '/history') || isUnder(pathname, '/runs')) return 'progress';
   if (pathname === '/sync') return 'sync';
 

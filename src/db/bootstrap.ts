@@ -251,7 +251,7 @@ export async function seedSampleData() {
     await db.programWeeks.bulkAdd(weeks);
     await db.workoutTemplates.add(template);
     // Montag und Donnerstag über vier Wochen ab dieser Woche, damit der
-    // Trainingskalender etwas zu zeigen hat.
+    // Zeitstrahl etwas zu zeigen hat.
     await db.planEntries.bulkAdd(
       expandSeries({
         weekdays: [1, 4],

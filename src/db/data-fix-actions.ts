@@ -65,7 +65,7 @@ async function findSessionsWithoutCategory() {
 
 /**
  * Wie viele Workouts noch feste Wochentage tragen - "Umwandlung steht aus".
- * Eigene Funktion, damit der Hinweis im Programm-Tab dieselbe Frage stellt
+ * Eigene Funktion, damit der Hinweis im Plan dieselbe Frage stellt
  * wie die Einstellungen und `scheduledWeekdays` keinen dritten Leser bekommt.
  */
 export async function countTemplatesWithWeekdays(): Promise<number> {

@@ -43,7 +43,7 @@ const SECTION_LABEL_CLASSES = 'text-xs font-semibold uppercase tracking-wide tex
 
 /**
  * „Jetzt trainieren": von jedem Tab aus eine Einheit wählen, unabhängig vom
- * Plan. Ersetzt das `TodayUnitSheet`, das nur im Programm-Tab hing - eine
+ * Plan. Ersetzt das `TodayUnitSheet`, das nur an der früheren Programmseite hing - eine
  * spontane Schreibtisch-Mobility soll nicht erst dort gesucht werden müssen.
  *
  * Gestartet wird ohne `planEntryId`, außer bei einem heute geplanten offenen

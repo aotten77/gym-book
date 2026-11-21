@@ -7,7 +7,7 @@ import { toDateInputValue } from '@/domain/program';
  * Eine installierte App bleibt über Nacht offen. Ohne Neulesen stünde morgens
  * noch gestern als „heute“ da, samt Lime-Karte. Neu gelesen wird deshalb bei
  * der Rückkehr in den Vordergrund (`visibilitychange` → `visible`), bei
- * `focus` und jede Minute - so, wie es `ProgramsPage` für sich tut. Der Zustand
+ * `focus` und jede Minute - so, wie es früher die Programmseite für sich tat. Der Zustand
  * ändert sich nur, wenn der Tag wirklich wechselt; sonst rendert nichts neu.
  */
 export function useTodayKey(): string {

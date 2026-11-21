@@ -84,9 +84,9 @@ export function formatDateTime(value?: string) {
 /**
  * Nur Tag und Monat: "08.09.".
  *
- * Für den Trainingskalender, wo Jahr, Wochentag und Uhrzeit aus dem Raster
+ * Für den Zeitstrahl, wo Jahr, Wochentag und Uhrzeit aus der Zeile
  * selbst hervorgehen und `formatDateTime` nur Breite kosten würde. Wieder ein
- * Formatter auf Modulebene - das Raster baut bis zu 56 Datumsangaben auf einmal.
+ * Formatter auf Modulebene - der Zeitstrahl baut bis zu 56 Datumsangaben auf einmal.
  */
 const shortDateFormat = new Intl.DateTimeFormat('de-DE', { day: '2-digit', month: '2-digit' });
 

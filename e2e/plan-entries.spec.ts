@@ -11,9 +11,8 @@ import {
 } from './helpers';
 
 /*
- * Termine im Programm-Tab. Das Startdatum liegt auf dem Montag dieser Woche,
- * damit "heute" in Programmwoche 1 liegt und die Terminliste genau diese
- * Woche zeigt.
+ * Termine im Plan (Zeitstrahl). Das Startdatum liegt auf dem Montag dieser
+ * Woche, damit "heute" in Programmwoche 1 liegt.
  */
 /** Ein lokaler Tag als `YYYY-MM-DD`, `offsetDays` von heute aus, im Browser gerechnet. */
 async function localDay(page: Page, offsetDays = 0, mondayOfWeek = false) {
@@ -40,22 +39,7 @@ async function setStartToThisMonday(page: Page) {
   await setProgramStart(page, await localDay(page, 0, true));
 }
 
-/** Wählt im Raster die Wochenzeile, in der `day` liegt - an einem Sonntag ist morgen schon die nächste Woche. */
-async function selectWeekOf(page: Page, day: string) {
-  const monday = await page.evaluate((value) => {
-    const [year, month, date] = value.split('-').map(Number);
-    const parsed = new Date(year, month - 1, date);
-
-    parsed.setDate(parsed.getDate() - ((parsed.getDay() + 6) % 7));
-
-    return `${parsed.getFullYear()}-${`${parsed.getMonth() + 1}`.padStart(2, '0')}-${`${parsed.getDate()}`.padStart(2, '0')}`;
-  }, day);
-
-  await page.locator(`[data-calendar-week="${monday}"]`).click();
-  await expect(page.locator('[data-plan-week]')).toHaveAttribute('data-plan-week', monday);
-}
-
-/** Legt einen Lauf-Termin per Import an und öffnet den Programm-Tab auf der Woche des Tages. */
+/** Legt einen Lauf-Termin per Import an und öffnet den Plan. */
 async function importRun(
   page: Page,
   title: string,
@@ -73,9 +57,9 @@ async function importRun(
       },
     },
   ]);
-  await page.goto('./#/programs');
+  await page.goto('./');
   await page.waitForTimeout(1200);
-  await selectWeekOf(page, day);
+  await expect(page.locator(`[data-timeline-day="${day}"]`)).toBeVisible();
 }
 
 /** Legt einen Workout-Termin „Einheit A“ für heute per Import an. */
@@ -83,12 +67,12 @@ async function addTodayWorkoutEntry(page: Page) {
   const today = await localDay(page);
 
   await importPlan(page, [{ date: today, workout: 'Einheit A' }]);
-  await page.goto('./#/programs');
+  await page.goto('./');
   await page.waitForTimeout(1200);
-  await selectWeekOf(page, today);
+  await expect(page.locator(`[data-timeline-day="${today}"]`)).toBeVisible();
 }
 
-test.describe('Termine im Programm-Tab', () => {
+test.describe('Termine im Plan', () => {
   test.beforeEach(async ({ page }) => {
     await resetDatabase(page);
     await seedSampleData(page);
@@ -106,7 +90,6 @@ test.describe('Termine im Programm-Tab', () => {
     await expect(entry).toContainText('7 km · 5:00 /km');
     await expect(entry).toHaveAttribute('data-plan-entry-state', 'offen');
     await expect(entry).toHaveAttribute('data-day-unit', 'run');
-    await expect(page.locator('[data-plan-week]')).toHaveCount(1);
 
     await entry.click();
 
@@ -132,7 +115,7 @@ test.describe('Termine im Programm-Tab', () => {
     await page.waitForURL(/#\/session\//);
     const sessionUrl = page.url();
 
-    await page.goto('./#/programs');
+    await page.goto('./');
     await page.waitForTimeout(1000);
     const entry = page.locator('[data-plan-entry]').filter({ hasText: 'Einheit A' });
     await expect(entry).toHaveAttribute('data-plan-entry-state', 'belegt');
@@ -194,12 +177,6 @@ test.describe('Termine im Programm-Tab', () => {
       page.locator(`[data-timeline-day="${today}"] [data-plan-entry]`).filter({ hasText: 'Einheit A' }),
     ).toHaveAttribute('data-plan-entry-state', 'erledigt');
 
-    await page.goto('./#/programs');
-    await page.waitForTimeout(1000);
-    await expect(
-      page.locator('[data-plan-entry]').filter({ hasText: 'Einheit A' }),
-    ).toHaveAttribute('data-plan-entry-state', 'erledigt');
-
     expect(errors).toEqual([]);
   });
 
@@ -214,8 +191,8 @@ test.describe('Termine im Programm-Tab', () => {
   });
 });
 
-test.describe('Terminliste nach Programmende', () => {
-  test('nach Programmende folgt die Liste der Auswahl im Raster', async ({ page }) => {
+test.describe('Zeitstrahl nach Programmende', () => {
+  test('nach Programmende trägt keine Woche mehr eine Programmwoche', async ({ page }) => {
     const errors = collectPageErrors(page);
 
     await resetDatabase(page);
@@ -223,16 +200,10 @@ test.describe('Terminliste nach Programmende', () => {
     // Acht Programmwochen ab Januar 2020 sind lange vorbei.
     await setProgramStart(page, '2020-01-06');
 
-    await expect(page.getByRole('tab', { name: /· W\d/ })).toHaveCount(0);
-
-    const week = page.locator('[data-plan-week]');
-    await expect(week).toHaveAttribute('data-plan-week', await localDay(page, 0, true));
-    await expect(page.getByRole('button', { name: 'Vorherige Woche' })).toHaveCount(0);
-
-    const nextMonday = await localDay(page, 7, true);
-
-    await page.locator(`[data-calendar-week="${nextMonday}"]`).click();
-    await expect(week).toHaveAttribute('data-plan-week', nextMonday);
+    const heads = page.locator('[data-timeline-week-head]');
+    await expect(heads.first()).toBeVisible();
+    await expect(heads.filter({ hasText: /· W\d/ })).toHaveCount(0);
+    await expect(page.locator(`[data-timeline-week="${await localDay(page, 0, true)}"] [data-timeline-week-head][data-current]`)).toHaveCount(1);
 
     expect(errors).toEqual([]);
   });
@@ -288,7 +259,7 @@ test.describe('Wochentage in Termine umwandeln', () => {
 
     await setStartToThisMonday(page);
 
-    // Vor der Umwandlung weist der Programm-Tab darauf hin - neutral, mit Weg in die Einstellungen.
+    // Vor der Umwandlung weist der Plan darauf hin - neutral, mit Weg in die Einstellungen.
     const hint = page.locator('[data-plan-weekday-hint]');
     await expect(hint).toContainText('Feste Wochentage noch nicht umgewandelt');
     await hint.click();
@@ -315,10 +286,10 @@ test.describe('Wochentage in Termine umwandeln', () => {
     await expect(card).toContainText('Nichts zu tun.');
     await expect(convert).toBeDisabled();
 
-    await page.goto('./#/programs');
+    await page.goto('./');
     await page.waitForTimeout(1000);
     await expect(
-      page.locator(`[data-plan-day="${today}"] [data-plan-entry]`).filter({ hasText: 'Einheit A' }),
+      page.locator(`[data-timeline-day="${today}"] [data-plan-entry]`).filter({ hasText: 'Einheit A' }),
     ).toHaveCount(1);
     await expect(page.locator('[data-plan-weekday-hint]')).toHaveCount(0);
 
@@ -345,10 +316,10 @@ test.describe('Wochentage in Termine umwandeln', () => {
     );
     await expect(page.getByRole('button', { name: 'Wochentage umwandeln' })).toBeDisabled();
 
-    await page.goto('./#/programs');
+    await page.goto('./');
     await page.waitForTimeout(1000);
     await expect(
-      page.locator(`[data-plan-day="${today}"] [data-plan-entry]`).filter({ hasText: 'Einheit A' }),
+      page.locator(`[data-timeline-day="${today}"] [data-plan-entry]`).filter({ hasText: 'Einheit A' }),
     ).toHaveCount(1);
 
     expect(errors).toEqual([]);

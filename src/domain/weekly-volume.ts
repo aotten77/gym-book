@@ -219,21 +219,3 @@ export function describeWeekVolume(week: WeekVolume): { strength?: string; mobil
 
   return result;
 }
-
-export function describeWeekCounts(week: WeekVolume): string {
-  const parts: string[] = [];
-
-  if (week.strength.sessions > 0) {
-    parts.push(`${formatNumber(week.strength.sessions)} Kraft`);
-  }
-
-  if (week.mobility.sessions > 0) {
-    parts.push(`${formatNumber(week.mobility.sessions)} Mobility`);
-  }
-
-  if (week.running.runs > 0) {
-    parts.push(unitCount(week.running.runs, 'Lauf', 'Läufe'));
-  }
-
-  return parts.join(' · ');
-}

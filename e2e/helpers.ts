@@ -224,7 +224,7 @@ export async function clearPlanEntries(page: Page) {
 
 /**
  * Setzt in den Einstellungen das Programmstart-Datum und landet danach auf
- * `#/programs`. Ohne Startdatum trägt keine Kalenderwoche eine Programmwoche -
+ * dem Plan. Ohne Startdatum trägt keine Kalenderwoche eine Programmwoche -
  * und damit gibt es auch keine Vorgaben anzusehen.
  */
 export async function setProgramStart(page: Page, date: string) {
@@ -233,6 +233,6 @@ export async function setProgramStart(page: Page, date: string) {
   await page.getByLabel('Programmstart').fill(date);
   await page.waitForTimeout(900);
 
-  await page.goto('./#/programs');
+  await page.goto('./');
   await page.waitForTimeout(1200);
 }

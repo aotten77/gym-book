@@ -437,26 +437,6 @@ export function pickTodayPlan(
   };
 }
 
-/**
- * Die Zeile der NowCard: was heute dran ist. Offene und belegte Termine in der
- * Reihenfolge des Tages; ist alles Heutige erledigt, "erledigt", sonst "frei".
- */
-export function describeTodayStatus(
-  entries: PlanEntry[],
-  links: Record<string, PlanEntryLink>,
-  today: string,
-  templateNames: Record<string, string>,
-): string {
-  const todays = sortPlanEntries(entries).filter((entry) => entry.date === today);
-  const pending = todays.filter((entry) => planEntryState(entry.id, links) !== 'erledigt');
-
-  if (pending.length > 0) {
-    return pending.map((entry) => planEntryName(entry, templateNames, links)).join(', ');
-  }
-
-  return todays.length > 0 ? 'erledigt' : 'frei';
-}
-
 /** Titel, sonst Workout-Name, sonst der Name aus der verknüpften Session, sonst ein Platzhalter. */
 export function planEntryName(
   entry: PlanEntry,

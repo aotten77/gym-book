@@ -108,7 +108,7 @@ test.describe('Bibliotheks-Import', () => {
    * Tage zeigt die Liste nicht mehr - dieser Woche läge der Dienstag je nach
    * Wochentag schon dahinter.
    */
-  test('legt Termine aus planRange an und zeigt sie im Programm-Tab', async ({ page }) => {
+  test('legt Termine aus planRange an und zeigt sie im Plan', async ({ page }) => {
     const [tuesday, wednesday] = await page.evaluate(() => {
       const day = (offset: number) => {
         const now = new Date();
@@ -149,19 +149,11 @@ test.describe('Bibliotheks-Import', () => {
       '2 Termine',
     );
 
-    await page.goto('./#/programs');
+    await page.goto('./');
     await page.waitForTimeout(1200);
-    await page
-      .locator(`[data-calendar-week="${await page.evaluate(() => {
-        const now = new Date();
-        now.setDate(now.getDate() - ((now.getDay() + 6) % 7) + 7);
 
-        return `${now.getFullYear()}-${`${now.getMonth() + 1}`.padStart(2, '0')}-${`${now.getDate()}`.padStart(2, '0')}`;
-      })}"]`)
-      .click();
-
-    await expect(page.locator(`[data-plan-day="${tuesday}"]`)).toContainText('Einheit A');
-    await expect(page.locator(`[data-plan-day="${wednesday}"]`)).toContainText('Intervalle 6×400');
+    await expect(page.locator(`[data-timeline-day="${tuesday}"]`)).toContainText('Einheit A');
+    await expect(page.locator(`[data-timeline-day="${wednesday}"]`)).toContainText('Intervalle 6×400');
   });
 
   /*

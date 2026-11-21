@@ -3,7 +3,6 @@ import { openExerciseSheet, resetDatabase, seedSampleData, startSampleSession } 
 
 const ROUTES = [
   ['Plan', './'],
-  ['Programm', './#/programs'],
   ['Programm verwalten', './#/programs/manage'],
   ['Workouts', './#/templates'],
   ['Übungen', './#/exercises'],

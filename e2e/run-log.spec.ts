@@ -120,7 +120,7 @@ test.describe('Lauf-Sheet und Termine', () => {
   test('Lauf-Sheet wählt den heutigen Termin vor', async ({ page }) => {
     await resetDatabase(page);
     await seedSampleData(page);
-    await page.goto('./#/programs');
+    await page.goto('./');
     await page.waitForTimeout(1200);
 
     const today = await page.evaluate(() => {
@@ -148,7 +148,7 @@ test.describe('Lauf-Sheet und Termine', () => {
     await sheet.getByRole('button', { name: 'Lauf speichern' }).click();
     await expect(sheet).toHaveCount(0);
 
-    await page.goto('./#/programs');
+    await page.goto('./');
     await page.waitForTimeout(1000);
     await expect(
       page.locator('[data-plan-entry]').filter({ hasText: 'Intervalle 6×400' }),
@@ -188,7 +188,7 @@ test.describe('Lauf bearbeiten und Termine', () => {
   }
 
   async function entryState(page: Page, title: string) {
-    await page.goto('./#/programs');
+    await page.goto('./');
     await page.waitForTimeout(1000);
 
     return page.locator('[data-plan-entry]').filter({ hasText: title });

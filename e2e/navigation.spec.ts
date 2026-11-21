@@ -22,6 +22,22 @@ test.describe('Navigation', () => {
     expect(errors).toEqual([]);
   });
 
+  test('/programs leitet auf den Plan um', async ({ page }) => {
+    const errors = collectPageErrors(page);
+
+    await resetDatabase(page);
+    await seedSampleData(page);
+    await page.goto('./#/programs');
+    await page.waitForTimeout(900);
+
+    await expect(page).toHaveURL(/#\/$/);
+    const nav = page.getByRole('navigation', { name: 'Hauptnavigation' });
+    await expect(nav.getByRole('link', { name: 'Plan' })).toHaveAttribute('aria-current', 'page');
+    await expect(page.locator('[data-timeline]')).toBeVisible();
+
+    expect(errors).toEqual([]);
+  });
+
   for (const width of [320, 390]) {
     test(`Leiste bei ${width}px: jeder Eintrag im Viewport, Jetzt ragt über die Leiste`, async ({ page }) => {
       await resetDatabase(page);

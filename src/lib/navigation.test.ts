@@ -4,7 +4,6 @@ import { activeNavTab } from './navigation';
 describe('activeNavTab', () => {
   it.each([
     ['/', 'plan'],
-    ['/programs', 'plan'],
     ['/history', 'progress'],
     ['/history/session/abc', 'progress'],
     ['/runs/x', 'progress'],

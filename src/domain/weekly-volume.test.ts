@@ -8,7 +8,6 @@ import type {
 } from '@/domain/models';
 import {
   buildWeeklyVolume,
-  describeWeekCounts,
   describeWeekVolume,
   hasTraining,
   sessionExerciseVolume,
@@ -284,28 +283,6 @@ describe('describeWeekVolume', () => {
     expect(describeWeekVolume(week({ running: { ...running, elevationIncomplete: true } })).running).toContain(
       '≥ 180 HM',
     );
-  });
-});
-
-describe('describeWeekCounts', () => {
-  it('zählt die Arten', () => {
-    expect(
-      describeWeekCounts(
-        week({
-          strength: { sessions: 3, durationSeconds: 0, volumeKg: 0, workSets: 0 },
-          mobility: { sessions: 1, durationSeconds: 0 },
-          running: { runs: 2, distanceKm: 0, elevationGainM: 0, elevationIncomplete: false, durationSeconds: 0 },
-        }),
-      ),
-    ).toBe('3 Kraft · 1 Mobility · 2 Läufe');
-  });
-
-  it('lässt Nullen weg', () => {
-    expect(
-      describeWeekCounts(
-        week({ running: { runs: 1, distanceKm: 1, elevationGainM: 0, elevationIncomplete: false, durationSeconds: 0 } }),
-      ),
-    ).toBe('1 Lauf');
   });
 });
 

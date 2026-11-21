@@ -165,9 +165,6 @@ export function countWeekProgress(row: { days: { dated: number; datedDone: numbe
  * ---------------------------------------------------------------------------
  */
 
-export const CALENDAR_WINDOW_WEEKS = 6;
-export const CALENDAR_WINDOW_STEP = 4;
-
 /** Der Zeitstrahl beginnt so viele Wochen vor der laufenden und lädt so viele nach. */
 export const TIMELINE_INITIAL_PAST_WEEKS = 4;
 export const TIMELINE_LOAD_STEP_WEEKS = 4;
@@ -449,29 +446,6 @@ export function buildCalendarWeeks({
   return rows;
 }
 
-export type CellMark = { type: 'unit'; unit: CalendarUnit } | { type: 'more'; count: number };
-
-/** Eine Zelle zeigt höchstens zwei Marken; ab drei bleibt eine und "+n". */
-export function cellMarks(units: CalendarUnit[]): CellMark[] {
-  if (units.length <= 2) {
-    return units.map((unit) => ({ type: 'unit', unit }));
-  }
-
-  return [
-    { type: 'unit', unit: units[0] },
-    { type: 'more', count: units.length - 1 },
-  ];
-}
-
-/** Der Montag der Vorwoche - das Fenster beginnt eine Woche zurück. */
-export function defaultFirstMonday(today: Date): Date {
-  const monday = startOfCalendarWeek(today);
-
-  monday.setDate(monday.getDate() - DAYS_PER_WEEK);
-
-  return monday;
-}
-
 /** Das Fenster um `weeks` Wochen verschieben - über `setDate`, nie über Millisekunden. */
 export function shiftWindow(firstMonday: Date, weeks: number): Date {
   const shifted = new Date(firstMonday.getFullYear(), firstMonday.getMonth(), firstMonday.getDate());
@@ -551,40 +525,6 @@ export function pickTodayNowEntryId(day: CalendarWeekDay, hasActiveSession: bool
   const unit = day.units.find((candidate) => candidate.ref.type === 'entry');
 
   return unit?.planEntryId;
-}
-
-/** Die Auswahl bleibt, solange ihr Montag im Fenster liegt; sonst springt sie auf den ersten Montag. */
-export function keepSelectionInWindow(selected: string, firstMonday: Date, weeks: number): string {
-  const first = toDateInputValue(firstMonday);
-  const last = toDateInputValue(shiftWindow(firstMonday, weeks - 1));
-
-  return selected >= first && selected <= last ? selected : first;
-}
-
-/**
- * Der Tag hat gewechselt, die Seite blieb offen. War die bis dahin aktuelle
- * Woche gewählt, folgt der Kalender dem Heute (Fenster und Auswahl); sonst
- * bleiben Fenster und Auswahl, denn die hat der Nutzer selbst gewählt. Die
- * Auswahl liegt in beiden Fällen im Fenster.
- */
-export function rollCalendarToToday(
-  state: { firstMonday: Date; selectedWeek: string; previousToday: string },
-  now: Date,
-): { firstMonday: Date; selectedWeek: string } {
-  const previousDay = parseLocalDate(state.previousToday);
-  const previousMonday = toDateInputValue(startOfCalendarWeek(previousDay ?? now));
-
-  if (state.selectedWeek === previousMonday) {
-    return {
-      firstMonday: defaultFirstMonday(now),
-      selectedWeek: toDateInputValue(startOfCalendarWeek(now)),
-    };
-  }
-
-  return {
-    firstMonday: state.firstMonday,
-    selectedWeek: keepSelectionInWindow(state.selectedWeek, state.firstMonday, CALENDAR_WINDOW_WEEKS),
-  };
 }
 
 /** `05.–11.10.`, bei Monats- oder Jahreswechsel `28.09.–04.10.`. */

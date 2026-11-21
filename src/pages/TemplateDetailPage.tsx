@@ -733,10 +733,10 @@ export function TemplateDetailPage() {
             </SelectField>
             {/* Wann das Workout stattfindet, steht als Termin im Plan - nicht am Workout. */}
             <Link
-              to="/programs"
+              to="/"
               className="inline-flex min-h-touch items-center text-sm font-medium text-accent underline underline-offset-4"
             >
-              Termine im Programm-Tab
+              Termine im Plan
             </Link>
             <Button
               variant="primary"

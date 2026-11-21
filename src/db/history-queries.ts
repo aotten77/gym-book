@@ -232,7 +232,7 @@ export async function loadWeekSummary(sinceIso: string): Promise<WeekSummary> {
 /**
  * Die abgeschlossenen Einheiten eines Zeitraums, älteste zuerst.
  *
- * Für den Trainingskalender: er braucht je Tag nur, *was* abgeschlossen wurde,
+ * Für den Zeitstrahl: er braucht je Tag nur, *was* abgeschlossen wurde,
  * kein Volumen - das der gewählten Woche kommt aus `loadSessionVolumes`.
  * `loadWeekSummary` zöge dafür alle Satzzeilen des Fensters, und das wäre teuer
  * und ungenutzt.

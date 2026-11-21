@@ -29,7 +29,7 @@ async function startWithEmptyPlan(page: Page) {
         };
       }),
   );
-  await page.goto('./#/programs');
+  await page.goto('./');
   await page.waitForTimeout(1200);
 }
 

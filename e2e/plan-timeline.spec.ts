@@ -4,6 +4,7 @@ import {
   closeExerciseSheet,
   collectPageErrors,
   importPlan,
+  openRunLogFromNow,
   resetDatabase,
   seedSampleData,
 } from './helpers';
@@ -275,6 +276,55 @@ test.describe('Plan als Zeitstrahl', () => {
       .locator('[data-timeline-week-head]')
       .evaluateAll((heads) => heads.filter((head) => head.getBoundingClientRect().width > window.innerWidth).length);
     expect(tooWide).toBe(0);
+
+    expect(errors).toEqual([]);
+  });
+
+  test('passt bei 320px mit drei Einheiten an einem Tag', async ({ page }) => {
+    const errors = collectPageErrors(page);
+    const tomorrow = await localDay(page, 1);
+    const longTitle = (label: string) => `${label} mit einem wirklich sehr langen Titel über vierzig Zeichen`;
+
+    await importPlan(page, [
+      { date: tomorrow, workout: 'Einheit A' },
+      { date: tomorrow, run: { title: longTitle('Dauerlauf') } },
+      { date: tomorrow, run: { title: longTitle('Intervalle') } },
+    ]);
+    await page.setViewportSize({ width: 320, height: 700 });
+    await openPlan(page);
+
+    await expect(page.locator(`[data-timeline-day="${tomorrow}"] [data-day-unit]`)).toHaveCount(3);
+
+    const sizes = await page.locator('[data-timeline]').evaluate((element) => ({
+      scrollWidth: element.scrollWidth,
+      clientWidth: element.clientWidth,
+    }));
+    expect(sizes.scrollWidth).toBeLessThanOrEqual(sizes.clientWidth);
+
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    expect(overflow).toBeLessThanOrEqual(0);
+
+    expect(errors).toEqual([]);
+  });
+
+  test('ein eingetragener Lauf steht erledigt da und führt zur Detailseite', async ({ page }) => {
+    const errors = collectPageErrors(page);
+
+    await openPlan(page);
+    await openRunLogFromNow(page);
+
+    const sheet = page.locator('[data-sheet]');
+    await sheet.getByLabel('Strecke (km)').fill('10');
+    await sheet.getByLabel('Min', { exact: true }).fill('52');
+    await sheet.getByRole('button', { name: 'Lauf speichern' }).click();
+    await expect(sheet).toHaveCount(0);
+
+    const row = page.locator('[data-day-unit="run"][data-unit-state="erledigt"]');
+    await expect(row).toHaveCount(1);
+    await row.click();
+    await page.waitForURL(/#\/runs\//);
 
     expect(errors).toEqual([]);
   });

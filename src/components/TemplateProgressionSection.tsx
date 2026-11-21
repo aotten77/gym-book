@@ -36,9 +36,9 @@ interface TemplateProgressionSectionProps {
 }
 
 /**
- * Eine Übung über alle Wochen - die transponierte Achse zur Wochenansicht.
+ * Eine Übung über alle Wochen - die transponierte Achse zum Wochen-Sheet.
  *
- * `/programs` zeigt eine Woche über alle Workouts; hier steht eine Übung
+ * Das Wochen-Sheet zeigt eine Woche über alle Workouts; hier steht eine Übung
  * über alle Wochen untereinander, und für das *Anlegen* einer Progression
  * ("Nordic Curl: 12/14/16/18 s") ist das der richtige Schnitt.
  *
@@ -188,10 +188,10 @@ export function TemplateProgressionSection({
       }
       action={
         <Link
-          to="/programs"
+          to="/"
           className="min-h-touch inline-flex items-center justify-center rounded-control border border-line px-3 py-2 text-sm text-content-secondary transition hover:bg-surface-raised"
         >
-          Wochen
+          Plan
         </Link>
       }
     >
@@ -224,7 +224,7 @@ export function TemplateProgressionSection({
                 {nameById[selectedProgressionTemplateExercise.exerciseId] ?? 'Unbekannte Übung'}
               </p>
               {/*
-                Dieselbe Formatierung wie in der Wochenansicht: zwei
+                Dieselbe Formatierung wie im Wochen-Sheet: zwei
                 Formatierer sind der Weg, auf dem "3 × 8-10" und "3 x 8 Wdh"
                 auf zwei Bildschirmen landen.
               */}

@@ -35,7 +35,7 @@ const ROW_BASE =
  * Erledigt ist Waldgrün und führt in den Verlauf, die belegte Einheit einer
  * laufenden Session führt in die Session zurück (ohne `openFocus`: eine
  * Rückkehr, kein Start), die erste offene von heute ist die Lime-Karte. Die
- * Anker tragen dieselben Namen wie in `PlanWeekSection`, damit die Selektoren
+ * Anker tragen dieselben Namen wie in der früheren Tagesliste, damit die Selektoren
  * der Tests mitwandern.
  */
 export function TimelineUnitRow({
