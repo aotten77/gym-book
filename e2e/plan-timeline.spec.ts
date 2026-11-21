@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { devices, expect, test, type Page } from '@playwright/test';
 import {
   clearPlanEntries,
   closeExerciseSheet,
@@ -295,6 +295,77 @@ test.describe('Plan als Zeitstrahl', () => {
     await page.clock.runFor('02:00');
 
     await expect(page.locator('[data-timeline-today]')).toHaveAttribute('data-timeline-day', tomorrowKey);
+
+    expect(errors).toEqual([]);
+  });
+});
+
+/*
+ * Im Querformat dreht `index.css` die App um 90 Grad, und es scrollt das Kind
+ * von `#root` statt des Fensters. Gemessen wird die physische Lage des Kopfes
+ * (`getBoundingClientRect`, beide Achsen) - das ist, was man sieht.
+ */
+test.describe('Plan als Zeitstrahl im Querformat', () => {
+  const landscape = devices['iPhone 13 landscape'];
+
+  test.use({
+    viewport: landscape.viewport,
+    screen: landscape.screen,
+    userAgent: landscape.userAgent,
+    deviceScaleFactor: landscape.deviceScaleFactor,
+    isMobile: landscape.isMobile,
+    hasTouch: landscape.hasTouch,
+  });
+
+  test('frühere Wochen laden nach, ohne dass die Liste springt', async ({ page }) => {
+    const errors = collectPageErrors(page);
+
+    await resetDatabase(page);
+    await seedSampleData(page);
+    await clearPlanEntries(page);
+    await addPastRun(page, await localDay(page, -70));
+    await openPlan(page);
+
+    expect(
+      await page.evaluate(
+        () => matchMedia('(orientation: landscape) and (max-height: 520px) and (pointer: coarse)').matches,
+      ),
+    ).toBe(true);
+
+    const weeks = page.locator('[data-timeline-week]');
+    const loadEarlier = page.locator('[data-load-earlier]');
+    await expect(loadEarlier).toHaveCount(1);
+
+    const before = await weeks.count();
+    const firstKey = await weeks.first().getAttribute('data-timeline-week');
+    const head = page.locator(`[data-timeline-week="${firstKey}"] [data-timeline-week-head]`);
+
+    // Den gedrehten Scroll-Container an den Anfang setzen, damit der Knopf im Bild ist und der Klick nicht selbst scrollt.
+    await page.evaluate(() => {
+      const container = document.querySelector<HTMLElement>('#root > *');
+
+      if (container) {
+        container.scrollTop = 0;
+      }
+    });
+    await page.waitForTimeout(300);
+    const rectBefore = await head.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+
+      return { x: rect.left, y: rect.top };
+    });
+
+    await loadEarlier.click();
+    await expect(weeks).toHaveCount(before + 4);
+    await page.waitForTimeout(800);
+
+    const rectAfter = await head.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+
+      return { x: rect.left, y: rect.top };
+    });
+    expect(Math.abs(rectAfter.x - rectBefore.x)).toBeLessThanOrEqual(2);
+    expect(Math.abs(rectAfter.y - rectBefore.y)).toBeLessThanOrEqual(2);
 
     expect(errors).toEqual([]);
   });

@@ -51,6 +51,45 @@ const HEAD_LINE =
   'flex min-h-touch items-center gap-3 rounded-panel border px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent';
 
 /**
+ * Der Container, der die Seite scrollt. Im Hochformat das Dokument; im
+ * Querformat dreht `index.css` die App um 90 Grad, und dann scrollt das Kind
+ * von `#root` - `window.scrollBy` täte dort nichts.
+ */
+function scrollContainerOf(element: HTMLElement): HTMLElement {
+  for (let node = element.parentElement; node; node = node.parentElement) {
+    const { overflowY } = getComputedStyle(node);
+
+    if ((overflowY === 'auto' || overflowY === 'scroll') && node.scrollHeight > node.clientHeight) {
+      return node;
+    }
+  }
+
+  return (document.scrollingElement as HTMLElement | null) ?? document.documentElement;
+}
+
+/**
+ * Die Lage eines Elements im Layout, über die `offsetTop`-Kette: unabhängig
+ * vom Scrollstand und von Transformationen. `getBoundingClientRect` misst im
+ * gedrehten Querformat die physische Achse - dort liefe „nach unten“ über x.
+ */
+function layoutTop(element: HTMLElement): number {
+  let top = 0;
+
+  for (let node: HTMLElement | null = element; node; node = node.offsetParent as HTMLElement | null) {
+    top += node.offsetTop;
+  }
+
+  return top;
+}
+
+/** Wo ein Element im sichtbaren Ausschnitt seines Scroll-Containers steht, in Layout-Koordinaten. */
+function visibleTop(element: HTMLElement): number {
+  const container = scrollContainerOf(element);
+
+  return layoutTop(element) - layoutTop(container) - container.scrollTop;
+}
+
+/**
  * Der Plan: ein Zeitstrahl über Wochen. Oben das Protokoll (nur Erledigtes),
  * in der Mitte heute, unten die Termine. Er öffnet auf der laufenden Woche.
  *
@@ -214,7 +253,9 @@ export function PlanPage() {
    * ohne Ausgleich rutschte die Woche, die oben stand, um vier Wochen nach
    * unten. Gemessen wird gegen die Lage vor dem Tap, und zwar bei jedem
    * Rendern, bis die Daten des neuen Zeitraums da sind - die frühen Wochen
-   * wachsen erst mit ihren Einheiten.
+   * wachsen erst mit ihren Einheiten. Gemessen und verschoben wird im
+   * Layout und am Scroll-Container, nicht am Fenster: so gilt dasselbe im
+   * gedrehten Querformat.
    */
   useLayoutEffect(() => {
     const anchor = scrollAnchor.current;
@@ -226,10 +267,10 @@ export function PlanPage() {
     const element = findWeekElement(anchor.key);
 
     if (element) {
-      const delta = element.getBoundingClientRect().top - anchor.top;
+      const delta = visibleTop(element) - anchor.top;
 
-      if (delta !== 0) {
-        window.scrollBy(0, delta);
+      if (Math.abs(delta) >= 0.5) {
+        scrollContainerOf(element).scrollTop += delta;
       }
     }
 
@@ -250,9 +291,10 @@ export function PlanPage() {
       return undefined;
     }
 
+    // Oben oder unten über das Layout, nicht über `boundingClientRect`: im gedrehten Querformat wäre das die falsche Achse.
     const observer = new IntersectionObserver(([entry]) => {
       setTodayPosition(
-        entry.isIntersecting ? 'visible' : entry.boundingClientRect.top < 0 ? 'above' : 'below',
+        entry.isIntersecting ? 'visible' : visibleTop(entry.target as HTMLElement) < 0 ? 'above' : 'below',
       );
     });
 
@@ -266,7 +308,7 @@ export function PlanPage() {
     const element = findWeekElement(key);
 
     if (element) {
-      scrollAnchor.current = { key, top: element.getBoundingClientRect().top };
+      scrollAnchor.current = { key, top: visibleTop(element) };
     }
 
     setFirstMonday(shiftWindow(firstMonday, -TIMELINE_LOAD_STEP_WEEKS));
