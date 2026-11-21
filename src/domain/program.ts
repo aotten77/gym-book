@@ -40,8 +40,8 @@ export function deriveProgramWeek(startedOn: string, now: Date, maxWeek: number)
 
 /**
  * Löst die aktuell wirksame Woche auf und liefert dieselbe Obergrenze für
- * Home und Settings - die beiden Seiten wichen vorher in der maxWeek-Formel
- * voneinander ab (Home bezog einen Override oberhalb der höchsten
+ * Plan und Settings - die beiden Seiten wichen vorher in der maxWeek-Formel
+ * voneinander ab (Home, der Vorgänger des Plans, bezog einen Override oberhalb der höchsten
  * Programmwoche mit ein, Settings nicht).
  *
  * Die Rangfolge ist `Override → Startdatum → activeWeek → 1`. Der Override

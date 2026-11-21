@@ -169,7 +169,7 @@ describe('loadWeekSummary', () => {
 
     expect(summary.sessionCount).toBe(2);
     expect(summary.volume).toBe(980);
-    // Neueste zuerst - die Startseite liest daraus die letzte Einheit.
+    // Neueste zuerst - die Workouts-Seite liest daraus die letzte Einheit.
     expect(summary.sessions).toEqual([
       {
         id: 'session-2',

@@ -58,7 +58,7 @@ async function addPastRun(page: Page, date: string) {
           const stamp = new Date().toISOString();
 
           tx.objectStore('runLogs').add({
-            id: 'e2e-alter-lauf',
+            id: `e2e-alter-lauf-${crypto.randomUUID()}`,
             date: day,
             distanceKm: 8,
             durationSeconds: 2700,
@@ -207,6 +207,8 @@ test.describe('Plan als Zeitstrahl', () => {
     const errors = collectPageErrors(page);
 
     await addPastRun(page, await localDay(page, -70));
+    // Ein Lauf im Bereich, den der eine Tap lädt: die früheren Wochen wachsen erst mit ihren Daten.
+    await addPastRun(page, await localDay(page, -37));
     await openPlan(page);
 
     const weeks = page.locator('[data-timeline-week]');
@@ -249,6 +251,39 @@ test.describe('Plan als Zeitstrahl', () => {
     await pill.click();
     await expect(page.locator('[data-timeline-today]')).toBeInViewport();
     await expect(pill).toBeHidden();
+
+    expect(errors).toEqual([]);
+  });
+
+  test('heute ist beim Öffnen und nach der Pill im Bild, auch wenn die Woche davor voll ist', async ({ page }) => {
+    const errors = collectPageErrors(page);
+    const today = await localDay(page);
+    const monday = await mondayOf(page, today);
+
+    await importPlan(page, [{ date: today, workout: 'Einheit A' }]);
+
+    // Viele erledigte Läufe an den Tagen vor heute in dieser Woche (offene Termine der Vergangenheit zeigt der Plan nicht):
+    // heute liegt am Wochenanfang unter dem Bildrand. Ist heute ein Montag, gibt es davor nichts - dann gilt nur die Zusicherung selbst.
+    for (let offset = -6; offset < 0; offset += 1) {
+      const day = await localDay(page, offset);
+
+      if (day >= monday) {
+        for (let index = 0; index < 10; index += 1) {
+          await addPastRun(page, day);
+        }
+      }
+    }
+
+    await openPlan(page);
+
+    const todayRow = page.locator('[data-timeline-today]');
+    await expect(todayRow).toBeInViewport();
+
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await expect(page.locator('[data-jump-today]')).toBeVisible();
+    await page.locator('[data-jump-today]').click();
+    await expect(todayRow).toBeInViewport();
+    await expect(page.locator('[data-jump-today]')).toBeHidden();
 
     expect(errors).toEqual([]);
   });
@@ -374,6 +409,8 @@ test.describe('Plan als Zeitstrahl im Querformat', () => {
     await seedSampleData(page);
     await clearPlanEntries(page);
     await addPastRun(page, await localDay(page, -70));
+    // Ein Lauf im Bereich, den der eine Tap lädt: die früheren Wochen wachsen erst mit ihren Daten.
+    await addPastRun(page, await localDay(page, -37));
     await openPlan(page);
 
     expect(

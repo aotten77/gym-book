@@ -79,7 +79,7 @@ export function buildWeekSheetTiles({
       return {
         kind,
         title,
-        count: `${plannedOfKind.length} geplant`,
+        count: `${formatNumber(plannedOfKind.length)} geplant`,
         ...(kind === 'run' && plannedKm > 0 ? { detail: `${formatNumber(plannedKm)} km` } : {}),
         done: false,
       };
@@ -105,7 +105,7 @@ export function buildWeekSheetTiles({
     return {
       kind,
       title,
-      count: `${doneOfKind.length} / ${plannedOfKind.length}`,
+      count: `${formatNumber(doneOfKind.length)} / ${formatNumber(plannedOfKind.length)}`,
       ...(detail === undefined ? {} : { detail }),
       done: doneOfKind.length > 0,
     };

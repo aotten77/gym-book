@@ -102,7 +102,7 @@ export function PlanEntrySheet({ open, entry, onClose }: PlanEntrySheetProps) {
         ) : (
           <>
             {exerciseCount !== undefined ? (
-              <p className="text-sm text-content-secondary">{formatNumber(exerciseCount)} Übungen</p>
+              <p className="text-sm text-content-secondary">{exerciseCount === 1 ? '1 Übung' : `${formatNumber(exerciseCount)} Übungen`}</p>
             ) : null}
             {templateExists ? (
               <Link

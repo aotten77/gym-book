@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { ArrowDown, ArrowUp, ChevronRight, Play, ShieldAlert } from 'lucide-react';
@@ -50,6 +50,9 @@ import { useUiStore } from '@/store/ui-store';
 
 const HEAD_LINE =
   'flex min-h-touch items-center gap-3 rounded-panel border px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent';
+
+/** Die untere Leiste samt Pill verdeckt den Rand des Bildes: so viel zählt für „heute ist im Bild“ nicht mit. */
+const TAB_BAR_RESERVE = 112;
 
 /**
  * Der Container, der die Seite scrollt. Im Hochformat das Dokument; im
@@ -241,6 +244,28 @@ export function PlanPage() {
     return timelineRef.current?.querySelector<HTMLElement>(`[data-timeline-week="${key}"]`) ?? null;
   }
 
+  /*
+   * Erst an den Anfang der laufenden Woche, dann - nur wenn heute dort unter
+   * dem Bildrand bleibt (späte Tage einer vollen Woche, kleiner Bildschirm) -
+   * die Heute-Zeile nach oben; `scroll-mt-16` hält sie frei vom Kopf. Gemessen
+   * wird im Layout, wie beim Nachladen: so gilt es auch im Querformat.
+   */
+  const scrollToToday = useCallback(() => {
+    findWeekElement(currentWeekKey)?.scrollIntoView({ block: 'start' });
+
+    const todayElement = timelineRef.current?.querySelector<HTMLElement>('[data-timeline-today]');
+
+    if (!todayElement) {
+      return;
+    }
+
+    const bottom = visibleTop(todayElement) + todayElement.offsetHeight;
+
+    if (bottom > scrollContainerOf(todayElement).clientHeight - TAB_BAR_RESERVE) {
+      todayElement.scrollIntoView({ block: 'start' });
+    }
+  }, [currentWeekKey]);
+
   /* Öffnen auf heute: einmal pro Mount, sobald alles steht, was darüber liegt - ohne Animation. */
   useLayoutEffect(() => {
     if (!ready || !rangeLoaded || hasScrolledToToday.current) {
@@ -248,8 +273,8 @@ export function PlanPage() {
     }
 
     hasScrolledToToday.current = true;
-    findWeekElement(currentWeekKey)?.scrollIntoView({ block: 'start' });
-  }, [ready, rangeLoaded, currentWeekKey]);
+    scrollToToday();
+  }, [ready, rangeLoaded, scrollToToday]);
 
   /*
    * Scroll-Ausgleich beim Nachladen. Safari kennt kein `overflow-anchor`:
@@ -318,7 +343,7 @@ export function PlanPage() {
   }
 
   function handleJumpToToday() {
-    findWeekElement(currentWeekKey)?.scrollIntoView({ block: 'start' });
+    scrollToToday();
   }
 
   async function handleBackup() {

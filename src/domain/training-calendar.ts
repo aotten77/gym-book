@@ -70,16 +70,6 @@ const SHORT_LABELS: Record<IsoWeekday, string> = {
   7: 'So',
 };
 
-const LONG_LABELS: Record<IsoWeekday, string> = {
-  1: 'Montag',
-  2: 'Dienstag',
-  3: 'Mittwoch',
-  4: 'Donnerstag',
-  5: 'Freitag',
-  6: 'Samstag',
-  7: 'Sonntag',
-};
-
 /** `Date.getDay()` zählt ab Sonntag - hier wird daraus der ISO-Tag. */
 export function isoWeekday(date: Date): IsoWeekday {
   return (((date.getDay() + 6) % DAYS_PER_WEEK) + 1) as IsoWeekday;
@@ -87,10 +77,6 @@ export function isoWeekday(date: Date): IsoWeekday {
 
 export function weekdayShortLabel(day: IsoWeekday): string {
   return SHORT_LABELS[day];
-}
-
-export function weekdayLongLabel(day: IsoWeekday): string {
-  return LONG_LABELS[day];
 }
 
 /**
@@ -495,7 +481,7 @@ export function describeTimelineWeekHead(week: CalendarWeek): {
   const parts = [describeWeekRange(week.start, week.end)];
 
   if (week.programWeek) {
-    parts.push(`W${week.programWeek.number}`);
+    parts.push(`W${formatNumber(week.programWeek.number)}`);
 
     if (week.programWeek.kind) {
       parts.push(describeWeekKind(week.programWeek.kind));

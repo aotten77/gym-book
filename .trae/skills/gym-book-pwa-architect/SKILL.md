@@ -164,7 +164,7 @@ Recommended set log shape:
 ## The dated plan
 
 - Training is planned as single dated entries (`planEntries`): a local calendar day, an order within the day, and either a workout or a run prescription (title plus optional distance, duration, elevation, heart rate, pace and instructions). Several entries per day are fine; the same workout or run title only once per day.
-- Entries arrive only through the library import; the app displays them and never writes them, and a series exists only as a copy in the sample data. No recurring weekday schedule, no rule that generates future entries, no automatic rescheduling of a missed day — that would be a second plan source and the automation v1 excludes.
+- Entries arrive only through the library import; the user cannot create, edit, move or delete them. The app itself writes them in a few fixed places only: the weekday data fix, the sample data, the `deleteTemplate` cascade of open entries, backup restore and local reset. A series exists only as a copy in the sample data. No recurring weekday schedule, no rule that generates future entries, no automatic rescheduling of a missed day — that would be a second plan source and the automation v1 excludes.
 - Whether an entry is open, taken or done is **derived** from the sessions and runs that point at it (`planEntryId`), never stored on the entry. An aborted session takes nothing.
 - A taken entry is history: it cannot be changed, deleted or moved.
 - The link is made when a session starts or a run is saved — today's open matching entry first, else the earliest open one of the current calendar week. The program week still comes from `resolveWeekControl`; an entry never chooses it, and `materializeSession` knows nothing of the plan.

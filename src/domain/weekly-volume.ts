@@ -2,7 +2,7 @@
  * Die Wochenrechnung: was in einer Kalenderwoche trainiert wurde, getrennt
  * nach Kraft, Mobility und Laufen.
  *
- * Eine Rechnung, drei Leser. Der Verlauf, die Startseite und die Spalte in
+ * Eine Rechnung, drei Leser. Der Verlauf, das Wochen-Sheet und die Spalte in
  * `wochen.csv` des Analyse-Exports lesen alle dieselben `WeekVolume`-Zeilen;
  * rechnete jeder für sich, stünden auf drei Bildschirmen drei Wochen.
  *

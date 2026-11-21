@@ -819,7 +819,7 @@ async function loadAnalysisFiles(): Promise<{ files: AnalysisExportFiles; export
     programWeeks,
     progressionRules,
     program,
-    // Dieselbe Auflösung wie Start, Home und Einstellungen - die Rangfolge der
+    // Dieselbe Auflösung wie Start, Plan und Einstellungen - die Rangfolge der
     // Woche hat genau eine Stelle, und der Export darf keine zweite werden.
     weekControl: resolveWeekControl(
       settings?.weekOverride,

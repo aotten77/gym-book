@@ -190,7 +190,7 @@ export interface WeekSummary {
  * Was seit `sinceIso` trainiert wurde - Einheiten, Volumen, letzte Einheit.
  *
  * Läuft über den `completedAt`-Index statt über einen Tabellenscan: die Zahl
- * steht auf der Startseite bei jedem Aufruf, und die Session-Tabelle wächst
+ * steht auf der Workouts-Seite bei jedem Aufruf, und die Session-Tabelle wächst
  * mit jedem Training.
  */
 export async function loadWeekSummary(sinceIso: string): Promise<WeekSummary> {
