@@ -55,7 +55,7 @@ Texte, wörtlich:
 - Geplantes Workout: `{n} Übungen` bzw. `1 Übung`, dazu ` · ~{m} min`, falls `minutes > 0`. Das Wort „Kraft“/„Mobility“ entfällt, denn das Icon trägt die Art.
 - Laufende Session (`ref.type === 'active-session'`): `läuft · Satz {min(completedCount + 1, totalCount)} von {totalCount}`, wenn `activeProgress.totalCount > 0`, sonst wie bisher `Läuft gerade`.
 
-- [ ] **Step 1: Failing tests** in `training-calendar.test.ts` (lokale Daten, `new Date(2026, 10, 19)` ist Mittwoch, 19.11.2026):
+- [x] **Step 1: Failing tests** in `training-calendar.test.ts` (lokale Daten, `new Date(2026, 10, 19)` ist Mittwoch, 19.11.2026):
 
 ```ts
 it('reicht nach vorn mindestens bis Ende nächster Woche', () => {
@@ -87,10 +87,10 @@ Dazu folgende Tests:
 
 Die bestehenden Erwartungen `'nicht geplant'` (Zeile ~236) und `'Kraft · 5 Übungen'` (Zeile ~461) werden auf die neuen Texte umgestellt.
 
-- [ ] **Step 2:** `npx vitest run src/domain/training-calendar.test.ts`. Erwartet: FAIL, weil die neuen Exporte fehlen.
-- [ ] **Step 3:** Implementieren. `describeWeekKind` wird aus `program-plan.ts` importiert. Die Raster-Funktionen (`cellMarks`, `CALENDAR_WINDOW_*`, `defaultFirstMonday`, `keepSelectionInWindow`, `rollCalendarToToday`) bleiben bis Task 7 stehen, weil `ProgramsPage` sie noch nutzt.
-- [ ] **Step 4:** `npx vitest run src/domain/training-calendar.test.ts && npm run check:strict`. Erwartet: PASS.
-- [ ] **Step 5:** Commit `Zeitstrahl: Reichweite, Wochenkopf und Lime-Wahl als reine Regeln`
+- [x] **Step 2:** `npx vitest run src/domain/training-calendar.test.ts`. Erwartet: FAIL, weil die neuen Exporte fehlen.
+- [x] **Step 3:** Implementieren. `describeWeekKind` wird aus `program-plan.ts` importiert. Die Raster-Funktionen (`cellMarks`, `CALENDAR_WINDOW_*`, `defaultFirstMonday`, `keepSelectionInWindow`, `rollCalendarToToday`) bleiben bis Task 7 stehen, weil `ProgramsPage` sie noch nutzt.
+- [x] **Step 4:** `npx vitest run src/domain/training-calendar.test.ts && npm run check:strict`. Erwartet: PASS.
+- [x] **Step 5:** Commit `Zeitstrahl: Reichweite, Wochenkopf und Lime-Wahl als reine Regeln`
 
 ### Task 2: Seitenvergleiche als erledigte Einheiten
 
@@ -108,14 +108,14 @@ Screen 3 zeigt im Protokoll einen Test („Knie zur Wand · Seitenvergleich · 8
   - `loadTestsBetween(fromIso: string, toIso: string): Promise<CalendarTest[]>` **ersetzt** `loadTestDatesBetween`, über den `recordedAt`-Index
 - Ein Test wird eine Einheit mit `state: 'erledigt'` am lokalen Tag von `recordedAt`, Name `exerciseNameSnapshot`. Die Reihenfolge am Tag: Sessions, dann Läufe, dann Tests nach `recordedAt`. Detail: `Seitenvergleich · {formatNumber(asymmetryPercent)} %`. Icon: `Scale` aus lucide. Ein Tap führt nach `/tests`, eine Detailseite gibt es nicht.
 
-- [ ] **Step 1:** Failing tests:
+- [x] **Step 1:** Failing tests:
   - `buildCalendarWeeks` mit einem Test am Dienstag 18.11. um 08:00 Uhr: Am Dienstag steht eine Einheit `{ kind: 'test', state: 'erledigt', name: 'Knie zur Wand' }`, `day.state === 'erledigt'`, `testDone === true`.
   - `describeCalendarUnitDetail` dieser Einheit mit `asymmetryPercent: 8.3` ergibt `'Seitenvergleich · 8,3 %'`.
   - `loadTestsBetween` liefert nur Tests im Zeitraum, mit den vier Feldern.
-- [ ] **Step 2:** Run. Erwartet: FAIL.
-- [ ] **Step 3:** Implementieren und `ProgramsPage` auf `loadTestsBetween`/`tests` umstellen. `TrainingCalendar` braucht keine Änderung, weil `UnitKindIcon` die neue Art kennt.
-- [ ] **Step 4:** `npx vitest run src/domain/training-calendar.test.ts src/db/history-queries.test.ts && npm run check && npm run check:strict`. Erwartet: PASS.
-- [ ] **Step 5:** Commit `Zeitstrahl: Seitenvergleiche stehen als erledigte Einheit im Plan`
+- [x] **Step 2:** Run. Erwartet: FAIL.
+- [x] **Step 3:** Implementieren und `ProgramsPage` auf `loadTestsBetween`/`tests` umstellen. `TrainingCalendar` braucht keine Änderung, weil `UnitKindIcon` die neue Art kennt.
+- [x] **Step 4:** `npx vitest run src/domain/training-calendar.test.ts src/db/history-queries.test.ts && npm run check && npm run check:strict`. Erwartet: PASS.
+- [x] **Step 5:** Commit `Zeitstrahl: Seitenvergleiche stehen als erledigte Einheit im Plan`
 
 ### Task 3: Regeln des Wochen-Sheets in `week-sheet.ts`
 
@@ -142,7 +142,7 @@ Regeln:
 - **Blöcke**: Gezeigt werden nur Workouts mit Termin in der Woche, sortiert nach dem frühesten Termin. Hat die Woche keinen Workout-Termin, erscheinen alle Blöcke in der Reihenfolge von `buildWeekPlan` mit `days: ''`.
 - `days` sind die Termine dieses Workouts, durch `, ` getrennt. Jeder Termin wird als `{Wochentagskürzel}` geschrieben, mit ` · erledigt` bei `planEntryState === 'erledigt'`, sonst mit ` · heute`, wenn das Datum `todayKey` ist.
 
-- [ ] **Step 1: Failing tests** mit den Werten aus Screen 4 (Woche 16.–22.11.2026, `todayKey = '2026-11-19'`, ein Mittwoch):
+- [x] **Step 1: Failing tests** mit den Werten aus Screen 4 (Woche 16.–22.11.2026, `todayKey = '2026-11-19'`, ein Mittwoch):
   - Einheit B erledigt am Montag, 4.180 kg.
   - Einheit A offen am Mittwoch.
   - Mobility geplant am Samstag, eine spontane Mobility erledigt mit 540 s.
@@ -154,10 +154,10 @@ Regeln:
   - Blöcke: Einheit B mit `'Mo · erledigt'` vor Einheit A mit `'Mi · heute'`.
   - Ohne Workout-Termine stehen alle Blöcke mit `days: ''` da.
   - `splitWeekPlanEntries` mit drei Einträgen, davon der zweite überschrieben: `shown` hat einen Eintrag, `hidden` zwei.
-- [ ] **Step 2:** `npx vitest run src/domain/week-sheet.test.ts`. Erwartet: FAIL.
-- [ ] **Step 3:** Implementieren, rein, ohne Uhr.
-- [ ] **Step 4:** Run + `npm run check:strict`. Erwartet: PASS.
-- [ ] **Step 5:** Commit `Wochen-Sheet: Kacheln und Vorgaben-Blöcke als reine Regeln`
+- [x] **Step 2:** `npx vitest run src/domain/week-sheet.test.ts`. Erwartet: FAIL.
+- [x] **Step 3:** Implementieren, rein, ohne Uhr.
+- [x] **Step 4:** Run + `npm run check:strict`. Erwartet: PASS.
+- [x] **Step 5:** Commit `Wochen-Sheet: Kacheln und Vorgaben-Blöcke als reine Regeln`
 
 ### Task 4: Termine nur lesen
 
@@ -179,22 +179,22 @@ Anzeige im Sheet: Titel „Termin“, `closeLabel` „Termin schließen“, kein
 
 Die Regel „rendert nichts, bis die Verweise geladen sind“ bleibt.
 
-- [ ] **Step 1:** E2E zuerst umstellen. `plan-entries.spec.ts` und `run-log.spec.ts` legen Termine nur noch über `importPlan` an, nicht mehr über das Sheet.
+- [x] **Step 1:** E2E zuerst umstellen. `plan-entries.spec.ts` und `run-log.spec.ts` legen Termine nur noch über `importPlan` an, nicht mehr über das Sheet.
   - Ersatzlos entfallen die Tests, die das Formular prüfen: „Serie legt Termine an …“, „Doppelter Termin …“, „Fehler einer Dauer von 0“ und in `program-calendar.spec.ts` „+ Termin belegt das Datum vor“. Die Regeln dahinter prüft `plan-import.test.ts`.
   - „legt einen Lauf-Termin an …“ wird zu „ein importierter Lauf-Termin öffnet nur die Anzeige“: Tap auf den künftigen Termin, im `[data-sheet]` stehen Titel und Vorgabe, und es gibt **keinen** Knopf „Termin speichern“ und keinen „Termin löschen“.
   - „passt bei 320px“ prüft das Anzeige-Sheet.
-- [ ] **Step 2:** `caffeinate -i npx playwright test e2e/plan-entries.spec.ts`. Erwartet: FAIL am neuen Test, weil noch Formular-Knöpfe da sind.
-- [ ] **Step 3:** Sheet umbauen, Schreib-UI und Schreib-API entfernen, die Dateien löschen.
+- [x] **Step 2:** `caffeinate -i npx playwright test e2e/plan-entries.spec.ts`. Erwartet: FAIL am neuen Test, weil noch Formular-Knöpfe da sind.
+- [x] **Step 3:** Sheet umbauen, Schreib-UI und Schreib-API entfernen, die Dateien löschen.
   - In `plan-actions.test.ts` entfallen die Fälle, die nur die gelöschten Funktionen prüfen.
   - Fälle für `loadTakenPlanEntryIds`, `renumberPlanDay` und `nextOrderInDay` bleiben und legen ihre Termine direkt per `db.planEntries.bulkAdd` an.
   - Prüfen mit `grep -rn "createPlanEntry\|updatePlanEntry\|deletePlanEntry\|movePlanEntryInDay\|createPlanSeries\|PlanSeriesSheet\|WeekdayPicker\|plan-entry-form" src e2e`. Erwartet: keine Treffer.
-- [ ] **Step 4:** `npm run lint && npm run check && npm run check:strict && npm test`. Danach `caffeinate -i npx playwright test e2e/plan-entries.spec.ts`, `… e2e/run-log.spec.ts` und `… e2e/program-calendar.spec.ts`. Erwartet: alles grün.
-- [ ] **Step 5:** CLAUDE.md, Abschnitt „The dated plan“:
+- [x] **Step 4:** `npm run lint && npm run check && npm run check:strict && npm test`. Danach `caffeinate -i npx playwright test e2e/plan-entries.spec.ts`, `… e2e/run-log.spec.ts` und `… e2e/program-calendar.spec.ts`. Erwartet: alles grün.
+- [x] **Step 5:** CLAUDE.md, Abschnitt „The dated plan“:
   - `PlanEntrySheet` ist reine Anzeige. `PlanSeriesSheet`, „+ Termin“ und ↑/↓ sind entfallen.
   - Der Punkt „A series is a copy, not a rule“ beschreibt nur noch die Beispieldaten (`expandSeries`). Neue Termine kommen über den Import.
   - Der Punkt „Writes follow the run rules“ gilt jetzt für den Import und die Datenkorrektur.
   - Der Satz zu `fieldNavigation` der beiden Sheets entfällt.
-- [ ] **Step 6:** Commit `Termine nur lesen: Anzeige statt Formular, Schreib-API entfernt`
+- [x] **Step 6:** Commit `Termine nur lesen: Anzeige statt Formular, Schreib-API entfernt`
 
 ### Task 5: Der Zeitstrahl ersetzt Home
 
@@ -264,11 +264,11 @@ E2E-Helfer und Specs, die über Home liefen:
 - `library-and-tests.spec.ts` „Sicherung“: `/ungesichert/` und der Knopf „Sichern“.
 - `session-logging.spec.ts` „bei laufendem Training …“: auf `/` das Jetzt-Sheet öffnen, dort steht „Ein Training läuft bereits“.
 
-- [ ] **Step 1:** Unit-Tests für die drei Abfragen:
+- [x] **Step 1:** Unit-Tests für die drei Abfragen:
   - `loadLastPlanDate` ist leer ohne Termine und liefert sonst den spätesten Tag.
   - `loadEarliestTimelineDate` liefert das Minimum über die vier Tabellen. Eine abgebrochene Session zählt nicht.
   - `loadActiveSessionProgress` liefert 6 von 18 für eine Session mit 18 Zeilen, davon 6 erledigt, und `undefined` ohne aktive Session.
-- [ ] **Step 2:** `e2e/plan-timeline.spec.ts` (Beispieldaten, Termine über `clearPlanEntries` + `importPlan`):
+- [x] **Step 2:** `e2e/plan-timeline.spec.ts` (Beispieldaten, Termine über `clearPlanEntries` + `importPlan`):
   1. Öffnet auf heute: `[data-timeline-today]` liegt im Viewport, und genau ein Wochenkopf hat `data-current`.
   2. Reichweite: Mit einem Termin in zehn Wochen ist der letzte `[data-timeline-week]` dessen Montag. Ohne Termine ist es der Montag der nächsten Woche.
   3. Lime startet: Mit einem Termin „Einheit A“ heute gibt es genau ein `[data-now-unit]`. Ein Klick darauf führt zu `#/session/`, und `[data-sheet]` ist sichtbar.
@@ -282,20 +282,20 @@ E2E-Helfer und Specs, die über Home liefen:
   8. Pill: ans Ende scrollen, dann ist `[data-jump-today]` sichtbar. Nach dem Klick ist `[data-timeline-today]` im Viewport und die Pill verborgen.
   9. Bei 320px: `scrollWidth` von `[data-timeline]` ist höchstens dessen `clientWidth`, und kein Wochenkopf ist breiter als der Viewport.
   10. **Review Focus 4:** `page.clock.install({ time: <heute 23:59 lokal> })`, dann `page.reload()`, dann `page.clock.runFor('02:00')`. Danach trägt `[data-timeline-today]` den Tag von morgen.
-- [ ] **Step 3:** `caffeinate -i npx playwright test e2e/plan-timeline.spec.ts`. Erwartet: FAIL.
-- [ ] **Step 4:** Abfragen, Hook, Komponenten und Seite bauen, Route umstellen, `Home.tsx` löschen, die genannten Specs umstellen.
-- [ ] **Step 5:**
+- [x] **Step 3:** `caffeinate -i npx playwright test e2e/plan-timeline.spec.ts`. Erwartet: FAIL.
+- [x] **Step 4:** Abfragen, Hook, Komponenten und Seite bauen, Route umstellen, `Home.tsx` löschen, die genannten Specs umstellen.
+- [x] **Step 5:**
   - `npm run lint && npm run check && npm run check:strict && npm test`.
   - Danach einzeln: `caffeinate -i npx playwright test e2e/plan-timeline.spec.ts`, `… e2e/plan-entries.spec.ts`, `… e2e/run-log.spec.ts`, `… e2e/week-control.spec.ts`, `… e2e/session-start-focus.spec.ts`, `… e2e/library-and-tests.spec.ts`, `… e2e/session-logging.spec.ts`, `… e2e/accessibility.spec.ts`, `… e2e/now-sheet.spec.ts`.
   - Erwartet: alles grün.
-- [ ] **Step 6:** CLAUDE.md:
+- [x] **Step 6:** CLAUDE.md:
   - Neuer Abschnitt „### The plan: one timeline“ direkt vor „### The dated plan“. Er beschreibt Reichweite, Nachladen mit Scroll-Ausgleich, Wochenkopf, die Zustände aus der Tabelle oben, „Heute trainieren“, die Kopfzeilen, Pill, `useTodayKey` und die Test-Anker.
   - In „The dated plan“ wird „Home has three exclusive cases“ durch einen Verweis auf diesen Abschnitt ersetzt, und `PlanWeekSection` wird beim Wochentags-Hinweis durch „die Kopfzeile des Plans“ ersetzt.
   - Im Absatz „`weekOverride` has exactly one writer“: Home hat kein Wochen-Panel mehr, die Override-Zeile des Plans liest nur.
   - In „Data loss on iOS“ und im Analyse-Export: „the reminder on Home“ wird zu „the reminder at the head of the plan“.
   - Im Absatz zu `next-workout.ts`: „Am längsten her“ ist jetzt der Hinweis in „Heute trainieren“.
   - Im Session-Abschnitt: „Home no longer carries a resume card“ bleibt sinngemäß und bezieht sich auf den Plan.
-- [ ] **Step 7:** Commit `Plan: Zeitstrahl ersetzt die Startseite`
+- [x] **Step 7:** Commit `Plan: Zeitstrahl ersetzt die Startseite`
 
 ### Task 6: Wochen-Sheet
 
@@ -328,7 +328,7 @@ Aufbau nach Screen 4/5 (`Sheet`, `label` = Titel, `closeLabel="Woche schließen"
 
 Nichts in diesem Sheet schreibt und nichts startet.
 
-- [ ] **Step 1:** `e2e/week-sheet.spec.ts`. `beforeEach`: Beispieldaten, Programmstart über die Einstellungen auf den Montag dieser Woche (wie `setProgramStart` in `program-week.spec.ts`), Termine über `importPlan`. Tests:
+- [x] **Step 1:** `e2e/week-sheet.spec.ts`. `beforeEach`: Beispieldaten, Programmstart über die Einstellungen auf den Montag dieser Woche (wie `setProgramStart` in `program-week.spec.ts`), Termine über `importPlan`. Tests:
   1. Ein Tap auf den Kopf der laufenden Woche öffnet `[data-week-sheet]`. Die Kacheln Kraft, Mobility und Laufen sind da, und unter „Vorgaben W1“ steht „Einheit A“.
   2. Aus `program-week.spec.ts` übernommen:
      - „zeigt je Woche die Vorgaben, die der Sessionstart schreiben würde“, umgestellt auf ‹ ›.
@@ -337,14 +337,14 @@ Nichts in diesem Sheet schreibt und nichts startet.
   4. **Review Focus 3:** Override in den Einstellungen auf W2 setzen. Dann zeigt das Sheet der laufenden Woche „Von Hand auf W2 gesetzt“.
   5. Disclosure: „+ … weitere wie im Workout“ klicken, danach steigt die Zeilenzahl im Block, und `aria-expanded` ist `"true"`.
   6. Bei 320px: Die Kacheln laufen nicht über, `scrollWidth` ist höchstens `clientWidth`.
-- [ ] **Step 2:** Run. Erwartet: FAIL.
-- [ ] **Step 3:** Implementieren.
-- [ ] **Step 4:** `npm run lint && npm run check && npm test`. Danach `caffeinate -i npx playwright test e2e/week-sheet.spec.ts` und `… e2e/accessibility.spec.ts`. Erwartet: grün.
-- [ ] **Step 5:** CLAUDE.md: unter „The plan: one timeline“ ein Unterabschnitt „#### The week sheet“.
+- [x] **Step 2:** Run. Erwartet: FAIL.
+- [x] **Step 3:** Implementieren.
+- [x] **Step 4:** `npm run lint && npm run check && npm test`. Danach `caffeinate -i npx playwright test e2e/week-sheet.spec.ts` und `… e2e/accessibility.spec.ts`. Erwartet: grün.
+- [x] **Step 5:** CLAUDE.md: unter „The plan: one timeline“ ein Unterabschnitt „#### The week sheet“.
   - Hierher wandern aus dem Programm-Tab-Abschnitt die Regeln „week selection is ephemeral `useState`“, „No start beside the prescriptions“, „cards disappear where there is no program week“ und „inside the span a week without rules is not empty“. Sie werden auf das Sheet bezogen.
   - Neu dazu: Kachel-Regel, Blockauswahl, Disclosure, Override-Hinweis, Anker.
   - Im Absatz „The weekly calculation is one function with four readers“ heißen die Leser jetzt History, die Kacheln des Wochen-Sheets und `wochen.csv`.
-- [ ] **Step 6:** Commit `Wochen-Sheet: Kacheln, Testtermin und Vorgaben zum Lesen`
+- [x] **Step 6:** Commit `Wochen-Sheet: Kacheln, Testtermin und Vorgaben zum Lesen`
 
 ### Task 7: Programm-Tab und Raster entfernen
 
@@ -353,14 +353,14 @@ Nichts in diesem Sheet schreibt und nichts startet.
 - Delete: `src/pages/ProgramsPage.tsx`, `src/components/TrainingCalendar.tsx`, `src/components/WeekVolumeTiles.tsx`, `src/components/PlanWeekSection.tsx`, `e2e/program-calendar.spec.ts`, `e2e/program-week.spec.ts`
 - Bleibt: `ProgressionRuleFields.tsx` und `progression-rule-form.ts`, weil `TemplateProgressionSection` sie als Übergangs-Editor braucht. `WeekStepper.tsx` bleibt für die Einstellungen.
 
-- [ ] **Step 1:** Specs umstellen.
+- [x] **Step 1:** Specs umstellen.
   - Alle `goto('./#/programs')` mit anschließender Wochenwahl werden zu `goto('./')` plus Selektor auf `[data-timeline-day="…"]`. Die Hilfsfunktion `selectWeekOf` entfällt.
   - `library-import.spec.ts` „… zeigt sie im Programm-Tab“ heißt jetzt „… im Plan“ und prüft die beiden `[data-timeline-day]`.
   - Neu in `navigation.spec.ts`: `goto('./#/programs')` landet auf `/`, und „Plan“ hat `aria-current="page"`.
   - Was `program-calendar.spec.ts` noch an Eigenem prüfte und nicht in `plan-timeline.spec.ts` steht, wird dorthin übernommen: 320px mit drei Einheiten an einem Tag, ein Lauf führt zur Detailseite. Danach wird die Datei gelöscht.
-- [ ] **Step 2:** Entfernen und umleiten. `grep -rn "ProgramsPage\|TrainingCalendar\|WeekVolumeTiles\|PlanWeekSection\|cellMarks\|CALENDAR_WINDOW\|#/programs'" src e2e` liefert danach keine Treffer.
-- [ ] **Step 3:** `npm run lint && npm run check && npm run check:strict && npm test && npm run build`, dann alle E2E-Specs einzeln nach dem Muster aus den Global Constraints. Erwartet: grün.
-- [ ] **Step 4:** CLAUDE.md:
+- [x] **Step 2:** Entfernen und umleiten. `grep -rn "ProgramsPage\|TrainingCalendar\|WeekVolumeTiles\|PlanWeekSection\|cellMarks\|CALENDAR_WINDOW\|#/programs'" src e2e` liefert danach keine Treffer.
+- [x] **Step 3:** `npm run lint && npm run check && npm run check:strict && npm test && npm run build`, dann alle E2E-Specs einzeln nach dem Muster aus den Global Constraints. Erwartet: grün.
+- [x] **Step 4:** CLAUDE.md:
   - Der Abschnitt „### The program tab answers two questions …“ samt „#### The training calendar …“ entfällt.
   - Erhalten bleiben, verschoben unter „The plan: one timeline“ und angepasst:
     - Der Navigations-Absatz („five entries and a centre button“): `/programs` leitet um, `/programs/manage` ist Bestand.
@@ -369,20 +369,20 @@ Nichts in diesem Sheet schreibt und nichts startet.
     - Der Absatz zu `UnitKindIcon`, ergänzt um `Scale` für Tests.
     - Die Lese-Regel „Reading is split by what each part needs“, bezogen auf `PlanPage`.
   - Der Absatz zu `ProgressionRuleFields` sagt, dass nur noch `TemplateProgressionSection` es nutzt, als Übergangs-Editor bis zum Programm-Import.
-- [ ] **Step 5:** Commit `Plan: Programm-Tab, Raster und Tagesliste entfernt, /programs leitet um`
+- [x] **Step 5:** Commit `Plan: Programm-Tab, Raster und Tagesliste entfernt, /programs leitet um`
 
 ### Task 8: Vertrag, Doku-Abgleich und Abschluss
 
 **Files:**
 - Modify: `.claude/skills/gym-book-architect/SKILL.md` **und** `.trae/skills/gym-book-pwa-architect/SKILL.md` (beide gleich), `CLAUDE.md`, `docs/superpowers/specs/2026-11-17-navigation-zeitstrahl-design.md`
 
-- [ ] **Step 1:** Architekturvertrag, in beiden Kopien:
+- [x] **Step 1:** Architekturvertrag, in beiden Kopien:
   - Unter „The dated plan“ wird „A series is a copy, not a rule: creating one writes individual entries and is done“ zu: Termine kommen ausschließlich über den Bibliothek-Import, die App zeigt sie nur an, und eine Serie gibt es nur noch als Kopie in den Beispieldaten. Kein wiederkehrender Plan, keine automatische Umplanung bleibt stehen.
   - In „v1 scope“ wird „dated training plan (single entries for workouts and runs, series as copies)“ zu „dated training plan (single entries for workouts and runs, written by the library import, read-only in the app)“.
-- [ ] **Step 2:** `grep -n "Home\b\|program tab\|Programm-Tab\|PlanWeekSection\|TrainingCalendar\|WeekVolumeTiles\|PlanSeriesSheet\|PlanEntrySheet\|/programs\b" CLAUDE.md`. Jeder Treffer beschreibt den neuen Stand. „program tab“ verschwindet ganz, das ist ein offener Minor aus Etappe 1.
-- [ ] **Step 3:** `npm run lint && npm run check && npm run check:strict && npm test && npm run build`. Danach ist der Dev-Server beendet, und alle E2E-Specs laufen einzeln. Erwartet: alles grün. Die Ausgaben werden berichtet.
-- [ ] **Step 4:** Spec: Status auf „Etappe 2 umgesetzt“. Punkt 6 unter „Offen für den Umsetzungsplan“ ist erledigt und wird gestrichen.
-- [ ] **Step 5:** Commit `Doku: Navigation Etappe 2 umgesetzt`. **Nicht pushen.** Den Nutzer fragen, denn der Push löst den Pages-Deploy aus (Weg über `gh`, siehe Memory „Deployment-Setup Gym Book“).
+- [x] **Step 2:** `grep -n "Home\b\|program tab\|Programm-Tab\|PlanWeekSection\|TrainingCalendar\|WeekVolumeTiles\|PlanSeriesSheet\|PlanEntrySheet\|/programs\b" CLAUDE.md`. Jeder Treffer beschreibt den neuen Stand. „program tab“ verschwindet ganz, das ist ein offener Minor aus Etappe 1.
+- [x] **Step 3:** `npm run lint && npm run check && npm run check:strict && npm test && npm run build`. Danach ist der Dev-Server beendet, und alle E2E-Specs laufen einzeln. Erwartet: alles grün. Die Ausgaben werden berichtet.
+- [x] **Step 4:** Spec: Status auf „Etappe 2 umgesetzt“. Punkt 6 unter „Offen für den Umsetzungsplan“ ist erledigt und wird gestrichen.
+- [x] **Step 5:** Commit `Doku: Navigation Etappe 2 umgesetzt`. **Nicht pushen.** Den Nutzer fragen, denn der Push löst den Pages-Deploy aus (Weg über `gh`, siehe Memory „Deployment-Setup Gym Book“).
 
 ---
 
