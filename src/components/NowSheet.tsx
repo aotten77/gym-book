@@ -47,7 +47,7 @@ const SECTION_LABEL_CLASSES = 'text-xs font-semibold uppercase tracking-wide tex
  * spontane Schreibtisch-Mobility soll nicht erst dort gesucht werden müssen.
  *
  * Gestartet wird ohne `planEntryId`, außer bei einem heute geplanten offenen
- * Eintrag (wie Home): jedes andere Workout verknüpft die Zuordnungsregel
+ * Eintrag (wie die Lime-Karte im Plan): jedes andere Workout verknüpft die Zuordnungsregel
  * selbst. Jede Zeile ist ein Knopf; die Marken sind Zierde.
  *
  * Läuft schon eine Session, entfallen die Startoptionen: jeder Tap führte
@@ -56,7 +56,7 @@ const SECTION_LABEL_CLASSES = 'text-xs font-semibold uppercase tracking-wide tex
  * solche beschriftet und ohne Fokus-Sheet - man liest erst, wo man war.
  *
  * Das `RunLogSheet` wohnt hier, nicht in der AppShell: wer es öffnen kann,
- * besitzt es (Home, Plan, Laufdetail tun es genauso), und der Zustand „Lauf
+ * besitzt es (Plan, Laufdetail tun es genauso), und der Zustand „Lauf
  * erfassen" ist nur eine Folge dieses Sheets. Schließen und Öffnen laufen in
  * einem Zug - nie zwei Sheets übereinander.
  */

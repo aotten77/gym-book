@@ -19,7 +19,7 @@ interface RunLogSheetProps {
   open: boolean;
   /** Ohne Lauf wird ein neuer angelegt, mit Lauf dieser bearbeitet. */
   run?: RunLog;
-  /** Der Lauf-Termin, von dem aus das Sheet geöffnet wurde (Home: "Heute"). */
+  /** Der Lauf-Termin, von dem aus das Sheet geöffnet wurde (Plan: Lime-Karte "Heute"). */
   initialPlanEntryId?: string;
   onClose: () => void;
 }

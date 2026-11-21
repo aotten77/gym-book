@@ -92,7 +92,7 @@ Do not use it for generic framework tutorials or unrelated repositories.
 ## The dated plan
 
 - Training is planned as single dated entries (`planEntries`): a local calendar day, an order within the day, and either a workout or a run prescription (title plus optional distance, duration, elevation, heart rate, pace and instructions). Several entries per day are fine; the same workout or run title only once per day.
-- A series is a **copy, not a rule**: creating one writes individual entries and is done. No recurring weekday schedule, no rule that generates future entries, no automatic rescheduling of a missed day — that would be a second plan source and the automation v1 excludes.
+- Entries arrive only through the library import; the app displays them and never writes them, and a series exists only as a copy in the sample data. No recurring weekday schedule, no rule that generates future entries, no automatic rescheduling of a missed day — that would be a second plan source and the automation v1 excludes.
 - Whether an entry is open, taken or done is **derived** from the sessions and runs that point at it (`planEntryId`), never stored on the entry. An aborted session takes nothing.
 - A taken entry is history: it cannot be changed, deleted or moved.
 - The link is made when a session starts or a run is saved — today's open matching entry first, else the earliest open one of the current calendar week. The program week still comes from `resolveWeekControl`; an entry never chooses it, and `materializeSession` knows nothing of the plan.
@@ -100,7 +100,7 @@ Do not use it for generic framework tutorials or unrelated repositories.
 
 ## v1 scope
 
-Must include: template management · local media upload · session start from template · per-session execution edits · optional warmup set · work set logging · left/right capture · time plus optional load · rest timer · last values · exercise history graph · tests with left/right values and asymmetry · export/import backup · run logging (distance, duration, elevation, average heart rate) · dated training plan (single entries for workouts and runs, series as copies) · installable PWA on Pages.
+Must include: template management · local media upload · session start from template · per-session execution edits · optional warmup set · work set logging · left/right capture · time plus optional load · rest timer · last values · exercise history graph · tests with left/right values and asymmetry · export/import backup · run logging (distance, duration, elevation, average heart rate) · dated training plan (single entries for workouts and runs, written by the library import, read-only in the app) · installable PWA on Pages.
 
 Must exclude: backend services · cloud sync · multi-user · sharing · video upload · complex adaptive progression · deload automation · recurring plan rules or automatic rescheduling · semantic conflict resolution.
 

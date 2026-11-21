@@ -1,6 +1,6 @@
 # Navigation neu: Zeitstrahl, Jetzt, Abgleich, Bestand
 
-Stand: 19.11.2026 · Status: Etappe 1 umgesetzt, offene Fragen für Etappe 2 entschieden
+Stand: 19.11.2026 · Status: Etappe 2 umgesetzt
 
 ## Ausgangslage
 
@@ -116,10 +116,6 @@ Wochensummen (`buildWeeklyVolume`, `WeeklyVolumeList`), „Steigerung möglich�
 - **Reichweite des Strahls**: nach vorn bis zur Woche des letzten Termins, mindestens bis Ende nächster Woche; nach hinten unbegrenzt mit Nachladen. Nicht an das Programmende gekoppelt: Läufe hängen an keinem Programm, und eine Laufvorbereitung kommt als datierte Termine, nicht als Programm.
 - **Termine nur lesen.** Geplant wird ausschließlich in claude.ai. `PlanEntrySheet` wird zur reinen Anzeige, `PlanSeriesSheet` und „+ Termin“ entfallen.
 - **Wochenregeln**: Zielbild nur per Import, die App zeigt nur an. Weil der Import das heute nicht kann, kommt zuerst der Zeitstrahl (Etappe 2) und danach der Programm-Import als eigene Etappe; bis dahin bleiben `TemplateProgressionSection` und `/programs/manage` als Übergangs-Editoren.
-
-## Offen für den Umsetzungsplan
-
-6. Welche Abschnitte in CLAUDE.md umgeschrieben werden müssen: Home-Fälle, Programm-Tab/Kalender, „Never automatically on session start“, Tab-Labels, e2e-Anker.
 
 ## Mockups
 
