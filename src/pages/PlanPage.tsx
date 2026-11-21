@@ -8,6 +8,7 @@ import { PlanEntrySheet } from '@/components/PlanEntrySheet';
 import { RunLogSheet } from '@/components/RunLogSheet';
 import { TimelineUnitRow, type TimelineEntryAction } from '@/components/TimelineUnitRow';
 import { TimelineWeek } from '@/components/TimelineWeek';
+import { WeekSheet } from '@/components/WeekSheet';
 import { db } from '@/db/appDb';
 import { countTemplatesWithWeekdays } from '@/db/data-fix-actions';
 import {
@@ -117,6 +118,8 @@ export function PlanPage() {
   const [runEntryId, setRunEntryId] = useState<string | undefined>(undefined);
   const [viewedEntry, setViewedEntry] = useState<PlanEntry | undefined>(undefined);
   const [entrySheetOpen, setEntrySheetOpen] = useState(false);
+  // Die Woche im Wochen-Sheet. Ansehen ist nie `weekOverride`: der eine Schreiber sind die Einstellungen.
+  const [sheetWeek, setSheetWeek] = useState<string | null>(null);
   const [todayPosition, setTodayPosition] = useState<'visible' | 'above' | 'below'>('visible');
   const timelineRef = useRef<HTMLDivElement>(null);
   const hasScrolledToToday = useRef(false);
@@ -538,8 +541,7 @@ export function PlanPage() {
               <TimelineWeek
                 key={week.key}
                 week={week}
-                // Das Wochen-Sheet kommt mit dem nächsten Schritt; bis dahin tut der Kopf nichts.
-                onOpenWeek={() => undefined}
+                onOpenWeek={setSheetWeek}
                 renderDay={renderDay}
               />
             ))}
@@ -578,6 +580,7 @@ export function PlanPage() {
             }}
           />
           <PlanEntrySheet open={entrySheetOpen} entry={viewedEntry} onClose={() => setEntrySheetOpen(false)} />
+          <WeekSheet weekKey={sheetWeek} onChangeWeek={setSheetWeek} onClose={() => setSheetWeek(null)} />
         </div>
       ) : null}
     </AppShell>

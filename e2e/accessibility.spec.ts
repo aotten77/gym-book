@@ -173,6 +173,19 @@ test.describe('Zugänglichkeit', () => {
     await expect(page.locator('[role="timer"]')).toHaveCount(1);
   });
 
+  test('das Wochen-Sheet hält sich an dieselben Regeln', async ({ page }) => {
+    // Das Sheet steht nur nach einem Tap auf den Wochenkopf; die Route-Schleife sieht es nie.
+    await page.goto('./');
+    await page.waitForTimeout(900);
+    await page.locator('[data-timeline-week-head][data-current]').click();
+    await expect(page.locator('[data-week-sheet]')).toBeVisible();
+    await page.waitForTimeout(400);
+
+    expect(await findContrastViolations(page)).toEqual([]);
+    expect(await findSmallTargets(page)).toEqual([]);
+    expect(await findUnlabelledControls(page)).toEqual([]);
+  });
+
   test('der Ruhemodus hält sich auf Tinte an dieselben Regeln', async ({ page }) => {
     /*
       Die einzige Fläche der App in Tinte - und damit die einzige, auf der ein

@@ -5,6 +5,7 @@ import {
   completeActiveSet,
   resetDatabase,
   seedSampleData,
+  setProgramStart,
 } from './helpers';
 
 /*
@@ -33,16 +34,6 @@ async function localDay(page: Page, offsetDays = 0, mondayOfWeek = false) {
     },
     { offset: offsetDays, monday: mondayOfWeek },
   );
-}
-
-async function setProgramStart(page: Page, date: string) {
-  await page.goto('./#/settings');
-  await page.waitForTimeout(1200);
-  await page.getByLabel('Programmstart').fill(date);
-  await page.waitForTimeout(900);
-
-  await page.goto('./#/programs');
-  await page.waitForTimeout(1200);
 }
 
 test.describe('Trainingskalender', () => {
