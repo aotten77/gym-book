@@ -102,10 +102,15 @@ export interface GuidedStep {
 /**
  * Ein Steuer-Ereignis einer geführten Einheit, mit dem Zeitpunkt in
  * Millisekunden. Der Ablaufzustand ist die Faltung dieser Liste - siehe
- * [guided-run.ts]. Heute gibt es nur den Start; Pause, Überspringen und die
- * übrigen Eingriffe kommen als weitere Mitglieder der Union dazu.
+ * [guided-run.ts]. Start, Pause, Weiter und Schritt neu starten gibt es;
+ * Überspringen und die übrigen Eingriffe kommen als weitere Mitglieder der
+ * Union dazu.
  */
-export type GuidedEvent = { type: 'start'; at: number };
+export type GuidedEvent =
+  | { type: 'start'; at: number }
+  | { type: 'pause'; at: number }
+  | { type: 'resume'; at: number }
+  | { type: 'restart'; at: number };
 
 /**
  * Der gespeicherte Teil einer geführten Einheit an der Session: der

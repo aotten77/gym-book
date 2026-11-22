@@ -15,6 +15,7 @@ import { summarizeSessionProgress } from '@/domain/session-summary';
 import { resolveWorkoutCategory } from '@/domain/workout-category';
 import { useNowTicker } from '@/hooks/useNowTicker';
 import { formatTimer } from '@/lib/format';
+import { activeSessionPath } from '@/lib/session-navigation';
 
 interface ActiveSessionBarProps {
   session: WorkoutSession;
@@ -87,8 +88,8 @@ export function ActiveSessionBar({ session }: ActiveSessionBarProps) {
   return (
     <button
       type="button"
-      // Die Session-Route leitet eine geführte Einheit auf ihren eigenen Screen weiter.
-      onClick={() => navigate(`/session/${session.id}`)}
+      // Eine geführte Einheit führt auf ihren eigenen Screen, nicht in die Session.
+      onClick={() => navigate(activeSessionPath(session))}
       /*
        * Die ganze Fläche ist der Knopf, nicht ein "Fortsetzen" am Rand: der
        * Streifen ist schmal, und ein Ziel über die volle Breite trifft auch

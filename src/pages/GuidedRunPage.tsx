@@ -1,14 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
 import { Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { X } from 'lucide-react';
+import { Pause, Play, X } from 'lucide-react';
+import { GuidedEndDialog } from '@/components/GuidedEndDialog';
 import { GuidedHintDialog } from '@/components/GuidedHintDialog';
 import { GuidedSideTag } from '@/components/GuidedSideTag';
 import { GuidedStage } from '@/components/GuidedStage';
 import { Button, IconButton } from '@/components/ui/Button';
 import { DONE_SURFACE } from '@/components/ui/StatusCard';
 import { db } from '@/db/appDb';
-import { completeGuidedSession } from '@/db/guided-session-actions';
+import {
+  abortGuidedSession,
+  completeGuidedSession,
+  recordGuidedControl,
+  type GuidedControl,
+} from '@/db/guided-session-actions';
 import { deriveGuidedRunState, type GuidedRunState } from '@/domain/guided-run';
 import type { GuidedSection } from '@/domain/guided-steps';
 import type { GuidedRun, GuidedStep, WorkoutSession } from '@/domain/models';
@@ -19,8 +25,7 @@ import { keepScreenAwake } from '@/lib/wake-lock';
 import { cn } from '@/lib/utils';
 
 /** Kleinschrift über einem Block - auf Tinte in gedämpftem Papier. */
-const CAPTION_CLASSES =
-  'text-[10px] font-bold uppercase tracking-[0.16em] text-accent-contrast/60';
+const CAPTION_CLASSES = 'text-[10px] font-bold uppercase tracking-[0.16em] text-accent-contrast/60';
 
 /** Der Umfang des Rings im Wechsel (Radius 56). */
 const RING_CIRCUMFERENCE = 2 * Math.PI * 56;
@@ -38,6 +43,10 @@ const RING_CIRCUMFERENCE = 2 * Math.PI * 56;
  * kommen. Das Signal selbst merkt sich seinen Schlüssel, damit es nur einmal
  * klingt, auch wenn der Stand mehrere Takte lang „fällig“ ist.
  *
+ * Pause hält die Zeit an (Ereignisse, nicht Zustand im Screen) und zeigt den
+ * Pause-Screen mit Weiter, Schritt neu starten und - nach Rückfrage - Einheit
+ * beenden, das abbricht und den Plan-Termin offen lässt.
+ *
  * Das X verkleinert nur: die Einheit läuft weiter, und der Streifen der App
  * führt zurück. Solange der Screen zu ist, klingt nichts - der Ton gehört zu
  * diesem Screen. Dunkel ist alles, was läuft; auf jedem Screen steht höchstens
@@ -51,7 +60,11 @@ export function GuidedRunPage() {
   );
 
   if (session === undefined) {
-    return <GuidedStage label="Geführte Einheit" screen="loading" tone="dark">{null}</GuidedStage>;
+    return (
+      <GuidedStage label="Geführte Einheit" screen="loading" tone="dark">
+        {null}
+      </GuidedStage>
+    );
   }
 
   if (!session?.guided || session.status === 'aborted') {
@@ -71,6 +84,7 @@ function GuidedRunScreen({ session, guided }: { session: WorkoutSession; guided:
   const playedSignals = useRef<Set<string>>(new Set());
   // Der Abschnitt, in dem der Hinweis aufging: ein Wechsel schließt ihn von selbst.
   const [hintSection, setHintSection] = useState<number | null>(null);
+  const [isEndAsked, setIsEndAsked] = useState(false);
 
   // Der Bildschirm bleibt an, solange die Einheit läuft - unabhängig von der
   // Einstellung: schläft iOS ein, friert es die App ein, und das Signal bleibt aus.
@@ -101,6 +115,18 @@ function GuidedRunScreen({ session, guided }: { session: WorkoutSession; guided:
     }
   }, [isFinishedRun, session.id]);
 
+  function control(type: GuidedControl) {
+    // Ungültig (zweiter Tipp, schon zu Ende): der Stand aus der DB bleibt maßgeblich.
+    void recordGuidedControl(session.id, type).catch(() => {});
+  }
+
+  function endRun() {
+    setIsEndAsked(false);
+    void abortGuidedSession(session.id)
+      .catch(() => {})
+      .then(() => navigate('/', { replace: true }));
+  }
+
   function handleClose() {
     if (location.key === 'default') {
       navigate('/');
@@ -129,6 +155,71 @@ function GuidedRunScreen({ session, guided }: { session: WorkoutSession; guided:
     return null;
   }
 
+  if (state.phase === 'paused') {
+    return (
+      <GuidedStage label={session.templateNameSnapshot} screen="pause" tone="dark">
+        <div
+          data-guided-run
+          data-guided-phase="paused"
+          data-guided-section={current.kind}
+          data-guided-now={state.stepIndex}
+          data-guided-remaining={state.remainingSeconds}
+          className="flex min-h-0 flex-1 flex-col"
+        >
+          <RunTop state={state} stepCount={guided.steps.length} onClose={handleClose} />
+
+          <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_13.1rem] gap-[18px] pt-2.5">
+            <div className="flex min-w-0 flex-col justify-center opacity-70">
+              <p className={CAPTION_CLASSES}>Pausiert</p>
+              <h1
+                data-guided-name
+                className="mt-1 break-words font-display text-[34px] font-extrabold leading-[1.02] tracking-[-0.03em]"
+              >
+                {step.name}
+                {current.side ? <GuidedSideTag side={current.side} /> : null}
+              </h1>
+              <p
+                data-guided-clock
+                className="mt-2 font-display text-[72px] font-extrabold leading-[0.9] tracking-[-0.05em] tabular-nums"
+              >
+                {formatStepClock(state.remainingSeconds)}
+              </p>
+            </div>
+
+            <div className="flex flex-col items-stretch justify-center gap-2">
+              <Button
+                variant="primary"
+                className={cn(PAPER_BUTTON_CLASSES, 'gap-1.5')}
+                onClick={() => control('resume')}
+              >
+                <Play size={14} fill="currentColor" aria-hidden="true" />
+                Weiter
+              </Button>
+              <Button
+                variant="secondary"
+                className={cn(SOFT_BUTTON_CLASSES, 'bg-accent-contrast/10')}
+                onClick={() => control('restart')}
+              >
+                Schritt neu starten
+              </Button>
+              <Button
+                variant="secondary"
+                className={cn(SOFT_BUTTON_CLASSES, 'bg-transparent text-accent-contrast/60')}
+                onClick={() => setIsEndAsked(true)}
+              >
+                Einheit beenden …
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        {isEndAsked ? (
+          <GuidedEndDialog onConfirm={endRun} onCancel={() => setIsEndAsked(false)} />
+        ) : null}
+      </GuidedStage>
+    );
+  }
+
   return (
     <GuidedStage label={session.templateNameSnapshot} screen="run" tone="dark">
       <div
@@ -139,22 +230,7 @@ function GuidedRunScreen({ session, guided }: { session: WorkoutSession; guided:
         data-guided-remaining={state.remainingSeconds}
         className="flex min-h-0 flex-1 flex-col"
       >
-        <div className="flex items-center gap-2.5">
-          <IconButton
-            label="Verkleinern"
-            className="rounded-full border-transparent bg-accent-contrast/10 text-accent-contrast hover:bg-accent-contrast/20 focus-visible:ring-accent-contrast focus-visible:ring-offset-accent"
-            onClick={handleClose}
-          >
-            <X size={14} aria-hidden="true" />
-          </IconButton>
-          <ProgressSegments state={state} />
-          <span
-            data-guided-meta
-            className="whitespace-nowrap text-[11px] tabular-nums text-accent-contrast/60"
-          >
-            {describeMeta(state, guided.steps.length)}
-          </span>
-        </div>
+        <RunTop state={state} stepCount={guided.steps.length} onClose={handleClose} />
 
         <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_13.1rem] gap-[18px] pt-2.5">
           {current.kind === 'exercise' ? (
@@ -171,7 +247,7 @@ function GuidedRunScreen({ session, guided }: { session: WorkoutSession; guided:
             />
           )}
 
-          <div className="flex flex-col items-stretch justify-center">
+          <div className="flex flex-col items-stretch justify-center gap-3">
             {current.kind === 'exercise' ? (
               <p
                 data-guided-clock
@@ -182,9 +258,19 @@ function GuidedRunScreen({ session, guided }: { session: WorkoutSession; guided:
             ) : (
               <CountdownRing
                 remainingSeconds={state.remainingSeconds}
-                fraction={(current.startSeconds + current.seconds - state.elapsedSeconds) / current.seconds}
+                fraction={
+                  (current.startSeconds + current.seconds - state.elapsedSeconds) / current.seconds
+                }
               />
             )}
+            <Button
+              variant="primary"
+              className={cn(PAPER_BUTTON_CLASSES, 'gap-1.5')}
+              onClick={() => control('pause')}
+            >
+              <Pause size={14} fill="currentColor" aria-hidden="true" />
+              Pause
+            </Button>
           </div>
         </div>
       </div>
@@ -205,6 +291,44 @@ function GuidedRunScreen({ session, guided }: { session: WorkoutSession; guided:
         />
       ) : null}
     </GuidedStage>
+  );
+}
+
+/** Papier auf Tinte: die Hauptaktion des Screens, ohne Lime. */
+const PAPER_BUTTON_CLASSES =
+  'rounded-full bg-accent-contrast text-accent hover:opacity-90 focus-visible:ring-accent-contrast focus-visible:ring-offset-accent';
+
+/** Die leisen Aktionen daneben. */
+const SOFT_BUTTON_CLASSES =
+  'rounded-full text-accent-contrast hover:bg-accent-contrast/20 focus-visible:ring-accent-contrast focus-visible:ring-offset-accent';
+
+/** Die Kopfzeile von Ablauf und Pause: Verkleinern, Fortschritt, Restzeit. */
+function RunTop({
+  state,
+  stepCount,
+  onClose,
+}: {
+  state: GuidedRunState;
+  stepCount: number;
+  onClose: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-2.5">
+      <IconButton
+        label="Verkleinern"
+        className="rounded-full border-transparent bg-accent-contrast/10 text-accent-contrast hover:bg-accent-contrast/20 focus-visible:ring-accent-contrast focus-visible:ring-offset-accent"
+        onClick={onClose}
+      >
+        <X size={14} aria-hidden="true" />
+      </IconButton>
+      <ProgressSegments state={state} />
+      <span
+        data-guided-meta
+        className="whitespace-nowrap text-[11px] tabular-nums text-accent-contrast/60"
+      >
+        {describeMeta(state, stepCount)}
+      </span>
+    </div>
   );
 }
 
@@ -253,7 +377,9 @@ function ProgressSegments({ state }: { state: GuidedRunState }) {
                 'absolute inset-y-0 left-0 rounded-sm',
                 isNow ? 'bg-accent-contrast' : 'bg-accent-contrast/55',
               )}
-              style={{ width: `${Math.round((isDone ? 1 : isNow ? fraction : 0) * 100)}%` }}
+              style={{
+                width: `${Math.round((isDone ? 1 : isNow ? fraction : 0) * 100)}%`,
+              }}
             />
           </i>
         );
@@ -385,7 +511,14 @@ function CountdownRing({
   return (
     <div data-guided-ring className="relative mx-auto h-32 w-32">
       <svg width="128" height="128" viewBox="0 0 128 128" aria-hidden="true">
-        <circle cx="64" cy="64" r="56" fill="none" className="stroke-accent-contrast/15" strokeWidth="8" />
+        <circle
+          cx="64"
+          cy="64"
+          r="56"
+          fill="none"
+          className="stroke-accent-contrast/15"
+          strokeWidth="8"
+        />
         <circle
           cx="64"
           cy="64"

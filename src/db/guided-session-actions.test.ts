@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { db } from '@/db/appDb';
 import { loadTakenPlanEntryIds } from '@/db/plan-actions';
-import { completeGuidedSession, startGuidedSession } from '@/db/guided-session-actions';
+import {
+  abortGuidedSession,
+  completeGuidedSession,
+  recordGuidedControl,
+  startGuidedSession,
+} from '@/db/guided-session-actions';
 import { abortSession, startSessionFromTemplate } from '@/db/session-actions';
 import type { GuidedStep, PlanEntry } from '@/domain/models';
 
@@ -227,5 +232,136 @@ describe('completeGuidedSession', () => {
 
     expect(await completeGuidedSession('x')).toBe(false);
     expect((await db.workoutSessions.get('x'))?.status).toBe('active');
+  });
+});
+
+const after = (seconds: number) => new Date(DO.getTime() + seconds * 1000);
+
+describe('recordGuidedControl', () => {
+  it('hängt Pause, Weiter und Neustart der Reihe nach an', async () => {
+    await seedGuided();
+
+    const id = await startGuidedSession('g', { now: DO });
+
+    await recordGuidedControl(id, 'pause', after(8));
+    await recordGuidedControl(id, 'restart', after(9));
+    await recordGuidedControl(id, 'resume', after(20));
+
+    expect((await db.workoutSessions.get(id))?.guided?.events).toEqual([
+      { type: 'start', at: DO.getTime() },
+      { type: 'pause', at: after(8).getTime() },
+      { type: 'restart', at: after(9).getTime() },
+      { type: 'resume', at: after(20).getTime() },
+    ]);
+  });
+
+  it('lehnt Weiter ohne Pause ab und lässt die Ereignisse stehen', async () => {
+    await seedGuided();
+
+    const id = await startGuidedSession('g', { now: DO });
+
+    await expect(recordGuidedControl(id, 'resume', after(3))).rejects.toThrow(/nicht pausiert/);
+    expect((await db.workoutSessions.get(id))?.guided?.events).toHaveLength(1);
+  });
+
+  it('lehnt eine zweite Pause ab', async () => {
+    await seedGuided();
+
+    const id = await startGuidedSession('g', { now: DO });
+
+    await recordGuidedControl(id, 'pause', after(3));
+
+    await expect(recordGuidedControl(id, 'pause', after(4))).rejects.toThrow(/schon pausiert/);
+  });
+
+  it('lehnt ein Ereignis nach dem rechnerischen Ende ab', async () => {
+    await seedGuided();
+
+    const id = await startGuidedSession('g', { now: DO });
+
+    await expect(recordGuidedControl(id, 'pause', after(64))).rejects.toThrow(/zu Ende/);
+  });
+
+  it('lehnt ein Ereignis an einer beendeten Einheit ab', async () => {
+    await seedGuided();
+
+    const id = await startGuidedSession('g', { now: DO });
+
+    await abortGuidedSession(id);
+
+    await expect(recordGuidedControl(id, 'pause', after(3))).rejects.toThrow(/läuft nicht mehr/);
+  });
+
+  it('verschiebt das automatische Ende um die Pause', async () => {
+    await seedGuided();
+
+    const id = await startGuidedSession('g', { now: DO });
+
+    await recordGuidedControl(id, 'pause', after(10));
+    await recordGuidedControl(id, 'resume', after(40));
+
+    expect(await completeGuidedSession(id, after(63))).toBe(false);
+    expect(await completeGuidedSession(id, after(93))).toBe(true);
+    expect((await db.workoutSessions.get(id))?.completedAt).toBe(after(93).toISOString());
+  });
+
+  it('schließt in der Pause nicht automatisch ab', async () => {
+    await seedGuided();
+
+    const id = await startGuidedSession('g', { now: DO });
+
+    await recordGuidedControl(id, 'pause', after(10));
+
+    expect(await completeGuidedSession(id, after(1000))).toBe(false);
+    expect((await db.workoutSessions.get(id))?.status).toBe('active');
+  });
+
+  it('wirft bei einer fremden Id', async () => {
+    await expect(recordGuidedControl('fehlt', 'pause')).rejects.toThrow(/nicht gefunden/);
+  });
+});
+
+describe('abortGuidedSession', () => {
+  it('bricht ab und lässt den Plan-Termin offen', async () => {
+    await seedGuided();
+    await db.planEntries.add(entry('do', '2026-10-08'));
+
+    const id = await startGuidedSession('g', { now: DO });
+
+    expect((await loadTakenPlanEntryIds(['do'])).has('do')).toBe(true);
+
+    await recordGuidedControl(id, 'pause', after(10));
+    await abortGuidedSession(id);
+
+    expect((await db.workoutSessions.get(id))?.status).toBe('aborted');
+    expect((await loadTakenPlanEntryIds(['do'])).has('do')).toBe(false);
+    // Eine neue Einheit ist wieder möglich und nimmt den offenen Termin.
+    const again = await startGuidedSession('g', { now: DO });
+
+    expect(again).not.toBe(id);
+    expect((await db.workoutSessions.get(again))?.planEntryId).toBe('do');
+  });
+
+  it('lässt eine abgeschlossene Einheit abgeschlossen', async () => {
+    await seedGuided();
+
+    const id = await startGuidedSession('g', { now: DO });
+
+    await completeGuidedSession(id, after(63));
+    await abortGuidedSession(id);
+
+    expect((await db.workoutSessions.get(id))?.status).toBe('completed');
+  });
+
+  it('weist eine Kraft-Session ab', async () => {
+    await db.workoutTemplates.add({ id: 'k', name: 'Kraft', createdAt: STAMP, updatedAt: STAMP });
+
+    const id = await startSessionFromTemplate('k');
+
+    await expect(abortGuidedSession(id)).rejects.toThrow(/keine geführte/);
+  });
+
+  it('wirft bei einer fremden Id', async () => {
+    await expect(abortGuidedSession('fehlt')).rejects.toThrow(/nicht gefunden/);
   });
 });

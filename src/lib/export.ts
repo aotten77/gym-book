@@ -129,6 +129,9 @@ const workoutTemplateExerciseSchema = z.object({
  */
 const guidedEventSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('start'), at: z.number() }),
+  z.object({ type: z.literal('pause'), at: z.number() }),
+  z.object({ type: z.literal('resume'), at: z.number() }),
+  z.object({ type: z.literal('restart'), at: z.number() }),
 ]);
 
 const guidedRunSchema = z.object({

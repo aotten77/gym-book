@@ -15,7 +15,11 @@ import {
 } from '@/db/history-queries';
 import { loadUpcomingPlan } from '@/db/plan-queries';
 import { startSessionFromTemplate } from '@/db/session-actions';
-import { navigateToGuidedStart, navigateToStartedSession } from '@/lib/session-navigation';
+import {
+  activeSessionPath,
+  navigateToGuidedStart,
+  navigateToStartedSession,
+} from '@/lib/session-navigation';
 import { pickTodayPlan } from '@/domain/plan';
 import { toDateInputValue } from '@/domain/program';
 import {
@@ -230,7 +234,7 @@ export function NowSheet() {
                 bleibt; der Routenwechsel schließt dieses Sheet selbst.
               */}
               <Link
-                to={`/session/${activeSession.id}`}
+                to={activeSessionPath(activeSession)}
                 className="flex min-h-[3.625rem] w-full items-center gap-3 rounded-control bg-accent px-3 py-2 text-left text-accent-contrast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
               >
                 <span className="min-w-0 flex-1">

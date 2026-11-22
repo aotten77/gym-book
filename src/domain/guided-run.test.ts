@@ -174,6 +174,140 @@ describe('addGuidedEvent', () => {
   });
 });
 
+describe('Pause, Weiter und Schritt neu starten', () => {
+  const PAUSED: GuidedEvent[] = [...START, { type: 'pause', at: at(12) }];
+  const RESUMED: GuidedEvent[] = [...PAUSED, { type: 'resume', at: at(32) }];
+
+  it('hält die Zeit an: während der Pause ändert sich nichts', () => {
+    const early = deriveGuidedRunState(STEPS, PAUSED, at(13));
+    const late = deriveGuidedRunState(STEPS, PAUSED, at(500));
+
+    expect(early.phase).toBe('paused');
+    expect(late.phase).toBe('paused');
+    expect(late.elapsedSeconds).toBe(12);
+    expect(late.current).toMatchObject({ kind: 'exercise', stepIndex: 0 });
+    expect(late.remainingSeconds).toBe(3);
+  });
+
+  it('verschiebt nach Weiter alles Spätere um die Dauer der Pause', () => {
+    const state = deriveGuidedRunState(STEPS, RESUMED, at(34));
+
+    expect(state.phase).toBe('exercise');
+    expect(state.elapsedSeconds).toBe(14);
+    expect(guidedRunEndsAt(STEPS, RESUMED)).toBe(at(63 + 20));
+  });
+
+  it('gibt es ohne Weiter kein Ende', () => {
+    expect(guidedRunEndsAt(STEPS, PAUSED)).toBeNull();
+  });
+
+  it('lässt während der Pause kein Signal fällig werden und holt es danach zur neuen Zeit', () => {
+    const paused = [...START, { type: 'pause', at: at(14.9) } satisfies GuidedEvent];
+
+    expect(deriveGuidedRunState(STEPS, paused, at(15.2)).dueSignal).toBeNull();
+
+    const resumed: GuidedEvent[] = [...paused, { type: 'resume', at: at(30) }];
+
+    expect(deriveGuidedRunState(STEPS, resumed, at(30.3)).dueSignal?.key).toBe('exercise-end:1');
+  });
+
+  it('rechnet mehrere Pausen zusammen', () => {
+    const events: GuidedEvent[] = [
+      ...RESUMED,
+      { type: 'pause', at: at(40) }, // gespielt: 12 + 8 = 20
+      { type: 'resume', at: at(100) },
+    ];
+
+    expect(deriveGuidedRunState(STEPS, events, at(105)).elapsedSeconds).toBe(25);
+    expect(guidedRunEndsAt(STEPS, events)).toBe(at(100 + 43));
+  });
+
+  it('startet die Übung neu: Sie beginnt wieder bei ihrem vollen Wert', () => {
+    const events: GuidedEvent[] = [...START, { type: 'restart', at: at(12) }];
+    const state = deriveGuidedRunState(STEPS, events, at(12.5));
+
+    expect(state.current).toMatchObject({ kind: 'exercise', stepIndex: 0 });
+    expect(state.remainingSeconds).toBe(10);
+    expect(guidedRunEndsAt(STEPS, events)).toBe(at(12 + 58));
+  });
+
+  it('startet bei beidseitigen Schritten nur die aktuelle Seite neu', () => {
+    // 50 s: Taube rechts (Beginn bei 43 s) - links bleibt erledigt.
+    const events: GuidedEvent[] = [...START, { type: 'restart', at: at(50) }];
+    const state = deriveGuidedRunState(STEPS, events, at(50.5));
+
+    expect(state.current).toMatchObject({ kind: 'exercise', side: 'right' });
+    expect(state.remainingSeconds).toBe(20);
+    expect(state.stepProgress[0]).toBe(1);
+  });
+
+  it('startet im Wechsel den Wechsel neu', () => {
+    const events: GuidedEvent[] = [...START, { type: 'restart', at: at(3) }];
+
+    expect(deriveGuidedRunState(STEPS, events, at(3)).remainingSeconds).toBe(5);
+  });
+
+  it('bleibt beim Neustart in der Pause stehen und läuft mit Weiter von vorn', () => {
+    const events: GuidedEvent[] = [
+      ...START,
+      { type: 'pause', at: at(50) },
+      { type: 'restart', at: at(51) },
+    ];
+
+    expect(deriveGuidedRunState(STEPS, events, at(90))).toMatchObject({
+      phase: 'paused',
+      remainingSeconds: 20,
+    });
+
+    const resumed: GuidedEvent[] = [...events, { type: 'resume', at: at(100) }];
+
+    expect(deriveGuidedRunState(STEPS, resumed, at(105)).remainingSeconds).toBe(15);
+  });
+
+  it('lässt das Signal der neu gespielten Übung noch einmal klingen', () => {
+    const events: GuidedEvent[] = [...START, { type: 'restart', at: at(12) }];
+    const first = deriveGuidedRunState(STEPS, START, at(15.2)).dueSignal?.key;
+    const again = deriveGuidedRunState(STEPS, events, at(12 + 10 + 0.2)).dueSignal?.key;
+
+    expect(first).toBe('exercise-end:1');
+    expect(again).toBeTruthy();
+    expect(again).not.toBe(first);
+  });
+
+  it('wirft eine springende Uhr nicht in die negative Zeit', () => {
+    const events: GuidedEvent[] = [...START, { type: 'pause', at: at(-5) }];
+
+    expect(deriveGuidedRunState(STEPS, events, at(10)).elapsedSeconds).toBe(0);
+  });
+});
+
+describe('addGuidedEvent: Pause, Weiter, Neustart', () => {
+  it('lehnt Weiter ohne Pause ab', () => {
+    expect(() => addGuidedEvent(START, { type: 'resume', at: at(1) })).toThrow(/nicht pausiert/);
+  });
+
+  it('lehnt eine zweite Pause ab', () => {
+    const paused = addGuidedEvent(START, { type: 'pause', at: at(1) });
+
+    expect(() => addGuidedEvent(paused, { type: 'pause', at: at(2) })).toThrow(/schon pausiert/);
+  });
+
+  it('lehnt jedes Steuer-Ereignis vor dem Start ab', () => {
+    for (const type of ['pause', 'resume', 'restart'] as const) {
+      expect(() => addGuidedEvent([], { type, at: 1 })).toThrow(/noch nicht begonnen/);
+    }
+  });
+
+  it('nimmt Pause, Weiter und Neustart in gültiger Folge an', () => {
+    let events = addGuidedEvent(START, { type: 'pause', at: at(1) });
+
+    events = addGuidedEvent(events, { type: 'restart', at: at(2) });
+    events = addGuidedEvent(events, { type: 'resume', at: at(3) });
+
+    expect(events.map((event) => event.type)).toEqual(['start', 'pause', 'restart', 'resume']);
+  });
+});
+
 describe('guidedRunEndsAt', () => {
   it('ist der Start plus die Gesamtdauer', () => {
     expect(guidedRunEndsAt(STEPS, START)).toBe(at(63));

@@ -1,4 +1,6 @@
 import type { NavigateFunction } from 'react-router-dom';
+import { isGuidedSession } from '@/domain/guided-run';
+import type { WorkoutSession } from '@/domain/models';
 
 /**
  * Der Navigationsstate eines frischen Starts: "öffne das Fokus-Sheet".
@@ -68,4 +70,13 @@ export function navigateToGuidedStart(
   navigate(`/guided/${templateId}`, {
     state: (options.planEntryId ? { planEntryId: options.planEntryId } : {}) satisfies GuidedStartState,
   });
+}
+
+/**
+ * Wohin die Rückkehr in eine laufende Einheit führt: eine geführte Einheit hat
+ * ihren eigenen Screen, alles andere den Session-Screen. Ohne `state`, damit
+ * das Fokus-Sheet geschlossen bleibt.
+ */
+export function activeSessionPath(session: Pick<WorkoutSession, 'id' | 'guided'>): string {
+  return isGuidedSession(session) ? `/guided/run/${session.id}` : `/session/${session.id}`;
 }

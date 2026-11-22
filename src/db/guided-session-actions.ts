@@ -1,11 +1,12 @@
 import { db } from '@/db/appDb';
 import {
+  abortSession,
   findActiveSession,
   findPlanEntryForStart,
   resolveSessionWeekContext,
   type StartSessionOptions,
 } from '@/db/session-actions';
-import { addGuidedEvent, guidedRunEndsAt } from '@/domain/guided-run';
+import { addGuidedEvent, deriveGuidedRunState, guidedRunEndsAt } from '@/domain/guided-run';
 import { isGuidedTemplate } from '@/domain/guided-steps';
 import type { WorkoutSession } from '@/domain/models';
 import { resolveWorkoutCategory } from '@/domain/workout-category';
@@ -123,4 +124,61 @@ export async function completeGuidedSession(
 
     return true;
   });
+}
+
+/** Die Steuer-Ereignisse, die der Screen auslösen darf. */
+export type GuidedControl = 'pause' | 'resume' | 'restart';
+
+/**
+ * Hängt ein Steuer-Ereignis (Pause, Weiter, Schritt neu starten) an die
+ * laufende Einheit. Die Gültigkeit prüft `addGuidedEvent`; hier kommt dazu,
+ * dass die Session aktiv und geführt ist und nicht schon zu Ende gelaufen
+ * ist - nach dem letzten Abschnitt gibt es nichts mehr anzuhalten.
+ */
+export async function recordGuidedControl(
+  sessionId: string,
+  control: GuidedControl,
+  now: Date = new Date(),
+): Promise<void> {
+  await db.transaction('rw', db.workoutSessions, async () => {
+    const session = await db.workoutSessions.get(sessionId);
+
+    if (!session) {
+      throw new Error('Session nicht gefunden');
+    }
+
+    if (session.status !== 'active' || !session.guided) {
+      throw new Error('Die Einheit läuft nicht mehr.');
+    }
+
+    const { steps, events } = session.guided;
+
+    if (deriveGuidedRunState(steps, events, now.getTime()).phase === 'finished') {
+      throw new Error('Die Einheit ist schon zu Ende.');
+    }
+
+    await db.workoutSessions.update(sessionId, {
+      guided: { steps, events: addGuidedEvent(events, { type: control, at: now.getTime() }) },
+    });
+  });
+}
+
+/**
+ * „Einheit beenden“: bricht die geführte Einheit ab. Wie jeder Abbruch zählt
+ * sie weder im Wochenvolumen, noch erledigt sie den Plan-Termin - er bleibt
+ * offen und lässt sich neu starten. Eine schon abgeschlossene oder
+ * abgebrochene Einheit bleibt unberührt.
+ */
+export async function abortGuidedSession(sessionId: string): Promise<void> {
+  const session = await db.workoutSessions.get(sessionId);
+
+  if (!session) {
+    throw new Error('Session nicht gefunden');
+  }
+
+  if (!session.guided) {
+    throw new Error('Das ist keine geführte Einheit.');
+  }
+
+  await abortSession(sessionId);
 }
