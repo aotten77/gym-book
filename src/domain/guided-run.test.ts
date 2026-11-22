@@ -786,3 +786,109 @@ describe("deriveGuidedProtocol", () => {
     ]);
   });
 });
+
+describe("fällige Ansage", () => {
+  it("nennt im ersten Wechsel vor Schritt 1 die erste Übung", () => {
+    const state = deriveGuidedRunState(STEPS, START, at(0.3));
+
+    expect(state.dueAnnouncement).toEqual({
+      key: "announce:start",
+      text: "Als Nächstes: Hund, 10 Sekunden",
+      dueAt: at(0),
+    });
+  });
+
+  it("kommt im ersten Wechsel nicht mehr, wenn er länger als 2 s läuft", () => {
+    expect(deriveGuidedRunState(STEPS, START, at(2.5)).dueAnnouncement).toBeNull();
+    expect(deriveGuidedRunState(STEPS, START, at(4)).dueAnnouncement).toBeNull();
+  });
+
+  it("folgt dem Wechselsignal mit der nächsten Übung samt Seite", () => {
+    const state = deriveGuidedRunState(STEPS, START, at(15.2));
+
+    expect(state.dueSignal?.key).toBe("exercise-end:1");
+    expect(state.dueAnnouncement).toEqual({
+      key: "announce:exercise-end:1",
+      text: "Als Nächstes: Taube, links, 20 Sekunden",
+      dueAt: at(15),
+    });
+  });
+
+  it("nennt nach der linken Seite die rechte", () => {
+    expect(deriveGuidedRunState(STEPS, START, at(40.5)).dueAnnouncement).toMatchObject({
+      key: "announce:exercise-end:3",
+      text: "Als Nächstes: Taube, rechts, 20 Sekunden",
+    });
+  });
+
+  it("sagt am Ende der letzten Übung „Geschafft.“", () => {
+    const state = deriveGuidedRunState(STEPS, START, at(63.5));
+
+    expect(state.phase).toBe("finished");
+    expect(state.dueAnnouncement).toMatchObject({
+      key: "announce:exercise-end:5",
+      text: "Geschafft.",
+    });
+  });
+
+  it("nimmt den Sprechnamen vor dem Namen", () => {
+    const steps: GuidedStep[] = [{ name: "BWS", spokenName: "Brustwirbelsäule", seconds: 10 }];
+
+    expect(deriveGuidedRunState(steps, START, at(0.1)).dueAnnouncement?.text).toBe(
+      "Als Nächstes: Brustwirbelsäule, 10 Sekunden",
+    );
+  });
+
+  it("gilt etwa 2 Sekunden lang wie das Signal", () => {
+    const fresh = at(15) + GUIDED_SIGNAL_MAX_DELAY_MS;
+
+    expect(deriveGuidedRunState(STEPS, START, fresh).dueAnnouncement).not.toBeNull();
+    expect(deriveGuidedRunState(STEPS, START, fresh + 1).dueAnnouncement).toBeNull();
+  });
+
+  it("holt nach der Rückkehr aus dem Hintergrund nichts nach", () => {
+    expect(deriveGuidedRunState(STEPS, START, at(63 + 180)).dueAnnouncement).toBeNull();
+    expect(deriveGuidedRunState(STEPS, START, at(42.5)).dueAnnouncement).toBeNull();
+  });
+
+  it("kommt weder im Wechsel noch mitten in der Übung noch in der Pause", () => {
+    expect(deriveGuidedRunState(STEPS, START, at(8)).dueAnnouncement).toBeNull();
+    expect(deriveGuidedRunState(STEPS, START, at(30)).dueAnnouncement).toBeNull();
+
+    const paused: GuidedEvent[] = [...START, { type: "pause", at: at(15.1) }];
+
+    expect(deriveGuidedRunState(STEPS, paused, at(15.3)).dueAnnouncement).toBeNull();
+    expect(deriveGuidedRunState(STEPS, [], at(0.3)).dueAnnouncement).toBeNull();
+  });
+
+  it("behält den Schlüssel über Pause und Weiter, damit sie nicht doppelt kommt", () => {
+    const events: GuidedEvent[] = [
+      ...START,
+      { type: "pause", at: at(0.5) },
+      { type: "resume", at: at(30) },
+    ];
+
+    expect(deriveGuidedRunState(STEPS, events, at(30.5)).dueAnnouncement?.key).toBe(
+      "announce:start",
+    );
+  });
+
+  it("sagt nach einem Neustart oder Zurück erneut an, mit eigener Nummer", () => {
+    const events: GuidedEvent[] = [...START, { type: "restart", at: at(12) }];
+    const again = deriveGuidedRunState(STEPS, events, at(12 + 10 + 0.2));
+
+    expect(again.dueAnnouncement?.key).toBe("announce:exercise-end:1:1");
+
+    const back: GuidedEvent[] = [...START, { type: "back", at: at(20) }];
+
+    expect(deriveGuidedRunState(STEPS, back, at(20.4)).dueAnnouncement?.key).toBe(
+      "announce:start:1",
+    );
+  });
+
+  it("schweigt, wo die Übung übersprungen wurde - wie das Signal", () => {
+    const events: GuidedEvent[] = [...START, { type: "skip", at: at(8) }];
+
+    expect(deriveGuidedRunState(STEPS, events, at(8.2)).dueAnnouncement).toBeNull();
+  });
+});

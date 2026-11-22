@@ -1,4 +1,7 @@
 import { db } from "@/db/appDb";
+import { getStepsAnnouncementAvailability } from "@/db/announcement-actions";
+import { SETTINGS_ID } from "@/db/normalize";
+import { setGuidedAudioMode } from "@/db/settings-actions";
 import {
   abortSession,
   findActiveSession,
@@ -13,7 +16,7 @@ import {
   guidedRunEndsAt,
 } from "@/domain/guided-run";
 import { isGuidedTemplate } from "@/domain/guided-steps";
-import type { WorkoutSession } from "@/domain/models";
+import type { GuidedAudioMode, WorkoutSession } from "@/domain/models";
 import { resolveWorkoutCategory } from "@/domain/workout-category";
 import { createId } from "@/lib/id";
 
@@ -26,6 +29,11 @@ import { createId } from "@/lib/id";
  * Kraft, wie sie sind, und wissen nichts davon.
  */
 
+export interface StartGuidedOptions extends StartSessionOptions {
+  /** Die gewünschte Audio-Wahl; ohne sie gilt die zuletzt gewählte, sonst „Stimme + Ton“. */
+  audioMode?: GuidedAudioMode;
+}
+
 /**
  * Startet eine geführte Einheit.
  *
@@ -37,7 +45,7 @@ import { createId } from "@/lib/id";
  */
 export async function startGuidedSession(
   templateId: string,
-  options: StartSessionOptions = {},
+  options: StartGuidedOptions = {},
 ): Promise<string> {
   const now = options.now ?? new Date();
   const template = await db.workoutTemplates.get(templateId);
@@ -52,6 +60,17 @@ export async function startGuidedSession(
 
   const { program, programWeek, resolvedProgramWeek, usedWeekOverride } =
     await resolveSessionWeekContext();
+  // Vor der Transaktion: die Verfügbarkeit liest mehrere Tabellen und die TTS-Einstellungen.
+  const availability = await getStepsAnnouncementAvailability(
+    template.steps ?? [],
+  );
+  const wanted: GuidedAudioMode =
+    options.audioMode ??
+    (await db.appSettings.get(SETTINGS_ID))?.guidedAudioMode ??
+    "voice";
+  // „Stimme + Ton“ nur mit allen Ansagen: sonst läuft „Nur Ton“, und die Wahl bleibt, wie sie war.
+  const audioMode: GuidedAudioMode =
+    wanted === "voice" && availability.complete ? "voice" : "tone";
   const session: WorkoutSession = {
     id: createId(),
     templateId: template.id,
@@ -65,6 +84,7 @@ export async function startGuidedSession(
     status: "active",
     // Eine Kopie: spätere Importe ersetzen die Schritte der Vorlage, nicht die dieser Einheit.
     guided: {
+      audioMode,
       steps: (template.steps ?? []).map((step) => ({ ...step })),
       events: addGuidedEvent(
         [],
@@ -79,6 +99,7 @@ export async function startGuidedSession(
     db.planEntries,
     db.runLogs,
     db.workoutSessions,
+    db.appSettings,
     async () => {
       const existingActiveSession = await findActiveSession();
 
@@ -94,6 +115,10 @@ export async function startGuidedSession(
       }
 
       await db.workoutSessions.add(session);
+
+      if (options.audioMode && audioMode === wanted) {
+        await setGuidedAudioMode(audioMode);
+      }
 
       return session.id;
     },
@@ -186,7 +211,7 @@ export async function recordGuidedControl(
 
     await db.workoutSessions.update(sessionId, {
       guided: {
-        steps,
+        ...session.guided,
         events: addGuidedEvent(
           events,
           { type: control, at: now.getTime() },
@@ -235,5 +260,47 @@ export async function abortGuidedSession(
         ),
       },
     });
+  });
+}
+
+/**
+ * Schaltet die Audio-Wahl der laufenden Einheit um und merkt sie als zuletzt
+ * gewählt. Die Zeit bleibt unberührt: es kommt kein Ereignis dazu. „Stimme +
+ * Ton“ gibt es nur, wenn alle Ansagen der Einheit da sind - sonst wirft die
+ * Aktion, und die Wahl bleibt stehen.
+ */
+export async function setGuidedSessionAudioMode(
+  sessionId: string,
+  mode: GuidedAudioMode,
+): Promise<void> {
+  const session = await db.workoutSessions.get(sessionId);
+
+  if (!session) {
+    throw new Error("Session nicht gefunden");
+  }
+
+  if (!session.guided) {
+    throw new Error("Das ist keine geführte Einheit.");
+  }
+
+  // Vor der Transaktion, wie beim Start.
+  if (
+    mode === "voice" &&
+    !(await getStepsAnnouncementAvailability(session.guided.steps)).complete
+  ) {
+    throw new Error("Keine Ansagen für diese Vorlage.");
+  }
+
+  await db.transaction("rw", db.workoutSessions, db.appSettings, async () => {
+    const current = await db.workoutSessions.get(sessionId);
+
+    if (!current?.guided || current.status !== "active") {
+      throw new Error("Die Einheit läuft nicht mehr.");
+    }
+
+    await db.workoutSessions.update(sessionId, {
+      guided: { ...current.guided, audioMode: mode },
+    });
+    await setGuidedAudioMode(mode);
   });
 }

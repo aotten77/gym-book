@@ -246,6 +246,43 @@ export function playGuidedSignal() {
 }
 
 function playTonesWhenAwake(tones: readonly ChimeTone[]) {
+  runWhenAwake((context) => playChimeTones(context, tones));
+}
+
+/**
+ * Der geteilte Kontext ohne Entsperr-Versuch: zum Dekodieren, das auch auf
+ * einem noch gesperrten Kontext geht. `null`, wo es Web Audio nicht gibt.
+ */
+export function getSharedAudioContext(): AudioContext | null {
+  return ensureAudioContext();
+}
+
+/**
+ * Wie lange nach dem Wechselsignal die Ansage beginnt: das Signal dauert 0,4 s,
+ * dazu eine kurze Atempause - nacheinander statt übereinander.
+ */
+export const ANNOUNCEMENT_AFTER_SIGNAL_SECONDS = 0.7;
+
+/**
+ * Spielt einen schon dekodierten Puffer (eine Ansage) mit derselben Weck- und
+ * Fristlogik wie das Signal. Still statt Fehler, wo es Web Audio nicht gibt.
+ */
+export function playAudioBufferWhenAwake(buffer: AudioBuffer, delaySeconds = 0) {
+  setAmbientAudioSession();
+  runWhenAwake((context) => {
+    try {
+      const source = context.createBufferSource();
+
+      source.buffer = buffer;
+      source.connect(context.destination);
+      source.start(context.currentTime + delaySeconds);
+    } catch {
+      // Audio ist Beiwerk.
+    }
+  });
+}
+
+function runWhenAwake(play: (context: AudioContext) => void) {
   const context = ensureAudioContext();
 
   if (!context) {
@@ -253,7 +290,7 @@ function playTonesWhenAwake(tones: readonly ChimeTone[]) {
   }
 
   if (isRunning(context)) {
-    playChimeTones(context, tones);
+    play(context);
     return;
   }
 
@@ -271,7 +308,7 @@ function playTonesWhenAwake(tones: readonly ChimeTone[]) {
     .resume()
     .then(() => {
       if (isRunning(context) && Date.now() - requestedAt <= RESUME_GRACE_MS) {
-        playChimeTones(context, tones);
+        play(context);
       }
     })
     .catch(() => {});

@@ -903,6 +903,45 @@ describe('restoreDatabaseSnapshot', () => {
     expect((await db.workoutSessions.get('session-g'))?.guided).toEqual(guided);
   });
 
+  it('trägt die Audio-Wahl der Session und die zuletzt gewählte durch', async () => {
+    const stamp = '2026-07-01T08:00:00.000Z';
+    const guided = {
+      audioMode: 'voice' as const,
+      steps: [{ name: 'Taube', seconds: 75 }],
+      events: [{ type: 'start' as const, at: 1_790_000_000_000 }],
+    };
+    const parsed = parseDatabaseSnapshot(
+      JSON.stringify(
+        createSnapshot({
+          appSettings: [
+            {
+              id: 'app-settings',
+              guidedAudioMode: 'tone',
+              exportSchemaVersion: SNAPSHOT_SCHEMA_VERSION,
+              updatedAt: stamp,
+            },
+          ],
+          workoutSessions: [
+            {
+              id: 'session-a',
+              templateId: 'template-g',
+              templateNameSnapshot: 'Yoga Abend',
+              templateCategorySnapshot: 'yoga',
+              resolvedProgramWeek: 1,
+              startedAt: stamp,
+              status: 'active',
+              guided,
+            },
+          ],
+        }),
+      ),
+    );
+
+    // Zod striche beide Felder still, wenn sie im Schema fehlten.
+    expect(parsed.appSettings[0].guidedAudioMode).toBe('tone');
+    expect(parsed.workoutSessions[0].guided?.audioMode).toBe('voice');
+  });
+
   it('trägt das Schritt-Protokoll einer geführten Session durch', async () => {
     const stamp = '2026-07-01T08:00:00.000Z';
     const guided = {

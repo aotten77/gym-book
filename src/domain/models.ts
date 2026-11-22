@@ -122,9 +122,17 @@ export type GuidedEvent =
  * um) und die Ereignisse. Liegt wie `setTimer` in IndexedDB, damit Reload und
  * Hintergrund die Einheit überleben.
  */
+/** „Stimme + Ton“ oder „Nur Ton“ - was am Ende einer Übung zu hören ist. */
+export type GuidedAudioMode = 'voice' | 'tone';
+
 export interface GuidedRun {
   steps: GuidedStep[];
   events: GuidedEvent[];
+  /**
+   * Die Audio-Wahl der Einheit. Additiv: fehlt sie (ältere Einheiten), läuft
+   * „Nur Ton“.
+   */
+  audioMode?: GuidedAudioMode;
   /**
    * Das Schritt-Protokoll: wird beim Abschluss und beim Abbruch einmal aus
    * Schritten und Ereignissen abgeleitet (`deriveGuidedProtocol`) und hier
@@ -584,6 +592,11 @@ export interface AppSettings {
    * Signalton des Satz-Timers - siehe `lib/wake-lock.ts`.
    */
   keepScreenAwakeEnabled?: boolean;
+  /**
+   * Die zuletzt gewählte Audio-Wahl einer geführten Einheit: sie ist auf dem
+   * Start-Screen vorausgewählt. Additiv; `undefined` heißt „nie gewählt“.
+   */
+  guidedAudioMode?: GuidedAudioMode;
   exportSchemaVersion: number;
   updatedAt: string;
 }

@@ -1,6 +1,6 @@
 import { db } from '@/db/appDb';
 import { ensureSettings, SETTINGS_ID } from '@/db/normalize';
-import type { AppSettings } from '@/domain/models';
+import type { AppSettings, GuidedAudioMode } from '@/domain/models';
 
 /**
  * Read-Modify-Write auf die eine Einstellungszeile, geklammert.
@@ -83,6 +83,14 @@ export async function setTimerSoundEnabled(enabled: boolean) {
  */
 export async function setKeepScreenAwakeEnabled(enabled: boolean) {
   await updateSettings({ keepScreenAwakeEnabled: enabled });
+}
+
+/**
+ * Merkt die zuletzt gewählte Audio-Wahl einer geführten Einheit. Sie ist auf
+ * dem Start-Screen vorausgewählt; das Feld wird nur geschrieben, nie gelöscht.
+ */
+export async function setGuidedAudioMode(mode: GuidedAudioMode) {
+  await updateSettings({ guidedAudioMode: mode });
 }
 
 /**

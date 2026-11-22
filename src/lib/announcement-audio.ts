@@ -1,4 +1,9 @@
-import { acquireAudioContextFromGesture, setAmbientAudioSession } from '@/lib/sound';
+import {
+  acquireAudioContextFromGesture,
+  getSharedAudioContext,
+  playAudioBufferWhenAwake,
+  setAmbientAudioSession,
+} from '@/lib/sound';
 
 /**
  * Spielt eine MP3-Ansage über Web Audio ab, gemischt mit laufender Musik.
@@ -29,4 +34,39 @@ export async function playAnnouncementFromGesture(blob: Blob): Promise<void> {
   source.buffer = buffer;
   source.connect(context.destination);
   source.start();
+}
+
+/**
+ * Dekodiert die Ansagen einer Einheit einmal beim Start, damit beim Wechsel
+ * nichts mehr geladen oder dekodiert wird. Der Kontext darf noch gesperrt
+ * sein. Was sich nicht dekodieren lässt, fehlt in der Antwort - dann bleibt
+ * es bei dem Signal. Die Eingabepuffer werden dabei abgelöst.
+ */
+export async function decodeAnnouncements(
+  audio: ReadonlyMap<string, ArrayBuffer>,
+): Promise<Map<string, AudioBuffer>> {
+  const decoded = new Map<string, AudioBuffer>();
+  const context = getSharedAudioContext();
+
+  if (!context) {
+    return decoded;
+  }
+
+  for (const [text, data] of audio) {
+    try {
+      decoded.set(text, await context.decodeAudioData(data));
+    } catch {
+      // Eine kaputte Ansage ist kein Grund, die Einheit zu stören.
+    }
+  }
+
+  return decoded;
+}
+
+/**
+ * Spielt eine dekodierte Ansage im Ablauf, ohne Geste: der Kontext wurde beim
+ * Start entsperrt. `delaySeconds` legt sie hinter das Wechselsignal.
+ */
+export function playDecodedAnnouncement(buffer: AudioBuffer, delaySeconds: number) {
+  playAudioBufferWhenAwake(buffer, delaySeconds);
 }

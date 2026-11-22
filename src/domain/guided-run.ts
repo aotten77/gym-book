@@ -3,6 +3,10 @@ import {
   sumGuidedSeconds,
   type GuidedSection,
 } from "@/domain/guided-steps";
+import {
+  GUIDED_DONE_TEXT,
+  buildNextAnnouncement,
+} from "@/domain/guided-announcements";
 import type {
   GuidedEvent,
   GuidedProtocolEntry,
@@ -52,6 +56,17 @@ export interface GuidedDueSignal {
   dueAt: number;
 }
 
+/**
+ * Eine fällige Ansage: der Satz und der Schlüssel, den sich der Aufrufer
+ * merkt. Nur „Stimme + Ton“ spielt sie; ob das gilt, weiß der Aufrufer.
+ */
+export interface GuidedDueAnnouncement {
+  key: string;
+  text: string;
+  /** Wann sie fällig wurde (ms). */
+  dueAt: number;
+}
+
 export interface GuidedRunState {
   /**
    * Wechsel und Seitenwechsel zählen beide als `transition`. Bei `paused`
@@ -77,6 +92,8 @@ export interface GuidedRunState {
   /** Schritte, von denen eine Übung übersprungen wurde - der Abschluss zählt sie nicht als gemacht. */
   skippedStepIndexes: number[];
   dueSignal: GuidedDueSignal | null;
+  /** Die Ansage dazu: frisch wie das Signal, ohne Doppelung über den Schlüssel. */
+  dueAnnouncement: GuidedDueAnnouncement | null;
 }
 
 /** Ob die Session eine geführte ist: sie trägt einen Ablauf. */
@@ -454,6 +471,68 @@ function findDueSignal(
 }
 
 /**
+ * Die Ansage, die zur Zeit fällig ist - mit derselben Frische-Regel wie das
+ * Signal und `null`, wenn die Zeit steht.
+ *
+ * Zwei Anlässe: der Anfang des ersten Wechsels (die erste Übung, ohne Signal
+ * davor) und das Ende einer Übung, gleichzeitig mit ihrem Signal (die nächste
+ * Übung samt Seite, nach der letzten „Geschafft.“). Der Schlüssel trägt wie
+ * der des Signals die Nummer nach Neustart oder Zurück. Eine übersprungene
+ * Übung endet nie und sagt deshalb auch nichts an.
+ */
+function findDueAnnouncement(
+  timeline: Timeline,
+  steps: readonly GuidedStep[],
+  now: number,
+): GuidedDueAnnouncement | null {
+  if (timeline.runningSince === null) {
+    return null;
+  }
+
+  const suffix = timeline.rewinds > 0 ? `:${timeline.rewinds}` : "";
+  const textFrom = (from: number): string => {
+    const next = timeline.sections.find(
+      (section, index) => index >= from && section.kind === "exercise",
+    );
+
+    return next
+      ? buildNextAnnouncement(steps[next.stepIndex], next.side)
+      : GUIDED_DONE_TEXT;
+  };
+
+  let due: GuidedDueAnnouncement | null = null;
+
+  const opening = timeline.sections[0];
+
+  if (timeline.index === 0 && opening?.kind === "transition") {
+    const delay = timeline.rawPositionMs;
+
+    if (delay >= 0 && delay <= GUIDED_SIGNAL_MAX_DELAY_MS) {
+      due = { key: `announce:start${suffix}`, text: textFrom(1), dueAt: now - delay };
+    }
+  }
+
+  timeline.sections.forEach((section, index) => {
+    if (section.kind !== "exercise" || timeline.skipped.has(index)) {
+      return;
+    }
+
+    const delay =
+      timeline.rawPositionMs - (section.startSeconds + section.seconds) * 1000;
+
+    if (delay >= 0 && delay <= GUIDED_SIGNAL_MAX_DELAY_MS) {
+      due = {
+        key: `announce:exercise-end:${index}${suffix}`,
+        text: textFrom(index + 1),
+        dueAt: now - delay,
+      };
+    }
+  });
+
+  return due;
+}
+
+/**
  * Das Schritt-Protokoll bis `until` (ms): eine Zeile je Übung, bei beidseitigen
  * Schritten je Seite - Wechsel und Seitenwechsel kommen nicht vor.
  *
@@ -590,5 +669,8 @@ export function deriveGuidedRunState(
       ),
     ].sort((a, b) => a - b),
     dueSignal: started ? findDueSignal(timeline, now) : null,
+    dueAnnouncement: started
+      ? findDueAnnouncement(timeline, steps, now)
+      : null,
   };
 }

@@ -9,6 +9,7 @@ import { Button, IconButton } from '@/components/ui/Button';
 import { db } from '@/db/appDb';
 import { getAnnouncementAvailability } from '@/db/announcement-actions';
 import { startGuidedSession } from '@/db/guided-session-actions';
+import type { GuidedAudioMode } from '@/domain/models';
 import { describeGuidedFacts, describeGuidedStepDuration, isGuidedTemplate } from '@/domain/guided-steps';
 import { describeOverage, useAnnouncementGeneration } from '@/hooks/useAnnouncementGeneration';
 import { describeWorkoutCategory, resolveWorkoutCategory } from '@/domain/workout-category';
@@ -40,8 +41,8 @@ export function GuidedStartPage() {
   const [hintStepIndex, setHintStepIndex] = useState<number | null>(null);
   const [isStarting, setIsStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
-  // Die Wahl „Nur Ton“ gilt nur, wo sie gewählt wird; ohne vollständige Ansagen ist sie ohnehin die einzige.
-  const [wantsVoice, setWantsVoice] = useState(true);
+  // Die Wahl dieses Besuchs; bis zum ersten Tipp gilt die zuletzt gewählte (Standard: Stimme).
+  const [choice, setChoice] = useState<GuidedAudioMode | null>(null);
   const announcements = useAnnouncementGeneration();
 
   // `null` heißt „gibt es nicht“, `undefined` „noch nicht geladen“.
@@ -55,6 +56,14 @@ export function GuidedStartPage() {
     async () => (templateId ? await getAnnouncementAvailability(templateId) : null),
     [templateId],
   );
+
+  const lastChoice = useLiveQuery(
+    async () => (await db.appSettings.get('app-settings'))?.guidedAudioMode ?? null,
+    [],
+  );
+
+  const voiceAvailable = availability?.complete === true;
+  const voiceSelected = voiceAvailable && (choice ?? lastChoice ?? 'voice') === 'voice';
 
   // Läuft schon eine Einheit, startet keine zweite - wie beim Kraft-Start.
   const activeSession = useLiveQuery(
@@ -78,7 +87,11 @@ export function GuidedStartPage() {
     setStartError(null);
 
     try {
-      const sessionId = await startGuidedSession(template.id, readGuidedStartState(location.state));
+      const sessionId = await startGuidedSession(template.id, {
+        ...readGuidedStartState(location.state),
+        // Ohne vollständige Ansagen keine Angabe: es läuft „Nur Ton“, und die zuletzt gewählte Stimme bleibt vorgemerkt.
+        ...(voiceAvailable ? { audioMode: voiceSelected ? ('voice' as const) : ('tone' as const) } : {}),
+      });
 
       // Ersetzen, nicht anhängen: „Zurück“ vom Ablauf soll nicht auf diesen Start-Screen führen.
       navigate(`/guided/run/${sessionId}`, { replace: true });
@@ -137,8 +150,6 @@ export function GuidedStartPage() {
 
   const steps = template.steps ?? [];
   const category = resolveWorkoutCategory(template.category);
-  const voiceAvailable = availability?.complete === true;
-  const voiceSelected = voiceAvailable && wantsVoice;
   const hintStep = hintStepIndex === null ? undefined : steps[hintStepIndex];
 
   return (
@@ -243,7 +254,7 @@ export function GuidedStartPage() {
                     role="radio"
                     aria-checked={checked}
                     disabled={disabled}
-                    onClick={() => setWantsVoice(option.value)}
+                    onClick={() => setChoice(option.value ? 'voice' : 'tone')}
                     className={cn(
                       'min-h-touch flex-1 rounded-[10px] px-2 py-1 text-left text-xs leading-tight',
                       'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',

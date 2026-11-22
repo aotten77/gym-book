@@ -6,7 +6,15 @@ import {
   useParams,
 } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
-import { Pause, Play, SkipBack, SkipForward, X } from "lucide-react";
+import {
+  Pause,
+  Play,
+  SkipBack,
+  SkipForward,
+  Volume2,
+  VolumeX,
+  X,
+} from "lucide-react";
 import { GuidedEndDialog } from "@/components/GuidedEndDialog";
 import { GuidedHintDialog } from "@/components/GuidedHintDialog";
 import { GuidedSideTag } from "@/components/GuidedSideTag";
@@ -15,9 +23,14 @@ import { Button, IconButton } from "@/components/ui/Button";
 import { DONE_SURFACE } from "@/components/ui/StatusCard";
 import { db } from "@/db/appDb";
 import {
+  getStepsAnnouncementAvailability,
+  loadAnnouncementAudio,
+} from "@/db/announcement-actions";
+import {
   abortGuidedSession,
   completeGuidedSession,
   recordGuidedControl,
+  setGuidedSessionAudioMode,
   type GuidedControl,
 } from "@/db/guided-session-actions";
 import {
@@ -26,10 +39,23 @@ import {
   type GuidedRunState,
 } from "@/domain/guided-run";
 import type { GuidedSection } from "@/domain/guided-steps";
-import type { GuidedRun, GuidedStep, WorkoutSession } from "@/domain/models";
+import type {
+  GuidedAudioMode,
+  GuidedRun,
+  GuidedStep,
+  WorkoutSession,
+} from "@/domain/models";
 import { useNowTicker } from "@/hooks/useNowTicker";
 import { formatStepClock } from "@/lib/format";
-import { playGuidedSignal, primeTimerSound } from "@/lib/sound";
+import {
+  decodeAnnouncements,
+  playDecodedAnnouncement,
+} from "@/lib/announcement-audio";
+import {
+  ANNOUNCEMENT_AFTER_SIGNAL_SECONDS,
+  playGuidedSignal,
+  primeTimerSound,
+} from "@/lib/sound";
 import { keepScreenAwake } from "@/lib/wake-lock";
 import { cn } from "@/lib/utils";
 
@@ -56,6 +82,13 @@ const RING_CIRCUMFERENCE = 2 * Math.PI * 56;
  * Pause hält die Zeit an (Ereignisse, nicht Zustand im Screen) und zeigt den
  * Pause-Screen mit Weiter, Schritt neu starten und - nach Rückfrage - Einheit
  * beenden, das abbricht und den Plan-Termin offen lässt.
+ *
+ * Stimme + Ton: nach dem Signal kommt die Ansage der nächsten Übung (zu Beginn
+ * die der ersten), am Ende „Geschafft.“. Die MP3s werden beim Öffnen des
+ * Screens einmal aus IndexedDB gelesen und dekodiert, im Ablauf geht nichts
+ * ins Netz; fehlt eine Ansage oder lässt sie sich nicht dekodieren, bleibt es
+ * beim Signal. Die Pille schaltet die Wahl um, ohne die Zeit zu berühren. Wie
+ * beim Signal merkt sich der Screen den Schlüssel, damit nichts doppelt klingt.
  *
  * Das X verkleinert nur: die Einheit läuft weiter, und der Streifen der App
  * führt zurück. Solange der Screen zu ist, klingt nichts - der Ton gehört zu
@@ -122,7 +155,45 @@ function GuidedRunScreen({
     }
   }, [isActive]);
 
+  const audioMode: GuidedAudioMode = guided.audioMode ?? "tone";
+  // Vollständig mit der jetzigen Stimme? Sonst ist „Stimme + Ton“ nicht wählbar.
+  const availability = useLiveQuery(
+    () => getStepsAnnouncementAvailability(guided.steps),
+    [session.id],
+  );
+  const isVoiceAvailable = availability?.complete === true;
+  const buffers = useRef<Map<string, AudioBuffer>>(new Map());
+  const playedAnnouncements = useRef<Set<string>>(new Set());
+  const [announcedKey, setAnnouncedKey] = useState<string | null>(null);
+
+  // Einmal dekodieren, in beiden Modi: so kostet das Umschalten nichts.
+  useEffect(() => {
+    if (!isActive || !isVoiceAvailable) {
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    void loadAnnouncementAudio(guided.steps)
+      .then((audio) => (audio ? decodeAnnouncements(audio) : null))
+      .then((decoded) => {
+        if (!cancelled && decoded) {
+          buffers.current = decoded;
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+    // Die Schritte sind der Snapshot der Session und ändern sich nicht.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isActive, isVoiceAvailable, session.id]);
+
   const signalKey = isActive ? (state.dueSignal?.key ?? null) : null;
+  const announcement =
+    isActive && audioMode === "voice" ? state.dueAnnouncement : null;
+  const announcementKey = announcement?.key ?? null;
 
   useEffect(() => {
     if (signalKey && !playedSignals.current.has(signalKey)) {
@@ -130,6 +201,34 @@ function GuidedRunScreen({
       playGuidedSignal();
     }
   }, [signalKey]);
+
+  useEffect(() => {
+    if (!announcement || playedAnnouncements.current.has(announcement.key)) {
+      return;
+    }
+
+    playedAnnouncements.current.add(announcement.key);
+    setAnnouncedKey(announcement.key);
+
+    const buffer = buffers.current.get(announcement.text);
+
+    if (buffer) {
+      // Die erste Ansage hat kein Signal vor sich; die übrigen folgen ihm.
+      playDecodedAnnouncement(
+        buffer,
+        announcement.key.startsWith("announce:start")
+          ? 0
+          : ANNOUNCEMENT_AFTER_SIGNAL_SECONDS,
+      );
+    }
+    // Der Schlüssel genügt: `announcement` ist bei jedem Takt ein neues Objekt.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [announcementKey]);
+
+  const anchors = {
+    "data-guided-audio": audioMode,
+    "data-guided-announced": announcedKey ?? undefined,
+  } as const;
 
   // Das automatische Ende. Die Aktion prüft selbst, ob es erreicht ist.
   const isFinishedRun = isActive && state.phase === "finished";
@@ -144,6 +243,19 @@ function GuidedRunScreen({
     // Ungültig (zweiter Tipp, schon zu Ende): der Stand aus der DB bleibt maßgeblich.
     void recordGuidedControl(session.id, type).catch(() => {});
   }
+
+  function toggleAudioMode() {
+    const next: GuidedAudioMode = audioMode === "voice" ? "tone" : "voice";
+
+    // Die Aktion lehnt „Stimme + Ton“ ohne Ansagen ab; die Pille ist dann ohnehin aus.
+    void setGuidedSessionAudioMode(session.id, next).catch(() => {});
+  }
+
+  const audioPill = {
+    audioMode,
+    canUseVoice: isVoiceAvailable,
+    onToggle: toggleAudioMode,
+  };
 
   function endRun() {
     setIsEndAsked(false);
@@ -167,6 +279,7 @@ function GuidedRunScreen({
         name={session.templateNameSnapshot}
         steps={guided.steps}
         state={state}
+        anchors={anchors}
         onDone={() => navigate("/", { replace: true })}
       />
     );
@@ -186,6 +299,7 @@ function GuidedRunScreen({
         label={session.templateNameSnapshot}
         screen="pause"
         tone="dark"
+        anchors={anchors}
       >
         <div
           data-guided-run
@@ -199,6 +313,7 @@ function GuidedRunScreen({
             state={state}
             stepCount={guided.steps.length}
             onClose={handleClose}
+            audio={audioPill}
           />
 
           <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_13.1rem] gap-[18px] pt-2.5">
@@ -260,7 +375,12 @@ function GuidedRunScreen({
   }
 
   return (
-    <GuidedStage label={session.templateNameSnapshot} screen="run" tone="dark">
+    <GuidedStage
+      label={session.templateNameSnapshot}
+      screen="run"
+      tone="dark"
+      anchors={anchors}
+    >
       <div
         data-guided-run
         data-guided-phase={state.phase}
@@ -273,6 +393,7 @@ function GuidedRunScreen({
           state={state}
           stepCount={guided.steps.length}
           onClose={handleClose}
+          audio={audioPill}
         />
 
         <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_13.1rem] gap-[18px] pt-2.5">
@@ -413,10 +534,12 @@ function RunTop({
   state,
   stepCount,
   onClose,
+  audio,
 }: {
   state: GuidedRunState;
   stepCount: number;
   onClose: () => void;
+  audio: AudioPillProps;
 }) {
   return (
     <div className="flex items-center gap-2.5">
@@ -434,7 +557,39 @@ function RunTop({
       >
         {describeMeta(state, stepCount)}
       </span>
+      <AudioPill {...audio} />
     </div>
+  );
+}
+
+interface AudioPillProps {
+  audioMode: GuidedAudioMode;
+  /** Alle Ansagen da: nur dann lässt sich auf „Stimme + Ton“ schalten. */
+  canUseVoice: boolean;
+  onToggle: () => void;
+}
+
+/**
+ * Die Pille der Kopfzeile: zeigt die Audio-Wahl, ein Tipp schaltet um. Ohne
+ * vollständige Ansagen steht sie auf „Nur Ton“ und ist aus. Ein leiser Knopf
+ * auf Tinte - Lime bleibt dem Namen oder dem Ring.
+ */
+function AudioPill({ audioMode, canUseVoice, onToggle }: AudioPillProps) {
+  const isVoice = audioMode === "voice";
+  const Icon = isVoice ? Volume2 : VolumeX;
+
+  return (
+    <button
+      type="button"
+      data-guided-audio-pill={audioMode}
+      aria-label={isVoice ? "Stimme + Ton, tippen für Nur Ton" : "Nur Ton, tippen für Stimme + Ton"}
+      disabled={!isVoice && !canUseVoice}
+      onClick={onToggle}
+      className="inline-flex min-h-touch items-center gap-1.5 whitespace-nowrap rounded-full bg-accent-contrast/10 px-2.5 text-[11px] font-bold text-accent-contrast hover:bg-accent-contrast/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-contrast focus-visible:ring-offset-2 focus-visible:ring-offset-accent disabled:cursor-not-allowed disabled:opacity-45"
+    >
+      <Icon size={13} aria-hidden="true" />
+      {isVoice ? "Stimme + Ton" : "Nur Ton"}
+    </button>
   );
 }
 
@@ -671,15 +826,17 @@ function GuidedFinishedScreen({
   name,
   steps,
   state,
+  anchors,
   onDone,
 }: {
   name: string;
   steps: readonly GuidedStep[];
   state: GuidedRunState;
+  anchors: Record<`data-${string}`, string | undefined>;
   onDone: () => void;
 }) {
   return (
-    <GuidedStage label={name} screen="finished" tone="dark">
+    <GuidedStage label={name} screen="finished" tone="dark" anchors={anchors}>
       <div
         data-guided-done
         className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_13.1rem] items-center gap-[18px]"

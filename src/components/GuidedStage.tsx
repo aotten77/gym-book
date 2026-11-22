@@ -16,6 +16,8 @@ interface GuidedStageProps {
   screen: string;
   /** Standard hell. Dunkel ist nur, was läuft. */
   tone?: GuidedStageTone;
+  /** Weitere Test-Anker (`data-*`) für die Bühne; Werte `undefined` entfallen. */
+  anchors?: Record<`data-${string}`, string | undefined>;
   children: ReactNode;
 }
 
@@ -41,7 +43,7 @@ interface GuidedStageProps {
  * umgestellt, weil iOS sonst dunkle Statusleisten-Schrift auf den dunklen Grund
  * zeichnet. Lime gibt es auf keinem Screen mehr als einmal.
  */
-export function GuidedStage({ label, screen, tone = 'light', children }: GuidedStageProps) {
+export function GuidedStage({ label, screen, tone = 'light', anchors, children }: GuidedStageProps) {
   useEffect(() => (tone === 'dark' ? applyThemeColor(INK_THEME_COLOR) : undefined), [tone]);
 
   return createPortal(
@@ -49,6 +51,7 @@ export function GuidedStage({ label, screen, tone = 'light', children }: GuidedS
       aria-label={label}
       data-guided-stage={screen}
       data-guided-tone={tone}
+      {...anchors}
       className={cn(
         'guided-stage flex flex-col pb-[max(0.875rem,var(--stage-inset-bottom))] pl-[max(1.125rem,var(--stage-inset-left))] pr-[max(1.125rem,var(--stage-inset-right))] pt-[max(0.75rem,var(--stage-inset-top))]',
         tone === 'dark' ? 'bg-accent text-accent-contrast' : 'bg-app text-content',

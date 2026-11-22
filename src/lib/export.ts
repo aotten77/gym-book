@@ -152,6 +152,7 @@ const guidedRunSchema = z.object({
   steps: z.array(guidedStepSchema),
   events: z.array(guidedEventSchema),
   protocol: z.array(guidedProtocolEntrySchema).optional(),
+  audioMode: z.enum(['voice', 'tone']).optional(),
 });
 
 const workoutSessionSchema = z.object({
@@ -317,6 +318,7 @@ const appSettingsSchema = z.object({
   lastAnalysisCopiedAt: z.string().optional(),
   timerSoundEnabled: z.boolean().optional(),
   keepScreenAwakeEnabled: z.boolean().optional(),
+  guidedAudioMode: z.enum(['voice', 'tone']).optional(),
   exportSchemaVersion: z.number().int().positive(),
   updatedAt: z.string(),
 });

@@ -5,8 +5,11 @@ import {
   abortGuidedSession,
   completeGuidedSession,
   recordGuidedControl,
+  setGuidedSessionAudioMode,
   startGuidedSession,
 } from "@/db/guided-session-actions";
+import { generateAnnouncements } from "@/db/announcement-actions";
+import { saveApiKey } from "@/db/tts-actions";
 import { abortSession, startSessionFromTemplate } from "@/db/session-actions";
 import type { GuidedStep, PlanEntry } from "@/domain/models";
 
@@ -66,6 +69,8 @@ describe("startGuidedSession", () => {
       startedAt: DO.toISOString(),
     });
     expect(session?.guided).toEqual({
+      // Ohne Ansagen läuft „Nur Ton“.
+      audioMode: "tone",
       steps: STEPS,
       events: [{ type: "start", at: DO.getTime() }],
     });
@@ -562,5 +567,113 @@ describe("abortGuidedSession", () => {
 
   it("wirft bei einer fremden Id", async () => {
     await expect(abortGuidedSession("fehlt")).rejects.toThrow(/nicht gefunden/);
+  });
+});
+
+async function seedAnnouncements() {
+  await saveApiKey("PLATZHALTER-SCHLUESSEL-4321");
+  await generateAnnouncements(["g"], {
+    synth: async () => new Blob(["mp3"], { type: "audio/mpeg" }),
+    isOnline: () => true,
+  });
+}
+
+describe("Audio-Wahl", () => {
+  it("legt die Wahl an die Session und merkt sie als zuletzt gewählt", async () => {
+    await seedGuided();
+    await seedAnnouncements();
+
+    const id = await startGuidedSession("g", { now: DO, audioMode: "voice" });
+
+    expect((await db.workoutSessions.get(id))?.guided?.audioMode).toBe("voice");
+    expect((await db.appSettings.get("app-settings"))?.guidedAudioMode).toBe(
+      "voice",
+    );
+  });
+
+  it("wählt ohne Angabe die zuletzt gewählte, sonst Stimme, wo sie möglich ist", async () => {
+    await seedGuided();
+    await seedAnnouncements();
+
+    const first = await startGuidedSession("g", { now: DO });
+
+    expect((await db.workoutSessions.get(first))?.guided?.audioMode).toBe("voice");
+    await abortSession(first);
+
+    await startGuidedSession("g", { now: DO, audioMode: "tone" });
+    expect((await db.appSettings.get("app-settings"))?.guidedAudioMode).toBe("tone");
+  });
+
+  it("läuft ohne vollständige Ansagen als „Nur Ton“ und überschreibt die letzte Wahl nicht", async () => {
+    await seedGuided();
+    await db.appSettings.put({
+      id: "app-settings",
+      guidedAudioMode: "voice",
+      exportSchemaVersion: 1,
+      updatedAt: STAMP,
+    });
+
+    const id = await startGuidedSession("g", { now: DO, audioMode: "voice" });
+
+    expect((await db.workoutSessions.get(id))?.guided?.audioMode).toBe("tone");
+    expect((await db.appSettings.get("app-settings"))?.guidedAudioMode).toBe(
+      "voice",
+    );
+  });
+
+  it("schaltet während der Einheit um, ohne die Zeit zu berühren", async () => {
+    await seedGuided();
+    await seedAnnouncements();
+
+    const id = await startGuidedSession("g", { now: DO, audioMode: "voice" });
+
+    await recordGuidedControl(id, "pause", after(8));
+
+    const before = (await db.workoutSessions.get(id))?.guided;
+
+    await setGuidedSessionAudioMode(id, "tone");
+
+    const changed = await db.workoutSessions.get(id);
+
+    expect(changed?.guided?.audioMode).toBe("tone");
+    expect(changed?.guided?.events).toEqual(before?.events);
+    expect(changed?.guided?.steps).toEqual(before?.steps);
+    expect((await db.appSettings.get("app-settings"))?.guidedAudioMode).toBe("tone");
+  });
+
+  it("lehnt „Stimme + Ton“ ab, wenn eine Ansage fehlt, und lässt die Wahl stehen", async () => {
+    await seedGuided();
+
+    const id = await startGuidedSession("g", { now: DO });
+
+    await expect(setGuidedSessionAudioMode(id, "voice")).rejects.toThrow(
+      "Keine Ansagen",
+    );
+    expect((await db.workoutSessions.get(id))?.guided?.audioMode).toBe("tone");
+  });
+
+  it("verliert beim Steuern weder Wahl noch Protokoll", async () => {
+    await seedGuided();
+    await seedAnnouncements();
+
+    const id = await startGuidedSession("g", { now: DO, audioMode: "voice" });
+
+    await recordGuidedControl(id, "pause", after(8));
+    await recordGuidedControl(id, "resume", after(9));
+
+    expect((await db.workoutSessions.get(id))?.guided?.audioMode).toBe("voice");
+  });
+
+  it("wirft bei einer fremden Id und bei einer beendeten Einheit", async () => {
+    await seedGuided();
+    await seedAnnouncements();
+    await expect(setGuidedSessionAudioMode("nix", "tone")).rejects.toThrow();
+
+    const id = await startGuidedSession("g", { now: DO, audioMode: "voice" });
+
+    await abortGuidedSession(id, after(5));
+    await expect(setGuidedSessionAudioMode(id, "tone")).rejects.toThrow(
+      "läuft nicht mehr",
+    );
   });
 });

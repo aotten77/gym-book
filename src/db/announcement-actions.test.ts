@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import { db } from '@/db/appDb';
-import { generateAnnouncements, getAnnouncementAvailability, OFFLINE_MESSAGE } from '@/db/announcement-actions';
+import {
+  generateAnnouncements,
+  getAnnouncementAvailability,
+  getStepsAnnouncementAvailability,
+  loadAnnouncementAudio,
+  OFFLINE_MESSAGE,
+} from '@/db/announcement-actions';
 import { saveApiKey, updateTtsSettings, getTtsView } from '@/db/tts-actions';
 import type { GuidedStep } from '@/domain/models';
 import { announcementKey } from '@/domain/tts-quota';
@@ -182,5 +188,36 @@ describe('generateAnnouncements', () => {
 
     expect(confirmOverage).not.toHaveBeenCalled();
     expect(await db.announcements.get(announcementKey('Geschafft.', VOICE))).toBeTruthy();
+  });
+});
+
+describe('Ansagen einer laufenden Einheit (Schritt-Snapshot)', () => {
+  it('prüft die Verfügbarkeit an den Schritten, ohne die Vorlage zu lesen', async () => {
+    expect(await getStepsAnnouncementAvailability(A)).toMatchObject({ total: 3, missing: 3, complete: false });
+
+    await saveApiKey(KEY);
+    await generateAnnouncements([], { synth: async () => blob(), isOnline: ONLINE });
+    await seed('a', A);
+    await generateAnnouncements(['a'], { synth: async () => blob(), isOnline: ONLINE });
+    // Die Vorlage darf weg sein: der Snapshot genügt.
+    await db.workoutTemplates.delete('a');
+
+    expect(await getStepsAnnouncementAvailability(A)).toMatchObject({ missing: 0, complete: true });
+  });
+
+  it('lädt die Puffer je Satz als ArrayBuffer und nur, wenn alle da sind', async () => {
+    await seed('a', A);
+    expect(await loadAnnouncementAudio(A)).toBeNull();
+
+    await saveApiKey(KEY);
+    await generateAnnouncements(['a'], { synth: async () => blob(), isOnline: ONLINE });
+
+    const audio = await loadAnnouncementAudio(A);
+
+    expect(audio).not.toBeNull();
+    expect([...audio!.keys()].sort()).toEqual(
+      ['Als Nächstes: Hund, 60 Sekunden', 'Als Nächstes: Kind, 60 Sekunden', 'Geschafft.'].sort(),
+    );
+    expect(audio!.get('Geschafft.')!.byteLength).toBe(3);
   });
 });

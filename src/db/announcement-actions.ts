@@ -1,6 +1,7 @@
 import { db } from '@/db/appDb';
 import { addSentChars, getTtsQuota, readTtsSettings, saveAnnouncement } from '@/db/tts-actions';
 import { requiredAnnouncementTexts } from '@/domain/guided-announcements';
+import type { GuidedStep } from '@/domain/models';
 import { isGuidedTemplate } from '@/domain/guided-steps';
 import { announcementKey, countChars, quotaCostUsd, quotaFits, quotaOver } from '@/domain/tts-quota';
 import { MISSING_KEY_MESSAGE, synthesizeSpeech, TtsError, type SynthesizeOptions } from '@/lib/tts-client';
@@ -45,13 +46,51 @@ async function findMissingTexts(texts: readonly string[], voice: string): Promis
   return texts.filter((_, index) => !existing[index]);
 }
 
-/** „Alle Ansagen da?“ für eine Vorlage mit der aktuellen Stimme. */
-export async function getAnnouncementAvailability(templateId: string): Promise<AnnouncementAvailability> {
+async function describeAvailability(texts: readonly string[]): Promise<AnnouncementAvailability> {
   const { voice } = await readTtsSettings();
-  const texts = await loadGuidedTexts([templateId]);
   const missing = await findMissingTexts(texts, voice);
 
   return { voice, total: texts.length, missing: missing.length, complete: texts.length > 0 && missing.length === 0 };
+}
+
+/** „Alle Ansagen da?“ für eine Vorlage mit der aktuellen Stimme. */
+export async function getAnnouncementAvailability(templateId: string): Promise<AnnouncementAvailability> {
+  return describeAvailability(await loadGuidedTexts([templateId]));
+}
+
+/**
+ * Dasselbe für die Schritte einer laufenden Einheit: sie trägt ihren eigenen
+ * Snapshot, und die Vorlage darf inzwischen anders aussehen oder fehlen.
+ */
+export async function getStepsAnnouncementAvailability(
+  steps: readonly GuidedStep[],
+): Promise<AnnouncementAvailability> {
+  return describeAvailability(requiredAnnouncementTexts(steps));
+}
+
+/**
+ * Die MP3-Daten aller Ansagen einer Einheit, je Satz - oder `null`, wenn auch
+ * nur eine fehlt (dann gibt es kein „Stimme + Ton“). Reiner Lesezugriff auf
+ * IndexedDB: im Ablauf geht nichts ins Netz. Die Puffer sind Kopien, weil
+ * `decodeAudioData` seinen Puffer ablöst.
+ */
+export async function loadAnnouncementAudio(
+  steps: readonly GuidedStep[],
+): Promise<Map<string, ArrayBuffer> | null> {
+  const { voice } = await readTtsSettings();
+  const texts = requiredAnnouncementTexts(steps);
+  const records = await db.announcements.bulkGet(texts.map((text) => announcementKey(text, voice)));
+  const audio = new Map<string, ArrayBuffer>();
+
+  for (const [index, record] of records.entries()) {
+    if (!record) {
+      return null;
+    }
+
+    audio.set(texts[index], record.audio.slice(0));
+  }
+
+  return audio;
 }
 
 export interface OverageInfo {
