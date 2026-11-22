@@ -11,6 +11,8 @@ function renderStart(templateId: string) {
     <MemoryRouter initialEntries={[`/guided/${templateId}`]}>
       <Routes>
         <Route path="/guided/:templateId" element={<GuidedStartPage />} />
+        <Route path="/guided/run/:sessionId" element={<p>Ablauf</p>} />
+        <Route path="/session/:sessionId" element={<p>Session</p>} />
       </Routes>
     </MemoryRouter>,
   );
@@ -67,13 +69,38 @@ describe('GuidedStartPage', () => {
     expect(screen.getByText('Geführt · Yoga')).toBeTruthy();
   });
 
-  it('hat noch keinen Startknopf, der etwas tut', async () => {
+  it('startet die Einheit und führt auf den Ablauf-Screen', async () => {
     await addGuidedTemplate();
     renderStart('g1');
 
-    const start = await screen.findByRole('button', { name: 'Einheit starten' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Einheit starten' }));
 
-    expect((start as HTMLButtonElement).disabled).toBe(true);
+    expect(await screen.findByText('Ablauf')).toBeTruthy();
+
+    const sessions = await db.workoutSessions.toArray();
+
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0].guided?.steps).toHaveLength(2);
+  });
+
+  it('startet keine zweite Einheit, wenn schon eine läuft, und führt dorthin zurück', async () => {
+    await addGuidedTemplate();
+    await db.workoutSessions.add({
+      id: 'laeuft',
+      templateId: 'x',
+      templateNameSnapshot: 'Kraft',
+      resolvedProgramWeek: 1,
+      startedAt: STAMP,
+      status: 'active',
+    });
+    renderStart('g1');
+
+    expect(screen.queryByRole('button', { name: 'Einheit starten' })).toBeNull();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Zur laufenden Einheit' }));
+
+    expect(await screen.findByText('Session')).toBeTruthy();
+    expect(await db.workoutSessions.count()).toBe(1);
   });
 
   it('bietet ein „i“ nur an Schritten mit Hinweis und öffnet ihn im Info-Fenster', async () => {

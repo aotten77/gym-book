@@ -144,10 +144,10 @@ test.describe('Geführte Vorlage: Start-Screen', () => {
       }),
     ).toEqual({ wrap: 'nowrap', overflowX: 'auto' });
 
-    // Einen Startknopf gibt es noch nicht - er ist da, in Tinte, aber gesperrt.
+    // Der Startknopf steht in Tinte und ist bedienbar.
     const start = page.getByRole('button', { name: 'Einheit starten' });
 
-    await expect(start).toBeDisabled();
+    await expect(start).toBeEnabled();
     expect(await start.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe(INK);
 
     // Höchstens eine Lime-Fläche; auf dem Start-Screen ist nichts „jetzt dran“.

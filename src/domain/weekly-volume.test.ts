@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type {
+  GuidedEvent,
   RunLog,
   TrackingMode,
   WorkoutSession,
@@ -154,6 +155,45 @@ describe('buildWeeklyVolume', () => {
     expect(weeks[0].mobility.sessions).toBe(0);
     expect(weeks[0].strength.workSets).toBe(0);
     expect(hasTraining(weeks[0])).toBe(false);
+  });
+
+  it('zählt eine abgeschlossene geführte Session ohne Satzzeilen als Einheit', () => {
+    const guided = { steps: [{ name: 'Taube', seconds: 60 }], events: [] as GuidedEvent[] };
+    const weeks = buildWeeklyVolume({
+      ...empty,
+      sessions: [
+        session('g1', new Date(2026, 9, 7, 18, 0), new Date(2026, 9, 7, 18, 20), {
+          templateCategorySnapshot: 'yoga',
+          guided,
+        }),
+        session('g2', new Date(2026, 9, 7, 19, 0), new Date(2026, 9, 7, 19, 10), {
+          templateCategorySnapshot: 'faszien',
+          guided,
+        }),
+      ],
+      from: new Date(2026, 9, 7),
+      to: new Date(2026, 9, 7),
+    });
+
+    expect(weeks[0].mobility).toEqual({ sessions: 2, durationSeconds: 30 * 60 });
+    expect(weeks[0].strength.sessions).toBe(0);
+  });
+
+  it('zählt eine abgebrochene geführte Session nicht', () => {
+    const weeks = buildWeeklyVolume({
+      ...empty,
+      sessions: [
+        session('g1', new Date(2026, 9, 7, 18, 0), new Date(2026, 9, 7, 18, 5), {
+          status: 'aborted',
+          templateCategorySnapshot: 'yoga',
+          guided: { steps: [{ name: 'Taube', seconds: 60 }], events: [] },
+        }),
+      ],
+      from: new Date(2026, 9, 7),
+      to: new Date(2026, 9, 7),
+    });
+
+    expect(weeks[0].mobility.sessions).toBe(0);
   });
 
   it('trennt Kraft und Mobility', () => {

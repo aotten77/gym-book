@@ -2,12 +2,16 @@ import { useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { X } from 'lucide-react';
+import { ActiveSessionHint } from '@/components/ActiveSessionHint';
 import { GuidedHintDialog } from '@/components/GuidedHintDialog';
 import { GuidedStage } from '@/components/GuidedStage';
 import { Button, IconButton } from '@/components/ui/Button';
 import { db } from '@/db/appDb';
+import { startGuidedSession } from '@/db/guided-session-actions';
 import { describeGuidedFacts, describeGuidedStepDuration, isGuidedTemplate } from '@/domain/guided-steps';
 import { describeWorkoutCategory, resolveWorkoutCategory } from '@/domain/workout-category';
+import { primeTimerSound, setAmbientAudioSession } from '@/lib/sound';
+import { readGuidedStartState } from '@/lib/session-navigation';
 import { cn } from '@/lib/utils';
 
 /** Kleinschrift über einem Block. */
@@ -18,8 +22,9 @@ const CAPTION_CLASSES = 'text-[10px] font-bold uppercase tracking-[0.16em] text-
  * Kennzahlen und der Start.
  *
  * Er liest nur - `GuidedStage` stellt ihn hell auf Papier und ins Querformat, und die
- * Schritte kommen von der Vorlage, nicht aus einer Session. Gestartet wird hier
- * noch nicht: der Knopf wartet auf den Ablauf. Die Kennzahlen stehen in einer
+ * Schritte kommen von der Vorlage, nicht aus einer Session. Der Knopf startet
+ * die Einheit (`startGuidedSession`) und führt auf den Ablauf-Screen; läuft
+ * schon eine andere Session, steht dort der Weg zurück zu ihr. Die Kennzahlen stehen in einer
  * Zeile, die sich seitlich scrollen lässt, statt umzubrechen - im Querformat
  * bleibt der Screen so ruhig, auch mit langem Namen und vielen Zahlen.
  *
@@ -31,12 +36,48 @@ export function GuidedStartPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const [hintStepIndex, setHintStepIndex] = useState<number | null>(null);
+  const [isStarting, setIsStarting] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
 
   // `null` heißt „gibt es nicht“, `undefined` „noch nicht geladen“.
   const template = useLiveQuery(
     async () => (templateId ? ((await db.workoutTemplates.get(templateId)) ?? null) : null),
     [templateId],
   );
+
+  // Läuft schon eine Einheit, startet keine zweite - wie beim Kraft-Start.
+  const activeSession = useLiveQuery(
+    async () => (await db.workoutSessions.where('status').equals('active').first()) ?? null,
+    [],
+  );
+
+  async function handleStart() {
+    if (!template || isStarting) {
+      return;
+    }
+
+    /*
+     * Zuerst, noch in der Geste und vor jedem `await`: Safari gibt den Ton nur
+     * innerhalb einer Berührung frei, und das erste Signal kommt Sekunden
+     * später ohne eine.
+     */
+    primeTimerSound();
+    setAmbientAudioSession();
+    setIsStarting(true);
+    setStartError(null);
+
+    try {
+      const sessionId = await startGuidedSession(template.id, readGuidedStartState(location.state));
+
+      // Ersetzen, nicht anhängen: „Zurück“ vom Ablauf soll nicht auf diesen Start-Screen führen.
+      navigate(`/guided/run/${sessionId}`, { replace: true });
+    } catch (error) {
+      setStartError(
+        error instanceof Error ? error.message : 'Die Einheit konnte nicht gestartet werden.',
+      );
+      setIsStarting(false);
+    }
+  }
 
   // Ohne Verlauf (Kaltstart auf diesem Screen) führte `navigate(-1)` aus der App heraus.
   function handleClose() {
@@ -166,11 +207,37 @@ export function GuidedStartPage() {
 
           <div className="min-h-2 flex-1" />
 
-          {/* Wartet auf den Ablauf: ohne ihn gibt es nichts zu starten. */}
-          {/* Tinte, nicht Lime: ein Start ist eine Handlung, nichts ist „jetzt dran“. */}
-          <Button variant="primary" disabled className="rounded-full">
-            Einheit starten
-          </Button>
+          {startError ? (
+            <p role="alert" data-guided-error className="mb-2 text-xs text-danger">
+              {startError}
+            </p>
+          ) : null}
+
+          {activeSession ? (
+            <>
+              <div data-guided-running className="mb-2 text-xs">
+                <ActiveSessionHint />
+              </div>
+              {/* Zurück in die laufende Einheit: die Session-Route kennt beide Arten. */}
+              <Button
+                variant="primary"
+                className="rounded-full"
+                onClick={() => navigate(`/session/${activeSession.id}`)}
+              >
+                Zur laufenden Einheit
+              </Button>
+            </>
+          ) : (
+            /* Tinte, nicht Lime: ein Start ist eine Handlung, nichts ist „jetzt dran“. */
+            <Button
+              variant="primary"
+              className="rounded-full"
+              disabled={isStarting || activeSession === undefined}
+              onClick={() => void handleStart()}
+            >
+              Einheit starten
+            </Button>
+          )}
         </div>
       </div>
 

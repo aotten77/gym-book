@@ -127,3 +127,47 @@ describe('playTimerChime bei eingeschlafenem Kontext', () => {
     expect(context.startedOscillators).toBe(0);
   });
 });
+
+describe('playGuidedSignal', () => {
+  it('setzt die Audio-Sitzung auf ambient und spielt genau einen Ton', async () => {
+    const context = new FakeAudioContext();
+    context.state = 'running';
+    const audioSession = { type: 'auto' };
+    vi.stubGlobal(
+      'AudioContext',
+      class {
+        constructor() {
+          return context;
+        }
+      },
+    );
+    vi.stubGlobal('navigator', { audioSession });
+
+    const { playGuidedSignal } = await loadSoundModule();
+
+    playGuidedSignal();
+
+    expect(audioSession.type).toBe('ambient');
+    expect(context.startedOscillators).toBe(1);
+  });
+
+  it('weckt einen eingeschlafenen Kontext wie das Timer-Signal', async () => {
+    const context = new FakeAudioContext();
+    vi.stubGlobal(
+      'AudioContext',
+      class {
+        constructor() {
+          return context;
+        }
+      },
+    );
+
+    const { playGuidedSignal } = await loadSoundModule();
+
+    playGuidedSignal();
+    expect(context.startedOscillators).toBe(0);
+
+    context.letResumeThrough();
+    await vi.waitFor(() => expect(context.startedOscillators).toBe(1));
+  });
+});

@@ -7,7 +7,8 @@
  * rechnete jeder für sich, stünden auf drei Bildschirmen drei Wochen.
  *
  * Was als Einheit zählt: `status === 'completed'`, ein `completedAt` und
- * mindestens eine abgehakte Arbeitssatz-Zeile. Eine abgebrochene Einheit
+ * mindestens eine abgehakte Arbeitssatz-Zeile - oder, bei einer geführten
+ * Einheit, die keine Sätze hat, der Abschluss selbst. Eine abgebrochene Einheit
  * zählt nicht - `closeSession` stempelt `completedAt` auch auf sie, und
  * "abgebrochen" heißt in dieser App überall "nicht trainiert". Eine Einheit
  * ohne einen einzigen abgehakten Satz ist gestartet und liegengeblieben. Die
@@ -22,6 +23,7 @@
  * Wochen werden über `setDate(+7)` weitergezählt, nie über Millisekunden: eine
  * Woche über die Zeitumstellung hat 167 oder 169 Stunden.
  */
+import { isGuidedSession } from '@/domain/guided-run';
 import { parseLocalDate, startOfCalendarWeek } from '@/domain/calendar-week';
 import type { RunLog, WorkoutSession, WorkoutSessionExercise, WorkoutSetLog } from '@/domain/models';
 import { supportsReps } from '@/domain/tracking';
@@ -123,7 +125,9 @@ export function buildWeeklyVolume(input: WeeklyVolumeInput): WeekVolume[] {
     const exercises = exercisesBySession.get(session.id) ?? [];
     const hasCompletedWorkSet = exercises.some((exercise) => (logsByExercise.get(exercise.id)?.length ?? 0) > 0);
 
-    if (!hasCompletedWorkSet) {
+    // Eine geführte Einheit hat keine Satzzeilen: für sie ist der automatische
+    // Abschluss das Zeichen, dass sie gemacht wurde (ein Abbruch ist `aborted`).
+    if (!hasCompletedWorkSet && !isGuidedSession(session)) {
       continue;
     }
 

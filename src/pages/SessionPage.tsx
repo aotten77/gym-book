@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { ArrowRight, CheckCircle2, Clock3, Plus, Timer, X } from 'lucide-react';
 import { Alert } from '@/components/Alert';
@@ -1820,6 +1820,13 @@ export function SessionPage() {
         </div>
       </SectionCard>
     );
+  }
+
+  // Eine laufende geführte Einheit hat hier keine Übungen: alle Rückwege
+  // (Streifen, Jetzt-Sheet, Plan) führen über diese Route und landen so auf
+  // ihrem eigenen Screen, ohne dass jeder von ihnen die Art kennen muss.
+  if (session?.guided && session.status === 'active') {
+    return <Navigate to={`/guided/run/${session.id}`} replace />;
   }
 
   if (!session) {

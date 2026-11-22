@@ -95,6 +95,71 @@ export interface StartSessionOptions {
   now?: Date;
 }
 
+/**
+ * Die Woche, in der eine Session startet, samt Programm: für Kraft und für
+ * geführte Einheiten dieselbe Auflösung.
+ *
+ * Die Woche wird an genau einer Stelle aufgelöst - `resolveWeekControl` -,
+ * damit Startseite, Einstellungen und der Start einer Einheit nie
+ * auseinanderlaufen. Vorher stand die Rangfolge hier als eigene Zeile, und
+ * das Startdatum des Programms hätte sie nicht erreicht.
+ */
+export async function resolveSessionWeekContext() {
+  const settings = await db.appSettings.get('app-settings');
+  const program = settings?.activeProgramId
+    ? await db.programs.get(settings.activeProgramId)
+    : undefined;
+  const programWeeks = settings?.activeProgramId
+    ? await db.programWeeks.where('programId').equals(settings.activeProgramId).toArray()
+    : [];
+  const resolvedProgramWeek = resolveWeekControl(
+    settings?.weekOverride,
+    program,
+    programWeeks,
+  ).effectiveWeek;
+  const usedWeekOverride = typeof settings?.weekOverride === 'number';
+  const programWeek = program
+    ? programWeeks.find((week) => week.weekNumber === resolvedProgramWeek)
+    : undefined;
+
+  return { program, programWeek, resolvedProgramWeek, usedWeekOverride };
+}
+
+/**
+ * Der Termin, den eine neue Session erfüllt: der gewünschte, falls er offen
+ * und ein Workout dieser Vorlage ist, sonst der passende (heute zuerst, dann
+ * der früheste offene der Kalenderwoche).
+ *
+ * Nur innerhalb der Transaktion aufrufen, die die Session schreibt: ob der
+ * Termin belegt ist, darf sich zwischen Lesen und Schreiben nicht ändern.
+ */
+export async function findPlanEntryForStart(
+  templateId: string,
+  options: StartSessionOptions,
+  now: Date,
+) {
+  const candidates = await db.planEntries.where('templateId').equals(templateId).toArray();
+  const takenIds = await loadTakenPlanEntryIds(candidates.map((candidate) => candidate.id));
+  const requested = options.planEntryId
+    ? candidates.find(
+        (candidate) =>
+          candidate.id === options.planEntryId &&
+          candidate.kind === 'workout' &&
+          !takenIds.has(candidate.id),
+      )
+    : undefined;
+
+  return (
+    requested ??
+    findMatchingPlanEntry(candidates, {
+      kind: 'workout',
+      templateId,
+      day: toDateInputValue(now),
+      takenIds,
+    })
+  );
+}
+
 export async function startSessionFromTemplate(
   templateId: string,
   options: StartSessionOptions = {},
@@ -122,28 +187,8 @@ export async function startSessionFromTemplate(
     .sortBy('orderIndex');
 
   const exercises = await db.exercises.bulkGet(templateExercises.map((item) => item.exerciseId));
-  const settings = await db.appSettings.get('app-settings');
-  const program = settings?.activeProgramId
-    ? await db.programs.get(settings.activeProgramId)
-    : undefined;
-  /*
-   * Die Woche wird an genau einer Stelle aufgelöst - `resolveWeekControl` -,
-   * damit Startseite, Einstellungen und der Start einer Einheit nie
-   * auseinanderlaufen. Vorher stand die Rangfolge hier als eigene Zeile, und
-   * das Startdatum des Programms hätte sie nicht erreicht.
-   */
-  const programWeeks = settings?.activeProgramId
-    ? await db.programWeeks.where('programId').equals(settings.activeProgramId).toArray()
-    : [];
-  const resolvedProgramWeek = resolveWeekControl(
-    settings?.weekOverride,
-    program,
-    programWeeks,
-  ).effectiveWeek;
-  const usedWeekOverride = typeof settings?.weekOverride === 'number';
-  const programWeek = program
-    ? programWeeks.find((week) => week.weekNumber === resolvedProgramWeek)
-    : undefined;
+  const { program, programWeek, resolvedProgramWeek, usedWeekOverride } =
+    await resolveSessionWeekContext();
   const progressionRules =
     programWeek && templateExercises.length > 0
       ? await db.progressionRules.where('programWeekId').equals(programWeek.id).toArray()
@@ -197,24 +242,7 @@ export async function startSessionFromTemplate(
        * darf sich zwischen Lesen und Schreiben nicht ändern. Ohne Treffer
        * bleibt der Schlüssel ganz weg - kein `planEntryId: undefined`.
        */
-      const candidates = await db.planEntries.where('templateId').equals(templateId).toArray();
-      const takenIds = await loadTakenPlanEntryIds(candidates.map((candidate) => candidate.id));
-      const requested = options.planEntryId
-        ? candidates.find(
-            (candidate) =>
-              candidate.id === options.planEntryId &&
-              candidate.kind === 'workout' &&
-              !takenIds.has(candidate.id),
-          )
-        : undefined;
-      const planEntry =
-        requested ??
-        findMatchingPlanEntry(candidates, {
-          kind: 'workout',
-          templateId,
-          day: toDateInputValue(now),
-          takenIds,
-        });
+      const planEntry = await findPlanEntryForStart(templateId, options, now);
 
       if (planEntry) {
         bundle.session.planEntryId = planEntry.id;

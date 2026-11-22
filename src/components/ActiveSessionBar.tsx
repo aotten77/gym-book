@@ -87,6 +87,7 @@ export function ActiveSessionBar({ session }: ActiveSessionBarProps) {
   return (
     <button
       type="button"
+      // Die Session-Route leitet eine geführte Einheit auf ihren eigenen Screen weiter.
       onClick={() => navigate(`/session/${session.id}`)}
       /*
        * Die ganze Fläche ist der Knopf, nicht ein "Fortsetzen" am Rand: der
@@ -127,14 +128,17 @@ export function ActiveSessionBar({ session }: ActiveSessionBarProps) {
         Zahl wie im Kopf der Session. Kurz genug, dass sie auch auf 320px
         neben die Uhr passt; für den Screenreader steht sie ausgeschrieben.
       */}
-      <span className="shrink-0 text-xs font-semibold tabular-nums opacity-70">
-        <span aria-hidden>
-          {progress.completedCount}/{progress.totalCount}
+      {/* Eine geführte Einheit hat keine Sätze, die sich zählen ließen. */}
+      {session.guided ? null : (
+        <span className="shrink-0 text-xs font-semibold tabular-nums opacity-70">
+          <span aria-hidden>
+            {progress.completedCount}/{progress.totalCount}
+          </span>
+          <span className="sr-only">
+            {progress.completedCount} von {progress.totalCount} Sätzen
+          </span>
         </span>
-        <span className="sr-only">
-          {progress.completedCount} von {progress.totalCount} Sätzen
-        </span>
-      </span>
+      )}
       <ChevronUp size={18} className="shrink-0 opacity-70" aria-hidden />
     </button>
   );

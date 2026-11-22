@@ -99,6 +99,25 @@ export interface GuidedStep {
   spokenName?: string;
 }
 
+/**
+ * Ein Steuer-Ereignis einer geführten Einheit, mit dem Zeitpunkt in
+ * Millisekunden. Der Ablaufzustand ist die Faltung dieser Liste - siehe
+ * [guided-run.ts]. Heute gibt es nur den Start; Pause, Überspringen und die
+ * übrigen Eingriffe kommen als weitere Mitglieder der Union dazu.
+ */
+export type GuidedEvent = { type: 'start'; at: number };
+
+/**
+ * Der gespeicherte Teil einer geführten Einheit an der Session: der
+ * Schritt-Snapshot beim Start (spätere Importe schreiben die Historie nicht
+ * um) und die Ereignisse. Liegt wie `setTimer` in IndexedDB, damit Reload und
+ * Hintergrund die Einheit überleben.
+ */
+export interface GuidedRun {
+  steps: GuidedStep[];
+  events: GuidedEvent[];
+}
+
 export interface WorkoutTemplate {
   id: string;
   name: string;
@@ -265,6 +284,12 @@ export interface WorkoutSession {
    * Service-Worker-Update.
    */
   setTimer?: SetTimerState;
+  /**
+   * Nur bei einer geführten Einheit: Schritte und Ablauf. Eine solche Session
+   * hat keine `WorkoutSessionExercise`-Zeilen - `isGuidedSession` ist der eine
+   * Test dafür.
+   */
+  guided?: GuidedRun;
 }
 
 export interface WorkoutSessionExercise {

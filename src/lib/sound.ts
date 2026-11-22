@@ -6,11 +6,24 @@
  * Oszillator braucht nichts davon und klingt auf jedem Gerät gleich.
  */
 
+interface ChimeTone {
+  offsetSeconds: number;
+  durationSeconds: number;
+  frequency: number;
+}
+
 /** Zwei kurze Töne, im Rhythmus der Vibration [180, 90, 180]. */
-const CHIME_TONES = [
+const CHIME_TONES: ChimeTone[] = [
   { offsetSeconds: 0, durationSeconds: 0.18, frequency: 880 },
   { offsetSeconds: 0.27, durationSeconds: 0.22, frequency: 1174.7 },
 ];
+
+/**
+ * Das Wechselsignal der geführten Einheit: ein einzelner, kurzer, weicher Ton.
+ * Bewusst nicht der Doppelton der Timer - wer neben der Matte liegt, soll beide
+ * unterscheiden, und er läuft ohne Zutun oft minutenlang hintereinander.
+ */
+const GUIDED_SIGNAL_TONES: ChimeTone[] = [{ offsetSeconds: 0, durationSeconds: 0.4, frequency: 784 }];
 
 const PEAK_GAIN = 0.22;
 
@@ -217,6 +230,22 @@ export function primeTimerSound() {
  * Vibration das eigentliche Signal, wo es sie gibt.
  */
 export function playTimerChime() {
+  playTonesWhenAwake(CHIME_TONES);
+}
+
+/**
+ * Das einzelne Wechselsignal der geführten Einheit am Ende einer Übung.
+ *
+ * Teilt sich Entsperr- und Weck-Logik samt Frist mit dem Timer-Signal; vorher
+ * wird die Audio-Sitzung auf `ambient` gesetzt, damit die Musik weiterläuft.
+ * Still statt Fehler, wo es Web Audio nicht gibt.
+ */
+export function playGuidedSignal() {
+  setAmbientAudioSession();
+  playTonesWhenAwake(GUIDED_SIGNAL_TONES);
+}
+
+function playTonesWhenAwake(tones: readonly ChimeTone[]) {
   const context = ensureAudioContext();
 
   if (!context) {
@@ -224,7 +253,7 @@ export function playTimerChime() {
   }
 
   if (isRunning(context)) {
-    playChimeTones(context);
+    playChimeTones(context, tones);
     return;
   }
 
@@ -242,17 +271,17 @@ export function playTimerChime() {
     .resume()
     .then(() => {
       if (isRunning(context) && Date.now() - requestedAt <= RESUME_GRACE_MS) {
-        playChimeTones(context);
+        playChimeTones(context, tones);
       }
     })
     .catch(() => {});
 }
 
-function playChimeTones(context: AudioContext) {
+function playChimeTones(context: AudioContext, tones: readonly ChimeTone[]) {
   try {
     const startedAt = context.currentTime;
 
-    for (const tone of CHIME_TONES) {
+    for (const tone of tones) {
       const oscillator = context.createOscillator();
       const gain = context.createGain();
       const toneStart = startedAt + tone.offsetSeconds;

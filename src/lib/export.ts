@@ -122,6 +122,20 @@ const workoutTemplateExerciseSchema = z.object({
   notes: z.string().optional(),
 });
 
+/*
+ * Der Ablauf einer geführten Session (Schritt-Snapshot und Ereignisse). Neue
+ * Ereignistypen kommen als weitere Mitglieder der Union dazu. Additiv, kein
+ * Bump - ohne das Feld striche zod den Ablauf beim Restore still weg.
+ */
+const guidedEventSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('start'), at: z.number() }),
+]);
+
+const guidedRunSchema = z.object({
+  steps: z.array(guidedStepSchema),
+  events: z.array(guidedEventSchema),
+});
+
 const workoutSessionSchema = z.object({
   id: z.string().min(1),
   templateId: z.string().min(1),
@@ -137,6 +151,7 @@ const workoutSessionSchema = z.object({
   /* Additiv: der Termin im Trainingsplan, den die Session erfüllt - kein Bump. */
   planEntryId: z.string().optional(),
   planDateSnapshot: z.string().optional(),
+  guided: guidedRunSchema.optional(),
 });
 
 const workoutSessionExerciseSchema = z.object({

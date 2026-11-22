@@ -17,8 +17,12 @@ import { useEffect, useState } from 'react';
  * weggelassenes Argument mit stiller Vorgabe „immer an" wäre genau der Weg
  * zurück. Deshalb steht an jeder Aufrufstelle eine Zeile, warum ihr Flag so
  * ist.
+ *
+ * `intervalMs` ist 1000, solange nichts Genaueres gebraucht wird; der geführte
+ * Ablauf tastet öfter ab, damit der Wechsel nicht bis zu eine Sekunde nach dem
+ * Ende einer Übung kommt.
  */
-export function useNowTicker(enabled: boolean) {
+export function useNowTicker(enabled: boolean, intervalMs = 1000) {
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -28,7 +32,7 @@ export function useNowTicker(enabled: boolean) {
 
     const timer = window.setInterval(() => {
       setNow(Date.now());
-    }, 1000);
+    }, intervalMs);
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
@@ -42,7 +46,7 @@ export function useNowTicker(enabled: boolean) {
       window.clearInterval(timer);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [enabled]);
+  }, [enabled, intervalMs]);
 
   return now;
 }

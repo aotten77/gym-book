@@ -859,6 +859,64 @@ describe('restoreDatabaseSnapshot', () => {
     expect('steps' in ((await db.workoutTemplates.get('template-k')) ?? {})).toBe(false);
   });
 
+  it('trägt den Ablauf einer geführten Session durch', async () => {
+    const stamp = '2026-07-01T08:00:00.000Z';
+    const guided = {
+      steps: [{ name: 'Taube', seconds: 75, bothSides: true }],
+      events: [{ type: 'start' as const, at: 1_790_000_000_000 }],
+    };
+    const parsed = parseDatabaseSnapshot(
+      JSON.stringify(
+        createSnapshot({
+          workoutSessions: [
+            {
+              id: 'session-g',
+              templateId: 'template-g',
+              templateNameSnapshot: 'Yoga Abend',
+              templateCategorySnapshot: 'yoga',
+              resolvedProgramWeek: 1,
+              startedAt: stamp,
+              completedAt: stamp,
+              status: 'completed',
+              guided,
+            },
+          ],
+        }),
+      ),
+    );
+
+    // Ohne das Feld im Schema striche zod den Ablauf still - das Backup verlöre die Schritte.
+    expect(parsed.workoutSessions[0].guided).toEqual(guided);
+
+    await restoreDatabaseSnapshot(parsed);
+
+    expect((await db.workoutSessions.get('session-g'))?.guided).toEqual(guided);
+  });
+
+  it('weist eine Session mit unbekanntem Ereignis ab', () => {
+    const stamp = '2026-07-01T08:00:00.000Z';
+
+    expect(() =>
+      parseDatabaseSnapshot(
+        JSON.stringify(
+          createSnapshot({
+            workoutSessions: [
+              {
+                id: 'session-g',
+                templateId: 'template-g',
+                templateNameSnapshot: 'Yoga Abend',
+                resolvedProgramWeek: 1,
+                startedAt: stamp,
+                status: 'active',
+                guided: { steps: [{ name: 'Taube', seconds: 75 }], events: [{ type: 'teleport', at: 1 }] },
+              } as never,
+            ],
+          }),
+        ),
+      ),
+    ).toThrow();
+  });
+
   it('weist eine Schrittliste mit ungültigem Schritt ab', () => {
     const stamp = '2026-07-01T08:00:00.000Z';
 

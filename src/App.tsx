@@ -5,6 +5,7 @@ import { bootstrapAppData } from '@/db/bootstrap';
 import { requestPersistentStorage } from '@/lib/storage';
 import { BandsPage } from '@/pages/BandsPage';
 import { ExercisesPage } from '@/pages/ExercisesPage';
+import { GuidedRunPage } from '@/pages/GuidedRunPage';
 import { GuidedStartPage } from '@/pages/GuidedStartPage';
 import { HistoryPage } from '@/pages/HistoryPage';
 import { HistorySessionPage } from '@/pages/HistorySessionPage';
@@ -80,6 +81,7 @@ export default function App() {
           <Route path="/templates" element={<TemplatesPage />} />
           <Route path="/templates/:templateId" element={<TemplateDetailPage />} />
           <Route path="/session/:sessionId" element={<SessionPage />} />
+          <Route path="/guided/run/:sessionId" element={<GuidedRunPage />} />
           <Route path="/guided/:templateId" element={<GuidedStartPage />} />
           <Route path="/history" element={<HistoryPage />} />
           <Route path="/history/session/:sessionId" element={<HistorySessionPage />} />
