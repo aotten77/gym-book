@@ -10,24 +10,21 @@ import { describeGuidedFacts, describeGuidedStepDuration, isGuidedTemplate } fro
 import { describeWorkoutCategory, resolveWorkoutCategory } from '@/domain/workout-category';
 import { cn } from '@/lib/utils';
 
-/** Kleinschrift über einem Block - wie im Ruhemodus, auf Tinte gedämpft. */
-const CAPTION_CLASSES = 'text-[10px] font-bold uppercase tracking-[0.16em] text-accent-contrast/60';
-
-/** Umriss auf Tinte; der Ring der App ist Tinte und wäre hier unsichtbar. */
-const ON_INK_FOCUS_CLASSES =
-  'focus-visible:ring-accent-contrast focus-visible:ring-offset-accent';
+/** Kleinschrift über einem Block. */
+const CAPTION_CLASSES = 'text-[10px] font-bold uppercase tracking-[0.16em] text-content-muted';
 
 /**
  * Der Start-Screen einer geführten Vorlage: links die Schritte, rechts die
  * Kennzahlen und der Start.
  *
- * Er liest nur - `GuidedStage` stellt ihn dunkel und ins Querformat, und die
+ * Er liest nur - `GuidedStage` stellt ihn hell auf Papier und ins Querformat, und die
  * Schritte kommen von der Vorlage, nicht aus einer Session. Gestartet wird hier
  * noch nicht: der Knopf wartet auf den Ablauf. Die Kennzahlen stehen in einer
  * Zeile, die sich seitlich scrollen lässt, statt umzubrechen - im Querformat
  * bleibt der Screen so ruhig, auch mit langem Namen und vielen Zahlen.
  *
- * Lime gibt es hier nicht: nichts ist „jetzt dran“, solange nichts läuft.
+ * Lime gibt es hier nicht: nichts ist „jetzt dran“, solange nichts läuft. Hell
+ * ist nur dieser Screen - dunkel werden erst die Screens des laufenden Ablaufs.
  */
 export function GuidedStartPage() {
   const { templateId } = useParams();
@@ -54,10 +51,7 @@ export function GuidedStartPage() {
   const closeButton = (
     <IconButton
       label="Start-Screen schließen"
-      className={cn(
-        'rounded-full border-accent-contrast/25 text-accent-contrast/80 hover:bg-accent-contrast/10',
-        ON_INK_FOCUS_CLASSES,
-      )}
+      className="rounded-full border-transparent bg-surface-raised text-content-secondary hover:bg-surface-hover"
       onClick={handleClose}
     >
       <X size={16} aria-hidden="true" />
@@ -96,22 +90,22 @@ export function GuidedStartPage() {
         <ol
           aria-label="Schritte"
           data-guided-steps
-          className="min-h-0 overflow-y-auto rounded-panel bg-accent-contrast/10 px-3 py-0.5"
+          className="min-h-0 overflow-y-auto rounded-panel bg-surface-sunken px-3 py-0.5"
         >
           {steps.map((step, index) => (
             <li
               key={index}
               data-guided-step={index}
-              className="flex min-h-[2.5rem] items-center justify-between gap-3 border-b border-accent-contrast/10 py-1.5 text-[13px] last:border-b-0"
+              className="flex min-h-[2.5rem] items-center justify-between gap-3 border-b border-line py-1.5 text-[13px] last:border-b-0"
             >
               <span className="min-w-0 break-words">
                 {step.name}
                 {step.bothSides ? (
-                  <small className="ml-1 text-[11px] text-accent-contrast/60">L · R</small>
+                  <small className="ml-1 text-[11px] text-content-muted">L · R</small>
                 ) : null}
               </span>
               <span className="flex shrink-0 items-center gap-2">
-                <span className="whitespace-nowrap text-xs tabular-nums text-accent-contrast/60">
+                <span className="whitespace-nowrap text-xs tabular-nums text-content-muted">
                   {describeGuidedStepDuration(step)}
                 </span>
                 {step.hint ? (
@@ -125,13 +119,12 @@ export function GuidedStartPage() {
                     onClick={() => setHintStepIndex(index)}
                     className={cn(
                       '-my-2 -mr-2.5 grid h-11 w-11 place-items-center rounded-full',
-                      'focus-visible:outline-none focus-visible:ring-2',
-                      ON_INK_FOCUS_CLASSES,
+                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
                     )}
                   >
                     <span
                       aria-hidden="true"
-                      className="grid h-7 w-7 place-items-center rounded-full bg-accent-contrast/15 font-serif text-base font-bold italic leading-none"
+                      className="grid h-7 w-7 place-items-center rounded-full bg-surface-raised font-serif text-base font-bold italic leading-none"
                     >
                       i
                     </span>
@@ -164,7 +157,7 @@ export function GuidedStartPage() {
             {describeGuidedFacts(steps).map((fact) => (
               <li
                 key={fact}
-                className="flex-none whitespace-nowrap rounded-full bg-accent-contrast/10 px-[9px] py-[5px] text-[11.5px] font-semibold text-accent-contrast/85"
+                className="flex-none whitespace-nowrap rounded-full bg-surface-sunken px-[9px] py-[5px] text-[11.5px] font-semibold text-content-secondary"
               >
                 {fact}
               </li>
@@ -174,11 +167,8 @@ export function GuidedStartPage() {
           <div className="min-h-2 flex-1" />
 
           {/* Wartet auf den Ablauf: ohne ihn gibt es nichts zu starten. */}
-          <Button
-            variant="primary"
-            disabled
-            className={cn('rounded-full bg-accent-contrast text-accent', ON_INK_FOCUS_CLASSES)}
-          >
+          {/* Tinte, nicht Lime: ein Start ist eine Handlung, nichts ist „jetzt dran“. */}
+          <Button variant="primary" disabled className="rounded-full">
             Einheit starten
           </Button>
         </div>

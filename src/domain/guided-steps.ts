@@ -156,6 +156,11 @@ export function describeGuidedFacts(steps: readonly GuidedStep[]): string[] {
   return facts;
 }
 
+/** Die Kurzfassung für Listen, wo sonst „0 Übungen“ stünde: „3 Schritte · ≈ 6 min“. */
+export function describeGuidedSummary(steps: readonly GuidedStep[]): string {
+  return describeGuidedFacts(steps).slice(0, 2).join(' · ');
+}
+
 /** Die Dauer in der Schrittliste: „1:00“, bei einem beidseitigen Schritt „2 × 1:15“. */
 export function describeGuidedStepDuration(step: GuidedStep): string {
   const clock = formatStepClock(step.seconds);

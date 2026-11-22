@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { db } from '@/db/appDb';
@@ -105,18 +105,17 @@ describe('GuidedStartPage', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
-  it('färbt die Leiste dunkel, solange er steht, und stellt Papier wieder her', async () => {
+  it('steht hell auf Papier und lässt die Leistenfarbe, wie sie ist', async () => {
     await addGuidedTemplate();
 
-    const { unmount } = renderStart('g1');
+    renderStart('g1');
+
+    const stage = await screen.findByRole('main', { name: 'Yoga Abendflow' });
     const meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')!;
 
-    await screen.findByRole('list', { name: 'Schritte' });
-
-    expect(meta.content).toBe('#0c1210');
-
-    await act(async () => unmount());
-
+    expect(stage.getAttribute('data-guided-tone')).toBe('light');
+    expect(stage.className).toContain('bg-app');
+    expect(stage.className).not.toContain('bg-accent');
     expect(meta.content).toBe('#f2f2ef');
   });
 

@@ -16,7 +16,7 @@ import { startSessionFromTemplate } from '@/db/session-actions';
 import { navigateToGuidedStart, navigateToStartedSession } from '@/lib/session-navigation';
 import { createTemplate } from '@/db/template-actions';
 import { startOfCalendarWeek } from '@/domain/calendar-week';
-import { isGuidedTemplate } from '@/domain/guided-steps';
+import { describeGuidedSummary, isGuidedTemplate } from '@/domain/guided-steps';
 import type { WorkoutTemplateExercise } from '@/domain/models';
 import { pickNextTemplate } from '@/domain/next-workout';
 import { describeRepRange } from '@/domain/session-summary';
@@ -49,6 +49,12 @@ export function TemplatesPage() {
   const nextTemplateExerciseCount = (templateExercises ?? []).filter(
     (item) => item.templateId === nextTemplate?.id,
   ).length;
+  // Eine geführte Vorlage hat Schritte statt Übungen: „0 Übungen“ stimmte nicht.
+  const nextTemplateSubtitle = isGuidedTemplate(nextTemplate)
+    ? describeGuidedSummary(nextTemplate.steps ?? [])
+    : nextTemplateExerciseCount === 1
+      ? '1 Übung'
+      : `${nextTemplateExerciseCount} Übungen`;
 
   async function handleCreateTemplate() {
     if (!name.trim()) {
@@ -156,7 +162,7 @@ export function TemplatesPage() {
           <NowCard
             eyebrow="Am längsten her"
             title={nextTemplate.name}
-            subtitle={nextTemplateExerciseCount === 1 ? '1 Übung' : `${nextTemplateExerciseCount} Übungen`}
+            subtitle={nextTemplateSubtitle}
             onClick={() => void handleStartSession(nextTemplate.id)}
             disabled={isStartingSession}
             action={
@@ -200,12 +206,13 @@ export function TemplatesPage() {
            * anderen sie zusammengehört.
            */
           const blocks = buildSupersetBlocks(items);
+          const guidedSteps = isGuidedTemplate(template) ? (template.steps ?? []) : null;
 
           return (
             <SectionCard
               key={template.id}
               title={template.name}
-              subtitle={`${items.length} Übungen`}
+              subtitle={guidedSteps ? describeGuidedSummary(guidedSteps) : `${items.length} Übungen`}
               action={
                 <Link
                   to={`/templates/${template.id}`}
@@ -216,7 +223,12 @@ export function TemplatesPage() {
               }
             >
               <div className="space-y-3">
-                {items.length > 0 ? (
+                {guidedSteps ? (
+                  // Keine Übungen und kein Leer-Feld: die Schritte stehen auf der Detailseite.
+                  <p className="line-clamp-2 text-sm text-content-muted">
+                    {guidedSteps.map((step) => step.name).join(' · ')}
+                  </p>
+                ) : items.length > 0 ? (
                   blocks.map((block) =>
                     block.kind === 'single' ? (
                       renderTemplateExerciseRow(template.id, block.exercise)

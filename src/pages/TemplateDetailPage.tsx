@@ -27,6 +27,7 @@ import { ExerciseTargetFields } from '@/components/ExerciseTargetFields';
 import { formatNumber, formatTrackingMode } from '@/lib/format';
 import { parseMarkdownLite } from '@/lib/markdown-lite';
 import { optionalNumberInput, toInputValue } from '@/lib/number-input';
+import { GuidedStepsCard } from '@/components/GuidedStepsCard';
 import { SectionCard } from '@/components/SectionCard';
 import { SupersetBlock } from '@/components/SupersetBlock';
 import { TemplateProgressionSection } from '@/components/TemplateProgressionSection';
@@ -44,7 +45,7 @@ import {
   updateTemplate,
 } from '@/db/template-actions';
 import { prefillTargetReps } from '@/domain/exercise-defaults';
-import { isGuidedTemplate } from '@/domain/guided-steps';
+import { describeGuidedFacts, isGuidedTemplate } from '@/domain/guided-steps';
 import type { MediaAsset, WorkoutTemplateExercise } from '@/domain/models';
 import { describeRepRange } from '@/domain/session-summary';
 import { buildSupersetBlocks, moveSupersetBlock, moveWithinGroup } from '@/domain/superset';
@@ -677,17 +678,34 @@ export function TemplateDetailPage() {
     }
   }
 
+  // Eine geführte Vorlage hat Schritte statt Übungen: hier nur lesen, starten geht über ihren Screen.
+  const isGuided = isGuidedTemplate(template);
+
   return (
     <AppShell title={template?.name ?? 'Workout'} eyebrow="Workout">
       <div className="space-y-4">
         {startError ? <Alert>{startError}</Alert> : null}
+
+        {isGuided ? (
+          <NowCard
+            eyebrow="Geführt"
+            title="Start-Screen öffnen"
+            subtitle={describeGuidedFacts(template?.steps ?? []).join(' · ')}
+            onClick={() => navigateToGuidedStart(navigate, templateId)}
+            action={
+              <span className="flex h-11 w-11 items-center justify-center rounded-control bg-accent text-accent-contrast">
+                <Play size={18} />
+              </span>
+            }
+          />
+        ) : null}
 
         {/*
           Ein Plan kennt kein "erledigt" - es gibt hier nichts, was waldgrün
           werden könnte. Das eine Limettenfeld trägt deshalb nicht einen
           Zustand, sondern die Handlung, für die die ganze Seite da ist.
         */}
-        {orderedTemplateExercises.length > 0 ? (
+        {!isGuided && orderedTemplateExercises.length > 0 ? (
           <NowCard
             eyebrow="Bereit"
             title="Training starten"
@@ -758,90 +776,96 @@ export function TemplateDetailPage() {
           </div>
         </SectionCard>
 
-        <SectionCard
-          title="Übungen im Workout"
-          subtitle="Reihenfolge über die Pfeile - so verrutscht beim Scrollen nichts."
-          action={
-            /*
-              Vorher standen hier zwei `flex` und ein `h-10` gegen das
-              `min-h-touch` derselben Klassenkette - der Knopf maß 40px statt
-              44px, je nachdem, welche Regel gewann.
-            */
-            <Button variant="ghost" size="md" onClick={handleOpenAddTemplateExercise}>
-              <Plus size={16} />
-              Hinzufügen
-            </Button>
-          }
-        >
-          <div className="space-y-3">
-            {orderedTemplateExercises.length > 0 ? (
+        {isGuided ? (
+          <GuidedStepsCard steps={template?.steps ?? []} />
+        ) : (
+          <>
+            <SectionCard
+              title="Übungen im Workout"
+              subtitle="Reihenfolge über die Pfeile - so verrutscht beim Scrollen nichts."
+              action={
+                /*
+                  Vorher standen hier zwei `flex` und ein `h-10` gegen das
+                  `min-h-touch` derselben Klassenkette - der Knopf maß 40px statt
+                  44px, je nachdem, welche Regel gewann.
+                */
+                <Button variant="ghost" size="md" onClick={handleOpenAddTemplateExercise}>
+                  <Plus size={16} />
+                  Hinzufügen
+                </Button>
+              }
+            >
               <div className="space-y-3">
-                {templateBlocks.map((block, blockIndex) => {
-                  const isFirstBlock = blockIndex === 0;
-                  const isLastBlock = blockIndex === templateBlocks.length - 1;
+                {orderedTemplateExercises.length > 0 ? (
+                  <div className="space-y-3">
+                    {templateBlocks.map((block, blockIndex) => {
+                      const isFirstBlock = blockIndex === 0;
+                      const isLastBlock = blockIndex === templateBlocks.length - 1;
 
-                  if (block.kind === 'single') {
-                    return renderTemplateExerciseCard(block.exercise, {
-                      isFirst: isFirstBlock,
-                      isLast: isLastBlock,
-                    });
-                  }
-
-                  return (
-                    <SupersetBlock
-                      key={block.groupId}
-                      exerciseNames={block.exercises.map(
-                        (entry) => nameById[entry.exerciseId] ?? 'Unbekannte Übung',
-                      )}
-                      action={
-                        <div className="flex shrink-0 items-center gap-2">
-                          <IconButton
-                            label="Supersatz nach oben"
-                            disabled={isReorderingExercises || isFirstBlock}
-                            onClick={() => void handleMoveSupersetBlock(block.exercises[0].id, -1)}
-                          >
-                            <ChevronUp size={16} />
-                          </IconButton>
-                          <IconButton
-                            label="Supersatz nach unten"
-                            disabled={isReorderingExercises || isLastBlock}
-                            onClick={() => void handleMoveSupersetBlock(block.exercises[0].id, 1)}
-                          >
-                            <ChevronDown size={16} />
-                          </IconButton>
-                        </div>
+                      if (block.kind === 'single') {
+                        return renderTemplateExerciseCard(block.exercise, {
+                          isFirst: isFirstBlock,
+                          isLast: isLastBlock,
+                        });
                       }
-                    >
-                      {block.exercises.map((item, memberIndex) =>
-                        renderTemplateExerciseCard(item, {
-                          isFirst: memberIndex === 0,
-                          isLast: memberIndex === block.exercises.length - 1,
-                          isSupersetMember: true,
-                        }),
-                      )}
-                    </SupersetBlock>
-                  );
-                })}
-              </div>
-            ) : (
-              <Empty
-                title="Noch keine Übungen"
-                description="Füge über „Hinzufügen“ eine Übung aus der Bibliothek hinzu, dann lässt sich das Workout starten."
-              />
-            )}
-          </div>
-        </SectionCard>
 
-        <TemplateProgressionSection
-          programs={programs}
-          programWeeks={programWeeks}
-          progressionRules={progressionRules}
-          orderedTemplateExercises={orderedTemplateExercises}
-          exerciseById={exerciseById}
-          nameById={nameById}
-          bandLevels={bandLevels}
-          activeProgramId={settings?.activeProgramId}
-        />
+                      return (
+                        <SupersetBlock
+                          key={block.groupId}
+                          exerciseNames={block.exercises.map(
+                            (entry) => nameById[entry.exerciseId] ?? 'Unbekannte Übung',
+                          )}
+                          action={
+                            <div className="flex shrink-0 items-center gap-2">
+                              <IconButton
+                                label="Supersatz nach oben"
+                                disabled={isReorderingExercises || isFirstBlock}
+                                onClick={() => void handleMoveSupersetBlock(block.exercises[0].id, -1)}
+                              >
+                                <ChevronUp size={16} />
+                              </IconButton>
+                              <IconButton
+                                label="Supersatz nach unten"
+                                disabled={isReorderingExercises || isLastBlock}
+                                onClick={() => void handleMoveSupersetBlock(block.exercises[0].id, 1)}
+                              >
+                                <ChevronDown size={16} />
+                              </IconButton>
+                            </div>
+                          }
+                        >
+                          {block.exercises.map((item, memberIndex) =>
+                            renderTemplateExerciseCard(item, {
+                              isFirst: memberIndex === 0,
+                              isLast: memberIndex === block.exercises.length - 1,
+                              isSupersetMember: true,
+                            }),
+                          )}
+                        </SupersetBlock>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <Empty
+                    title="Noch keine Übungen"
+                    description="Füge über „Hinzufügen“ eine Übung aus der Bibliothek hinzu, dann lässt sich das Workout starten."
+                  />
+                )}
+              </div>
+            </SectionCard>
+
+            <TemplateProgressionSection
+              programs={programs}
+              programWeeks={programWeeks}
+              progressionRules={progressionRules}
+              orderedTemplateExercises={orderedTemplateExercises}
+              exerciseById={exerciseById}
+              nameById={nameById}
+              bandLevels={bandLevels}
+              activeProgramId={settings?.activeProgramId}
+            />
+          </>
+        )}
       </div>
 
       <Sheet

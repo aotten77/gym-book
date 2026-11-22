@@ -7,7 +7,8 @@ import { collectPageErrors, resetDatabase } from './helpers';
  * Die Vorlage kommt wie in der Praxis über den Bibliotheks-Import, und der
  * Screen wird dort geöffnet, wo ihn ein Mensch öffnet: im Jetzt-Sheet und im
  * Plan. Geprüft wird, was nur ein echter WebKit-Viewport zeigt - die Lage im
- * Querformat, egal wie das Handy liegt, der dunkle Grund und die Leistenfarbe.
+ * Querformat, egal wie das Handy liegt, der helle Grund und die unveränderte
+ * Leistenfarbe (dunkel werden erst die Screens des laufenden Ablaufs).
  * Was die Schritte sind und wie sie sich auflösen, steht in
  * `domain/guided-steps.test.ts`.
  */
@@ -24,7 +25,8 @@ const STEPS = [
   { name: 'Taube', seconds: 75, bothSides: true, hint: 'Das vordere Schienbein liegt quer.' },
 ];
 
-/** Die Tinte der App, wie `accent.DEFAULT` und `theme-color` des Screens. */
+/** Das Papier der App, wie `app` in tailwind.config.js und `theme-color` in index.html. */
+const PAPER = 'rgb(242, 242, 239)';
 const INK = 'rgb(12, 18, 16)';
 const LIME = 'rgb(220, 242, 90)';
 
@@ -102,7 +104,7 @@ test.describe('Geführte Vorlage: Start-Screen', () => {
     await expect(page.getByText('Alles steht schon so in der Datenbank')).toBeVisible();
   });
 
-  test('das Jetzt-Sheet führt auf den Start-Screen: dunkel, mit Schritten und Kennzahlen', async ({
+  test('das Jetzt-Sheet führt auf den Start-Screen: hell, mit Schritten und Kennzahlen', async ({
     page,
   }) => {
     const errors = collectPageErrors(page);
@@ -110,11 +112,11 @@ test.describe('Geführte Vorlage: Start-Screen', () => {
     await importGuidedTemplate(page);
     await openStartFromNowSheet(page);
 
-    // Dunkel wie der Ruhemodus, samt Leistenfarbe.
+    // Hell auf Papier, die Leistenfarbe bleibt.
     const stage = await readStage(page);
 
-    expect(stage.background).toBe(INK);
-    expect(stage.themeColor).toBe('#0c1210');
+    expect(stage.background).toBe(PAPER);
+    expect(stage.themeColor).toBe('#f2f2ef');
     expect(stage.inBody).toBe(true);
 
     await expect(page.getByRole('heading', { name: TEMPLATE_NAME })).toBeVisible();
@@ -142,8 +144,11 @@ test.describe('Geführte Vorlage: Start-Screen', () => {
       }),
     ).toEqual({ wrap: 'nowrap', overflowX: 'auto' });
 
-    // Einen Startknopf gibt es noch nicht - er ist da, aber gesperrt.
-    await expect(page.getByRole('button', { name: 'Einheit starten' })).toBeDisabled();
+    // Einen Startknopf gibt es noch nicht - er ist da, in Tinte, aber gesperrt.
+    const start = page.getByRole('button', { name: 'Einheit starten' });
+
+    await expect(start).toBeDisabled();
+    expect(await start.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe(INK);
 
     // Höchstens eine Lime-Fläche; auf dem Start-Screen ist nichts „jetzt dran“.
     const limeCount = await page.evaluate((lime) => {
@@ -156,7 +161,7 @@ test.describe('Geführte Vorlage: Start-Screen', () => {
 
     expect(limeCount).toBeLessThanOrEqual(1);
 
-    // Das X führt dorthin zurück, wo man herkam, und gibt dem Browser das Papier zurück.
+    // Das X führt dorthin zurück, wo man herkam.
     await page.getByRole('button', { name: 'Start-Screen schließen' }).click();
     await expect(page.locator('[data-guided-stage]')).toHaveCount(0);
     expect(
@@ -195,7 +200,7 @@ test.describe('Geführte Vorlage: Start-Screen', () => {
     expect(lying.boxWidth).toBe(portrait.height);
     expect(lying.boxHeight).toBe(portrait.width);
     expect(lying.inBody).toBe(true);
-    expect(lying.background).toBe(INK);
+    expect(lying.background).toBe(PAPER);
 
     // In beiden Lagen steht dasselbe da und ist bedienbar.
     await expect(page.locator('[data-guided-step]')).toHaveCount(3);
@@ -244,5 +249,41 @@ test.describe('Geführte Vorlage: Start-Screen', () => {
     await page.getByRole('button', { name: 'Start-Screen schließen' }).click();
     await page.waitForTimeout(600);
     await expect(page.getByRole('timer')).toHaveCount(0);
+  });
+
+  test('die Detailseite zeigt die Schritte nur lesend und führt auf den Start-Screen', async ({
+    page,
+  }) => {
+    await importGuidedTemplate(page);
+
+    await page.goto('./#/templates');
+    await page.waitForTimeout(800);
+
+    // Die Liste nennt Schritte und Minuten statt „0 Übungen“ und kein Leer-Feld.
+    const card = page.locator('section').filter({
+      has: page.getByRole('heading', { name: TEMPLATE_NAME }),
+    });
+
+    await expect(card).toContainText('3 Schritte · ≈ 5 min');
+    await expect(card).not.toContainText('Noch keine Übungen');
+    await expect(page.getByText('0 Übungen')).toHaveCount(0);
+
+    // Der Link der Karte heißt „Bearbeiten“, nicht wie die Vorlage.
+    await card.getByRole('link', { name: 'Bearbeiten' }).click();
+    await page.waitForURL(/#\/templates\//);
+
+    const steps = page.getByRole('list', { name: 'Schritte' });
+
+    await expect(steps.getByRole('listitem')).toHaveCount(3);
+    await expect(steps.getByRole('listitem').nth(2)).toContainText('L · R');
+    await expect(steps.getByRole('listitem').nth(2)).toContainText('2 × 1:15');
+
+    // Keine Übungen, keine Zuordnungs-Bearbeitung.
+    await expect(page.getByRole('heading', { name: 'Übungen im Workout' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Hinzufügen' })).toHaveCount(0);
+
+    await page.getByRole('button', { name: /Start-Screen öffnen/ }).click();
+    await page.waitForURL(/#\/guided\//);
+    await expect(page.locator('[data-guided-stage="start"]')).toBeVisible();
   });
 });

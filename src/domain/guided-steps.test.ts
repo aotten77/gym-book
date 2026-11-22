@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   describeGuidedFacts,
   describeGuidedStepDuration,
+  describeGuidedSummary,
   describeGuidedSteps,
   GUIDED_SIDE_SWITCH_SECONDS,
   GUIDED_START_TRANSITION_SECONDS,
@@ -155,6 +156,12 @@ describe('describeGuidedFacts', () => {
 
   it('rundet nicht unter eine Minute', () => {
     expect(describeGuidedFacts([{ name: 'Kurz', seconds: 10 }])[1]).toBe('≈ 1 min');
+  });
+});
+
+describe('describeGuidedSummary', () => {
+  it('nennt Schritte und Minuten, ohne die beidseitigen', () => {
+    expect(describeGuidedSummary([KINDHALTUNG, KATZE_KUH, TAUBE])).toBe('3 Schritte · ≈ 5 min');
   });
 });
 
