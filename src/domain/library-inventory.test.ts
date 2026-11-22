@@ -157,6 +157,35 @@ describe('buildLibraryInventory', () => {
     expect(planHasChanges(plan)).toBe(false);
   });
 
+  it('nennt die Schritte einer geführten Vorlage und lässt sich damit unverändert einlesen', () => {
+    const steps = [
+      { name: 'Kindhaltung', seconds: 60 },
+      { name: 'Taube', seconds: 75, bothSides: true, hint: 'Hüfte sinken lassen.' },
+    ];
+    const guided = template({ id: 'tpl-yoga', name: 'Yoga Abend', category: 'yoga', steps });
+    const guidedInput = { ...input, templates: [...templates, guided] };
+    const inventory = buildLibraryInventory(guidedInput);
+
+    expect(inventory.templates.find((item) => item.name === 'Yoga Abend')).toEqual({
+      name: 'Yoga Abend',
+      category: 'yoga',
+      steps,
+    });
+    // Ohne Schritte steht kein Schlüssel da.
+    expect('steps' in (inventory.templates.find((item) => item.name === 'Einheit A') ?? {})).toBe(false);
+
+    const payload = {
+      schemaVersion: 1,
+      templates: inventory.templates.filter((item) => item.steps),
+    };
+    const plan = planLibraryImport(parseLibraryImportPayload(JSON.stringify(payload)), {
+      ...state,
+      templates: guidedInput.templates,
+    });
+
+    expect(planHasChanges(plan)).toBe(false);
+  });
+
   it('wird von der App so, wie er ist, nicht als Import angenommen', () => {
     expect(() => parseLibraryImportPayload(JSON.stringify(buildLibraryInventory(input)))).toThrow();
   });

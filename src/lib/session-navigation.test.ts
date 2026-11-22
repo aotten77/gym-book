@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import { navigateToStartedSession, readOpenFocusState } from './session-navigation';
+import {
+  navigateToGuidedStart,
+  navigateToStartedSession,
+  readGuidedStartState,
+  readOpenFocusState,
+} from './session-navigation';
 
 describe('readOpenFocusState', () => {
   it('erkennt den Navigationsstate eines frischen Starts', () => {
@@ -22,4 +27,35 @@ describe('navigateToStartedSession', () => {
 
     expect(navigate).toHaveBeenCalledWith('/session/abc', { state: { openFocus: true } });
   });
+});
+
+describe('navigateToGuidedStart', () => {
+  it('führt auf den Start-Screen der Vorlage', () => {
+    const navigate = vi.fn();
+
+    navigateToGuidedStart(navigate, 'abc');
+
+    expect(navigate).toHaveBeenCalledWith('/guided/abc', { state: {} });
+  });
+
+  it('gibt den Termin als State mit, für den später gestartet wird', () => {
+    const navigate = vi.fn();
+
+    navigateToGuidedStart(navigate, 'abc', { planEntryId: 'entry-1' });
+
+    expect(navigate).toHaveBeenCalledWith('/guided/abc', { state: { planEntryId: 'entry-1' } });
+  });
+});
+
+describe('readGuidedStartState', () => {
+  it('liest den Termin aus dem State', () => {
+    expect(readGuidedStartState({ planEntryId: 'entry-1' })).toEqual({ planEntryId: 'entry-1' });
+  });
+
+  it.each([[null], [undefined], [{}], ['x'], [42], [{ planEntryId: 7 }], [{ planEntryId: '' }]])(
+    '%j nennt keinen Termin',
+    (state) => {
+      expect(readGuidedStartState(state)).toEqual({});
+    },
+  );
 });

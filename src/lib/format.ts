@@ -135,6 +135,16 @@ export function formatSideLabel(side: WorkoutSetLog['side']) {
   return '';
 }
 
+/**
+ * Eine Dauer als „1:15“ - Minuten ohne führende Null.
+ *
+ * `formatTimer` schreibt „01:15“, was auf einer laufenden Uhr richtig ist. In
+ * einer Liste von Schritten stünde die Null vor jeder Zeile und kostete Platz.
+ */
+export function formatStepClock(seconds: number) {
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
 export function formatTimer(seconds: number) {
   const minutes = Math.floor(seconds / 60);
   const restSeconds = seconds % 60;

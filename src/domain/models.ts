@@ -76,12 +76,44 @@ export interface Exercise {
   updatedAt: string;
 }
 
+/**
+ * Ein Schritt einer geführten Vorlage: eine Übung, die von selbst abläuft.
+ *
+ * Ein Wert ohne eigene Identität außerhalb seiner Vorlage - wie
+ * `scheduledWeekdays` und aus demselben Grund ohne eigene Tabelle. Er trägt
+ * keine Wiederholungen, keine Sätze und kein Gewicht: der Ablauf ist rein
+ * zeitgesteuert, und was claude.ai als Runden denkt, rechnet es in Zeit um
+ * oder schreibt es aus.
+ */
+export interface GuidedStep {
+  name: string;
+  /** Ganze Sekunden über 0 - bei einem beidseitigen Schritt **je Seite**. */
+  seconds: number;
+  /** Aus einem Schritt werden links und rechts, mit Seitenwechsel dazwischen. */
+  bothSides?: boolean;
+  /** Der Text hinter dem „i“. */
+  hint?: string;
+  /** Der Wechsel **vor** diesem Schritt in Sekunden; fehlt er, gelten 5. */
+  transitionSeconds?: number;
+  /** Was die Ansage sagt, wenn `name` sich nicht vorlesen lässt („BWS“). */
+  spokenName?: string;
+}
+
 export interface WorkoutTemplate {
   id: string;
   name: string;
   notes?: string;
   /** Fehlt bei Kraft - siehe [workout-category.ts]; geschrieben wird nur `'mobility'`. */
   category?: WorkoutCategory;
+  /**
+   * Die Schritte einer geführten Vorlage, in Reihenfolge - siehe [guided-steps.ts].
+   *
+   * Additiv und ohne Index: ein fehlendes Feld heißt „keine geführte Vorlage",
+   * ebenso eine leere Liste, geschrieben wird sie nur nicht leer. Eine geführte
+   * Vorlage hat keine Übungs-Zuordnungen. Die Liste ändert nur der
+   * Bibliotheks-Import, und er ersetzt sie als Ganzes.
+   */
+  steps?: GuidedStep[];
   /**
    * Die Wochentage, an denen dieses Workout ansteht - ISO, 1 = Montag bis
    * 7 = Sonntag.

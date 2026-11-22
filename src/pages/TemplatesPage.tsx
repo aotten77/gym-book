@@ -13,9 +13,10 @@ import { DoneRow, NowCard } from '@/components/ui/StatusCard';
 import { db } from '@/db/appDb';
 import { loadTemplateRecency, loadWeekSummary } from '@/db/history-queries';
 import { startSessionFromTemplate } from '@/db/session-actions';
-import { navigateToStartedSession } from '@/lib/session-navigation';
+import { navigateToGuidedStart, navigateToStartedSession } from '@/lib/session-navigation';
 import { createTemplate } from '@/db/template-actions';
 import { startOfCalendarWeek } from '@/domain/calendar-week';
+import { isGuidedTemplate } from '@/domain/guided-steps';
 import type { WorkoutTemplateExercise } from '@/domain/models';
 import { pickNextTemplate } from '@/domain/next-workout';
 import { describeRepRange } from '@/domain/session-summary';
@@ -71,6 +72,12 @@ export function TemplatesPage() {
    * die Startseite, obwohl man genau vor der Liste der Workouts stand.
    */
   async function handleStartSession(templateId: string) {
+    // Eine geführte Vorlage startet nicht hier, sondern auf ihrem Start-Screen.
+    if (isGuidedTemplate(templates?.find((template) => template.id === templateId))) {
+      navigateToGuidedStart(navigate, templateId);
+      return;
+    }
+
     setIsStartingSession(true);
 
     try {

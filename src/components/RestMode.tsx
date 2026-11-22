@@ -14,16 +14,13 @@ import {
   REST_TIMER_STEP_SECONDS,
 } from '@/domain/rest-timer';
 import { formatTimer } from '@/lib/format';
-import { applyThemeColor } from '@/lib/theme-color';
+import { applyThemeColor, INK_THEME_COLOR } from '@/lib/theme-color';
 import {
   initialEdgeWidgetPlacement,
   placeEdgeWidget,
   type EdgeWidgetPlacement,
 } from '@/lib/edge-widget';
 import { cn } from '@/lib/utils';
-
-/** Die Tinte der App - derselbe Wert wie `accent.DEFAULT` in tailwind.config.js. */
-const REST_THEME_COLOR = '#0c1210';
 
 /** Schrittweite der Pfeiltasten - der Reiter muss auch ohne Finger bewegbar sein. */
 const KEY_STEP = 16;
@@ -286,7 +283,7 @@ export function RestMode({
       return undefined;
     }
 
-    return applyThemeColor(REST_THEME_COLOR);
+    return applyThemeColor(INK_THEME_COLOR);
   }, [isMinimized, seconds]);
 
   /*

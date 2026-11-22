@@ -826,6 +826,61 @@ describe('restoreDatabaseSnapshot', () => {
     expect((await db.workoutSessions.get('session-f'))?.templateCategorySnapshot).toBe('faszien');
   });
 
+  it('trägt die Schrittliste einer geführten Vorlage durch', async () => {
+    const stamp = '2026-07-01T08:00:00.000Z';
+    const steps = [
+      { name: 'Kindhaltung', seconds: 60 },
+      {
+        name: 'Taube',
+        seconds: 75,
+        bothSides: true,
+        hint: 'Hüfte sinken lassen.',
+        transitionSeconds: 10,
+        spokenName: 'Taubenhaltung',
+      },
+    ];
+    const parsed = parseDatabaseSnapshot(
+      JSON.stringify(
+        createSnapshot({
+          workoutTemplates: [
+            { id: 'template-g', name: 'Yoga Abend', category: 'yoga', steps, createdAt: stamp, updatedAt: stamp },
+            { id: 'template-k', name: 'Einheit A', createdAt: stamp, updatedAt: stamp },
+          ],
+        }),
+      ),
+    );
+
+    // Ohne das Feld im Schema striche zod es still - das Backup wäre dann verlustbehaftet.
+    expect(parsed.workoutTemplates[0].steps).toEqual(steps);
+
+    await restoreDatabaseSnapshot(parsed);
+
+    expect((await db.workoutTemplates.get('template-g'))?.steps).toEqual(steps);
+    expect('steps' in ((await db.workoutTemplates.get('template-k')) ?? {})).toBe(false);
+  });
+
+  it('weist eine Schrittliste mit ungültigem Schritt ab', () => {
+    const stamp = '2026-07-01T08:00:00.000Z';
+
+    expect(() =>
+      parseDatabaseSnapshot(
+        JSON.stringify(
+          createSnapshot({
+            workoutTemplates: [
+              {
+                id: 'template-g',
+                name: 'Yoga Abend',
+                steps: [{ name: 'Taube', seconds: 0 }],
+                createdAt: stamp,
+                updatedAt: stamp,
+              },
+            ],
+          }),
+        ),
+      ),
+    ).toThrow();
+  });
+
   it('sichert und stellt Läufe wieder her', async () => {
     const run = {
       id: 'run-1',

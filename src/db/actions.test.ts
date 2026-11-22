@@ -1169,6 +1169,23 @@ describe('starting a session', () => {
     expect(first).toBe(second);
     expect(activeSessions[0].id).toBe(first);
   });
+
+  it('startet eine geführte Vorlage nicht als leere Kraft-Session', async () => {
+    await db.workoutTemplates.add({
+      id: 'template-guided',
+      name: 'Yoga Abend',
+      category: 'yoga',
+      steps: [{ name: 'Kindhaltung', seconds: 60 }],
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+
+    await expect(startSessionFromTemplate('template-guided')).rejects.toThrow(
+      'Yoga Abend ist eine geführte Vorlage und startet über ihren Start-Screen.',
+    );
+
+    expect(await db.workoutSessions.count()).toBe(0);
+  });
 });
 
 describe('deleteSetLog', () => {

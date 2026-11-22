@@ -577,6 +577,25 @@ describe('loadTemplateMinutes', () => {
     expect(await loadTemplateMinutes()).toEqual({ t1: 4, t2: 5 });
     expect(await loadTemplateExerciseCounts()).toEqual({ t1: 1, t2: 1 });
   });
+
+  it('rechnet eine geführte Vorlage aus ihren Abschnitten und zählt ihre Schritte', async () => {
+    const stamp = new Date().toISOString();
+    await db.workoutTemplates.add({
+      id: 'g1',
+      name: 'Yoga Abend',
+      category: 'yoga',
+      // 5 + 60 + 5 + 75 + 3 + 75 = 223 s
+      steps: [
+        { name: 'Kindhaltung', seconds: 60 },
+        { name: 'Taube', seconds: 75, bothSides: true },
+      ],
+      createdAt: stamp,
+      updatedAt: stamp,
+    });
+
+    expect(await loadTemplateMinutes()).toEqual({ g1: 4 });
+    expect(await loadTemplateExerciseCounts()).toEqual({ g1: 2 });
+  });
 });
 
 describe('loadEarliestTimelineDate', () => {

@@ -26,6 +26,7 @@ import { loadLastPlanDate, loadPlanBetween } from '@/db/plan-queries';
 import { startSessionFromTemplate } from '@/db/session-actions';
 import { evaluateBackupStatus } from '@/domain/backup';
 import { parseLocalDate, startOfCalendarWeek } from '@/domain/calendar-week';
+import { isGuidedTemplate } from '@/domain/guided-steps';
 import type { PlanEntry, ProgramWeek } from '@/domain/models';
 import { pickNextTemplate } from '@/domain/next-workout';
 import { planEntryState } from '@/domain/plan';
@@ -44,7 +45,7 @@ import {
 import { useTodayKey } from '@/hooks/useTodayKey';
 import { exportDatabaseSnapshot } from '@/lib/export';
 import { formatNumber } from '@/lib/format';
-import { navigateToStartedSession } from '@/lib/session-navigation';
+import { navigateToGuidedStart, navigateToStartedSession } from '@/lib/session-navigation';
 import { cn } from '@/lib/utils';
 import { useUiStore } from '@/store/ui-store';
 
@@ -475,6 +476,12 @@ export function PlanPage() {
     }
 
     if (!entry.templateId || isStarting) {
+      return;
+    }
+
+    // Eine geführte Vorlage startet nicht hier, sondern auf ihrem Start-Screen.
+    if (isGuidedTemplate(templates?.find((template) => template.id === entry.templateId))) {
+      navigateToGuidedStart(navigate, entry.templateId, { planEntryId: entry.id });
       return;
     }
 

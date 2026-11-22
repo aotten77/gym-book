@@ -33,7 +33,7 @@ import { TemplateProgressionSection } from '@/components/TemplateProgressionSect
 import { db } from '@/db/appDb';
 import { clearExerciseMedia, replaceExerciseMedia } from '@/db/media-actions';
 import { startSessionFromTemplate } from '@/db/session-actions';
-import { navigateToStartedSession } from '@/lib/session-navigation';
+import { navigateToGuidedStart, navigateToStartedSession } from '@/lib/session-navigation';
 import {
   deleteTemplate,
   deleteTemplateExercise,
@@ -44,6 +44,7 @@ import {
   updateTemplate,
 } from '@/db/template-actions';
 import { prefillTargetReps } from '@/domain/exercise-defaults';
+import { isGuidedTemplate } from '@/domain/guided-steps';
 import type { MediaAsset, WorkoutTemplateExercise } from '@/domain/models';
 import { describeRepRange } from '@/domain/session-summary';
 import { buildSupersetBlocks, moveSupersetBlock, moveWithinGroup } from '@/domain/superset';
@@ -451,6 +452,12 @@ export function TemplateDetailPage() {
 
   async function handleStartSession() {
     if (!template) {
+      return;
+    }
+
+    // Eine geführte Vorlage startet nicht hier, sondern auf ihrem Start-Screen.
+    if (isGuidedTemplate(template)) {
+      navigateToGuidedStart(navigate, template.id);
       return;
     }
 

@@ -15,7 +15,7 @@ import {
 } from '@/db/history-queries';
 import { loadUpcomingPlan } from '@/db/plan-queries';
 import { startSessionFromTemplate } from '@/db/session-actions';
-import { navigateToStartedSession } from '@/lib/session-navigation';
+import { navigateToGuidedStart, navigateToStartedSession } from '@/lib/session-navigation';
 import { pickTodayPlan } from '@/domain/plan';
 import { toDateInputValue } from '@/domain/program';
 import {
@@ -157,6 +157,13 @@ export function NowSheet() {
   const nothingToShow = !first && visibleFurther.length === 0 && visibleOthers.length === 0;
 
   async function handleStart(option: TodayUnitOption) {
+    // Eine geführte Vorlage startet nicht hier, sondern auf ihrem Start-Screen.
+    if (option.guided) {
+      setOpen(false);
+      navigateToGuidedStart(navigate, option.templateId, { planEntryId: option.planEntryId });
+      return;
+    }
+
     setIsStarting(true);
 
     try {

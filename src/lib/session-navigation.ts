@@ -30,3 +30,42 @@ export function readOpenFocusState(state: unknown): state is OpenFocusState {
 export function navigateToStartedSession(navigate: NavigateFunction, sessionId: string): void {
   navigate(`/session/${sessionId}`, { state: { openFocus: true } satisfies OpenFocusState });
 }
+
+/**
+ * Der Navigationsstate des Wegs auf den Start-Screen einer geführten Vorlage:
+ * der Termin, für den gestartet werden soll.
+ *
+ * Er reist wie `openFocus` im History-State und nicht in der URL. Ein Reload
+ * verliert ihn, und das ist ehrlich: der Start verknüpft dann den passenden
+ * Termin selbst, wie bei jedem Start ohne `planEntryId`.
+ */
+interface GuidedStartState {
+  planEntryId?: string;
+}
+
+/** Liest den State des Start-Screens; alles Unbrauchbare heißt „kein Termin“. */
+export function readGuidedStartState(state: unknown): GuidedStartState {
+  const planEntryId =
+    typeof state === 'object' && state !== null
+      ? (state as { planEntryId?: unknown }).planEntryId
+      : undefined;
+
+  return typeof planEntryId === 'string' && planEntryId ? { planEntryId } : {};
+}
+
+/**
+ * Führt auf den Start-Screen einer geführten Vorlage.
+ *
+ * Eine geführte Vorlage startet nicht in `/session/`: der Kraft-Screen kennt
+ * keine Schritte. Wo sonst `startSessionFromTemplate` aufgerufen würde, geht es
+ * hierhin - gestartet wird erst auf dem Start-Screen.
+ */
+export function navigateToGuidedStart(
+  navigate: NavigateFunction,
+  templateId: string,
+  options: { planEntryId?: string } = {},
+): void {
+  navigate(`/guided/${templateId}`, {
+    state: (options.planEntryId ? { planEntryId: options.planEntryId } : {}) satisfies GuidedStartState,
+  });
+}

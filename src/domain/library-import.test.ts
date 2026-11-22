@@ -1138,3 +1138,258 @@ describe('planLibraryImport - Art des Workouts', () => {
     expect(() => accepted('pilates')).toThrow(/Workout 1, Feld "category"/);
   });
 });
+
+describe('Import - geführte Schritte', () => {
+  const STEPS = [
+    { name: 'Kindhaltung', seconds: 60 },
+    {
+      name: 'Taube',
+      seconds: 75,
+      bothSides: true,
+      hint: 'Hüfte sinken lassen.',
+      transitionSeconds: 10,
+      spokenName: 'Taubenhaltung',
+    },
+  ];
+
+  function parseWithSteps(steps: unknown) {
+    return parseLibraryImportPayload(
+      JSON.stringify({ schemaVersion: 1, templates: [{ name: 'Yoga Abend', steps }] }),
+    );
+  }
+
+  it('behält den Hash einer Datei ohne Schritte', () => {
+    /*
+     * Der Wert wurde vor der Einführung des Feldes aufgenommen. Bekäme das
+     * Schema für `steps` ein `.default`, stünde ein Schlüssel in jeder alten
+     * Datei, und "dieselbe Datei wie neulich" stimmte nicht mehr.
+     */
+    const payload = parseLibraryImportPayload(
+      JSON.stringify({
+        schemaVersion: 1,
+        templates: [{ name: 'Yoga Abendflow', category: 'yoga', notes: 'ruhig' }],
+        exercises: [{ name: 'Taube', trackingMode: 'time', unilateral: true }],
+      }),
+    );
+
+    expect('steps' in (payload.templates[0] ?? {})).toBe(false);
+    expect(hashImportPayload(payload)).toBe('f89ab3cc');
+  });
+
+  it('liest die Schritte mit allen Feldern', () => {
+    const payload = parseWithSteps(STEPS);
+
+    expect(payload.templates[0].steps).toEqual(STEPS);
+  });
+
+  it('weist einen leeren Namen mit Block, Position und deutscher Meldung ab', () => {
+    expect(() => parseWithSteps([{ name: 'Kindhaltung', seconds: 60 }, { name: '  ', seconds: 30 }])).toThrow(
+      'Import-Datei ungültig bei Workout 1, Schritt 2, Feld "name": Der Name darf nicht leer sein.',
+    );
+  });
+
+  it('weist Sekunden unter 1, krumme und fehlende Sekunden ab', () => {
+    expect(() => parseWithSteps([{ name: 'A', seconds: 0 }])).toThrow(
+      'Schritt 1, Feld "seconds": Sekunden müssen größer als 0 sein.',
+    );
+    expect(() => parseWithSteps([{ name: 'A', seconds: -5 }])).toThrow(
+      'Schritt 1, Feld "seconds": Sekunden müssen größer als 0 sein.',
+    );
+    expect(() => parseWithSteps([{ name: 'A', seconds: 45.5 }])).toThrow(
+      'Schritt 1, Feld "seconds": Sekunden müssen eine ganze Zahl sein.',
+    );
+    expect(() => parseWithSteps([{ name: 'A', seconds: '45' }])).toThrow(
+      'Schritt 1, Feld "seconds": Sekunden müssen eine Zahl sein.',
+    );
+    expect(() => parseWithSteps([{ name: 'A' }])).toThrow(
+      'Schritt 1, Feld "seconds": Sekunden fehlen.',
+    );
+  });
+
+  it('weist einen ungültigen Wechsel ab', () => {
+    expect(() => parseWithSteps([{ name: 'A', seconds: 30, transitionSeconds: 0 }])).toThrow(
+      'Schritt 1, Feld "transitionSeconds": Der Wechsel muss größer als 0 sein.',
+    );
+    expect(() => parseWithSteps([{ name: 'A', seconds: 30, transitionSeconds: 2.5 }])).toThrow(
+      'Schritt 1, Feld "transitionSeconds": Der Wechsel muss eine ganze Zahl sein.',
+    );
+  });
+
+  it('weist eine leere Schrittliste ab', () => {
+    expect(() => parseWithSteps([])).toThrow(
+      'Workout 1, Feld "steps": Eine Schrittliste braucht mindestens einen Schritt.',
+    );
+  });
+
+  it('legt eine neue geführte Vorlage mit bereinigten Schritten an', () => {
+    const plan = planLibraryImport(
+      buildPayload({
+        templates: [
+          {
+            name: 'Yoga Abend',
+            category: 'yoga',
+            steps: [
+              { name: ' Kindhaltung ', seconds: 60, hint: '  ', spokenName: '', bothSides: false },
+              STEPS[1],
+            ],
+          },
+        ],
+      }),
+      emptyState(),
+    );
+
+    expect(plan.templates[0].record?.steps).toEqual([
+      { name: 'Kindhaltung', seconds: 60 },
+      STEPS[1],
+    ]);
+    // Kein Schlüssel mit `undefined`: er würde beim Update die Property löschen.
+    expect(Object.keys(plan.templates[0].record?.steps?.[0] ?? {})).toEqual(['name', 'seconds']);
+    expect(plan.templates[0].changes).toEqual([
+      { field: 'Schritte', from: '—', to: 'geführt, 2 Schritte' },
+    ]);
+  });
+
+  it('schreibt bei einer neuen Vorlage ohne Schritte keinen Schlüssel', () => {
+    const plan = planLibraryImport(buildPayload({ templates: [{ name: 'Kraft A' }] }), emptyState());
+
+    expect('steps' in (plan.templates[0].record ?? {})).toBe(false);
+    expect(plan.templates[0].changes).toEqual([]);
+  });
+
+  it('macht eine bestehende Vorlage durch Schritte zur geführten', () => {
+    const plan = planLibraryImport(
+      buildPayload({ templates: [{ name: 'Yoga Abend', steps: STEPS }] }),
+      emptyState({ templates: [buildTemplate('t1', 'Yoga Abend')] }),
+    );
+
+    expect(plan.templates[0].kind).toBe('update');
+    expect(plan.templates[0].changes).toEqual([
+      { field: 'Schritte', from: '—', to: 'geführt, 2 Schritte' },
+    ]);
+    expect(plan.templates[0].values.steps).toEqual(STEPS);
+  });
+
+  it('ersetzt die Liste einer geführten Vorlage vollständig und meldet es als Änderung', () => {
+    const plan = planLibraryImport(
+      buildPayload({
+        templates: [
+          {
+            name: 'Yoga Abend',
+            steps: [{ name: 'Katze-Kuh', seconds: 45 }, STEPS[0], STEPS[1]],
+          },
+        ],
+      }),
+      emptyState({ templates: [{ ...buildTemplate('t1', 'Yoga Abend'), steps: STEPS }] }),
+    );
+
+    expect(plan.templates[0].kind).toBe('update');
+    expect(plan.templates[0].changes).toEqual([
+      { field: 'Schritte', from: 'geführt, 2 Schritte', to: 'geführt, 3 Schritte' },
+    ]);
+    expect(plan.templates[0].values.steps).toHaveLength(3);
+  });
+
+  it('meldet eine geänderte Liste mit gleicher Länge nicht als unverändert', () => {
+    const plan = planLibraryImport(
+      buildPayload({
+        templates: [{ name: 'Yoga Abend', steps: [STEPS[0], { ...STEPS[1], seconds: 90 }] }],
+      }),
+      emptyState({ templates: [{ ...buildTemplate('t1', 'Yoga Abend'), steps: STEPS }] }),
+    );
+
+    expect(plan.templates[0].kind).toBe('update');
+    expect(plan.templates[0].changes).toEqual([
+      {
+        field: 'Schritte',
+        from: 'geführt, 2 Schritte',
+        to: 'geführt, 2 Schritte (Inhalt geändert)',
+      },
+    ]);
+  });
+
+  it('findet dieselbe Liste unverändert, auch in anderer Schreibweise', () => {
+    const plan = planLibraryImport(
+      buildPayload({
+        templates: [
+          {
+            name: 'Yoga Abend',
+            steps: [{ name: ' Kindhaltung', seconds: 60, bothSides: false }, STEPS[1]],
+          },
+        ],
+      }),
+      emptyState({ templates: [{ ...buildTemplate('t1', 'Yoga Abend'), steps: STEPS }] }),
+    );
+
+    expect(plan.templates[0].kind).toBe('unchanged');
+    expect(planHasChanges(plan)).toBe(false);
+  });
+
+  it('lässt die vorhandene Liste stehen, wenn die Datei kein Schrittfeld hat', () => {
+    const plan = planLibraryImport(
+      buildPayload({ templates: [{ name: 'Yoga Abend', notes: 'Neu' }] }),
+      emptyState({ templates: [{ ...buildTemplate('t1', 'Yoga Abend'), steps: STEPS }] }),
+    );
+
+    expect(plan.templates[0].kind).toBe('update');
+    expect('steps' in plan.templates[0].values).toBe(false);
+  });
+
+  it('lehnt Schritte und Zuordnungen für dieselbe Vorlage in einer Datei ab', () => {
+    expect(() =>
+      planLibraryImport(
+        buildPayload({
+          exercises: [{ name: 'Hip Thrust', trackingMode: 'reps_weight', unilateral: false }],
+          templates: [{ name: 'Yoga Abend', steps: STEPS }],
+          templateAssignments: [
+            { template: 'Yoga Abend', exercise: 'Hip Thrust', orderIndex: 1, workSetCount: 3 },
+          ],
+        }),
+        emptyState(),
+      ),
+    ).toThrow(
+      'Workout "Yoga Abend" hat Schritte und Zuordnungen in dieser Datei - eine geführte Vorlage hat keine Übungen.',
+    );
+  });
+
+  it('lehnt Schritte für ein Workout ab, das schon Übungen hat', () => {
+    expect(() =>
+      planLibraryImport(
+        buildPayload({ templates: [{ name: 'Einheit A', steps: STEPS }] }),
+        emptyState({
+          exercises: [buildExercise({ id: 'e1', name: 'Hip Thrust' })],
+          templates: [buildTemplate('t1', 'Einheit A')],
+          templateExercises: [
+            buildAssignment({ id: 'a1', templateId: 't1', exerciseId: 'e1', orderIndex: 1 }),
+          ],
+        }),
+      ),
+    ).toThrow('Workout "Einheit A" hat schon Übungen - eine geführte Vorlage hat keine Übungen.');
+  });
+
+  it('lehnt Zuordnungen für eine bereits geführte Vorlage ab', () => {
+    expect(() =>
+      planLibraryImport(
+        buildPayload({
+          templateAssignments: [
+            { template: 'Yoga Abend', exercise: 'Hip Thrust', orderIndex: 1, workSetCount: 3 },
+          ],
+        }),
+        emptyState({
+          exercises: [buildExercise({ id: 'e1', name: 'Hip Thrust' })],
+          templates: [{ ...buildTemplate('t1', 'Yoga Abend'), steps: STEPS }],
+        }),
+      ),
+    ).toThrow('Zuordnung 1: Workout "Yoga Abend" ist eine geführte Vorlage und hat keine Übungen.');
+  });
+
+  it('ist beim zweiten Lauf derselben Datei unverändert', () => {
+    const payload = buildPayload({
+      templates: [{ name: 'Yoga Abend', category: 'yoga', steps: STEPS }],
+    });
+    const first = planLibraryImport(payload, emptyState());
+    const state = applyPlan(emptyState(), first);
+
+    expect(state.templates[0].steps).toEqual(STEPS);
+    expect(planHasChanges(planLibraryImport(payload, state))).toBe(false);
+  });
+});

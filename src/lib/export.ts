@@ -65,6 +65,20 @@ const bandLevelSchema = z.object({
   updatedAt: z.string(),
 });
 
+/*
+ * Additiv wie `scheduledWeekdays`: kein Bump von SNAPSHOT_SCHEMA_VERSION. Ohne
+ * das Feld im Schema striche zod die Schritte beim Einlesen still weg - ein
+ * Restore machte aus jeder geführten Vorlage eine leere.
+ */
+const guidedStepSchema = z.object({
+  name: z.string().min(1),
+  seconds: z.number().int().positive(),
+  bothSides: z.boolean().optional(),
+  hint: z.string().optional(),
+  transitionSeconds: z.number().int().positive().optional(),
+  spokenName: z.string().optional(),
+});
+
 const workoutTemplateSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
@@ -76,6 +90,7 @@ const workoutTemplateSchema = z.object({
    */
   scheduledWeekdays: z.array(z.number().int().min(1).max(7)).optional(),
   category: z.enum(WORKOUT_CATEGORIES).optional(),
+  steps: z.array(guidedStepSchema).optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });

@@ -1,6 +1,7 @@
 import type {
   BandLevel,
   Exercise,
+  GuidedStep,
   LoadKind,
   Program,
   ProgramWeek,
@@ -65,6 +66,11 @@ export interface InventoryTemplate {
   name: string;
   category: WorkoutCategory;
   notes?: string;
+  /**
+   * Die Schritte einer geführten Vorlage. Der Import ersetzt die Liste immer
+   * ganz, und wer nur einen Schritt ändern will, muss die anderen kennen.
+   */
+  steps?: GuidedStep[];
 }
 
 interface InventoryTargets {
@@ -192,6 +198,7 @@ export function buildLibraryInventory(input: LibraryInventoryInput): LibraryInve
         name: item.name,
         category: resolveWorkoutCategory(item.category),
         notes: item.notes,
+        steps: item.steps?.length ? item.steps.map((step) => ({ ...step })) : undefined,
       }),
     ),
     templateAssignments,

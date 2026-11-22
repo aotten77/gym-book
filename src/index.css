@@ -166,6 +166,56 @@ select {
 }
 
 /*
+ * Die Gegenrichtung: der geführte Screen steht fest im Querformat.
+ *
+ * Die Sperre oben hält die App im Hochformat, hier ist es umgekehrt - das Handy
+ * lehnt quer an der Wand oder liegt auf dem Boden, und der Screen soll lesbar
+ * sein, wie auch immer es liegt. Zwei Lagen:
+ *
+ * - Liegt das Handy quer, ist die Seite ohnehin im Querformat und der Screen
+ *   füllt sie. Er hängt dafür nicht in `#root` (das dreht die Sperre oben
+ *   zurück, und er stünde dann wieder hochkant), sondern per Portal an `body`.
+ * - Steht es hochkant, wird der Screen um 90 Grad gedreht und mit vertauschten
+ *   Maßen aufgespannt. Nur auf Touch-Geräten in Telefonbreite, derselbe Filter
+ *   wie bei der Sperre: ein schmal gezogenes Desktop-Fenster soll nicht kippen.
+ *
+ * Gedreht wird im Uhrzeigersinn: die Oberkante des Handys liegt dann links, wo
+ * auch die Kamera im Mockup sitzt. Eine Orientierungssperre in iOS lässt sich
+ * von hier aus nicht erkennen, die Richtung ist deshalb eine feste Annahme -
+ * anders als bei der Sperre oben, wo `data-screen-angle` sie liefert.
+ *
+ * Die Safe-Area-Insets zeigen auf die physischen Ränder. `--stage-inset-*` sind
+ * die der *Bühne*: gedreht heißt ihr linker Rand die Oberkante des Geräts. Der
+ * Inhalt liest nur diese Variablen und muss die Lage nicht kennen.
+ */
+.guided-stage {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  overflow: hidden;
+  --stage-inset-top: env(safe-area-inset-top);
+  --stage-inset-right: env(safe-area-inset-right);
+  --stage-inset-bottom: env(safe-area-inset-bottom);
+  --stage-inset-left: env(safe-area-inset-left);
+}
+
+@media (orientation: portrait) and (max-width: 520px) and (pointer: coarse) {
+  .guided-stage {
+    inset: auto;
+    top: 50%;
+    left: 50%;
+    width: 100dvh;
+    height: 100dvw;
+    transform: translate(-50%, -50%) rotate(90deg);
+    transform-origin: center center;
+    --stage-inset-top: env(safe-area-inset-right);
+    --stage-inset-right: env(safe-area-inset-bottom);
+    --stage-inset-bottom: env(safe-area-inset-left);
+    --stage-inset-left: env(safe-area-inset-top);
+  }
+}
+
+/*
  * WebKit ignoriert min-height auf einem <select> mit nativem Erscheinungsbild -
  * das Feld schrumpft dort auf 22px, weit unter jede Touch-Empfehlung.
  * `appearance: none` macht daraus eine normale CSS-Box; der Pfeil kommt als

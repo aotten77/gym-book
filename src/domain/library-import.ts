@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { describeGuidedSteps } from '@/domain/guided-steps';
 import { normalizeImportKey } from '@/domain/import-key';
 import {
   describeImportValue,
@@ -19,6 +20,7 @@ import {
 import type {
   BandLevel,
   Exercise,
+  GuidedStep,
   LoadKind,
   PlanEntry,
   ProgressionRule,
@@ -77,10 +79,61 @@ const importExerciseSchema = z.object({
   tracksHeight: z.boolean().optional(),
 });
 
+/*
+ * Die Meldungen stehen im Schema, weil zods eigene englisch sind und der
+ * Nutzer die Datei von claude.ai korrigieren lassen will: "Schritt 2, Feld
+ * seconds: Sekunden müssen größer als 0 sein" lässt sich weitergeben, "Number
+ * must be greater than 0" nicht.
+ */
+function positiveWholeNumber(messages: {
+  missing: string;
+  notNumber: string;
+  notWhole: string;
+  notPositive: string;
+}) {
+  return z
+    .number({ required_error: messages.missing, invalid_type_error: messages.notNumber })
+    .int(messages.notWhole)
+    .positive(messages.notPositive);
+}
+
+const importGuidedStepSchema = z.object({
+  name: z
+    .string({ required_error: 'Der Name fehlt.', invalid_type_error: 'Der Name muss Text sein.' })
+    .refine((value) => value.trim().length > 0, 'Der Name darf nicht leer sein.'),
+  seconds: positiveWholeNumber({
+    missing: 'Sekunden fehlen.',
+    notNumber: 'Sekunden müssen eine Zahl sein.',
+    notWhole: 'Sekunden müssen eine ganze Zahl sein.',
+    notPositive: 'Sekunden müssen größer als 0 sein.',
+  }),
+  bothSides: z.boolean().optional(),
+  hint: z.string().optional(),
+  transitionSeconds: positiveWholeNumber({
+    missing: 'Der Wechsel fehlt.',
+    notNumber: 'Der Wechsel muss eine Zahl sein.',
+    notWhole: 'Der Wechsel muss eine ganze Zahl sein.',
+    notPositive: 'Der Wechsel muss größer als 0 sein.',
+  }).optional(),
+  spokenName: z.string().optional(),
+});
+
 const importTemplateSchema = z.object({
   name: z.string().min(1),
   notes: z.string().optional(),
   category: z.enum(WORKOUT_CATEGORIES).optional(),
+  /*
+   * Die Schritte einer geführten Vorlage - bewusst ohne `.default`, aus
+   * demselben Grund wie `planEntries` unten: der Hash läuft über die
+   * *geparste* Nutzlast, und ein Schlüssel, den es in alten Dateien nicht gab,
+   * änderte ihren Hash. Mindestens ein Schritt: eine leere Liste hieße "mach
+   * die Vorlage wieder ungeführt", und das löscht eine Liste, die nur der
+   * Import schreibt - das muss jemand ausdrücklich wollen, nicht ein Tippfehler.
+   */
+  steps: z
+    .array(importGuidedStepSchema)
+    .min(1, 'Eine Schrittliste braucht mindestens einen Schritt.')
+    .optional(),
   /*
    * Die Zuordnungen dieses Workouts in der Datei sind der vollständige
    * Soll-Stand seiner Zusammensetzung: was fehlt, wird entfernt, Reihenfolge
@@ -325,7 +378,7 @@ const BLOCK_LABELS: Record<string, string> = {
 };
 
 function describeIssuePath(path: Array<string | number>) {
-  const [block, index, field] = path;
+  const [block, index, field, stepIndex, stepField] = path;
 
   if (typeof block !== 'string') {
     return 'der Datei';
@@ -335,6 +388,13 @@ function describeIssuePath(path: Array<string | number>) {
 
   if (typeof index !== 'number') {
     return label;
+  }
+
+  // Ein Fehler in einem Schritt nennt den Schritt, nicht nur die Vorlage.
+  if (block === 'templates' && field === 'steps' && typeof stepIndex === 'number') {
+    const step = `${label} ${index + 1}, Schritt ${stepIndex + 1}`;
+
+    return stepField ? `${step}, Feld "${String(stepField)}"` : step;
   }
 
   return field ? `${label} ${index + 1}, Feld "${String(field)}"` : `${label} ${index + 1}`;
@@ -459,6 +519,34 @@ function planExercises(
   return entries;
 }
 
+/**
+ * Die Schritte, wie sie gespeichert werden: Namen und Texte getrimmt, leere
+ * Texte und ein `bothSides: false` weggelassen.
+ *
+ * Einen Schlüssel mit `undefined` gibt es nie: der Vergleich mit dem Bestand
+ * (`sameGuidedSteps`) soll sich an Werten entscheiden und nicht daran, ob ein
+ * Schlüssel da ist.
+ */
+function normalizeGuidedSteps(steps: readonly GuidedStep[]): GuidedStep[] {
+  return steps.map((step) => {
+    const hint = optionalText(step.hint);
+    const spokenName = optionalText(step.spokenName);
+
+    return {
+      name: step.name.trim(),
+      seconds: step.seconds,
+      ...(step.bothSides && { bothSides: true }),
+      ...(hint && { hint }),
+      ...(step.transitionSeconds !== undefined && { transitionSeconds: step.transitionSeconds }),
+      ...(spokenName && { spokenName }),
+    };
+  });
+}
+
+function sameGuidedSteps(current: readonly GuidedStep[] | undefined, next: readonly GuidedStep[]) {
+  return stableStringify(normalizeGuidedSteps(current ?? [])) === stableStringify(next);
+}
+
 function planTemplates(
   payload: LibraryImportPayload,
   state: LibraryImportState,
@@ -481,6 +569,10 @@ function planTemplates(
 
     const existing = existingByKey.get(key);
 
+    // Ohne `strictNullChecks` liest zod die Pflichtfelder als optional - die
+    // Schritte sind geprüft, der Cast sagt dem Compiler nur, was das Schema weiß.
+    const steps = input.steps ? normalizeGuidedSteps(input.steps as GuidedStep[]) : undefined;
+
     if (!existing) {
       const category = normalizeWorkoutCategory(input.category);
 
@@ -488,12 +580,15 @@ function planTemplates(
         id: createId(),
         kind: 'new',
         label: name,
-        changes: [],
+        changes: steps
+          ? [{ field: 'Schritte', from: describeValue(undefined), to: describeGuidedSteps(steps) }]
+          : [],
         record: {
           name,
           notes: optionalText(input.notes),
           // Kraft hat keine Schreibweise: der Schlüssel fehlt dann ganz.
           ...(category && { category }),
+          ...(steps && { steps }),
         },
         values: {},
       });
@@ -526,6 +621,21 @@ function planTemplates(
       values.category = normalizeWorkoutCategory(input.category);
     }
 
+    // Eine Liste in der Datei ersetzt die vorhandene vollständig; ohne Feld
+    // bleibt sie stehen. Gleich ist gleich, auch wenn die Schreibweise abweicht.
+    if (steps && !sameGuidedSteps(existing.steps, steps)) {
+      const to = describeGuidedSteps(steps);
+      const from = existing.steps?.length ? describeGuidedSteps(existing.steps) : undefined;
+
+      changes.push({
+        field: 'Schritte',
+        from: describeValue(from),
+        // Gleiche Zahl, anderer Inhalt: ohne den Zusatz stünde dort "5 → 5".
+        to: from === to ? `${to} (Inhalt geändert)` : to,
+      });
+      values.steps = steps;
+    }
+
     entries.push({
       id: existing.id,
       kind: changes.length > 0 ? 'update' : 'unchanged',
@@ -537,6 +647,61 @@ function planTemplates(
   });
 
   return entries;
+}
+
+/**
+ * Eine geführte Vorlage hat keine Übungs-Zuordnungen - der Import lässt nicht
+ * zu, dass sie beides bekommt.
+ *
+ * Geprüft wird gegen das Ergebnis und nicht nur gegen die Datei: Schritte für
+ * ein Workout, das schon Übungen hat, oder Übungen für eine Vorlage, die schon
+ * Schritte hat, ergäben genau denselben Zwitter, den die Datei selbst nicht
+ * enthalten darf. Er ließe sich nicht starten - Kraft liest die Übungen, der
+ * geführte Ablauf die Schritte, und welche der beiden gilt, wäre Zufall.
+ */
+function checkGuidedTemplates(
+  payload: LibraryImportPayload,
+  state: LibraryImportState,
+  problems: string[],
+) {
+  const templatesByKey = new Map(state.templates.map((item) => [normalizeImportKey(item.name), item]));
+  const fileAssignmentKeys = new Set(
+    payload.templateAssignments.map((item) => normalizeImportKey(item.template)),
+  );
+  const fileStepKeys = new Set<string>();
+
+  for (const input of payload.templates) {
+    if (!input.steps) {
+      continue;
+    }
+
+    const name = input.name.trim();
+    const key = normalizeImportKey(name);
+    const existing = templatesByKey.get(key);
+
+    fileStepKeys.add(key);
+
+    if (fileAssignmentKeys.has(key)) {
+      problems.push(
+        `Workout "${name}" hat Schritte und Zuordnungen in dieser Datei - eine geführte Vorlage hat keine Übungen.`,
+      );
+    } else if (existing && state.templateExercises.some((item) => item.templateId === existing.id)) {
+      problems.push(`Workout "${name}" hat schon Übungen - eine geführte Vorlage hat keine Übungen.`);
+    }
+  }
+
+  payload.templateAssignments.forEach((input, index) => {
+    const name = input.template.trim();
+    const key = normalizeImportKey(name);
+    const existing = templatesByKey.get(key);
+
+    // Beides in derselben Datei hat die Schleife oben schon gemeldet.
+    if (existing?.steps?.length && !fileStepKeys.has(key)) {
+      problems.push(
+        `Zuordnung ${index + 1}: Workout "${existing.name}" ist eine geführte Vorlage und hat keine Übungen.`,
+      );
+    }
+  });
 }
 
 /** Ein Platz in der Reihenfolge eines Workouts - bestehend oder neu. */
@@ -1340,6 +1505,7 @@ export function planLibraryImport(
   const problems: string[] = [];
   const exercises = planExercises(payload, state, problems);
   const templates = planTemplates(payload, state, problems);
+  checkGuidedTemplates(payload, state, problems);
   const { entries: assignments, templateOrder } = planAssignments(
     payload,
     state,

@@ -78,6 +78,44 @@ describe('buildTodayUnitOptions', () => {
   });
 });
 
+describe('buildTodayUnitOptions: geführte Vorlagen', () => {
+  const withGuided = [
+    ...templates,
+    {
+      id: 'g',
+      name: 'Yoga Abend',
+      category: 'yoga' as const,
+      steps: [{ name: 'Kindhaltung', seconds: 60 }],
+    },
+  ];
+
+  it('markiert eine geführte Vorlage, Kraft und leere Listen nicht', () => {
+    const { others } = buildTodayUnitOptions({
+      templates: [...withGuided, { id: 'e', name: 'Leer', steps: [] }],
+      plannedToday: [],
+      recency: {},
+      minutesByTemplate: {},
+      today,
+    });
+
+    expect(others.filter((option) => option.guided).map((option) => option.name)).toEqual([
+      'Yoga Abend',
+    ]);
+  });
+
+  it('markiert auch einen heute geplanten Termin einer geführten Vorlage', () => {
+    const { planned } = buildTodayUnitOptions({
+      templates: withGuided,
+      plannedToday: [entry({ id: 'e1', orderInDay: 1, templateId: 'g' })],
+      recency: {},
+      minutesByTemplate: {},
+      today,
+    });
+
+    expect(planned[0]).toMatchObject({ name: 'Yoga Abend', guided: true, planEntryId: 'e1' });
+  });
+});
+
 describe('describeLastTrained', () => {
   it('beschreibt den Abstand in Kalendertagen', () => {
     expect(describeLastTrained(new Date(2026, 9, 5, 18).toISOString(), today)).toBe('zuletzt Mo');
@@ -153,6 +191,7 @@ describe('filterNowOptions', () => {
     lastTrained: 'noch nie',
     minutes,
     exerciseCount: 0,
+    guided: false,
   });
   const options = [
     option('m8', 'mobility', 8),

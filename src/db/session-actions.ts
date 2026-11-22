@@ -7,6 +7,7 @@ import type {
   WorkoutSessionExercise,
   WorkoutSetLog,
 } from '@/domain/models';
+import { isGuidedTemplate } from '@/domain/guided-steps';
 import { resolveWeekControl } from '@/domain/program';
 import { loadTakenPlanEntryIds } from '@/db/plan-actions';
 import { findMatchingPlanEntry } from '@/domain/plan';
@@ -103,6 +104,16 @@ export async function startSessionFromTemplate(
 
   if (!template) {
     throw new Error('Template not found');
+  }
+
+  /*
+   * Eine geführte Vorlage hat keine Übungen. `materializeSession` machte aus
+   * ihr eine leere Kraft-Session, die sich weder abhaken noch sinnvoll
+   * beenden ließe - die Oberflächen schicken sie deshalb auf den Start-Screen,
+   * und das hier fängt, was an ihnen vorbeikommt.
+   */
+  if (isGuidedTemplate(template)) {
+    throw new Error(`${template.name} ist eine geführte Vorlage und startet über ihren Start-Screen.`);
   }
 
   const templateExercises = await db.workoutTemplateExercises

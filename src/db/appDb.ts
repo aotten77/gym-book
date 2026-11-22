@@ -110,6 +110,10 @@ class GymBookDatabase extends Dexie {
       workoutSessions: 'id, templateId, status, startedAt, completedAt, planEntryId',
       runLogs: 'id, date, planEntryId',
     });
+
+    // Kein v7 für die geführten Vorlagen: `WorkoutTemplate.steps` ist eine Liste
+    // von Werten am Workout, weder indiziert noch umzuformen - Dexie speichert
+    // das ganze Objekt, und Bestandsworkouts haben das Feld schlicht nicht.
   }
 }
 

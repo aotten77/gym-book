@@ -681,3 +681,119 @@ describe('applyLibraryImport - Termine', () => {
     expect(await db.planEntries.count()).toBe(5);
   });
 });
+
+describe('applyLibraryImport - geführte Schritte', () => {
+  const STEPS = [
+    { name: 'Kindhaltung', seconds: 60 },
+    { name: 'Taube', seconds: 75, bothSides: true, hint: 'Hüfte sinken lassen.' },
+  ];
+
+  function guidedPayload(steps: unknown, name = 'Yoga Abend') {
+    return parseLibraryImportPayload(
+      JSON.stringify({ schemaVersion: 1, templates: [{ name, category: 'yoga', steps }] }),
+    );
+  }
+
+  const byName = async (name: string) => db.workoutTemplates.where('name').equals(name).first();
+
+  it('schreibt die Schritte einer neuen Vorlage', async () => {
+    await seedLibrary();
+
+    const { plan } = await applyLibraryImport(guidedPayload(STEPS));
+
+    expect(plan.summary.createdTemplates).toBe(1);
+    expect((await byName('Yoga Abend'))?.steps).toEqual(STEPS);
+    // Eine geführte Vorlage hat keine Übungs-Zuordnungen.
+    expect(await db.workoutTemplateExercises.where('templateId').equals((await byName('Yoga Abend'))!.id).count()).toBe(0);
+  });
+
+  it('ersetzt die Liste beim erneuten Import vollständig', async () => {
+    await seedLibrary();
+    await applyLibraryImport(guidedPayload(STEPS));
+
+    const { plan } = await applyLibraryImport(guidedPayload([{ name: 'Katze-Kuh', seconds: 45 }]));
+
+    expect(plan.summary.updatedTemplates).toBe(1);
+    expect((await byName('Yoga Abend'))?.steps).toEqual([{ name: 'Katze-Kuh', seconds: 45 }]);
+  });
+
+  it('lässt die Liste stehen, wenn die Datei kein Schrittfeld hat', async () => {
+    await seedLibrary();
+    await applyLibraryImport(guidedPayload(STEPS));
+
+    await applyLibraryImport(
+      parseLibraryImportPayload(
+        JSON.stringify({ schemaVersion: 1, templates: [{ name: 'Yoga Abend', notes: 'ruhig' }] }),
+      ),
+    );
+
+    const template = await byName('Yoga Abend');
+
+    expect(template?.notes).toBe('ruhig');
+    expect(template?.steps).toEqual(STEPS);
+  });
+
+  it('schreibt beim zweiten Lauf derselben Datei nichts mehr', async () => {
+    await seedLibrary();
+    await applyLibraryImport(guidedPayload(STEPS));
+
+    const plan = await buildLibraryImportPlan(guidedPayload(STEPS));
+
+    expect(plan.templates[0].kind).toBe('unchanged');
+  });
+
+  it('macht ein bestehendes Workout ohne Übungen zur geführten Vorlage und lässt andere unberührt', async () => {
+    await seedLibrary();
+    await db.workoutTemplates.add({
+      id: 't2',
+      name: 'Yoga Abend',
+      createdAt: '2026-02-01T09:00:00.000Z',
+      updatedAt: '2026-02-01T09:00:00.000Z',
+    });
+
+    await applyLibraryImport(guidedPayload(STEPS));
+
+    expect((await db.workoutTemplates.get('t2'))?.steps).toEqual(STEPS);
+    expect('steps' in ((await db.workoutTemplates.get('t1')) ?? {})).toBe(false);
+  });
+
+  it('lehnt Schritte für ein Workout mit Übungen ab und schreibt nichts', async () => {
+    await seedLibrary();
+
+    await expect(applyLibraryImport(guidedPayload(STEPS, 'Einheit B'))).rejects.toThrow(
+      'Workout "Einheit B" hat schon Übungen',
+    );
+
+    expect('steps' in ((await byName('Einheit B')) ?? {})).toBe(false);
+    expect(await listLibraryImports()).toHaveLength(0);
+  });
+
+  it('bleibt als Backup lesbar', async () => {
+    await seedLibrary();
+    await applyLibraryImport(guidedPayload(STEPS));
+
+    const snapshot: Record<string, unknown> = {
+      schemaVersion: SNAPSHOT_SCHEMA_VERSION,
+      exportedAt: new Date().toISOString(),
+      exercises: await db.exercises.toArray(),
+      workoutTemplates: await db.workoutTemplates.toArray(),
+      workoutTemplateExercises: await db.workoutTemplateExercises.toArray(),
+      workoutSessions: [],
+      workoutSessionExercises: [],
+      workoutSetLogs: [],
+      exerciseTests: [],
+      programs: [],
+      programWeeks: [],
+      progressionRules: [],
+      mediaAssets: [],
+      appSettings: await db.appSettings.toArray(),
+      bandLevels: await db.bandLevels.toArray(),
+      libraryImports: await db.libraryImports.toArray(),
+    };
+    const parsed = parseDatabaseSnapshot(JSON.stringify(snapshot));
+
+    expect(parsed.workoutTemplates.find((template) => template.name === 'Yoga Abend')?.steps).toEqual(
+      STEPS,
+    );
+  });
+});

@@ -1,3 +1,4 @@
+import { isGuidedTemplate } from '@/domain/guided-steps';
 import type { PlanEntry, WorkoutTemplate } from '@/domain/models';
 import {
   FALLBACK_WORK_SECONDS,
@@ -18,6 +19,8 @@ export interface TodayUnitOption {
   /** Grobe Dauer, siehe `estimateTemplateMinutes`; 0 heißt „nicht schätzbar". */
   minutes: number;
   exerciseCount: number;
+  /** Eine geführte Vorlage startet nicht als Session, sondern auf ihrem Start-Screen. */
+  guided: boolean;
   /** Nur bei einem heute geplanten Workout: der Termin, der beim Start mitgegeben wird. */
   planEntryId?: string;
 }
@@ -141,7 +144,7 @@ export function describeLastTrained(completedAt: string | undefined, today: Date
  * Ein Termin ist ein Angebot, kein Schloss - deshalb bleibt jedes Workout wählbar.
  */
 export function buildTodayUnitOptions(input: {
-  templates: Pick<WorkoutTemplate, 'id' | 'name' | 'category'>[];
+  templates: Pick<WorkoutTemplate, 'id' | 'name' | 'category' | 'steps'>[];
   plannedToday: PlanEntry[];
   recency: Record<string, string>;
   minutesByTemplate: Record<string, number>;
@@ -151,13 +154,16 @@ export function buildTodayUnitOptions(input: {
 }): { planned: TodayUnitOption[]; others: TodayUnitOption[] } {
   const byId = new Map(input.templates.map((template) => [template.id, template]));
 
-  const toOption = (template: Pick<WorkoutTemplate, 'id' | 'name' | 'category'>): TodayUnitOption => ({
+  const toOption = (
+    template: Pick<WorkoutTemplate, 'id' | 'name' | 'category' | 'steps'>,
+  ): TodayUnitOption => ({
     templateId: template.id,
     name: template.name,
     kind: resolveWorkoutCategory(template.category),
     lastTrained: describeLastTrained(input.recency[template.id], input.today),
     minutes: input.minutesByTemplate[template.id] ?? 0,
     exerciseCount: input.exerciseCountByTemplate?.[template.id] ?? 0,
+    guided: isGuidedTemplate(template),
   });
 
   const plannedIds = new Set<string>();

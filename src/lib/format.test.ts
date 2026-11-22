@@ -4,6 +4,7 @@ import {
   formatClockTime,
   formatNumber,
   formatRemainingEstimate,
+  formatStepClock,
 } from '@/lib/format';
 
 describe('formatNumber', () => {
@@ -72,5 +73,14 @@ describe('describeRemainingEstimate', () => {
     expect(describeRemainingEstimate(3600)).toBe('etwa eine Stunde');
     expect(describeRemainingEstimate(4800)).toBe('etwa eine Stunde und 20 Minuten');
     expect(describeRemainingEstimate(7500)).toBe('etwa 2 Stunden und 5 Minuten');
+  });
+});
+
+describe('formatStepClock', () => {
+  it('schreibt Minuten ohne führende Null und Sekunden zweistellig', () => {
+    expect(formatStepClock(45)).toBe('0:45');
+    expect(formatStepClock(60)).toBe('1:00');
+    expect(formatStepClock(75)).toBe('1:15');
+    expect(formatStepClock(605)).toBe('10:05');
   });
 });

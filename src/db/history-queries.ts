@@ -1,4 +1,5 @@
 import { db } from '@/db/appDb';
+import { isGuidedTemplate, resolveGuidedSections, sumGuidedSeconds } from '@/domain/guided-steps';
 import {
   buildLastSetValues,
   pickLastCompletedExecution,
@@ -122,9 +123,10 @@ export async function loadTemplateRecency(): Promise<Record<string, string>> {
  * im Ergebnis.
  */
 export async function loadTemplateMinutes(): Promise<Record<string, number>> {
-  const [rows, exercises] = await Promise.all([
+  const [rows, exercises, templates] = await Promise.all([
     db.workoutTemplateExercises.toArray(),
     db.exercises.toArray(),
+    db.workoutTemplates.toArray(),
   ]);
   const unilateralById = new Map(exercises.map((exercise) => [exercise.id, exercise.unilateral]));
   const byTemplate = new Map<string, typeof rows>();
@@ -152,17 +154,41 @@ export async function loadTemplateMinutes(): Promise<Record<string, number>> {
     );
   }
 
+  // Eine geführte Vorlage hat keine Zeilen: ihre Dauer ist die der Abschnitte,
+  // Wechsel eingerechnet - dieselbe Rechnung wie die Kennzahlen des Start-Screens.
+  for (const template of templates) {
+    if (isGuidedTemplate(template)) {
+      minutes[template.id] = Math.ceil(
+        sumGuidedSeconds(resolveGuidedSections(template.steps ?? [])) / 60,
+      );
+    }
+  }
+
   return minutes;
 }
 
-/** Übungen je Workout - für die Kacheln „8 min · 5 Übungen". */
+/**
+ * Übungen je Workout - für die Kacheln „8 min · 5 Übungen“. Bei einer
+ * geführten Vorlage die Schritte: aus Sicht dessen, der sie macht, ist jeder
+ * eine Übung, und „0 Übungen“ stimmte nicht.
+ */
 export async function loadTemplateExerciseCounts(): Promise<Record<string, number>> {
-  const rows = await db.workoutTemplateExercises.toArray();
-
-  return rows.reduce<Record<string, number>>((counts, row) => {
-    counts[row.templateId] = (counts[row.templateId] ?? 0) + 1;
-    return counts;
+  const [rows, templates] = await Promise.all([
+    db.workoutTemplateExercises.toArray(),
+    db.workoutTemplates.toArray(),
+  ]);
+  const counts = rows.reduce<Record<string, number>>((result, row) => {
+    result[row.templateId] = (result[row.templateId] ?? 0) + 1;
+    return result;
   }, {});
+
+  for (const template of templates) {
+    if (isGuidedTemplate(template)) {
+      counts[template.id] = template.steps?.length ?? 0;
+    }
+  }
+
+  return counts;
 }
 
 export interface WeekSummarySession {
