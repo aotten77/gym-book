@@ -2,6 +2,18 @@ import { create } from 'zustand';
 
 // Nur flüchtiger UI-Zustand. Alles, was einen Reload überleben muss -
 // insbesondere der Pausentimer - liegt in IndexedDB, siehe session-actions.
+/**
+ * Wo der Plan-Zeitstrahl beim letzten Scrollen stand: die oberste sichtbare
+ * Woche und ihre Lage im sichtbaren Ausschnitt, dazu der Anfang des geladenen
+ * Bereichs und der Tag, für den das galt.
+ */
+export interface PlanPosition {
+  todayKey: string;
+  firstMondayKey: string;
+  anchorKey: string;
+  anchorTop: number;
+}
+
 interface UiStoreState {
   activeSessionExerciseId: string | null;
   /**
@@ -30,6 +42,12 @@ interface UiStoreState {
    * [openSessionBlockKey]: nach einem Neustart steht man in der Übersicht.
    */
   isNowSheetOpen: boolean;
+  /**
+   * Die Lage des Plan-Zeitstrahls, damit ein Zurück aus einer Detailseite ihn
+   * an derselben Stelle wieder aufbaut. Flüchtig: nach einem Neustart und bei
+   * jedem Einstieg über den Plan-Tab öffnet der Plan auf heute.
+   */
+  planPosition: PlanPosition | null;
   isOnline: boolean;
   isOfflineReady: boolean;
   isUpdateAvailable: boolean;
@@ -40,6 +58,7 @@ interface UiStoreState {
   setOpenSessionBlockKey: (blockKey: string | null) => void;
   setMinimizedRestKey: (restKey: string | null) => void;
   setNowSheetOpen: (open: boolean) => void;
+  setPlanPosition: (position: PlanPosition | null) => void;
   setOnlineStatus: (isOnline: boolean) => void;
   setOfflineReady: (isOfflineReady: boolean) => void;
   setUpdateAvailable: (isUpdateAvailable: boolean) => void;
@@ -60,6 +79,7 @@ export const useUiStore = create<UiStoreState>((set) => ({
   openSessionBlockKey: null,
   minimizedRestKey: null,
   isNowSheetOpen: false,
+  planPosition: null,
   isOnline: true,
   isOfflineReady: false,
   isUpdateAvailable: false,
@@ -69,6 +89,7 @@ export const useUiStore = create<UiStoreState>((set) => ({
   setOpenSessionBlockKey: (openSessionBlockKey) => set({ openSessionBlockKey }),
   setMinimizedRestKey: (minimizedRestKey) => set({ minimizedRestKey }),
   setNowSheetOpen: (isNowSheetOpen) => set({ isNowSheetOpen }),
+  setPlanPosition: (planPosition) => set({ planPosition }),
   setOnlineStatus: (isOnline) => set({ isOnline }),
   setOfflineReady: (isOfflineReady) => set({ isOfflineReady }),
   setUpdateAvailable: (isUpdateAvailable) => set({ isUpdateAvailable }),

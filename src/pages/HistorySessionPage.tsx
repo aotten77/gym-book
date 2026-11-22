@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { ArrowLeft } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
@@ -11,6 +11,7 @@ import { db } from '@/db/appDb';
 import { sortSetLogs } from '@/domain/history';
 import type { WorkoutSessionExercise, WorkoutSetLog } from '@/domain/models';
 import { buildSupersetBlocks } from '@/domain/superset';
+import { useBackToOrigin } from '@/lib/back-navigation';
 import {
   formatDateTime,
   formatLoadLabel,
@@ -29,6 +30,7 @@ function formatSetLabel(setLog: WorkoutSetLog) {
 
 export function HistorySessionPage() {
   const { sessionId = '' } = useParams();
+  const { goBack } = useBackToOrigin();
   const session = useLiveQuery(() => db.workoutSessions.get(sessionId), [sessionId]);
   const sessionExercises = useLiveQuery(
     () => db.workoutSessionExercises.where('sessionId').equals(sessionId).sortBy('orderIndex'),
@@ -63,13 +65,14 @@ export function HistorySessionPage() {
         <SectionCard
           title="Session nicht gefunden"
           action={
-            <Link
-              to="/history"
+            <button
+              type="button"
+              onClick={goBack}
               className="min-h-touch inline-flex items-center justify-center gap-2 rounded-control border border-line px-3 py-2 text-sm text-content-secondary transition hover:bg-surface-raised"
             >
               <ArrowLeft size={16} />
               Zurück
-            </Link>
+            </button>
           }
         >
           <p className="text-sm text-content-muted">Die Session existiert nicht mehr oder wurde noch nicht exportiert.</p>
@@ -87,13 +90,14 @@ export function HistorySessionPage() {
           title="Session-Snapshot"
           subtitle={`${formatDateTime(session.completedAt ?? session.startedAt)} · ${weekContext}`}
           action={
-            <Link
-              to="/history"
+            <button
+              type="button"
+              onClick={goBack}
               className="min-h-touch inline-flex items-center justify-center gap-2 rounded-control border border-line px-3 py-2 text-sm text-content-secondary transition hover:bg-surface-raised"
             >
               <ArrowLeft size={16} />
               Zurück
-            </Link>
+            </button>
           }
         >
           <div className="grid grid-cols-2 gap-3 text-sm">

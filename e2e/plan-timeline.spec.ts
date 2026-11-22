@@ -76,6 +76,57 @@ async function addPastRun(page: Page, date: string) {
   );
 }
 
+/** Die physische Lage einer Woche (Kopf) im Bild - gilt im Hoch- wie im gedrehten Querformat. */
+async function weekHeadRect(page: Page, weekKey: string) {
+  return page
+    .locator(`[data-timeline-week="${weekKey}"] [data-timeline-week-head]`)
+    .evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+
+      return { x: rect.left, y: rect.top };
+    });
+}
+
+/**
+ * Lädt frühere Wochen nach, holt die erledigte Einheit in den Bild und liefert
+ * ihre Zeile samt dem Schlüssel ihrer Woche - die Stelle, an die man nach dem
+ * Zurück wieder kommen muss.
+ */
+async function loadEarlierAndFindSession(page: Page) {
+  await addPastRun(page, await localDay(page, -70));
+  await addPastRun(page, await localDay(page, -37));
+  await openPlan(page);
+
+  const weeks = page.locator('[data-timeline-week]');
+  const before = await weeks.count();
+
+  await page.locator('[data-load-earlier]').scrollIntoViewIfNeeded();
+  await page.locator('[data-load-earlier]').click();
+  await expect(weeks).toHaveCount(before + 4);
+  await page.waitForTimeout(800);
+
+  const row = page.locator('[data-unit-state="erledigt"]').filter({ hasText: 'Einheit A' });
+  await row.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(300);
+
+  const weekKey = await row
+    .locator('xpath=ancestor::*[@data-timeline-week][1]')
+    .getAttribute('data-timeline-week');
+
+  return { row, weekKey: weekKey as string, weeksAfter: before + 4 };
+}
+
+/** Erwartet, dass die Woche nach der Rückkehr an derselben Stelle steht. */
+async function expectWeekBackAt(page: Page, weekKey: string, expected: { x: number; y: number }) {
+  await expect(page.locator('[data-timeline-week]')).not.toHaveCount(0);
+  await page.waitForTimeout(800);
+
+  const rect = await weekHeadRect(page, weekKey);
+
+  expect(Math.abs(rect.x - expected.x)).toBeLessThanOrEqual(3);
+  expect(Math.abs(rect.y - expected.y)).toBeLessThanOrEqual(3);
+}
+
 test.describe('Plan als Zeitstrahl', () => {
   test.beforeEach(async ({ page }) => {
     await resetDatabase(page);
@@ -170,7 +221,7 @@ test.describe('Plan als Zeitstrahl', () => {
     await expect(page.locator('[data-sheet]')).toBeVisible();
     await closeExerciseSheet(page);
     await page.getByRole('button', { name: 'Session minimieren' }).click();
-    await page.waitForURL(/#\/$/);
+    await expect(page).toHaveURL(/\/(#\/)?$/);
     await page.waitForTimeout(800);
 
     await expect(page.locator('[data-now-unit]')).toHaveCount(0);
@@ -364,6 +415,111 @@ test.describe('Plan als Zeitstrahl', () => {
     expect(errors).toEqual([]);
   });
 
+  test('Zurück aus der Einheit führt an dieselbe Stelle im Plan', async ({ page }) => {
+    const errors = collectPageErrors(page);
+    const { row, weekKey, weeksAfter } = await loadEarlierAndFindSession(page);
+    const expected = await weekHeadRect(page, weekKey);
+
+    await row.click();
+    await page.waitForURL(/#\/history\/session\//);
+    await page.getByRole('button', { name: 'Zurück' }).click();
+    await expect(page).toHaveURL(/\/(#\/)?$/);
+
+    await expect(page.locator('[data-timeline-week]')).toHaveCount(weeksAfter);
+    await expectWeekBackAt(page, weekKey, expected);
+
+    expect(errors).toEqual([]);
+  });
+
+  test('die Zurück-Geste (goBack) führt an dieselbe Stelle im Plan', async ({ page }) => {
+    const errors = collectPageErrors(page);
+    const { row, weekKey } = await loadEarlierAndFindSession(page);
+    const expected = await weekHeadRect(page, weekKey);
+
+    await row.click();
+    await page.waitForURL(/#\/history\/session\//);
+    await page.goBack();
+    await expect(page).toHaveURL(/\/(#\/)?$/);
+
+    await expectWeekBackAt(page, weekKey, expected);
+
+    expect(errors).toEqual([]);
+  });
+
+  test('aus einem Lauf führt die Zurück-Geste an dieselbe Stelle im Plan', async ({ page }) => {
+    const errors = collectPageErrors(page);
+
+    await loadEarlierAndFindSession(page);
+
+    const run = page.locator('[data-day-unit="run"][data-unit-state="erledigt"]').first();
+    await run.scrollIntoViewIfNeeded();
+    await page.waitForTimeout(300);
+
+    const weekKey = (await run
+      .locator('xpath=ancestor::*[@data-timeline-week][1]')
+      .getAttribute('data-timeline-week')) as string;
+    const expected = await weekHeadRect(page, weekKey);
+
+    await run.click();
+    await page.waitForURL(/#\/runs\//);
+    await page.goBack();
+    await expect(page).toHaveURL(/\/(#\/)?$/);
+
+    await expectWeekBackAt(page, weekKey, expected);
+
+    expect(errors).toEqual([]);
+  });
+
+  test('der Plan-Tab öffnet nach der Rückkehr wieder auf heute', async ({ page }) => {
+    const errors = collectPageErrors(page);
+    const { row } = await loadEarlierAndFindSession(page);
+
+    await row.click();
+    await page.waitForURL(/#\/history\/session\//);
+    await page.goBack();
+    await expect(page).toHaveURL(/\/(#\/)?$/);
+
+    await page.getByRole('link', { name: 'Fortschritt' }).click();
+    await page.waitForURL(/#\/history$/);
+    await page.getByRole('link', { name: 'Plan', exact: true }).click();
+    await expect(page).toHaveURL(/\/(#\/)?$/);
+    await page.waitForTimeout(800);
+
+    await expect(page.locator('[data-timeline-today]')).toBeInViewport();
+
+    expect(errors).toEqual([]);
+  });
+
+  test('aus dem Fortschritt führt Zurück wieder in den Fortschritt', async ({ page }) => {
+    const errors = collectPageErrors(page);
+
+    await page.goto('./#/history');
+    await page.waitForTimeout(800);
+    await page.locator('a[href*="/history/session/"]').first().click();
+    await page.waitForURL(/#\/history\/session\//);
+    await page.getByRole('button', { name: 'Zurück' }).click();
+    await page.waitForURL(/#\/history$/);
+
+    expect(errors).toEqual([]);
+  });
+
+  test('ein Deep Link auf die Einheit führt mit Zurück nie ins Leere', async ({ page }) => {
+    const errors = collectPageErrors(page);
+
+    await page.goto('./#/history');
+    await page.waitForTimeout(600);
+    const href = await page.locator('a[href*="/history/session/"]').first().getAttribute('href');
+
+    // Kaltstart direkt auf der Detailseite: keine Herkunft, also in den Verlauf.
+    await page.goto(`./${href}`);
+    await page.reload();
+    await page.waitForTimeout(800);
+    await page.getByRole('button', { name: 'Zurück' }).click();
+    await page.waitForURL(/#\/history$/);
+
+    expect(errors).toEqual([]);
+  });
+
   test('folgt über Nacht dem neuen Tag', async ({ page }) => {
     const errors = collectPageErrors(page);
     const lateToday = new Date();
@@ -453,6 +609,26 @@ test.describe('Plan als Zeitstrahl im Querformat', () => {
     });
     expect(Math.abs(rectAfter.x - rectBefore.x)).toBeLessThanOrEqual(2);
     expect(Math.abs(rectAfter.y - rectBefore.y)).toBeLessThanOrEqual(2);
+
+    expect(errors).toEqual([]);
+  });
+
+  test('Zurück aus der Einheit führt an dieselbe Stelle im Plan', async ({ page }) => {
+    const errors = collectPageErrors(page);
+
+    await resetDatabase(page);
+    await seedSampleData(page);
+    await clearPlanEntries(page);
+
+    const { row, weekKey } = await loadEarlierAndFindSession(page);
+    const expected = await weekHeadRect(page, weekKey);
+
+    await row.click();
+    await page.waitForURL(/#\/history\/session\//);
+    await page.getByRole('button', { name: 'Zurück' }).click();
+    await expect(page).toHaveURL(/\/(#\/)?$/);
+
+    await expectWeekBackAt(page, weekKey, expected);
 
     expect(errors).toEqual([]);
   });

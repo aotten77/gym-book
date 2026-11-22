@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { AppShell } from '@/components/AppShell';
 import { Empty } from '@/components/Empty';
@@ -11,6 +11,7 @@ import { db } from '@/db/appDb';
 import { deleteRunLog } from '@/db/run-actions';
 import { describeRunTarget } from '@/domain/plan';
 import { formatPace, formatRunDuration, paceSecondsPerKm } from '@/domain/run';
+import { useBackToOrigin } from '@/lib/back-navigation';
 import { formatNumber, formatRunDate } from '@/lib/format';
 
 function Tile({ label, value }: { label: string; value: string }) {
@@ -24,7 +25,7 @@ function Tile({ label, value }: { label: string; value: string }) {
 
 export function RunDetailPage() {
   const { runId } = useParams();
-  const navigate = useNavigate();
+  const { goBack } = useBackToOrigin();
   // `null` = nicht gefunden, `undefined` = lädt noch.
   const run = useLiveQuery(async () => (runId ? ((await db.runLogs.get(runId)) ?? null) : null), [runId]);
   const [isEditing, setIsEditing] = useState(false);
@@ -60,7 +61,8 @@ export function RunDetailPage() {
 
     try {
       await deleteRunLog(run!.id);
-      navigate('/history');
+      // Vom Plan kommend zurück an dessen Stelle, sonst in den Verlauf.
+      goBack();
     } catch (error) {
       setDeleteError(error instanceof Error ? error.message : 'Löschen fehlgeschlagen.');
     } finally {

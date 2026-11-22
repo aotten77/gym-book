@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useNavigationType } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { ArrowDown, ArrowUp, ChevronRight, Play, ShieldAlert } from 'lucide-react';
 import { Alert } from '@/components/Alert';
@@ -103,6 +103,23 @@ function visibleTop(element: HTMLElement): number {
 }
 
 /**
+ * Wo der Zeitstrahl gerade steht: die oberste Woche, die noch im Bild ist, und
+ * ihre Lage im sichtbaren Ausschnitt. Gemessen im Layout (`visibleTop`), nicht
+ * am Rect - so gilt es auch im gedrehten Querformat.
+ */
+function topVisibleWeek(timeline: HTMLElement): { key: string; top: number } | null {
+  for (const element of timeline.querySelectorAll<HTMLElement>('[data-timeline-week]')) {
+    const top = visibleTop(element);
+
+    if (top + element.offsetHeight > 0) {
+      return { key: element.dataset.timelineWeek ?? '', top };
+    }
+  }
+
+  return null;
+}
+
+/**
  * Der Plan: ein Zeitstrahl über Wochen. Oben das Protokoll (nur Erledigtes),
  * in der Mitte heute, unten die Termine. Er öffnet auf der laufenden Woche.
  *
@@ -112,7 +129,9 @@ function visibleTop(element: HTMLElement): number {
  */
 export function PlanPage() {
   const navigate = useNavigate();
+  const navigationType = useNavigationType();
   const setNowSheetOpen = useUiStore((state) => state.setNowSheetOpen);
+  const setPlanPosition = useUiStore((state) => state.setPlanPosition);
   const todayKey = useTodayKey();
   /* Nur der lokale Tag zählt; ein Tageswechsel bei offener Seite ändert die Abhängigkeit. */
   const today = useMemo(() => parseLocalDate(todayKey) ?? new Date(), [todayKey]);
@@ -121,7 +140,23 @@ export function PlanPage() {
    * schiebt ihn zurück; ein Tageswechsel lässt ihn stehen, denn nach vorn
    * folgt die Reichweite dem Tag ohnehin über `timelineLastMonday`.
    */
-  const [firstMonday, setFirstMonday] = useState(() => timelineFirstMonday(today));
+  /*
+   * Wiederherstellen nur beim Zurück (POP) und nur am selben Tag: wer über den
+   * Plan-Tab kommt (PUSH) oder am nächsten Morgen, startet auf heute. Einmal pro
+   * Mount gelesen - die Position danach gehört dem Scrollen dieser Seite.
+   */
+  const [restored] = useState(() => {
+    const position = useUiStore.getState().planPosition;
+
+    if (navigationType !== 'POP' || !position || position.todayKey !== todayKey) {
+      return null;
+    }
+
+    const firstMondayOfPosition = parseLocalDate(position.firstMondayKey);
+
+    return firstMondayOfPosition ? { position, firstMonday: firstMondayOfPosition } : null;
+  });
+  const [firstMonday, setFirstMonday] = useState(() => restored?.firstMonday ?? timelineFirstMonday(today));
   const [isStarting, setIsStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
   const [isBackingUp, setIsBackingUp] = useState(false);
@@ -134,9 +169,16 @@ export function PlanPage() {
   const [sheetWeek, setSheetWeek] = useState<string | null>(null);
   const [todayPosition, setTodayPosition] = useState<'visible' | 'above' | 'below'>('visible');
   const timelineRef = useRef<HTMLDivElement>(null);
-  const hasScrolledToToday = useRef(false);
-  /** Die Woche, die vor dem Nachladen oben stand, und wo sie stand. */
-  const scrollAnchor = useRef<{ key: string; top: number } | null>(null);
+  /* Beim Wiederherstellen entfällt das Öffnen auf heute: die Lage kommt aus dem Anker. */
+  const hasScrolledToToday = useRef(restored !== null);
+  /**
+   * Die Woche, die vor dem Nachladen oben stand, und wo sie stand - beim
+   * Wiederherstellen die gemerkte. Der Scroll-Ausgleich setzt sie in beiden
+   * Fällen absolut: er misst die aktuelle Lage und verschiebt um die Differenz.
+   */
+  const scrollAnchor = useRef<{ key: string; top: number } | null>(
+    restored ? { key: restored.position.anchorKey, top: restored.position.anchorTop } : null,
+  );
 
   /*
    * Alles, was über dem Zeitstrahl steht oder seine Reichweite bestimmt. Das
@@ -312,10 +354,64 @@ export function PlanPage() {
       }
     }
 
-    if (rangeLoaded) {
+    /*
+     * Fertig erst, wenn auch die Seite steht: beim Wiederherstellen kann der
+     * Zeitraum vor Kopfzeile und Rest geladen sein, und dann gäbe es noch
+     * nichts zu messen.
+     */
+    if (ready && rangeLoaded) {
       scrollAnchor.current = null;
     }
-  }, [firstMonday, weeks, rangeLoaded, findWeekElement]);
+  }, [firstMonday, weeks, ready, rangeLoaded, findWeekElement]);
+
+  /*
+   * Die Lage merken, damit ein Zurück aus einer Detailseite sie wiederfindet.
+   * Gemessen wird beim Scrollen, rAF-gedrosselt - nicht im Cleanup, wo das DOM
+   * schon im Abbau sein kann. Solange der Ausgleich läuft, steht die Seite
+   * noch nicht und würde eine halbe Lage überschreiben.
+   */
+  useEffect(() => {
+    const timelineElement = timelineRef.current;
+
+    if (!ready || !timelineElement) {
+      return undefined;
+    }
+
+    const container = scrollContainerOf(timelineElement);
+    const scrollingElement = document.scrollingElement ?? document.documentElement;
+    // Das Fenster scrollt, nicht `<html>`: Scroll-Ereignisse des Dokuments kommen am Fenster an.
+    const target: HTMLElement | Window = container === scrollingElement ? window : container;
+    const firstMondayKey = toDateInputValue(firstMonday);
+    let frame = 0;
+
+    const remember = () => {
+      frame = 0;
+
+      if (scrollAnchor.current) {
+        return;
+      }
+
+      const week = topVisibleWeek(timelineElement);
+
+      if (week) {
+        setPlanPosition({ todayKey, firstMondayKey, anchorKey: week.key, anchorTop: week.top });
+      }
+    };
+    const schedule = () => {
+      if (frame === 0) {
+        frame = requestAnimationFrame(remember);
+      }
+    };
+
+    target.addEventListener('scroll', schedule, { passive: true });
+    // Auch ohne Scrollen: sonst stünde eine Lage aus einem früheren Besuch im Speicher.
+    schedule();
+
+    return () => {
+      target.removeEventListener('scroll', schedule);
+      cancelAnimationFrame(frame);
+    };
+  }, [ready, firstMonday, todayKey, weekCount, setPlanPosition]);
 
   /* Die Pill steht, solange heute nicht im Bild ist. */
   useEffect(() => {

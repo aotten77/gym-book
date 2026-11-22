@@ -4,6 +4,7 @@ import { UnitKindIcon } from '@/components/icons/UnitKindIcon';
 import { NowCard } from '@/components/ui/StatusCard';
 import type { PlanEntryState } from '@/domain/plan';
 import type { CalendarUnit } from '@/domain/training-calendar';
+import { FROM_PLAN_STATE } from '@/lib/back-navigation';
 import { cn } from '@/lib/utils';
 
 /**
@@ -113,7 +114,7 @@ export function TimelineUnitRow({
 
   if (ref.type === 'session') {
     return (
-      <Link to={`/history/session/${ref.sessionId}`} className={className} {...anchors}>
+      <Link to={`/history/session/${ref.sessionId}`} state={FROM_PLAN_STATE} className={className} {...anchors}>
         {content}
       </Link>
     );
@@ -121,7 +122,7 @@ export function TimelineUnitRow({
 
   if (ref.type === 'run') {
     return (
-      <Link to={`/runs/${ref.runId}`} className={className} {...anchors}>
+      <Link to={`/runs/${ref.runId}`} state={FROM_PLAN_STATE} className={className} {...anchors}>
         {content}
       </Link>
     );

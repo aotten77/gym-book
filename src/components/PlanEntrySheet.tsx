@@ -7,6 +7,7 @@ import { db } from '@/db/appDb';
 import { loadPlanBetween } from '@/db/plan-queries';
 import type { PlanEntry } from '@/domain/models';
 import { describeRunTarget, doneDayOf, planEntryName } from '@/domain/plan';
+import { FROM_PLAN_STATE } from '@/lib/back-navigation';
 import { parseMarkdownLite } from '@/lib/markdown-lite';
 import { formatNumber, formatRunDate } from '@/lib/format';
 
@@ -126,6 +127,8 @@ export function PlanEntrySheet({ open, entry, onClose }: PlanEntrySheetProps) {
             </p>
             <Link
               to={target}
+              // Nur die Detailseiten kennen den Rückweg zum Plan; die laufende Session nicht.
+              state={target.startsWith('/session/') ? undefined : FROM_PLAN_STATE}
               className="min-h-touch inline-flex items-center rounded-control border border-line px-4 py-2 text-sm font-semibold text-content hover:bg-surface-raised"
             >
               {link.source === 'session' ? 'Zur Session' : 'Zum Lauf'}
