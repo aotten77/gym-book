@@ -565,3 +565,33 @@ export interface SessionBundle {
   sessionExercises: WorkoutSessionExercise[];
   setLogs: WorkoutSetLog[];
 }
+
+/**
+ * Ein fertig erzeugter Ansagetext als MP3. Der Schlüssel (`id`) setzt sich aus
+ * Stimme und Satz zusammen, gleiche Sätze teilen sich also einen Datensatz.
+ * Liegt bewusst außerhalb des Backups - siehe `docs/architecture/import-export.md`.
+ */
+export interface Announcement {
+  id: string;
+  text: string;
+  voice: string;
+  blob: Blob;
+  byteSize: number;
+  createdAt: string;
+}
+
+/**
+ * Der eine Datensatz der Sprachausgabe: Google-Schlüssel, Einstellungen und
+ * Zeichenzähler pro UTC-Monat (`YYYY-MM`). Liegt außerhalb von `appSettings`
+ * und kommt weder in Backup noch in Analyse-Export.
+ */
+export interface TtsConfig {
+  id: 'tts-config';
+  apiKey?: string;
+  voice: string;
+  languageCode: string;
+  freeCharsPerMonth: number;
+  pricePerMillionUsd: number;
+  charsByMonth: Record<string, number>;
+  updatedAt: string;
+}

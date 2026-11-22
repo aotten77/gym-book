@@ -305,3 +305,47 @@ export async function playTimerChimeFromGesture() {
 
   playTimerChime();
 }
+
+/**
+ * Setzt die Audio-Sitzung auf `ambient`, wo es das gibt (iOS Safari).
+ *
+ * Ohne das unterbricht jede Web-Audio-Ausgabe die Musik im Hintergrund;
+ * `ambient` mischt sich dazu. Gerätetest laut Spec: Signal und MP3 sind so
+ * hörbar, Apple Music läuft weiter. Nie ein Fehler, wenn die API fehlt.
+ */
+export function setAmbientAudioSession() {
+  try {
+    const nav = navigator as Navigator & { audioSession?: { type: string } };
+
+    if (nav.audioSession) {
+      nav.audioSession.type = 'ambient';
+    }
+  } catch {
+    // Audio-Sitzung nicht setzbar - dann spielt es eben ohne Mischen.
+  }
+}
+
+/**
+ * Der geteilte `AudioContext`, aus einer Nutzergeste heraus freigeschaltet.
+ * Nutzt dieselbe Entsperr- und Weck-Logik wie der Signalton; `null`, wenn es
+ * Web Audio nicht gibt oder der Kontext nicht anläuft.
+ */
+export async function acquireAudioContextFromGesture(): Promise<AudioContext | null> {
+  const context = ensureAudioContext();
+
+  if (!context) {
+    return null;
+  }
+
+  primeTimerSound();
+
+  if (!isRunning(context)) {
+    try {
+      await context.resume();
+    } catch {
+      return null;
+    }
+  }
+
+  return isRunning(context) ? context : null;
+}

@@ -64,3 +64,7 @@ Every run writes a `LibraryImportLog` row (timestamp, source, counts, `payloadHa
 `applyNordicCurlTrackingFix` switches the exercise from `time` to `reps_weight` — seconds reward a static hold, which is exactly what this exercise must not reward. Logged seconds stay; nothing is converted. Which is why `isLegacyExecution` ([progress.ts](../../src/domain/progress.ts)) exists: a session exercise carries its own `trackingMode` snapshot, so after such a switch the old executions no longer hold the number the chart asks for and `buildProgressSeries` drops them **silently**. The exercise detail names that gap ("3 frühere Ausführungen wurden als „Zeit" erfasst …") and badges those rows "Altdaten" — in neutral ink, because that state is neither done nor skipped nor up next.
 
 `applyWeekdaysToPlanMigration` turns the old `scheduledWeekdays` into dated plan entries and removes the field; its rules are in "The dated plan" above.
+
+### What stays out of the backup
+
+`ttsConfig` (Google key, voice, free quota, price, monthly character counter) and `announcements` (generated MP3s) are **not** read by `createDatabaseSnapshot` or the analysis export, and `restoreDatabaseSnapshot` neither clears nor writes them — a smuggled `ttsConfig` key in a backup file is stripped by the Zod schema. Only the local reset empties them (it clears every table). [export-tts.test.ts](../../src/lib/export-tts.test.ts) searches the serialized backup, the analysis archive and the pasted analysis text for the key string.

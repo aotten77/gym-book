@@ -1,5 +1,6 @@
 import Dexie, { type Table } from 'dexie';
 import type {
+  Announcement,
   AppSettings,
   BandLevel,
   Exercise,
@@ -11,6 +12,7 @@ import type {
   ProgramWeek,
   ProgressionRule,
   RunLog,
+  TtsConfig,
   WorkoutSession,
   WorkoutSessionExercise,
   WorkoutSetLog,
@@ -35,6 +37,8 @@ class GymBookDatabase extends Dexie {
   libraryImports!: Table<LibraryImportLog, string>;
   runLogs!: Table<RunLog, string>;
   planEntries!: Table<PlanEntry, string>;
+  announcements!: Table<Announcement, string>;
+  ttsConfig!: Table<TtsConfig, string>;
 
   constructor() {
     super('gym-book-db');
@@ -111,9 +115,18 @@ class GymBookDatabase extends Dexie {
       runLogs: 'id, date, planEntryId',
     });
 
-    // Kein v7 für die geführten Vorlagen: `WorkoutTemplate.steps` ist eine Liste
-    // von Werten am Workout, weder indiziert noch umzuformen - Dexie speichert
-    // das ganze Objekt, und Bestandsworkouts haben das Feld schlicht nicht.
+    // v7 bringt die Sprachausgabe: `announcements` (fertige MP3-Ansagen, geteilt
+    // über Vorlagen hinweg) und `ttsConfig` (Google-Schlüssel, TTS-Einstellungen,
+    // Zeichenzähler). Beides sind neue Tabellen ohne `upgrade()` - Bestandsdaten
+    // brauchen nichts. Beide liegen bewusst außerhalb von Backup, Restore und
+    // Analyse-Export; nur der lokale Reset leert sie (er leert alle Tabellen).
+    //
+    // `WorkoutTemplate.steps` (geführte Vorlagen) brauchte keine eigene Version:
+    // eine Liste von Werten am Workout, weder indiziert noch umzuformen.
+    this.version(7).stores({
+      announcements: 'id, createdAt',
+      ttsConfig: 'id',
+    });
   }
 }
 

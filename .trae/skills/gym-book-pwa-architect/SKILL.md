@@ -30,6 +30,7 @@ Do not use this skill for:
 - v1 does not include cloud sync or a backend.
 - Local media upload is required.
 - Media for v1 is limited to image formats plus animated `GIF/WebP`, not video.
+- One optional, fail-safe network call exists: Google Cloud Text-to-Speech, called straight from the client with the user's own API key, **only to generate the spoken announcements** of guided sessions. It is not a backend. It never runs inside the training flow, and without a key, offline or on any error the session runs with "Nur Ton" (signal only). The key, the TTS settings, the character counter and the generated announcements stay out of backup, restore and the analysis export.
 
 ## Core Architecture
 
@@ -187,6 +188,7 @@ Must include:
 - tests with left/right values and asymmetry
 - export/import backup
 - run logging (distance, duration, elevation, average heart rate)
+- guided session (step list from the library import, hands-free run with signal and optional spoken announcements)
 - dated training plan (single entries for workouts and runs, written by the library import, read-only in the app)
 - installable PWA behavior on GitHub Pages
 

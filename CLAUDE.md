@@ -44,6 +44,7 @@ Layering is strict and worth preserving:
 Further core rules (details in `docs/architecture/core-invariants.md`):
 
 - `weekOverride` has exactly **one** writer; nothing else sets it (see `docs/architecture/plan-timeline.md`).
+- **The one network path.** Google Cloud Text-to-Speech, called straight from the client ([tts-client.ts](src/lib/tts-client.ts), `POST …/v1/text:synthesize`, key in the `X-Goog-Api-Key` header, never `?key=`), **only to generate announcement MP3s** for guided sessions — never inside the training flow; without key, offline or on error the session runs with "Nur Ton". The user's own key, the TTS settings, the monthly character counter (`ttsConfig`) and the generated announcements (`announcements`) live in their own tables (DB v7) outside `appSettings` and are **not** in backup, restore or the analysis export (only "Alle Daten löschen" empties them). The key never appears in a message, in the UI (masked, last four characters) or in `console`; no key in the repo or in tests (placeholders only). Quota maths: [tts-quota.ts](src/domain/tts-quota.ts), actions: [tts-actions.ts](src/db/tts-actions.ts).
 - Guided templates (`WorkoutTemplate.steps`) do not go through `startSessionFromTemplate` — it throws for them; they have their own start path (`docs/architecture/guided-templates.md`).
 
 ### Pitfalls
@@ -78,7 +79,7 @@ Read the matching file before touching that area. Everything in `docs/architectu
 
 ### Schema changes
 
-`appDb.ts` declares `version(1)` through `version(6)` (5 adds `runLogs`, 6 adds `planEntries` and the `planEntryId` index on sessions and runs — without an `upgrade()`, since existing rows simply have no link). Adding or changing indexes requires a new `this.version(n).stores({...})` block with an `upgrade()` where data needs reshaping — the DB is on real users' devices and cannot be reset. Also update the matching Zod schema in `export.ts`. `WorkoutTemplate.steps` (guided templates) needed **no** new version: it is neither indexed nor a reshaping, so Dexie just stores it with the object; it went into `export.ts` as an `.optional()` without a `SNAPSHOT_SCHEMA_VERSION` bump. Note that IndexedDB rejects booleans as keys, so boolean fields must not be indexed.
+`appDb.ts` declares `version(1)` through `version(7)` (5 adds `runLogs`, 6 adds `planEntries` and the `planEntryId` index on sessions and runs — without an `upgrade()`, since existing rows simply have no link; 7 adds `announcements` and `ttsConfig`, again without one, and both stay out of `export.ts`). Adding or changing indexes requires a new `this.version(n).stores({...})` block with an `upgrade()` where data needs reshaping — the DB is on real users' devices and cannot be reset. Also update the matching Zod schema in `export.ts`. `WorkoutTemplate.steps` (guided templates) needed **no** new version: it is neither indexed nor a reshaping, so Dexie just stores it with the object; it went into `export.ts` as an `.optional()` without a `SNAPSHOT_SCHEMA_VERSION` bump. Note that IndexedDB rejects booleans as keys, so boolean fields must not be indexed.
 
 ## Conventions
 

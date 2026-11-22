@@ -22,6 +22,7 @@ Do not use it for generic framework tutorials or unrelated repositories.
 - Stack is Vite + React + TypeScript. Routing uses `HashRouter` for Pages compatibility.
 - Offline-first. v1 is single-user, no cloud sync, no backend.
 - Local media upload is required. Media is images plus animated GIF/WebP — **not video**.
+- One optional, fail-safe network call exists: Google Cloud Text-to-Speech, called straight from the client with the user's own API key, **only to generate the spoken announcements** of guided sessions. It is not a backend. It never runs inside the training flow, and without a key, offline or on any error the session runs with "Nur Ton" (signal only). The key, the TTS settings, the character counter and the generated announcements stay out of backup, restore and the analysis export.
 
 ## Core architecture
 
@@ -100,7 +101,7 @@ Do not use it for generic framework tutorials or unrelated repositories.
 
 ## v1 scope
 
-Must include: template management · local media upload · session start from template · per-session execution edits · optional warmup set · work set logging · left/right capture · time plus optional load · rest timer · last values · exercise history graph · tests with left/right values and asymmetry · export/import backup · run logging (distance, duration, elevation, average heart rate) · dated training plan (single entries for workouts and runs, written by the library import, read-only in the app) · installable PWA on Pages.
+Must include: template management · local media upload · session start from template · per-session execution edits · optional warmup set · work set logging · left/right capture · time plus optional load · rest timer · last values · exercise history graph · tests with left/right values and asymmetry · export/import backup · run logging (distance, duration, elevation, average heart rate) · guided session (step list from the library import, hands-free run with signal and optional spoken announcements) · dated training plan (single entries for workouts and runs, written by the library import, read-only in the app) · installable PWA on Pages.
 
 Must exclude: backend services · cloud sync · multi-user · sharing · video upload · complex adaptive progression · deload automation · recurring plan rules or automatic rescheduling · semantic conflict resolution.
 

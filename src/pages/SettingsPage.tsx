@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/Button';
 import { TextField, ToggleField } from '@/components/ui/Field';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { SectionCard } from '@/components/SectionCard';
+import { SpeechSettingsSection } from '@/components/SpeechSettingsSection';
 import { WeekStepper } from '@/components/WeekStepper';
 import { bootstrapAppData, seedSampleData } from '@/db/bootstrap';
 import { formatBuildVersion, readBuildInfo } from '@/lib/build-info';
@@ -687,6 +688,8 @@ export function SettingsPage() {
             {screenAwakeError ? <Alert variant="error">{screenAwakeError}</Alert> : null}
           </div>
         </SectionCard>
+
+        <SpeechSettingsSection />
 
         {/*
           Sichtbar machen, was sonst unsichtbar schiefgeht: ohne dauerhaften
