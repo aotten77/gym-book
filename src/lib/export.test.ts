@@ -903,6 +903,72 @@ describe('restoreDatabaseSnapshot', () => {
     expect((await db.workoutSessions.get('session-g'))?.guided).toEqual(guided);
   });
 
+  it('trägt das Schritt-Protokoll einer geführten Session durch', async () => {
+    const stamp = '2026-07-01T08:00:00.000Z';
+    const guided = {
+      steps: [{ name: 'Taube', seconds: 75, bothSides: true }],
+      events: [{ type: 'start' as const, at: 1_790_000_000_000 }],
+      protocol: [
+        { stepIndex: 0, name: 'Taube', side: 'left' as const, status: 'extended' as const, plannedSeconds: 75, actualSeconds: 90 },
+        { stepIndex: 0, name: 'Taube', side: 'right' as const, status: 'skipped' as const, plannedSeconds: 75, actualSeconds: 12 },
+      ],
+    };
+    const parsed = parseDatabaseSnapshot(
+      JSON.stringify(
+        createSnapshot({
+          workoutSessions: [
+            {
+              id: 'session-p',
+              templateId: 'template-g',
+              templateNameSnapshot: 'Yoga Abend',
+              templateCategorySnapshot: 'yoga',
+              resolvedProgramWeek: 1,
+              startedAt: stamp,
+              completedAt: stamp,
+              status: 'completed',
+              guided,
+            },
+          ],
+        }),
+      ),
+    );
+
+    // Ohne das Feld im Schema striche zod das Protokoll beim Restore still weg.
+    expect(parsed.workoutSessions[0].guided).toEqual(guided);
+
+    await restoreDatabaseSnapshot(parsed);
+
+    expect((await db.workoutSessions.get('session-p'))?.guided?.protocol).toEqual(guided.protocol);
+  });
+
+  it('weist ein Protokoll mit unbekanntem Status ab', () => {
+    const stamp = '2026-07-01T08:00:00.000Z';
+
+    expect(() =>
+      parseDatabaseSnapshot(
+        JSON.stringify(
+          createSnapshot({
+            workoutSessions: [
+              {
+                id: 'session-p',
+                templateId: 'template-g',
+                templateNameSnapshot: 'Yoga Abend',
+                resolvedProgramWeek: 1,
+                startedAt: stamp,
+                status: 'completed',
+                guided: {
+                  steps: [{ name: 'Taube', seconds: 75 }],
+                  events: [],
+                  protocol: [{ stepIndex: 0, name: 'Taube', status: 'nope', plannedSeconds: 75, actualSeconds: 1 }],
+                },
+              } as never,
+            ],
+          }),
+        ),
+      ),
+    ).toThrow();
+  });
+
   it('weist eine Session mit unbekanntem Ereignis ab', () => {
     const stamp = '2026-07-01T08:00:00.000Z';
 

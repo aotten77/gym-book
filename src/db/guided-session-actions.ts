@@ -8,6 +8,7 @@ import {
 } from "@/db/session-actions";
 import {
   addGuidedEvent,
+  deriveGuidedProtocol,
   deriveGuidedRunState,
   guidedRunEndsAt,
 } from "@/domain/guided-run";
@@ -134,6 +135,15 @@ export async function completeGuidedSession(
     await db.workoutSessions.update(sessionId, {
       status: "completed",
       completedAt: new Date(endsAt).toISOString(),
+      // Das Protokoll gilt bis zum rechnerischen Ende, nicht bis `now`.
+      guided: {
+        ...session.guided,
+        protocol: deriveGuidedProtocol(
+          session.guided.steps,
+          session.guided.events,
+          endsAt,
+        ),
+      },
     });
 
     return true;
@@ -191,18 +201,39 @@ export async function recordGuidedControl(
  * „Einheit beenden“: bricht die geführte Einheit ab. Wie jeder Abbruch zählt
  * sie weder im Wochenvolumen, noch erledigt sie den Plan-Termin - er bleibt
  * offen und lässt sich neu starten. Eine schon abgeschlossene oder
- * abgebrochene Einheit bleibt unberührt.
+ * abgebrochene Einheit bleibt unberührt. Beim Abbruch wird das Schritt-Protokoll
+ * bis `now` festgehalten: die laufende Übung steht als abgebrochen darin.
  */
-export async function abortGuidedSession(sessionId: string): Promise<void> {
-  const session = await db.workoutSessions.get(sessionId);
+export async function abortGuidedSession(
+  sessionId: string,
+  now: Date = new Date(),
+): Promise<void> {
+  await db.transaction("rw", db.workoutSessions, async () => {
+    const session = await db.workoutSessions.get(sessionId);
 
-  if (!session) {
-    throw new Error("Session nicht gefunden");
-  }
+    if (!session) {
+      throw new Error("Session nicht gefunden");
+    }
 
-  if (!session.guided) {
-    throw new Error("Das ist keine geführte Einheit.");
-  }
+    if (!session.guided) {
+      throw new Error("Das ist keine geführte Einheit.");
+    }
 
-  await abortSession(sessionId);
+    if (session.status !== "active") {
+      return;
+    }
+
+    await abortSession(sessionId);
+    await db.workoutSessions.update(sessionId, {
+      completedAt: now.toISOString(),
+      guided: {
+        ...session.guided,
+        protocol: deriveGuidedProtocol(
+          session.guided.steps,
+          session.guided.events,
+          now.getTime(),
+        ),
+      },
+    });
+  });
 }

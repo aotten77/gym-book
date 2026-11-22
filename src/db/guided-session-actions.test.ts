@@ -451,6 +451,70 @@ describe("recordGuidedControl: Überspringen, +15 s, Zurück, Sofort starten", (
   });
 });
 
+describe("Schritt-Protokoll an der Session", () => {
+  it("speichert beim Abschluss das Protokoll mit Verlängerung und Überspringen", async () => {
+    await seedGuided();
+
+    const id = await startGuidedSession("g", { now: DO });
+
+    // Hund 5-15 s: +15 s bei 8 s, endet bei 30 s; Taube dahinter.
+    await recordGuidedControl(id, "extend", after(8));
+    expect(await completeGuidedSession(id, after(200))).toBe(true);
+
+    const protocol = (await db.workoutSessions.get(id))?.guided?.protocol;
+
+    expect(protocol).toEqual([
+      { stepIndex: 0, name: "Hund", status: "extended", plannedSeconds: 10, actualSeconds: 25 },
+      { stepIndex: 1, name: "Taube", side: "left", status: "done", plannedSeconds: 20, actualSeconds: 20 },
+      { stepIndex: 1, name: "Taube", side: "right", status: "done", plannedSeconds: 20, actualSeconds: 20 },
+    ]);
+    // Schritte und Ereignisse bleiben dabei unverändert.
+    expect((await db.workoutSessions.get(id))?.guided?.steps).toEqual(STEPS);
+  });
+
+  it("schreibt vor dem Ende kein Protokoll", async () => {
+    await seedGuided();
+
+    const id = await startGuidedSession("g", { now: DO });
+
+    await completeGuidedSession(id, after(30));
+
+    expect((await db.workoutSessions.get(id))?.guided?.protocol).toBeUndefined();
+  });
+
+  it("speichert beim Abbruch das Protokoll bis zum Abbruch", async () => {
+    await seedGuided();
+
+    const id = await startGuidedSession("g", { now: DO });
+
+    await abortGuidedSession(id, after(28));
+
+    const session = await db.workoutSessions.get(id);
+
+    expect(session?.status).toBe("aborted");
+    expect(session?.completedAt).toBe(after(28).toISOString());
+    expect(session?.guided?.protocol).toEqual([
+      { stepIndex: 0, name: "Hund", status: "done", plannedSeconds: 10, actualSeconds: 10 },
+      { stepIndex: 1, name: "Taube", side: "left", status: "aborted", plannedSeconds: 20, actualSeconds: 8 },
+    ]);
+  });
+
+  it("verändert das Protokoll einer abgeschlossenen Einheit beim Abbruch nicht", async () => {
+    await seedGuided();
+
+    const id = await startGuidedSession("g", { now: DO });
+
+    await completeGuidedSession(id, after(63));
+
+    const before = (await db.workoutSessions.get(id))?.guided?.protocol;
+
+    await abortGuidedSession(id, after(10));
+
+    expect((await db.workoutSessions.get(id))?.guided?.protocol).toEqual(before);
+    expect((await db.workoutSessions.get(id))?.completedAt).toBe(after(63).toISOString());
+  });
+});
+
 describe("abortGuidedSession", () => {
   it("bricht ab und lässt den Plan-Termin offen", async () => {
     await seedGuided();

@@ -9,7 +9,12 @@ import { SectionCard } from '@/components/SectionCard';
 import { SupersetBlock } from '@/components/SupersetBlock';
 import { db } from '@/db/appDb';
 import { sortSetLogs } from '@/domain/history';
-import type { WorkoutSessionExercise, WorkoutSetLog } from '@/domain/models';
+import type {
+  GuidedProtocolEntry,
+  GuidedProtocolStatus,
+  WorkoutSessionExercise,
+  WorkoutSetLog,
+} from '@/domain/models';
 import { buildSupersetBlocks } from '@/domain/superset';
 import { useBackToOrigin } from '@/lib/back-navigation';
 import {
@@ -26,6 +31,72 @@ function formatSetLabel(setLog: WorkoutSetLog) {
 
   const sideLabel = setLog.side === 'left' ? 'links' : setLog.side === 'right' ? 'rechts' : '';
   return `Satz ${setLog.setNumber}${sideLabel ? ` · ${sideLabel}` : ''}`;
+}
+
+const PROTOCOL_STATUS_LABELS: Record<GuidedProtocolStatus, string> = {
+  done: 'Gemacht',
+  skipped: 'Übersprungen',
+  extended: 'Verlängert',
+  aborted: 'Abgebrochen',
+};
+
+function formatProtocolSide(entry: GuidedProtocolEntry) {
+  return entry.side === 'left' ? 'links' : entry.side === 'right' ? 'rechts' : null;
+}
+
+/**
+ * Das Schritt-Protokoll einer geführten Einheit - an die Stelle der Sätze
+ * getreten: Name, Seite, Status, Soll und Ist. Die Zeilen sind der gespeicherte
+ * Stand (`guided.protocol`), nichts wird hier nachgerechnet.
+ */
+function GuidedProtocolCard({ protocol }: { protocol?: GuidedProtocolEntry[] }) {
+  return (
+    <SectionCard title="Schritt-Protokoll" subtitle="Soll und Ist je Schritt, ohne Pausen">
+      {protocol && protocol.length > 0 ? (
+        <ol className="space-y-3" data-guided-protocol>
+          {protocol.map((entry, index) => {
+            const side = formatProtocolSide(entry);
+
+            return (
+              <li
+                key={`${entry.stepIndex}-${entry.side ?? 'both'}-${index}`}
+                className="rounded-panel border border-line bg-surface p-4"
+                data-protocol-step={entry.stepIndex + 1}
+                data-protocol-side={entry.side ?? 'both'}
+                data-protocol-status={entry.status}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-content">
+                      {entry.stepIndex + 1}. {entry.name}
+                      {side ? ` · ${side}` : ''}
+                    </p>
+                    <p className="mt-1 text-sm text-content-muted">
+                      Soll {formatNumber(entry.plannedSeconds)} s · Ist {formatNumber(entry.actualSeconds)} s
+                    </p>
+                  </div>
+                  <span
+                    className={`rounded-control px-3 py-2 text-xs font-medium ${
+                      entry.status === 'done' || entry.status === 'extended'
+                        ? 'bg-success text-success-contrast'
+                        : 'bg-surface-raised text-content-secondary'
+                    }`}
+                  >
+                    {PROTOCOL_STATUS_LABELS[entry.status]}
+                  </span>
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+      ) : (
+        <Empty
+          title="Kein Protokoll"
+          description="Zu dieser Einheit wurde kein Schritt-Protokoll gespeichert."
+        />
+      )}
+    </SectionCard>
+  );
 }
 
 export function HistorySessionPage() {
@@ -119,6 +190,9 @@ export function HistorySessionPage() {
           Template: ein Training soll später so aussehen, wie es ausgeführt
           wurde - auch wenn der Plan sich seither geändert hat.
         */}
+        {session.guided ? (
+          <GuidedProtocolCard protocol={session.guided.protocol} />
+        ) : null}
         {buildSupersetBlocks(sessionExercises ?? []).map((block) =>
           block.kind === 'single' ? (
             renderExercise(block.exercise)

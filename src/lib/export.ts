@@ -138,9 +138,20 @@ const guidedEventSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('startNow'), at: z.number() }),
 ]);
 
+// Das Schritt-Protokoll (beim Abschluss/Abbruch abgeleitet) - additiv, ohne Bump.
+const guidedProtocolEntrySchema = z.object({
+  stepIndex: z.number().int().min(0),
+  name: z.string().min(1),
+  side: z.enum(['left', 'right']).optional(),
+  status: z.enum(['done', 'skipped', 'extended', 'aborted']),
+  plannedSeconds: z.number().min(0),
+  actualSeconds: z.number().min(0),
+});
+
 const guidedRunSchema = z.object({
   steps: z.array(guidedStepSchema),
   events: z.array(guidedEventSchema),
+  protocol: z.array(guidedProtocolEntrySchema).optional(),
 });
 
 const workoutSessionSchema = z.object({
@@ -870,7 +881,7 @@ async function loadAnalysisFiles(): Promise<{ files: AnalysisExportFiles; export
   return { files, exportedAt };
 }
 
-/** Der Analyse-Export als Archiv - acht Dateien, ein Teilen-Vorgang. */
+/** Der Analyse-Export als Archiv - neun Dateien, ein Teilen-Vorgang. */
 export async function exportAnalysisSnapshot(options: ExportOptions = {}): Promise<ExportResult> {
   const { files, exportedAt } = await loadAnalysisFiles();
 
@@ -882,6 +893,7 @@ export async function exportAnalysisSnapshot(options: ExportOptions = {}): Promi
       { name: 'wochen.csv', content: files.weeksCsv },
       { name: 'laeufe.csv', content: files.runsCsv },
       { name: 'plan.csv', content: files.planCsv },
+      { name: 'protokoll.csv', content: files.protocolCsv },
       { name: 'meta.json', content: files.metaJson },
       { name: 'bestand.json', content: files.inventoryJson },
     ],

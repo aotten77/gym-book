@@ -4,6 +4,7 @@ import type {
   BandLevel,
   Exercise,
   ExerciseTest,
+  GuidedProtocolEntry,
   PlanEntry,
   Program,
   ProgramWeek,
@@ -145,6 +146,8 @@ export interface AnalysisExportFiles {
   weeksCsv: string;
   runsCsv: string;
   planCsv: string;
+  /** Das Schritt-Protokoll der geführten Einheiten - siehe `buildProtocolCsv`. */
+  protocolCsv: string;
   inventoryJson: string;
 }
 
@@ -180,6 +183,16 @@ interface AnalysisRow {
   stundenSeitReferenz?: number;
   /** Der Spitzensatz als Kurzform - Rohstoff für `progression.csv`. */
   topKurz: string;
+}
+
+/** Eine Zeile von `protokoll.csv`: ein Schritt einer geführten Einheit, bei beidseitigen je Seite. */
+interface ProtocolRow {
+  datum: string;
+  wochentag: string;
+  einheit: string;
+  art: 'kraft' | 'mobility' | 'yoga' | 'faszien';
+  entry: GuidedProtocolEntry;
+  abgebrochen: boolean;
 }
 
 /** Ein Datum als `YYYY-MM-DD` in **Ortszeit**. */
@@ -414,6 +427,7 @@ export function buildAnalysisExport(input: AnalysisExportInput): AnalysisExportF
   );
 
   const rows: AnalysisRow[] = [];
+  const protocolRows: ProtocolRow[] = [];
   const discarded: DiscardedSession[] = [];
   const trainedExercises = new Map<
     string,
@@ -427,6 +441,42 @@ export function buildAnalysisExport(input: AnalysisExportInput): AnalysisExportF
     const sessionExercises = [...(exercisesBySession.get(session.id) ?? [])].sort(
       (left, right) => left.orderIndex - right.orderIndex,
     );
+    /*
+     * Eine geführte Einheit hat keine Sätze: ihr Inhalt ist das Schritt-
+     * Protokoll, und das steht in `protokoll.csv`. Sie verschiebt weder
+     * `sessions.csv` noch den Bezugspunkt der Abstände zwischen Kraft-Einheiten.
+     */
+    if (session.guided) {
+      if (session.status === 'active') {
+        discarded.push({
+          datum: localDateTimeMinutes(session.startedAt),
+          einheit: session.templateNameSnapshot,
+          grund: 'läuft noch',
+        });
+      } else if (!session.guided.protocol?.length) {
+        discarded.push({
+          datum: localDateTimeMinutes(session.startedAt),
+          einheit: session.templateNameSnapshot,
+          grund: 'kein Protokoll',
+        });
+      } else {
+        exportedCount += 1;
+
+        for (const entry of session.guided.protocol) {
+          protocolRows.push({
+            datum: localDate(session.startedAt),
+            wochentag: weekdayLabel(session.startedAt),
+            einheit: session.templateNameSnapshot,
+            art: describeCategoryArt(session.templateCategorySnapshot),
+            entry,
+            abgebrochen: session.status === 'aborted',
+          });
+        }
+      }
+
+      continue;
+    }
+
     const completedWorkLogs = new Map<string, WorkoutSetLog[]>();
     let plannedWorkRows = 0;
     let completedWorkRows = 0;
@@ -577,9 +627,10 @@ export function buildAnalysisExport(input: AnalysisExportInput): AnalysisExportF
     sessionsCsv: buildSessionsCsv(rows),
     progressionCsv: buildProgressionCsv(rows),
     testsCsv: buildTestsCsv(input.tests),
-    weeksCsv: buildWeeksCsv(input, rows),
+    weeksCsv: buildWeeksCsv(input, rows, protocolRows),
     runsCsv: buildRunsCsv(input.runs),
     planCsv: buildPlanCsv(input),
+    protocolCsv: buildProtocolCsv(protocolRows),
     inventoryJson: `${JSON.stringify(
       buildLibraryInventory({
         exercises: input.exercises,
@@ -595,6 +646,7 @@ export function buildAnalysisExport(input: AnalysisExportInput): AnalysisExportF
     )}\n`,
     metaJson: buildMetaJson(input, {
       rows,
+      protocolRows,
       discarded,
       exportedCount,
       totalSessions: input.sessions.length,
@@ -858,6 +910,58 @@ function buildPlanCsv(input: AnalysisExportInput): string {
   return `${lines.join('\n')}\n`;
 }
 
+const PROTOCOL_COLUMNS = [
+  'datum',
+  'wochentag',
+  'einheit',
+  'art',
+  'schritt_nr',
+  'schritt',
+  'seite',
+  'status',
+  'soll_sekunden',
+  'ist_sekunden',
+  'abgebrochen',
+];
+
+const PROTOCOL_STATUS_LABELS: Record<GuidedProtocolEntry['status'], string> = {
+  done: 'gemacht',
+  skipped: 'uebersprungen',
+  extended: 'verlaengert',
+  aborted: 'abgebrochen',
+};
+
+/**
+ * Das Schritt-Protokoll der geführten Einheiten: eine Zeile je Schritt, bei
+ * beidseitigen je Seite, in der Reihenfolge der Einheiten und Schritte. Soll
+ * ist die Dauer der Vorlage, Ist die gelaufene Zeit ohne Pausen. `status` ist
+ * ASCII wie die übrigen Zellenwerte dieser Dateien; `abgebrochen` in der
+ * letzten Spalte sagt, dass die ganze Einheit vorzeitig beendet wurde.
+ */
+function buildProtocolCsv(rows: ProtocolRow[]): string {
+  const lines = [PROTOCOL_COLUMNS.join(CSV_SEPARATOR)];
+
+  for (const row of rows) {
+    lines.push(
+      csvLine([
+        row.datum,
+        row.wochentag,
+        row.einheit,
+        row.art,
+        row.entry.stepIndex + 1,
+        row.entry.name,
+        row.entry.side ? SIDE_LABELS[row.entry.side] : SIDE_LABELS.both,
+        PROTOCOL_STATUS_LABELS[row.entry.status],
+        row.entry.plannedSeconds,
+        row.entry.actualSeconds,
+        row.abgebrochen,
+      ]),
+    );
+  }
+
+  return `${lines.join('\n')}\n`;
+}
+
 const WEEK_COLUMNS = [
   'woche_beginn',
   'kraft_einheiten',
@@ -874,8 +978,16 @@ const WEEK_COLUMNS = [
 ];
 
 /** Frühestes exportiertes Datum über Zeilen und Läufe (`YYYY-MM-DD`), sonst `undefined`. */
-function earliestDate(rows: AnalysisRow[], runs: RunLog[]): string | undefined {
-  return [...rows.map((row) => row.datum), ...runs.map((run) => run.date)].sort()[0];
+function earliestDate(
+  rows: AnalysisRow[],
+  runs: RunLog[],
+  protocolRows: ProtocolRow[],
+): string | undefined {
+  return [
+    ...rows.map((row) => row.datum),
+    ...protocolRows.map((row) => row.datum),
+    ...runs.map((run) => run.date),
+  ].sort()[0];
 }
 
 /**
@@ -884,9 +996,13 @@ function earliestDate(rows: AnalysisRow[], runs: RunLog[]): string | undefined {
  * Sie zählt nur abgeschlossene Sessions; abgebrochene stehen in
  * `sessions.csv`, aber nicht hier.
  */
-function buildWeeksCsv(input: AnalysisExportInput, rows: AnalysisRow[]): string {
+function buildWeeksCsv(
+  input: AnalysisExportInput,
+  rows: AnalysisRow[],
+  protocolRows: ProtocolRow[],
+): string {
   const lines = [WEEK_COLUMNS.join(CSV_SEPARATOR)];
-  const firstDate = earliestDate(rows, input.runs);
+  const firstDate = earliestDate(rows, input.runs, protocolRows);
   const first = firstDate ? parseLocalDate(firstDate) : undefined;
 
   if (first) {
@@ -925,6 +1041,7 @@ function buildWeeksCsv(input: AnalysisExportInput, rows: AnalysisRow[]): string 
 
 interface MetaContext {
   rows: AnalysisRow[];
+  protocolRows: ProtocolRow[];
   discarded: DiscardedSession[];
   exportedCount: number;
   totalSessions: number;
@@ -967,7 +1084,11 @@ function describeTrackingMode(
 
 function buildMetaJson(input: AnalysisExportInput, context: MetaContext): string {
   const dates = [
-    ...new Set([...context.rows.map((row) => row.datum), ...input.runs.map((run) => run.date)]),
+    ...new Set([
+      ...context.rows.map((row) => row.datum),
+      ...context.protocolRows.map((row) => row.datum),
+      ...input.runs.map((run) => run.date),
+    ]),
   ].sort();
   const library = new Map(
     input.exercises.map((exercise) => [normalizeName(exercise.name), exercise.trackingMode]),
@@ -1013,6 +1134,7 @@ function buildMetaJson(input: AnalysisExportInput, context: MetaContext): string
       })(),
       hinweise: [
         'kraft_dauer_min ist die Session-Dauer von Start bis Abschluss, inklusive Pausen.',
+        'protokoll.csv ist das Schritt-Protokoll der geführten Einheiten (Yoga, Faszien, Mobility): eine Zeile je Schritt und Seite mit Status (gemacht, verlaengert, uebersprungen, abgebrochen), Soll- und Ist-Dauer in Sekunden ohne Pausen; abgebrochen=ja heißt: die Einheit wurde vorzeitig beendet.',
         'wochen.csv zählt nur abgeschlossene Sessions; abgebrochene stehen in sessions.csv, aber nicht in den Wochensummen.',
         'verstrichen heißt: vergangen und keiner Session oder keinem Lauf zugeordnet – nicht zwingend ausgelassen.',
         'bestand.json ist der heutige Stand der Bibliothek (Übungen, Workouts mit Zuordnungen und Zielwerten, Bänder, Wochenregeln) in den Feldnamen des Bibliotheks-Imports – Plan, nicht Training.',
@@ -1025,7 +1147,7 @@ function buildMetaJson(input: AnalysisExportInput, context: MetaContext): string
 }
 
 /**
- * Dieselben acht Dateien als ein Text zum Einfügen.
+ * Dieselben neun Dateien als ein Text zum Einfügen.
  *
  * Das ZIP ist auf dem Telefon der längere Weg: sichern, App wechseln, Anhang
  * suchen - und ein Archiv wird am anderen Ende oft gar nicht ausgepackt. Über
@@ -1086,6 +1208,12 @@ export function buildAnalysisPasteText(
     '',
     '```csv',
     files.planCsv.trimEnd(),
+    '```',
+    '',
+    '## protokoll.csv',
+    '',
+    '```csv',
+    files.protocolCsv.trimEnd(),
     '```',
     '',
     '## bestand.json',

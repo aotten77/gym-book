@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   GUIDED_SIGNAL_MAX_DELAY_MS,
   addGuidedEvent,
+  deriveGuidedProtocol,
   deriveGuidedRunState,
   guidedRunEndsAt,
   isGuidedSession,
@@ -665,5 +666,123 @@ describe("Überspringen, +15 s, Zurück und Sofort starten", () => {
         /zu Ende/,
       );
     }
+  });
+});
+
+describe("deriveGuidedProtocol", () => {
+  // Übungen: Hund 0-5..15 (10 s), Taube L 20-40, Taube R 43-63.
+  const ev = (type: GuidedEvent["type"], seconds: number): GuidedEvent => ({
+    type,
+    at: at(seconds),
+  });
+
+  it("nennt nach dem glatten Durchlauf jeden Schritt und jede Seite als gemacht", () => {
+    expect(deriveGuidedProtocol(STEPS, START, at(63))).toEqual([
+      { stepIndex: 0, name: "Hund", status: "done", plannedSeconds: 10, actualSeconds: 10 },
+      { stepIndex: 1, name: "Taube", side: "left", status: "done", plannedSeconds: 20, actualSeconds: 20 },
+      { stepIndex: 1, name: "Taube", side: "right", status: "done", plannedSeconds: 20, actualSeconds: 20 },
+    ]);
+  });
+
+  it("zählt Wechsel und Seitenwechsel nicht als Zeile", () => {
+    expect(deriveGuidedProtocol(STEPS, START, at(63))).toHaveLength(3);
+  });
+
+  it("markiert eine übersprungene Übung mit der gespielten Zeit", () => {
+    // Hund läuft von 5 bis 8, dann Überspringen.
+    const protocol = deriveGuidedProtocol(
+      STEPS,
+      [...START, ev("skip", 8)],
+      at(8 + 5 + 20 + 3 + 20 + 5),
+    );
+
+    expect(protocol[0]).toMatchObject({ name: "Hund", status: "skipped", plannedSeconds: 10, actualSeconds: 3 });
+    expect(protocol[1]).toMatchObject({ side: "left", status: "done", actualSeconds: 20 });
+  });
+
+  it("überspringt im Wechsel den Schritt, in den er führt, mit null Sekunden", () => {
+    const protocol = deriveGuidedProtocol(STEPS, [...START, ev("skip", 2)], at(100));
+
+    expect(protocol[0]).toMatchObject({ name: "Hund", status: "skipped", actualSeconds: 0 });
+  });
+
+  it("markiert beide Seiten als übersprungen, wenn auf der ersten übersprungen wird", () => {
+    // Taube links ab 20 s; Überspringen bei 25 s.
+    const protocol = deriveGuidedProtocol(STEPS, [...START, ev("skip", 25)], at(30));
+
+    expect(protocol[0]).toMatchObject({ name: "Hund", status: "done" });
+    expect(protocol[1]).toMatchObject({ side: "left", status: "skipped", actualSeconds: 5 });
+    expect(protocol[2]).toMatchObject({ side: "right", status: "skipped", actualSeconds: 0 });
+  });
+
+  it("markiert eine verlängerte Übung mit Soll ohne und Ist mit den 15 s", () => {
+    const protocol = deriveGuidedProtocol(STEPS, [...START, ev("extend", 7)], at(100));
+
+    expect(protocol[0]).toEqual({
+      stepIndex: 0,
+      name: "Hund",
+      status: "extended",
+      plannedSeconds: 10,
+      actualSeconds: 25,
+    });
+    expect(protocol[1].status).toBe("done");
+  });
+
+  it("zählt die Pause nicht zur Dauer", () => {
+    // Hund von 5 s, Pause bei 8 s für 30 s, Weiter - Ende 30 s später.
+    const events = [...START, ev("pause", 8), ev("resume", 38)];
+    const protocol = deriveGuidedProtocol(STEPS, events, at(100));
+
+    expect(protocol[0]).toMatchObject({ status: "done", actualSeconds: 10 });
+    expect(protocol).toHaveLength(3);
+  });
+
+  it("zählt bei einem Neustart nur den letzten Durchgang", () => {
+    // Hund von 5 s, Neustart bei 9 s: neuer Durchgang 10 s.
+    const protocol = deriveGuidedProtocol(STEPS, [...START, ev("restart", 9)], at(100));
+
+    expect(protocol[0]).toMatchObject({ status: "done", actualSeconds: 10 });
+  });
+
+  it("führt nach Zurück den erneut gemachten Schritt mit dem zweiten Durchgang", () => {
+    // Hund fertig bei 15 s, Taube links ab 20 s; Zurück bei 22 s: Hund neu ab 22 s.
+    const events = [...START, ev("back", 22)];
+    const protocol = deriveGuidedProtocol(STEPS, events, at(22 + 5 + 10 + 5 + 20 + 3 + 20));
+
+    expect(protocol).toHaveLength(3);
+    expect(protocol[0]).toMatchObject({ name: "Hund", status: "done", actualSeconds: 10 });
+    expect(protocol[1]).toMatchObject({ side: "left", status: "done", actualSeconds: 20 });
+  });
+
+  it("verwirft ein „+15 s“ vor Zurück: der Replay hat seine eigene Dauer", () => {
+    // +15 s im Hund (7 s), Zurück bei 30 s im ersten Schritt neu.
+    const events = [...START, ev("extend", 7), ev("back", 30)];
+    const protocol = deriveGuidedProtocol(STEPS, events, at(30 + 5 + 10 + 5 + 20 + 3 + 20));
+
+    expect(protocol[0]).toMatchObject({ status: "done", plannedSeconds: 10, actualSeconds: 10 });
+  });
+
+  it("lässt bei einem Abbruch nicht erreichte Übungen weg und nennt die laufende abgebrochen", () => {
+    // Hund fertig bei 15 s, Taube links läuft von 20 s, Abbruch bei 28 s.
+    const protocol = deriveGuidedProtocol(STEPS, START, at(28));
+
+    expect(protocol).toEqual([
+      { stepIndex: 0, name: "Hund", status: "done", plannedSeconds: 10, actualSeconds: 10 },
+      { stepIndex: 1, name: "Taube", side: "left", status: "aborted", plannedSeconds: 20, actualSeconds: 8 },
+    ]);
+  });
+
+  it("ist vor dem Start und im ersten Wechsel leer", () => {
+    expect(deriveGuidedProtocol(STEPS, [], at(10))).toEqual([]);
+    expect(deriveGuidedProtocol(STEPS, START, at(3))).toEqual([]);
+  });
+
+  it("zählt bei einer Pause zum Abbruch nur die gelaufene Zeit", () => {
+    const events = [...START, ev("pause", 8)];
+    const protocol = deriveGuidedProtocol(STEPS, events, at(500));
+
+    expect(protocol).toEqual([
+      { stepIndex: 0, name: "Hund", status: "aborted", plannedSeconds: 10, actualSeconds: 3 },
+    ]);
   });
 });

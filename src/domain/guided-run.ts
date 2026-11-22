@@ -3,7 +3,12 @@ import {
   sumGuidedSeconds,
   type GuidedSection,
 } from "@/domain/guided-steps";
-import type { GuidedEvent, GuidedStep, WorkoutSession } from "@/domain/models";
+import type {
+  GuidedEvent,
+  GuidedProtocolEntry,
+  GuidedStep,
+  WorkoutSession,
+} from "@/domain/models";
 
 /*
  * Der Ablauf einer geführten Einheit.
@@ -113,6 +118,15 @@ interface Timeline {
   skipped: ReadonlySet<number>;
   /** Wie oft die Zeit zurückgesprungen ist (Neustart, Zurück) - Teil des Signal-Schlüssels. */
   rewinds: number;
+  /**
+   * Wie lange (ms) die Zeit je Abschnitt der wirksamen Abfolge gelaufen ist,
+   * ohne Pausen - nur der letzte Durchgang: Neustart und Zurück setzen zurück.
+   */
+  playedMs: number[];
+  /** Index des Abschnitts, in dem die Zeit am Ende steht. */
+  index: number;
+  /** Ob die Zeit das Ende des letzten Abschnitts erreicht hat. */
+  isOver: boolean;
 }
 
 function layOut(
@@ -152,6 +166,7 @@ function foldTimeline(
   const count = baseSections.length;
   const extra: number[] = baseSections.map(() => 0);
   const skipped = new Set<number>();
+  const playedMs: number[] = baseSections.map(() => 0);
   let sections = layOut(baseSections, extra);
   let index = 0;
   let offsetMs = 0;
@@ -165,8 +180,28 @@ function foldTimeline(
   /** Läuft die Zeit bis `time` weiter und rückt in den Abschnitt, in dem sie dann steht. */
   const advance = (time: number) => {
     if (runningSince !== null) {
-      offsetMs += Math.max(0, time - runningSince);
+      let delta = Math.max(0, time - runningSince);
+
       runningSince = time;
+
+      // Die Zeit je Abschnitt festhalten: eine Strecke über eine Grenze wird geteilt.
+      while (delta > 0) {
+        const room =
+          index >= count - 1
+            ? delta
+            : Math.max(0, lengthMs(index) - offsetMs);
+        const used = Math.min(delta, room);
+
+        // Hinter dem Ende des letzten Abschnitts läuft nichts mehr mit.
+        playedMs[index] += Math.min(used, Math.max(0, lengthMs(index) - offsetMs));
+        offsetMs += used;
+        delta -= used;
+
+        if (delta > 0) {
+          offsetMs -= lengthMs(index);
+          index += 1;
+        }
+      }
     }
 
     while (index < count - 1 && offsetMs >= lengthMs(index)) {
@@ -214,6 +249,7 @@ function foldTimeline(
       case "restart":
         if (!isOver()) {
           offsetMs = 0;
+          playedMs[index] = 0;
           rewinds += 1;
         }
         break;
@@ -272,6 +308,7 @@ function foldTimeline(
 
         for (let again = target; again < count; again += 1) {
           extra[again] = 0;
+          playedMs[again] = 0;
         }
 
         sections = layOut(baseSections, extra);
@@ -296,6 +333,9 @@ function foldTimeline(
     runningSince,
     skipped,
     rewinds,
+    playedMs,
+    index,
+    isOver: index >= count - 1 && offsetMs >= lengthMs(count - 1),
   };
 }
 
@@ -413,6 +453,68 @@ function findDueSignal(
   return due;
 }
 
+/**
+ * Das Schritt-Protokoll bis `until` (ms): eine Zeile je Übung, bei beidseitigen
+ * Schritten je Seite - Wechsel und Seitenwechsel kommen nicht vor.
+ *
+ * Status: `skipped`, wenn die Übung übersprungen wurde (auch die zweite Seite,
+ * wenn auf der ersten übersprungen wird), sonst `extended` bei einem „+15 s“
+ * in ihrem letzten Durchgang, sonst `done`; die Übung, in der die Zeit bei
+ * einem Abbruch stand, ist `aborted`. Übungen, die nicht erreicht wurden,
+ * fehlen. Die Ist-Dauer ist die gelaufene Zeit des letzten Durchgangs ohne
+ * Pausen, ganze Sekunden, höchstens die wirksame Länge. Das Soll ist die
+ * Länge der Vorlage ohne Verlängerung.
+ */
+export function deriveGuidedProtocol(
+  steps: readonly GuidedStep[],
+  events: readonly GuidedEvent[],
+  until: number,
+): GuidedProtocolEntry[] {
+  if (!findStart(events)) {
+    return [];
+  }
+
+  const baseSections = resolveGuidedSections(steps);
+  const timeline = foldTimeline(baseSections, events, until);
+  const entries: GuidedProtocolEntry[] = [];
+
+  timeline.sections.forEach((section, index) => {
+    if (section.kind !== "exercise") {
+      return;
+    }
+
+    const skipped = timeline.skipped.has(index);
+    const reached = index < timeline.index || (index === timeline.index && (skipped || timeline.playedMs[index] > 0));
+
+    if (!reached) {
+      return;
+    }
+
+    const playedMs = Math.min(timeline.playedMs[index], section.seconds * 1000);
+    const finished =
+      index < timeline.index || (index === timeline.index && timeline.isOver);
+    const planned = baseSections[index].seconds;
+    const status = skipped
+      ? "skipped"
+      : !finished
+        ? "aborted"
+        : section.seconds > planned
+          ? "extended"
+          : "done";
+
+    entries.push({
+      stepIndex: section.stepIndex,
+      name: steps[section.stepIndex].name,
+      ...(section.side ? { side: section.side } : {}),
+      status,
+      plannedSeconds: planned,
+      actualSeconds: Math.round(playedMs / 1000),
+    });
+  });
+
+  return entries;
+}
+
 export function deriveGuidedRunState(
   steps: readonly GuidedStep[],
   events: readonly GuidedEvent[],
@@ -429,6 +531,9 @@ export function deriveGuidedRunState(
         runningSince: null,
         skipped: new Set(),
         rewinds: 0,
+        playedMs: [],
+        index: 0,
+        isOver: false,
       };
   const sections = timeline.sections;
   const totalSeconds = sumGuidedSeconds(sections);

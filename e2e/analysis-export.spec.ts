@@ -9,7 +9,7 @@ import { resetDatabase, seedSampleData } from './helpers';
  * WebKit tatsächlich ein lesbares ZIP herauskommt.
  */
 test.describe('Analyse-Export', () => {
-  test('lädt ein ZIP mit den acht Dateien herunter', async ({ page }) => {
+  test('lädt ein ZIP mit den neun Dateien herunter', async ({ page }) => {
     await resetDatabase(page);
     await seedSampleData(page);
     await page.goto('./#/sync');
@@ -38,6 +38,7 @@ test.describe('Analyse-Export', () => {
     expect(archive.toString('latin1')).toContain('wochen.csv');
     expect(archive.toString('latin1')).toContain('laeufe.csv');
     expect(archive.toString('latin1')).toContain('plan.csv');
+    expect(archive.toString('latin1')).toContain('protokoll.csv');
     expect(archive.toString('latin1')).toContain('meta.json');
     expect(archive.toString('latin1')).toContain('bestand.json');
     // Die Kopfzeile der Tabelle liegt unkomprimiert im Archiv.

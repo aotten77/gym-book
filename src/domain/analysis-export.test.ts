@@ -7,6 +7,7 @@ import {
 import type {
   Exercise,
   ExerciseTest,
+  GuidedProtocolEntry,
   PlanEntry,
   RunLog,
   Side,
@@ -624,8 +625,8 @@ describe('buildAnalysisPasteText', () => {
 
     expect(text.startsWith('# Gym Book Analyse-Export 2026-08-28')).toBe(true);
     expect(text).toContain('```json');
-    // Sechsmal csv-Rahmen: sessions, progression, tests, wochen, laeufe und plan.
-    expect(text.match(/```csv/g)).toHaveLength(6);
+    // Siebenmal csv-Rahmen: sessions, progression, tests, wochen, laeufe, plan und protokoll.
+    expect(text.match(/```csv/g)).toHaveLength(7);
   });
 
   it('bestand.json: Workouts mit Zuordnungen, auch ohne ein einziges Training', () => {
@@ -646,7 +647,7 @@ describe('buildAnalysisPasteText', () => {
     expect(meta.hinweise.some((text: string) => text.includes('bestand.json'))).toBe(true);
   });
 
-  it('trägt den Inhalt aller acht Dateien', () => {
+  it('trägt den Inhalt aller neun Dateien', () => {
     const files = build({
       sessions: [session({ id: 's1' })],
       sessionExercises: [sessionExercise({ id: 'e1', sessionId: 's1' })],
@@ -662,6 +663,7 @@ describe('buildAnalysisPasteText', () => {
       files.weeksCsv,
       files.runsCsv,
       files.planCsv,
+      files.protocolCsv,
       files.metaJson,
       files.inventoryJson,
     ]) {
@@ -1060,5 +1062,136 @@ describe('Plandaten', () => {
     const text = buildAnalysisPasteText(planBuild(), new Date('2026-08-26T09:00:00'));
 
     expect(text.indexOf('## laeufe.csv')).toBeLessThan(text.indexOf('## plan.csv'));
+  });
+});
+
+describe('geführte Sessions im Analyse-Export', () => {
+  const protocol: GuidedProtocolEntry[] = [
+    { stepIndex: 0, name: 'Hund', status: 'extended', plannedSeconds: 60, actualSeconds: 75 },
+    { stepIndex: 1, name: 'Taube, tief', side: 'left', status: 'done', plannedSeconds: 90, actualSeconds: 90 },
+    { stepIndex: 1, name: 'Taube, tief', side: 'right', status: 'skipped', plannedSeconds: 90, actualSeconds: 20 },
+  ];
+
+  function guidedSession(overrides: Partial<WorkoutSession> & { id: string }, withProtocol = true) {
+    return session({
+      templateNameSnapshot: 'Abendflow',
+      templateCategorySnapshot: 'yoga',
+      guided: {
+        steps: [
+          { name: 'Hund', seconds: 60 },
+          { name: 'Taube, tief', seconds: 90, bothSides: true },
+        ],
+        events: [{ type: 'start', at: 1 }],
+        ...(withProtocol ? { protocol } : {}),
+      },
+      ...overrides,
+    });
+  }
+
+  it('schreibt das Protokoll mit einer Zeile je Schritt und Seite in protokoll.csv', () => {
+    const files = build({ sessions: [guidedSession({ id: 'g1' })] });
+    const { columns, rows } = parseCsv(files.protocolCsv.split('"Taube, tief"').join('Taube tief'));
+
+    expect(columns).toEqual([
+      'datum',
+      'wochentag',
+      'einheit',
+      'art',
+      'schritt_nr',
+      'schritt',
+      'seite',
+      'status',
+      'soll_sekunden',
+      'ist_sekunden',
+      'abgebrochen',
+    ]);
+    expect(rows).toEqual([
+      ['2026-08-25', 'Di', 'Abendflow', 'yoga', '1', 'Hund', 'beide', 'verlaengert', '60', '75', 'nein'],
+      ['2026-08-25', 'Di', 'Abendflow', 'yoga', '2', 'Taube tief', 'links', 'gemacht', '90', '90', 'nein'],
+      ['2026-08-25', 'Di', 'Abendflow', 'yoga', '2', 'Taube tief', 'rechts', 'uebersprungen', '90', '20', 'nein'],
+    ]);
+    expect(files.protocolCsv).toContain('"Taube, tief"');
+  });
+
+  it('zählt die Session als exportiert und nicht als verworfen', () => {
+    const meta = JSON.parse(build({ sessions: [guidedSession({ id: 'g1' })] }).metaJson);
+
+    expect(meta.sessions).toEqual({ gesamt: 1, exportiert: 1, verworfen: 0 });
+    expect(meta.verworfeneSessions).toEqual([]);
+    expect(meta.zeitraum.von).toBe('2026-08-25');
+  });
+
+  it('nimmt einen Abbruch auf und kennzeichnet ihn als abgebrochen', () => {
+    const files = build({
+      sessions: [
+        guidedSession({
+          id: 'g1',
+          status: 'aborted',
+          guided: {
+            steps: [{ name: 'Hund', seconds: 60 }],
+            events: [{ type: 'start', at: 1 }],
+            protocol: [{ stepIndex: 0, name: 'Hund', status: 'aborted', plannedSeconds: 60, actualSeconds: 20 }],
+          },
+        }),
+      ],
+    });
+    const { rows } = parseCsv(files.protocolCsv);
+
+    expect(rows[0].slice(7)).toEqual(['abgebrochen', '60', '20', 'ja']);
+  });
+
+  it('verwirft eine geführte Session ohne Protokoll mit Begründung', () => {
+    const meta = JSON.parse(
+      build({
+        sessions: [
+          guidedSession({ id: 'g1', status: 'aborted' }, false),
+          guidedSession({ id: 'g2', status: 'active', completedAt: undefined }, false),
+        ],
+      }).metaJson,
+    );
+
+    expect(meta.sessions).toEqual({ gesamt: 2, exportiert: 0, verworfen: 2 });
+    expect(meta.verworfeneSessions.map((item: { grund: string }) => item.grund)).toEqual([
+      'kein Protokoll',
+      'läuft noch',
+    ]);
+  });
+
+  it('lässt sessions.csv und den Abstand der Kraft-Einheiten unberührt', () => {
+    const strength = {
+      sessions: [session({ id: 's1', startedAt: '2026-08-25T17:00:00.000Z', completedAt: '2026-08-25T18:00:00.000Z' })],
+      sessionExercises: [sessionExercise({ id: 'e1', sessionId: 's1' })],
+      setLogs: [setLog({ id: 'l1', sessionExerciseId: 'e1', weight: 40, reps: 6 })],
+    };
+    const withGuided = build({
+      ...strength,
+      sessions: [
+        ...strength.sessions,
+        guidedSession({ id: 'g1', startedAt: '2026-08-26T08:00:00.000Z', completedAt: '2026-08-26T08:30:00.000Z' }),
+        session({ id: 's2', startedAt: '2026-08-27T17:00:00.000Z', completedAt: '2026-08-27T18:00:00.000Z' }),
+      ],
+      sessionExercises: [...strength.sessionExercises, sessionExercise({ id: 'e2', sessionId: 's2' })],
+      setLogs: [...strength.setLogs, setLog({ id: 'l2', sessionExerciseId: 'e2', weight: 40, reps: 6 })],
+    });
+    const without = build({
+      sessions: [strength.sessions[0], session({ id: 's2', startedAt: '2026-08-27T17:00:00.000Z', completedAt: '2026-08-27T18:00:00.000Z' })],
+      sessionExercises: [...strength.sessionExercises, sessionExercise({ id: 'e2', sessionId: 's2' })],
+      setLogs: [...strength.setLogs, setLog({ id: 'l2', sessionExerciseId: 'e2', weight: 40, reps: 6 })],
+    });
+
+    expect(withGuided.sessionsCsv).toBe(without.sessionsCsv);
+    expect(withGuided.progressionCsv).toBe(without.progressionCsv);
+  });
+
+  it('hat ohne geführte Session nur die Kopfzeile in protokoll.csv', () => {
+    expect(build({}).protocolCsv.trimEnd().split('\n')).toHaveLength(1);
+  });
+
+  it('hängt protokoll.csv an den Einfügetext', () => {
+    const files = build({ sessions: [guidedSession({ id: 'g1' })] });
+    const text = buildAnalysisPasteText(files, new Date('2026-08-28T09:00:00'));
+
+    expect(text).toContain('## protokoll.csv');
+    expect(text).toContain(files.protocolCsv.trimEnd());
   });
 });

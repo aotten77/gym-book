@@ -125,6 +125,31 @@ export type GuidedEvent =
 export interface GuidedRun {
   steps: GuidedStep[];
   events: GuidedEvent[];
+  /**
+   * Das Schritt-Protokoll: wird beim Abschluss und beim Abbruch einmal aus
+   * Schritten und Ereignissen abgeleitet (`deriveGuidedProtocol`) und hier
+   * festgehalten. Fehlt bei laufenden und bei älteren Einheiten.
+   */
+  protocol?: GuidedProtocolEntry[];
+}
+
+/**
+ * Was aus einem Schritt wurde. `aborted` gilt für die Übung, in der die
+ * Einheit endete, bevor sie zu Ende lief.
+ */
+export type GuidedProtocolStatus = 'done' | 'skipped' | 'extended' | 'aborted';
+
+/** Eine Zeile des Protokolls: ein Schritt, bei beidseitigen je Seite. */
+export interface GuidedProtocolEntry {
+  stepIndex: number;
+  name: string;
+  /** Nur bei einem beidseitigen Schritt. */
+  side?: 'left' | 'right';
+  status: GuidedProtocolStatus;
+  /** Soll: die Dauer der Vorlage ohne „+15 s“. */
+  plannedSeconds: number;
+  /** Ist: wie lange die Übung tatsächlich lief, ohne Pausen. */
+  actualSeconds: number;
 }
 
 export interface WorkoutTemplate {
