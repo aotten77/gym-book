@@ -126,6 +126,37 @@ describe('Bibliotheks-Import', () => {
     expect(await listLibraryImports()).toHaveLength(1);
   });
 
+  it('schreibt die Art Yoga und Faszien und stellt Kraft ohne Schlüssel wieder her', async () => {
+    await seedLibrary();
+
+    const payload = parseLibraryImportPayload(
+      JSON.stringify({
+        schemaVersion: 1,
+        templates: [
+          { name: 'Yoga Abend', category: 'yoga' },
+          { name: 'Rolle Rücken', category: 'faszien' },
+          { name: 'Einheit B', category: 'yoga' },
+        ],
+      }),
+    );
+
+    await applyLibraryImport(payload);
+
+    const byName = async (name: string) => db.workoutTemplates.where('name').equals(name).first();
+
+    expect((await byName('Yoga Abend'))?.category).toBe('yoga');
+    expect((await byName('Rolle Rücken'))?.category).toBe('faszien');
+    expect((await byName('Einheit B'))?.category).toBe('yoga');
+
+    await applyLibraryImport(
+      parseLibraryImportPayload(
+        JSON.stringify({ schemaVersion: 1, templates: [{ name: 'Einheit B', category: 'strength' }] }),
+      ),
+    );
+
+    expect('category' in ((await byName('Einheit B')) ?? {})).toBe(false);
+  });
+
   it('erzeugt beim zweiten Lauf keine Duplikate', async () => {
     await seedLibrary();
 

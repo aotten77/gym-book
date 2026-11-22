@@ -177,7 +177,7 @@ export type CalendarTest = Pick<
   'id' | 'recordedAt' | 'exerciseNameSnapshot' | 'asymmetryPercent'
 >;
 
-export type CalendarUnitKind = 'strength' | 'mobility' | 'run' | 'test';
+export type CalendarUnitKind = WorkoutCategory | 'run' | 'test';
 export type CalendarUnitState = 'geplant' | 'erledigt';
 
 /** Wohin ein Tipp auf die Einheit führt. */

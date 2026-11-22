@@ -33,6 +33,8 @@ const FILTERS: { value: NowFilter; label: string }[] = [
   { value: 'all', label: 'Alle' },
   { value: 'short', label: 'Kurz' },
   { value: 'mobility', label: 'Mobility' },
+  { value: 'yoga', label: 'Yoga' },
+  { value: 'faszien', label: 'Faszien' },
   { value: 'strength', label: 'Kraft' },
 ];
 

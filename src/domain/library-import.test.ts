@@ -1097,12 +1097,44 @@ describe('planLibraryImport - Art des Workouts', () => {
     expect(plan.templates[0].kind).toBe('unchanged');
   });
 
-  it('weist eine unbekannte Art mit Zeile ab', () => {
-    const json = JSON.stringify({
-      schemaVersion: 1,
-      templates: [{ name: 'Einheit A', category: 'yoga' }],
-    });
+  it('legt neue Workouts mit Art Yoga und Faszien an', () => {
+    const plan = planLibraryImport(
+      buildPayload({
+        templates: [
+          { name: 'Yoga Abend', category: 'yoga' },
+          { name: 'Rolle Rücken', category: 'faszien' },
+        ],
+      }),
+      emptyState(),
+    );
 
-    expect(() => parseLibraryImportPayload(json)).toThrow(/Workout 1, Feld "category"/);
+    expect(plan.templates.map((entry) => entry.record?.category)).toEqual(['yoga', 'faszien']);
+  });
+
+  it('meldet den Wechsel zu Yoga und Faszien mit ihren Beschriftungen', () => {
+    const toYoga = planLibraryImport(
+      buildPayload({ templates: [{ name: 'Einheit A', category: 'yoga' }] }),
+      emptyState({ templates: [buildTemplate('t1', 'Einheit A')] }),
+    );
+    const toFaszien = planLibraryImport(
+      buildPayload({ templates: [{ name: 'Einheit A', category: 'faszien' }] }),
+      emptyState({ templates: [{ ...buildTemplate('t1', 'Einheit A'), category: 'yoga' }] }),
+    );
+
+    expect(toYoga.templates[0].changes).toContainEqual({ field: 'Art', from: 'Kraft', to: 'Yoga' });
+    expect(toYoga.templates[0].values.category).toBe('yoga');
+    expect(toFaszien.templates[0].changes).toContainEqual({ field: 'Art', from: 'Yoga', to: 'Faszien' });
+    expect(toFaszien.templates[0].values.category).toBe('faszien');
+  });
+
+  it('nimmt Yoga und Faszien an, weist aber eine unbekannte Art mit Zeile ab', () => {
+    const accepted = (category: string) =>
+      parseLibraryImportPayload(
+        JSON.stringify({ schemaVersion: 1, templates: [{ name: 'Einheit A', category }] }),
+      );
+
+    expect(accepted('yoga').templates?.[0].category).toBe('yoga');
+    expect(accepted('faszien').templates?.[0].category).toBe('faszien');
+    expect(() => accepted('pilates')).toThrow(/Workout 1, Feld "category"/);
   });
 });

@@ -28,12 +28,31 @@ describe('Art des Workouts', () => {
     expect('category' in ((await db.workoutTemplates.get(templateId)) ?? {})).toBe(false);
   });
 
-  it('legt ein Mobility-Workout an und schreibt bei Kraft keinen Schlüssel', async () => {
+  it('legt Workouts mit Art an und schreibt bei Kraft keinen Schlüssel', async () => {
     const mobility = await createTemplate({ name: 'M', category: 'mobility' });
+    const yoga = await createTemplate({ name: 'Y', category: 'yoga' });
+    const faszien = await createTemplate({ name: 'F', category: 'faszien' });
     const strength = await createTemplate({ name: 'K', category: 'strength' });
 
     expect((await db.workoutTemplates.get(mobility))?.category).toBe('mobility');
+    expect((await db.workoutTemplates.get(yoga))?.category).toBe('yoga');
+    expect((await db.workoutTemplates.get(faszien))?.category).toBe('faszien');
     expect('category' in ((await db.workoutTemplates.get(strength)) ?? {})).toBe(false);
+  });
+});
+
+describe('Art des Workouts: Yoga und Faszien', () => {
+  it('wechselt zwischen den Arten und entfernt sie bei Kraft', async () => {
+    const templateId = await createTemplate({ name: 'Einheit A' });
+
+    await updateTemplate(templateId, { name: 'Einheit A', category: 'yoga' });
+    expect((await db.workoutTemplates.get(templateId))?.category).toBe('yoga');
+
+    await updateTemplate(templateId, { name: 'Einheit A', category: 'faszien' });
+    expect((await db.workoutTemplates.get(templateId))?.category).toBe('faszien');
+
+    await updateTemplate(templateId, { name: 'Einheit A', category: 'strength' });
+    expect('category' in ((await db.workoutTemplates.get(templateId)) ?? {})).toBe(false);
   });
 });
 

@@ -11,7 +11,11 @@ import {
   planRangeSchema,
   type PlanEntryPlanEntry,
 } from '@/domain/plan-import';
-import { describeWorkoutCategory, normalizeWorkoutCategory } from '@/domain/workout-category';
+import {
+  describeWorkoutCategory,
+  normalizeWorkoutCategory,
+  WORKOUT_CATEGORIES,
+} from '@/domain/workout-category';
 import type {
   BandLevel,
   Exercise,
@@ -76,7 +80,7 @@ const importExerciseSchema = z.object({
 const importTemplateSchema = z.object({
   name: z.string().min(1),
   notes: z.string().optional(),
-  category: z.enum(['strength', 'mobility']).optional(),
+  category: z.enum(WORKOUT_CATEGORIES).optional(),
   /*
    * Die Zuordnungen dieses Workouts in der Datei sind der vollständige
    * Soll-Stand seiner Zusammensetzung: was fehlt, wird entfernt, Reihenfolge
@@ -478,6 +482,8 @@ function planTemplates(
     const existing = existingByKey.get(key);
 
     if (!existing) {
+      const category = normalizeWorkoutCategory(input.category);
+
       entries.push({
         id: createId(),
         kind: 'new',
@@ -487,7 +493,7 @@ function planTemplates(
           name,
           notes: optionalText(input.notes),
           // Kraft hat keine Schreibweise: der Schlüssel fehlt dann ganz.
-          ...(normalizeWorkoutCategory(input.category) && { category: 'mobility' as const }),
+          ...(category && { category }),
         },
         values: {},
       });

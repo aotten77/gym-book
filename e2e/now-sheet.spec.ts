@@ -148,6 +148,31 @@ test.describe('Jetzt-Sheet', () => {
     await expect(page.locator('[data-sheet]')).toBeHidden();
   });
 
+  test('die Filter lauten Alle · Kurz · Mobility · Yoga · Faszien · Kraft und passen bei 320px', async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 700 });
+    await startWithEmptyPlan(page);
+    await openNowSheet(page);
+
+    const group = page.locator('[data-sheet]').getByRole('radiogroup');
+
+    await expect(group.getByRole('radio')).toHaveText(['Alle', 'Kurz', 'Mobility', 'Yoga', 'Faszien', 'Kraft']);
+
+    // Die Chips brechen um, statt seitlich aus dem Sheet zu laufen.
+    const overflow = await group.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+
+      return {
+        clipped: element.scrollWidth - element.clientWidth,
+        outside: Array.from(element.children).filter(
+          (child) => child.getBoundingClientRect().right > box.right + 0.5,
+        ).length,
+      };
+    });
+
+    expect(overflow.clipped).toBeLessThanOrEqual(0);
+    expect(overflow.outside).toBe(0);
+  });
+
   test('bei 320px sind „Lauf eintragen“ und „Test erfassen“ nicht abgeschnitten', async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 700 });
     await startWithEmptyPlan(page);

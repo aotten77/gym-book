@@ -852,6 +852,27 @@ describe('Läufe und Wochensummen', () => {
     expect(rows.map((row) => row[row.length - 2])).toEqual(['kraft', 'mobility']);
   });
 
+  it('sessions.csv: Yoga und Faszien tragen ihre Art, nicht kraft', () => {
+    const stamps = { startedAt: '2026-08-26T17:00:00.000Z', completedAt: '2026-08-26T18:00:00.000Z' };
+    const files = build({
+      sessions: [
+        session({ id: 's1', ...stamps, templateCategorySnapshot: 'yoga' }),
+        session({ id: 's2', ...stamps, templateCategorySnapshot: 'faszien' }),
+      ],
+      sessionExercises: [
+        sessionExercise({ id: 'e1', sessionId: 's1' }),
+        sessionExercise({ id: 'e2', sessionId: 's2' }),
+      ],
+      setLogs: [
+        setLog({ id: 'l1', sessionExerciseId: 'e1', reps: 5 }),
+        setLog({ id: 'l2', sessionExerciseId: 'e2', reps: 5 }),
+      ],
+    });
+    const { rows } = parseCsv(files.sessionsCsv);
+
+    expect(rows.map((row) => row[row.length - 2])).toEqual(['yoga', 'faszien']);
+  });
+
   it('meta.json: Zeitraum über Sessions und Läufe', () => {
     const files = build({
       sessions: [session({ id: 's1' })],
@@ -968,6 +989,27 @@ describe('Plandaten', () => {
       ['2026-09-01', 'mobility', 'Mobility', 'offen'],
     ]);
     expect(rows[1][9]).toBe('locker');
+  });
+
+  it('plan.csv: Termine von Yoga- und Faszien-Workouts tragen ihre Art', () => {
+    const { rows } = parseCsv(
+      build({
+        exportedAt: new Date('2026-08-26T09:00:00'),
+        templates: [
+          template({ id: 't-y', name: 'Yoga', category: 'yoga' }),
+          template({ id: 't-f', name: 'Faszien', category: 'faszien' }),
+        ],
+        planEntries: [
+          planEntry({ id: 'p-y', date: '2026-09-01', templateId: 't-y' }),
+          planEntry({ id: 'p-f', date: '2026-09-02', templateId: 't-f' }),
+        ],
+      }).planCsv,
+    );
+
+    expect(rows.map((row) => [row[2], row[3]])).toEqual([
+      ['yoga', 'Yoga'],
+      ['faszien', 'Faszien'],
+    ]);
   });
 
   it('plan.csv: Lauf-Termin mit Sollwerten, Pace als m:ss', () => {

@@ -1,6 +1,7 @@
 /**
  * Die Regeln des Wochen-Sheets: drei Kacheln (Kraft, Mobility, Laufen) und die
- * Vorgaben-Blöcke der Woche. Rein und ohne Uhr - "heute" kommt als `todayKey`
+ * Vorgaben-Blöcke der Woche. Yoga und Faszien zählen in der Kachel Mobility, wie
+ * in der Wochenrechnung. Rein und ohne Uhr - "heute" kommt als `todayKey`
  * herein, die Woche als `CalendarWeek`.
  *
  * Geplant ist, was in der Woche *datiert* ist, in jedem Zustand; erledigt ist,
@@ -11,7 +12,12 @@ import type { PlanEntry, WorkoutTemplate } from '@/domain/models';
 import { parseLocalDate } from '@/domain/calendar-week';
 import { planEntryState, sortPlanEntries, type PlanEntryLink } from '@/domain/plan';
 import type { WeekPlanBlock, WeekPlanEntry } from '@/domain/program-plan';
-import { isoWeekday, weekdayShortLabel, type CalendarWeek } from '@/domain/training-calendar';
+import {
+  isoWeekday,
+  weekdayShortLabel,
+  type CalendarUnitKind,
+  type CalendarWeek,
+} from '@/domain/training-calendar';
 import type { WeekVolume } from '@/domain/weekly-volume';
 import { resolveWorkoutCategory } from '@/domain/workout-category';
 import { formatDurationHours, formatNumber } from '@/lib/format';
@@ -40,6 +46,11 @@ interface BuildWeekSheetTilesInput {
   todayKey: string;
 }
 
+/** Die Kachel einer Einheit: Yoga und Faszien zählen wie Mobility. */
+function tileKindOf(kind: Exclude<CalendarUnitKind, 'test'>): TileKind {
+  return kind === 'strength' || kind === 'run' ? kind : 'mobility';
+}
+
 function entryKind(
   entry: PlanEntry,
   categoryByTemplateId: Map<string, WorkoutTemplate['category']>,
@@ -49,8 +60,10 @@ function entryKind(
   }
 
   // Ein gelöschtes Workout zählt als Kraft, wie im Kalender.
-  return resolveWorkoutCategory(
-    entry.templateId === undefined ? undefined : categoryByTemplateId.get(entry.templateId),
+  return tileKindOf(
+    resolveWorkoutCategory(
+      entry.templateId === undefined ? undefined : categoryByTemplateId.get(entry.templateId),
+    ),
   );
 }
 
@@ -71,7 +84,8 @@ export function buildWeekSheetTiles({
 
   return TILES.map(({ kind, title }) => {
     const plannedOfKind = planned.filter((entry) => entryKind(entry, categoryByTemplateId) === kind);
-    const doneOfKind = doneUnits.filter((unit) => unit.kind === kind);
+    // Ein Seitenvergleich zählt in keiner Kachel.
+    const doneOfKind = doneUnits.filter((unit) => unit.kind !== 'test' && tileKindOf(unit.kind) === kind);
     const plannedKm = plannedOfKind.reduce((sum, entry) => sum + (entry.targetDistanceKm ?? 0), 0);
     const doneKm = doneOfKind.reduce((sum, unit) => sum + (unit.distanceKm ?? 0), 0);
 

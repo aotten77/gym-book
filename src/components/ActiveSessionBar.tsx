@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { ChevronUp, Clock3, Timer } from 'lucide-react';
+import { UnitKindIcon } from '@/components/icons/UnitKindIcon';
 import { db } from '@/db/appDb';
 import type { WorkoutSession } from '@/domain/models';
 import { remainingRestSeconds, selectPrimaryRestTrack } from '@/domain/rest-timer';
@@ -11,6 +12,7 @@ import {
   remainingSetTimerSeconds,
 } from '@/domain/set-timer';
 import { summarizeSessionProgress } from '@/domain/session-summary';
+import { resolveWorkoutCategory } from '@/domain/workout-category';
 import { useNowTicker } from '@/hooks/useNowTicker';
 import { formatTimer } from '@/lib/format';
 
@@ -93,6 +95,12 @@ export function ActiveSessionBar({ session }: ActiveSessionBarProps) {
        */
       className="flex w-full items-center gap-3 rounded-t-card border-b border-highlight-border bg-highlight px-4 py-2.5 text-left text-highlight-contrast transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
     >
+      {/* Das Zeichen der Art: Yoga und Faszien lassen sich so von Kraft unterscheiden. */}
+      <UnitKindIcon
+        kind={resolveWorkoutCategory(session.templateCategorySnapshot)}
+        size={18}
+        className="shrink-0 opacity-70"
+      />
       <div className="min-w-0 flex-1">
         <p className="truncate text-[11px] font-bold uppercase tracking-[0.16em] opacity-70">
           Training läuft

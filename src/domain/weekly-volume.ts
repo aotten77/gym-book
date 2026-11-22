@@ -1,6 +1,6 @@
 /**
  * Die Wochenrechnung: was in einer Kalenderwoche trainiert wurde, getrennt
- * nach Kraft, Mobility und Laufen.
+ * nach Kraft, Mobility (mit Yoga und Faszien) und Laufen.
  *
  * Eine Rechnung, drei Leser. Der Verlauf, das Wochen-Sheet und die Spalte in
  * `wochen.csv` des Analyse-Exports lesen alle dieselben `WeekVolume`-Zeilen;
@@ -16,7 +16,8 @@
  * Das Kraftvolumen zählt nur Übungen, deren Modus Wiederholungen kennt
  * (`supportsReps`) - wie die Spalte `volumen` in `sessions.csv`. Kilo mal
  * Sekunden ist kein Kilogramm Bewegung; einen Haltesatz mit 20 kg dazuzuzählen
- * würde die Summe verfälschen. Mobility trägt nur Einheiten und Dauer bei.
+ * würde die Summe verfälschen. Mobility, Yoga und Faszien tragen nur Einheiten
+ * und Dauer bei und stehen zusammen im Block `mobility`.
  *
  * Wochen werden über `setDate(+7)` weitergezählt, nie über Millisekunden: eine
  * Woche über die Zeitumstellung hat 167 oder 169 Stunden.
@@ -32,6 +33,7 @@ export interface WeekVolume {
   /** Montag 00:00 Ortszeit. */
   weekStart: Date;
   strength: { sessions: number; durationSeconds: number; volumeKg: number; workSets: number };
+  /** Mobility, Yoga und Faszien zusammen: Einheiten ohne Kraftvolumen. */
   mobility: { sessions: number; durationSeconds: number };
   running: {
     runs: number;
@@ -137,7 +139,7 @@ export function buildWeeklyVolume(input: WeeklyVolumeInput): WeekVolume[] {
       Math.round((completedAt.getTime() - new Date(session.startedAt).getTime()) / 1000),
     );
 
-    if (resolveWorkoutCategory(session.templateCategorySnapshot) === 'mobility') {
+    if (resolveWorkoutCategory(session.templateCategorySnapshot) !== 'strength') {
       week.mobility.sessions += 1;
       week.mobility.durationSeconds += durationSeconds;
       continue;

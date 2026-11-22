@@ -785,6 +785,47 @@ describe('restoreDatabaseSnapshot', () => {
     expect((await db.workoutSessions.get('session-1'))?.templateCategorySnapshot).toBe('mobility');
   });
 
+  it('trägt Yoga und Faszien als Art und Snapshot durch', async () => {
+    const stamp = '2026-07-01T08:00:00.000Z';
+    const parsed = parseDatabaseSnapshot(
+      JSON.stringify(
+        createSnapshot({
+          workoutTemplates: [
+            { id: 'template-y', name: 'Yoga A', category: 'yoga', createdAt: stamp, updatedAt: stamp },
+            { id: 'template-f', name: 'Faszien A', category: 'faszien', createdAt: stamp, updatedAt: stamp },
+          ],
+          workoutSessions: [
+            {
+              id: 'session-y',
+              templateId: 'template-y',
+              templateNameSnapshot: 'Yoga A',
+              templateCategorySnapshot: 'yoga',
+              resolvedProgramWeek: 1,
+              startedAt: stamp,
+              status: 'completed',
+            },
+            {
+              id: 'session-f',
+              templateId: 'template-f',
+              templateNameSnapshot: 'Faszien A',
+              templateCategorySnapshot: 'faszien',
+              resolvedProgramWeek: 1,
+              startedAt: stamp,
+              status: 'completed',
+            },
+          ],
+        }),
+      ),
+    );
+
+    await restoreDatabaseSnapshot(parsed);
+
+    expect((await db.workoutTemplates.get('template-y'))?.category).toBe('yoga');
+    expect((await db.workoutTemplates.get('template-f'))?.category).toBe('faszien');
+    expect((await db.workoutSessions.get('session-y'))?.templateCategorySnapshot).toBe('yoga');
+    expect((await db.workoutSessions.get('session-f'))?.templateCategorySnapshot).toBe('faszien');
+  });
+
   it('sichert und stellt Läufe wieder her', async () => {
     const run = {
       id: 'run-1',

@@ -25,7 +25,7 @@ import { supportsReps } from '@/domain/tracking';
 import { isoWeekday, weekdayShortLabel } from '@/domain/training-calendar';
 import { sumWorkVolume } from '@/domain/volume';
 import { buildWeeklyVolume } from '@/domain/weekly-volume';
-import { resolveWorkoutCategory } from '@/domain/workout-category';
+import { resolveWorkoutCategory, type WorkoutCategory } from '@/domain/workout-category';
 
 /**
  * Der Analyse-Export - ein zweiter, ausdrücklich **verlustbehafteter** Export
@@ -44,6 +44,13 @@ import { resolveWorkoutCategory } from '@/domain/workout-category';
  * verworfene Session mit einer Zeile Begründung: gefiltert wurde sichtbar, statt
  * die Auswertung mit Rauschen zuzumüllen.
  */
+
+/** Die Spalte `art`: die Art des Workouts klein geschrieben, Kraft als `kraft`. */
+function describeCategoryArt(category?: WorkoutCategory): 'kraft' | 'mobility' | 'yoga' | 'faszien' {
+  const resolved = resolveWorkoutCategory(category);
+
+  return resolved === 'strength' ? 'kraft' : resolved;
+}
 
 /** Trennzeichen der CSV. Siehe `formatCsvNumber` zur Zahlenschreibweise. */
 const CSV_SEPARATOR = ',';
@@ -116,7 +123,7 @@ export interface AnalysisExportInput {
    * `meta.json` leitet sich aus Sessions ab und würde sie abschneiden.
    */
   planEntries: PlanEntry[];
-  /** Für Name und Art der Workout-Termine (`kraft` / `mobility`) und für `bestand.json`. */
+  /** Für Name und Art der Workout-Termine (`kraft` / `mobility` / `yoga` / `faszien`) und für `bestand.json`. */
   templates: WorkoutTemplate[];
   /**
    * Zusammensetzung der Workouts, Programmwochen und Wochenregeln - nur für
@@ -167,8 +174,8 @@ interface AnalysisRow {
   unvollstaendig: boolean;
   /** Der Plan-Tag, an dem die Session stand (`planDateSnapshot`). */
   geplantAm?: string;
-  /** `kraft` oder `mobility` - Kraft auch bei fehlendem Snapshot. */
-  art: 'kraft' | 'mobility';
+  /** `kraft`, `mobility`, `yoga` oder `faszien` - Kraft auch bei fehlendem Snapshot. */
+  art: 'kraft' | 'mobility' | 'yoga' | 'faszien';
   stundenSeitLetzterEinheit?: number;
   stundenSeitReferenz?: number;
   /** Der Spitzensatz als Kurzform - Rohstoff für `progression.csv`. */
@@ -546,7 +553,7 @@ export function buildAnalysisExport(input: AnalysisExportInput): AnalysisExportF
           uebersprungen: exercise.wasSkipped,
           unvollstaendig: incomplete,
           geplantAm: session.planDateSnapshot,
-          art: resolveWorkoutCategory(session.templateCategorySnapshot) === 'mobility' ? 'mobility' : 'kraft',
+          art: describeCategoryArt(session.templateCategorySnapshot),
           stundenSeitLetzterEinheit,
           stundenSeitReferenz,
           topKurz: topSet ? formatTopSet(topSet) : '',
@@ -815,12 +822,7 @@ function planRows(input: AnalysisExportInput) {
 
   return sortPlanEntries(input.planEntries).map((entry) => {
     const template = entry.templateId ? templatesById.get(entry.templateId) : undefined;
-    const art =
-      entry.kind === 'run'
-        ? 'lauf'
-        : resolveWorkoutCategory(template?.category) === 'mobility'
-          ? 'mobility'
-          : 'kraft';
+    const art = entry.kind === 'run' ? 'lauf' : describeCategoryArt(template?.category);
 
     return { entry, art, name: planEntryName(entry, templateNames, links), status: planStatus(entry, links, today) };
   });

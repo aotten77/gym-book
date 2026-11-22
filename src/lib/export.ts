@@ -7,6 +7,7 @@ import {
   type AnalysisExportFiles,
 } from '@/domain/analysis-export';
 import { resolveWeekControl, toDateInputValue } from '@/domain/program';
+import { WORKOUT_CATEGORIES } from '@/domain/workout-category';
 import { blobToDataUrl, dataUrlToBlob, isSupportedMediaType } from '@/lib/media';
 import { createZipArchive } from '@/lib/zip';
 import type {
@@ -74,7 +75,7 @@ const workoutTemplateSchema = z.object({
    * bestehende Nutzer-Backup ab.
    */
   scheduledWeekdays: z.array(z.number().int().min(1).max(7)).optional(),
-  category: z.enum(['strength', 'mobility']).optional(),
+  category: z.enum(WORKOUT_CATEGORIES).optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -110,7 +111,7 @@ const workoutSessionSchema = z.object({
   id: z.string().min(1),
   templateId: z.string().min(1),
   templateNameSnapshot: z.string().min(1),
-  templateCategorySnapshot: z.enum(['strength', 'mobility']).optional(),
+  templateCategorySnapshot: z.enum(WORKOUT_CATEGORIES).optional(),
   programNameSnapshot: z.string().optional(),
   programWeekLabelSnapshot: z.string().optional(),
   usedWeekOverride: z.boolean().optional(),

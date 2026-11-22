@@ -7,13 +7,13 @@ import {
   WARMUP_REST_FACTOR,
 } from '@/domain/session-estimate';
 import { isoWeekday, weekdayShortLabel } from '@/domain/training-calendar';
-import { resolveWorkoutCategory } from '@/domain/workout-category';
+import { resolveWorkoutCategory, type WorkoutCategory } from '@/domain/workout-category';
 import { formatShortDate } from '@/lib/format';
 
 export interface TodayUnitOption {
   templateId: string;
   name: string;
-  kind: 'strength' | 'mobility';
+  kind: WorkoutCategory;
   lastTrained: string;
   /** Grobe Dauer, siehe `estimateTemplateMinutes`; 0 heißt „nicht schätzbar". */
   minutes: number;
@@ -25,7 +25,7 @@ export interface TodayUnitOption {
 /** Bis hierhin gilt ein Workout als „kurz & spontan". */
 export const SHORT_WORKOUT_MAX_MINUTES = 15;
 
-export type NowFilter = 'all' | 'short' | 'mobility' | 'strength';
+export type NowFilter = 'all' | 'short' | WorkoutCategory;
 
 export interface TemplateEstimateItem {
   workSetCount: number;
@@ -84,9 +84,10 @@ export function filterNowOptions(options: TodayUnitOption[], filter: NowFilter):
         (option) => option.minutes > 0 && option.minutes <= SHORT_WORKOUT_MAX_MINUTES,
       );
     case 'mobility':
-      return options.filter((option) => option.kind === 'mobility');
+    case 'yoga':
+    case 'faszien':
     case 'strength':
-      return options.filter((option) => option.kind === 'strength');
+      return options.filter((option) => option.kind === filter);
     default:
       return options;
   }

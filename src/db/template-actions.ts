@@ -76,12 +76,13 @@ async function normalizeTemplateExerciseOrder(templateId: string) {
 export async function createTemplate(input: TemplateInput) {
   const now = new Date().toISOString();
   const templateId = createId();
+  const category = normalizeWorkoutCategory(input.category);
 
   await db.workoutTemplates.add({
     id: templateId,
     name: input.name.trim(),
     notes: normalizeOptionalText(input.notes),
-    ...(normalizeWorkoutCategory(input.category) && { category: 'mobility' as const }),
+    ...(category && { category }),
     createdAt: now,
     updatedAt: now,
   });

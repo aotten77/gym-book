@@ -16,6 +16,8 @@ const templates: Pick<WorkoutTemplate, 'id' | 'name' | 'category'>[] = [
   { id: 'a', name: 'Einheit A', category: undefined },
   { id: 'b', name: 'Einheit B', category: undefined },
   { id: 'm', name: 'Mobility', category: 'mobility' },
+  { id: 'y', name: 'Yoga', category: 'yoga' },
+  { id: 'f', name: 'Faszien', category: 'faszien' },
 ];
 
 function entry(overrides: Partial<PlanEntry>): PlanEntry {
@@ -110,6 +112,55 @@ describe('buildWeekSheetTiles', () => {
       { kind: 'mobility', title: 'Mobility', count: '1 / 1', detail: '0:09 h', done: true },
       { kind: 'run', title: 'Laufen', count: '0 / 1', detail: '0 / 8 km', done: false },
     ]);
+  });
+
+  it('zählt Yoga und Faszien in der Kachel Mobility, geplant wie erledigt', () => {
+    const yogaEntries = [
+      entry({ id: 'ey', date: '2026-11-16', templateId: 'y' }),
+      entry({ id: 'ef', date: '2026-11-21', templateId: 'f' }),
+    ];
+    const yogaSessions: CalendarSession[] = [
+      {
+        id: 'sy',
+        templateId: 'y',
+        templateName: 'Yoga',
+        startedAt: new Date(2026, 10, 16, 7, 0).toISOString(),
+        completedAt: new Date(2026, 10, 16, 7, 30).toISOString(),
+        templateCategorySnapshot: 'yoga',
+        planEntryId: 'ey',
+      },
+    ];
+    const week = buildCalendarWeeks({
+      firstMonday: new Date(2026, 10, 16),
+      weeks: 1,
+      today: new Date(2026, 10, 18),
+      programWeeks: [],
+      planEntries: yogaEntries,
+      planLinks: {
+        ey: { planEntryId: 'ey', source: 'session', sourceId: 'sy', done: true, doneAt: '2026-11-16T07:30:00.000Z' },
+      },
+      templates,
+      completedSessions: yogaSessions,
+      runs: [],
+      tests: [],
+    })[0];
+
+    const tiles = buildWeekSheetTiles({
+      week,
+      entries: yogaEntries,
+      templates,
+      volume: { ...volume, mobility: { sessions: 1, durationSeconds: 1800 } },
+      todayKey: TODAY_KEY,
+    });
+
+    expect(tiles[0]).toMatchObject({ kind: 'strength', count: '0 / 0' });
+    expect(tiles[1]).toEqual({
+      kind: 'mobility',
+      title: 'Mobility',
+      count: '1 / 2',
+      detail: '0:30 h',
+      done: true,
+    });
   });
 
   it('nennt in einer künftigen Woche nur die Zahl der Termine', () => {

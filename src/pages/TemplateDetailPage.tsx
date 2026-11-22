@@ -730,6 +730,8 @@ export function TemplateDetailPage() {
             >
               <option value="strength">Kraft</option>
               <option value="mobility">Mobility</option>
+              <option value="yoga">Yoga</option>
+              <option value="faszien">Faszien</option>
             </SelectField>
             {/* Wann das Workout stattfindet, steht als Termin im Plan - nicht am Workout. */}
             <Link

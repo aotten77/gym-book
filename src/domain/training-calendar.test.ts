@@ -325,6 +325,24 @@ describe('buildCalendarWeeks', () => {
     expect(dayOf(rows, '2026-10-10').units[0].kind).toBe('run');
   });
 
+  it('Art einer Einheit: Yoga und Faszien behalten ihre Art', () => {
+    const rows = build({
+      templates: [
+        { id: 'yoga', name: 'Yoga', category: 'yoga' },
+        { id: 'faszien', name: 'Faszien', category: 'faszien' },
+      ],
+      planEntries: [
+        { ...entry('y', '2026-10-08'), templateId: 'yoga' },
+        { ...entry('f', '2026-10-09'), templateId: 'faszien' },
+      ],
+      completedSessions: [session({ id: 's-yoga', templateCategorySnapshot: 'yoga' })],
+    });
+
+    expect(dayOf(rows, '2026-10-06').units[0].kind).toBe('yoga');
+    expect(dayOf(rows, '2026-10-08').units[0].kind).toBe('yoga');
+    expect(dayOf(rows, '2026-10-09').units[0].kind).toBe('faszien');
+  });
+
   it('Reihenfolge: erledigte vor geplanten, geplante nach orderInDay', () => {
     const rows = build({
       templates: [

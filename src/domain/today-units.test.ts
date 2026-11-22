@@ -154,13 +154,21 @@ describe('filterNowOptions', () => {
     minutes,
     exerciseCount: 0,
   });
-  const options = [option('m8', 'mobility', 8), option('s15', 'strength', 15), option('s40', 'strength', 40)];
+  const options = [
+    option('m8', 'mobility', 8),
+    option('s15', 'strength', 15),
+    option('s40', 'strength', 40),
+    option('y30', 'yoga', 30),
+    option('f10', 'faszien', 10),
+  ];
 
-  it('filtert „Kurz" auf höchstens 15 min, „Mobility" und „Kraft" auf die Art', () => {
+  it('filtert „Kurz" auf höchstens 15 min, die übrigen Filter auf die Art', () => {
     expect(SHORT_WORKOUT_MAX_MINUTES).toBe(15);
-    expect(filterNowOptions(options, 'all')).toHaveLength(3);
-    expect(filterNowOptions(options, 'short').map((o) => o.templateId)).toEqual(['m8', 's15']);
+    expect(filterNowOptions(options, 'all')).toHaveLength(5);
+    expect(filterNowOptions(options, 'short').map((o) => o.templateId)).toEqual(['m8', 's15', 'f10']);
     expect(filterNowOptions(options, 'mobility').map((o) => o.templateId)).toEqual(['m8']);
+    expect(filterNowOptions(options, 'yoga').map((o) => o.templateId)).toEqual(['y30']);
+    expect(filterNowOptions(options, 'faszien').map((o) => o.templateId)).toEqual(['f10']);
     expect(filterNowOptions(options, 'strength').map((o) => o.templateId)).toEqual(['s15', 's40']);
   });
 

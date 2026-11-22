@@ -178,6 +178,33 @@ describe('buildWeeklyVolume', () => {
     expect(weeks[0].strength.workSets).toBe(1);
   });
 
+  it('zählt Yoga und Faszien als Einheiten, nicht als Kraftvolumen', () => {
+    const start = new Date(2026, 9, 5, 18);
+    const end = new Date(2026, 9, 5, 18, 30);
+    const weeks = buildWeeklyVolume({
+      sessions: [
+        session('y', start, end, { templateCategorySnapshot: 'yoga' }),
+        session('f', start, end, { templateCategorySnapshot: 'faszien' }),
+        session('k', start, end),
+      ],
+      sessionExercises: [exercise('e1', 'y'), exercise('e2', 'f'), exercise('e3', 'k')],
+      setLogs: [
+        setLog('l1', 'e1', { weight: 10, reps: 10 }),
+        setLog('l2', 'e2', { weight: 10, reps: 10 }),
+        setLog('l3', 'e3', { weight: 10, reps: 10 }),
+      ],
+      runs: [],
+      from: start,
+      to: start,
+    });
+
+    expect(weeks[0].mobility.sessions).toBe(2);
+    expect(weeks[0].mobility.durationSeconds).toBe(3600);
+    expect(weeks[0].strength.sessions).toBe(1);
+    expect(weeks[0].strength.volumeKg).toBe(100);
+    expect(weeks[0].strength.workSets).toBe(1);
+  });
+
   it('Dauer ist Start bis Abschluss', () => {
     const weeks = buildWeeklyVolume({
       sessions: [session('k', new Date(2026, 9, 5, 18), new Date(2026, 9, 5, 19, 10))],
