@@ -416,3 +416,17 @@ For anything jsdom cannot express — safe-area insets, the sticky rest timer, c
 ## Notes
 
 `README.md` is still the stock Vite template and describes nothing about this project.
+
+## Agent skills
+
+### Issue tracker
+
+Local markdown under `.scratch/<feature>/` (spec.md + issues/NN-<slug>.md), gitignored. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default vocabulary (needs-triage, needs-info, ready-for-agent, ready-for-human, wontfix) as a `Status:` line. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `GLOSSARY.md` + `docs/adr/` at the root, created lazily. See `docs/agents/domain.md`.
