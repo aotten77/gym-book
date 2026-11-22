@@ -110,7 +110,11 @@ export type GuidedEvent =
   | { type: 'start'; at: number }
   | { type: 'pause'; at: number }
   | { type: 'resume'; at: number }
-  | { type: 'restart'; at: number };
+  | { type: 'restart'; at: number }
+  | { type: 'skip'; at: number }
+  | { type: 'extend'; at: number }
+  | { type: 'back'; at: number }
+  | { type: 'startNow'; at: number };
 
 /**
  * Der gespeicherte Teil einer geführten Einheit an der Session: der

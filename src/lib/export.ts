@@ -132,6 +132,10 @@ const guidedEventSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('pause'), at: z.number() }),
   z.object({ type: z.literal('resume'), at: z.number() }),
   z.object({ type: z.literal('restart'), at: z.number() }),
+  z.object({ type: z.literal('skip'), at: z.number() }),
+  z.object({ type: z.literal('extend'), at: z.number() }),
+  z.object({ type: z.literal('back'), at: z.number() }),
+  z.object({ type: z.literal('startNow'), at: z.number() }),
 ]);
 
 const guidedRunSchema = z.object({

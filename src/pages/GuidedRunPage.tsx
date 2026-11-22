@@ -1,31 +1,41 @@
-import { useEffect, useRef, useState } from 'react';
-import { Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { useLiveQuery } from 'dexie-react-hooks';
-import { Pause, Play, X } from 'lucide-react';
-import { GuidedEndDialog } from '@/components/GuidedEndDialog';
-import { GuidedHintDialog } from '@/components/GuidedHintDialog';
-import { GuidedSideTag } from '@/components/GuidedSideTag';
-import { GuidedStage } from '@/components/GuidedStage';
-import { Button, IconButton } from '@/components/ui/Button';
-import { DONE_SURFACE } from '@/components/ui/StatusCard';
-import { db } from '@/db/appDb';
+import { useEffect, useRef, useState } from "react";
+import {
+  Navigate,
+  useLocation,
+  useNavigate,
+  useParams,
+} from "react-router-dom";
+import { useLiveQuery } from "dexie-react-hooks";
+import { Pause, Play, SkipBack, SkipForward, X } from "lucide-react";
+import { GuidedEndDialog } from "@/components/GuidedEndDialog";
+import { GuidedHintDialog } from "@/components/GuidedHintDialog";
+import { GuidedSideTag } from "@/components/GuidedSideTag";
+import { GuidedStage } from "@/components/GuidedStage";
+import { Button, IconButton } from "@/components/ui/Button";
+import { DONE_SURFACE } from "@/components/ui/StatusCard";
+import { db } from "@/db/appDb";
 import {
   abortGuidedSession,
   completeGuidedSession,
   recordGuidedControl,
   type GuidedControl,
-} from '@/db/guided-session-actions';
-import { deriveGuidedRunState, type GuidedRunState } from '@/domain/guided-run';
-import type { GuidedSection } from '@/domain/guided-steps';
-import type { GuidedRun, GuidedStep, WorkoutSession } from '@/domain/models';
-import { useNowTicker } from '@/hooks/useNowTicker';
-import { formatStepClock } from '@/lib/format';
-import { playGuidedSignal, primeTimerSound } from '@/lib/sound';
-import { keepScreenAwake } from '@/lib/wake-lock';
-import { cn } from '@/lib/utils';
+} from "@/db/guided-session-actions";
+import {
+  GUIDED_EXTEND_SECONDS,
+  deriveGuidedRunState,
+  type GuidedRunState,
+} from "@/domain/guided-run";
+import type { GuidedSection } from "@/domain/guided-steps";
+import type { GuidedRun, GuidedStep, WorkoutSession } from "@/domain/models";
+import { useNowTicker } from "@/hooks/useNowTicker";
+import { formatStepClock } from "@/lib/format";
+import { playGuidedSignal, primeTimerSound } from "@/lib/sound";
+import { keepScreenAwake } from "@/lib/wake-lock";
+import { cn } from "@/lib/utils";
 
 /** Kleinschrift über einem Block - auf Tinte in gedämpftem Papier. */
-const CAPTION_CLASSES = 'text-[10px] font-bold uppercase tracking-[0.16em] text-accent-contrast/60';
+const CAPTION_CLASSES =
+  "text-[10px] font-bold uppercase tracking-[0.16em] text-accent-contrast/60";
 
 /** Der Umfang des Rings im Wechsel (Radius 56). */
 const RING_CIRCUMFERENCE = 2 * Math.PI * 56;
@@ -55,7 +65,8 @@ const RING_CIRCUMFERENCE = 2 * Math.PI * 56;
 export function GuidedRunPage() {
   const { sessionId } = useParams();
   const session = useLiveQuery(
-    async () => (sessionId ? ((await db.workoutSessions.get(sessionId)) ?? null) : null),
+    async () =>
+      sessionId ? ((await db.workoutSessions.get(sessionId)) ?? null) : null,
     [sessionId],
   );
 
@@ -67,7 +78,7 @@ export function GuidedRunPage() {
     );
   }
 
-  if (!session?.guided || session.status === 'aborted') {
+  if (!session?.guided || session.status === "aborted") {
     // Abgebrochen oder keine geführte Session: hier gibt es nichts zu zeigen.
     return <Navigate to="/" replace />;
   }
@@ -75,16 +86,30 @@ export function GuidedRunPage() {
   return <GuidedRunScreen session={session} guided={session.guided} />;
 }
 
-function GuidedRunScreen({ session, guided }: { session: WorkoutSession; guided: GuidedRun }) {
+function GuidedRunScreen({
+  session,
+  guided,
+}: {
+  session: WorkoutSession;
+  guided: GuidedRun;
+}) {
   const navigate = useNavigate();
   const location = useLocation();
-  const isActive = session.status === 'active';
+  const isActive = session.status === "active";
   const now = useNowTicker(isActive, 250);
   const state = deriveGuidedRunState(guided.steps, guided.events, now);
   const playedSignals = useRef<Set<string>>(new Set());
   // Der Abschnitt, in dem der Hinweis aufging: ein Wechsel schließt ihn von selbst.
   const [hintSection, setHintSection] = useState<number | null>(null);
   const [isEndAsked, setIsEndAsked] = useState(false);
+
+  // Der nächste Abschnittswechsel schließt den Hinweis - auch ein Sprung vor oder zurück:
+  // ohne das ginge er beim Zurück in denselben Abschnitt wieder von selbst auf.
+  useEffect(() => {
+    if (hintSection !== null && hintSection !== state.sectionIndex) {
+      setHintSection(null);
+    }
+  }, [hintSection, state.sectionIndex]);
 
   // Der Bildschirm bleibt an, solange die Einheit läuft - unabhängig von der
   // Einstellung: schläft iOS ein, friert es die App ein, und das Signal bleibt aus.
@@ -107,7 +132,7 @@ function GuidedRunScreen({ session, guided }: { session: WorkoutSession; guided:
   }, [signalKey]);
 
   // Das automatische Ende. Die Aktion prüft selbst, ob es erreicht ist.
-  const isFinishedRun = isActive && state.phase === 'finished';
+  const isFinishedRun = isActive && state.phase === "finished";
 
   useEffect(() => {
     if (isFinishedRun) {
@@ -124,25 +149,25 @@ function GuidedRunScreen({ session, guided }: { session: WorkoutSession; guided:
     setIsEndAsked(false);
     void abortGuidedSession(session.id)
       .catch(() => {})
-      .then(() => navigate('/', { replace: true }));
+      .then(() => navigate("/", { replace: true }));
   }
 
   function handleClose() {
-    if (location.key === 'default') {
-      navigate('/');
+    if (location.key === "default") {
+      navigate("/");
       return;
     }
 
     navigate(-1);
   }
 
-  if (state.phase === 'finished') {
+  if (state.phase === "finished") {
     return (
       <GuidedFinishedScreen
         name={session.templateNameSnapshot}
         steps={guided.steps}
         state={state}
-        onDone={() => navigate('/', { replace: true })}
+        onDone={() => navigate("/", { replace: true })}
       />
     );
   }
@@ -155,9 +180,13 @@ function GuidedRunScreen({ session, guided }: { session: WorkoutSession; guided:
     return null;
   }
 
-  if (state.phase === 'paused') {
+  if (state.phase === "paused") {
     return (
-      <GuidedStage label={session.templateNameSnapshot} screen="pause" tone="dark">
+      <GuidedStage
+        label={session.templateNameSnapshot}
+        screen="pause"
+        tone="dark"
+      >
         <div
           data-guided-run
           data-guided-phase="paused"
@@ -166,7 +195,11 @@ function GuidedRunScreen({ session, guided }: { session: WorkoutSession; guided:
           data-guided-remaining={state.remainingSeconds}
           className="flex min-h-0 flex-1 flex-col"
         >
-          <RunTop state={state} stepCount={guided.steps.length} onClose={handleClose} />
+          <RunTop
+            state={state}
+            stepCount={guided.steps.length}
+            onClose={handleClose}
+          />
 
           <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_13.1rem] gap-[18px] pt-2.5">
             <div className="flex min-w-0 flex-col justify-center opacity-70">
@@ -189,22 +222,25 @@ function GuidedRunScreen({ session, guided }: { session: WorkoutSession; guided:
             <div className="flex flex-col items-stretch justify-center gap-2">
               <Button
                 variant="primary"
-                className={cn(PAPER_BUTTON_CLASSES, 'gap-1.5')}
-                onClick={() => control('resume')}
+                className={cn(PAPER_BUTTON_CLASSES, "gap-1.5")}
+                onClick={() => control("resume")}
               >
                 <Play size={14} fill="currentColor" aria-hidden="true" />
                 Weiter
               </Button>
               <Button
                 variant="secondary"
-                className={cn(SOFT_BUTTON_CLASSES, 'bg-accent-contrast/10')}
-                onClick={() => control('restart')}
+                className={cn(SOFT_BUTTON_CLASSES, "bg-accent-contrast/10")}
+                onClick={() => control("restart")}
               >
                 Schritt neu starten
               </Button>
               <Button
                 variant="secondary"
-                className={cn(SOFT_BUTTON_CLASSES, 'bg-transparent text-accent-contrast/60')}
+                className={cn(
+                  SOFT_BUTTON_CLASSES,
+                  "bg-transparent text-accent-contrast/60",
+                )}
                 onClick={() => setIsEndAsked(true)}
               >
                 Einheit beenden …
@@ -214,7 +250,10 @@ function GuidedRunScreen({ session, guided }: { session: WorkoutSession; guided:
         </div>
 
         {isEndAsked ? (
-          <GuidedEndDialog onConfirm={endRun} onCancel={() => setIsEndAsked(false)} />
+          <GuidedEndDialog
+            onConfirm={endRun}
+            onCancel={() => setIsEndAsked(false)}
+          />
         ) : null}
       </GuidedStage>
     );
@@ -230,10 +269,14 @@ function GuidedRunScreen({ session, guided }: { session: WorkoutSession; guided:
         data-guided-remaining={state.remainingSeconds}
         className="flex min-h-0 flex-1 flex-col"
       >
-        <RunTop state={state} stepCount={guided.steps.length} onClose={handleClose} />
+        <RunTop
+          state={state}
+          stepCount={guided.steps.length}
+          onClose={handleClose}
+        />
 
         <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_13.1rem] gap-[18px] pt-2.5">
-          {current.kind === 'exercise' ? (
+          {current.kind === "exercise" ? (
             <ExerciseLeft
               state={state}
               steps={guided.steps}
@@ -247,30 +290,85 @@ function GuidedRunScreen({ session, guided }: { session: WorkoutSession; guided:
             />
           )}
 
-          <div className="flex flex-col items-stretch justify-center gap-3">
-            {current.kind === 'exercise' ? (
-              <p
-                data-guided-clock
-                className="text-center font-display text-[92px] font-extrabold leading-[0.9] tracking-[-0.05em] tabular-nums"
-              >
-                {formatStepClock(state.remainingSeconds)}
-              </p>
+          <div className="flex flex-col items-stretch justify-center gap-2">
+            {current.kind === "exercise" ? (
+              <>
+                <p
+                  data-guided-clock
+                  className="text-center font-display text-[84px] font-extrabold leading-[0.9] tracking-[-0.05em] tabular-nums"
+                >
+                  {formatStepClock(state.remainingSeconds)}
+                </p>
+                <button
+                  type="button"
+                  className={cn(PLUS_CLASSES)}
+                  onClick={() => control("extend")}
+                >
+                  +{GUIDED_EXTEND_SECONDS} s
+                </button>
+              </>
             ) : (
               <CountdownRing
                 remainingSeconds={state.remainingSeconds}
                 fraction={
-                  (current.startSeconds + current.seconds - state.elapsedSeconds) / current.seconds
+                  (current.startSeconds +
+                    current.seconds -
+                    state.elapsedSeconds) /
+                  current.seconds
                 }
               />
             )}
-            <Button
-              variant="primary"
-              className={cn(PAPER_BUTTON_CLASSES, 'gap-1.5')}
-              onClick={() => control('pause')}
-            >
-              <Pause size={14} fill="currentColor" aria-hidden="true" />
-              Pause
-            </Button>
+            <div className="flex items-center gap-2">
+              <IconButton
+                label="Zurück"
+                className={cn(ROUND_ICON_CLASSES)}
+                onClick={() => control("back")}
+              >
+                <SkipBack size={18} fill="currentColor" aria-hidden="true" />
+              </IconButton>
+              {current.kind === "exercise" ? (
+                <Button
+                  variant="primary"
+                  className={cn(
+                    PAPER_BUTTON_CLASSES,
+                    "min-w-0 flex-1 gap-1.5 px-2",
+                  )}
+                  onClick={() => control("pause")}
+                >
+                  <Pause size={14} fill="currentColor" aria-hidden="true" />
+                  Pause
+                </Button>
+              ) : (
+                <Button
+                  variant="primary"
+                  className={cn(PAPER_BUTTON_CLASSES, "min-w-0 flex-1 px-2")}
+                  onClick={() => control("startNow")}
+                >
+                  Sofort starten
+                </Button>
+              )}
+              {current.kind === "exercise" ? (
+                <IconButton
+                  label="Überspringen"
+                  className={cn(ROUND_ICON_CLASSES)}
+                  onClick={() => control("skip")}
+                >
+                  <SkipForward
+                    size={18}
+                    fill="currentColor"
+                    aria-hidden="true"
+                  />
+                </IconButton>
+              ) : (
+                <IconButton
+                  label="Pause"
+                  className={cn(ROUND_ICON_CLASSES)}
+                  onClick={() => control("pause")}
+                >
+                  <Pause size={16} fill="currentColor" aria-hidden="true" />
+                </IconButton>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -296,11 +394,19 @@ function GuidedRunScreen({ session, guided }: { session: WorkoutSession; guided:
 
 /** Papier auf Tinte: die Hauptaktion des Screens, ohne Lime. */
 const PAPER_BUTTON_CLASSES =
-  'rounded-full bg-accent-contrast text-accent hover:opacity-90 focus-visible:ring-accent-contrast focus-visible:ring-offset-accent';
+  "rounded-full bg-accent-contrast text-accent hover:opacity-90 focus-visible:ring-accent-contrast focus-visible:ring-offset-accent";
+
+/** „+15 s“: ein leiser Knopf, mindestens 44 px hoch. */
+const PLUS_CLASSES =
+  "mx-auto inline-flex min-h-touch items-center rounded-full bg-accent-contrast/10 px-4 text-xs font-bold text-accent-contrast hover:bg-accent-contrast/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-contrast focus-visible:ring-offset-2 focus-visible:ring-offset-accent";
+
+/** Zurück und Überspringen: runde Symbolknöpfe neben der Hauptaktion. */
+const ROUND_ICON_CLASSES =
+  "rounded-full border-transparent bg-accent-contrast/10 text-accent-contrast hover:bg-accent-contrast/20 focus-visible:ring-accent-contrast focus-visible:ring-offset-accent";
 
 /** Die leisen Aktionen daneben. */
 const SOFT_BUTTON_CLASSES =
-  'rounded-full text-accent-contrast hover:bg-accent-contrast/20 focus-visible:ring-accent-contrast focus-visible:ring-offset-accent';
+  "rounded-full text-accent-contrast hover:bg-accent-contrast/20 focus-visible:ring-accent-contrast focus-visible:ring-offset-accent";
 
 /** Die Kopfzeile von Ablauf und Pause: Verkleinern, Fortschritt, Restzeit. */
 function RunTop({
@@ -337,9 +443,9 @@ function describeMeta(state: GuidedRunState, stepCount: number): string {
   const rest = `noch ${formatStepClock(state.remainingTotalSeconds)}`;
 
   switch (state.current?.kind) {
-    case 'transition':
+    case "transition":
       return `Wechsel · ${rest}`;
-    case 'sideSwitch':
+    case "sideSwitch":
       return `Seitenwechsel · ${rest}`;
     default:
       return `${state.stepIndex + 1} / ${stepCount} · ${rest}`;
@@ -369,13 +475,13 @@ function ProgressSegments({ state }: { state: GuidedRunState }) {
         return (
           <i
             key={index}
-            data-guided-segment={isDone ? 'done' : isNow ? 'now' : 'todo'}
+            data-guided-segment={isDone ? "done" : isNow ? "now" : "todo"}
             className="relative h-1 flex-1 overflow-hidden rounded-sm bg-accent-contrast/15"
           >
             <span
               className={cn(
-                'absolute inset-y-0 left-0 rounded-sm',
-                isNow ? 'bg-accent-contrast' : 'bg-accent-contrast/55',
+                "absolute inset-y-0 left-0 rounded-sm",
+                isNow ? "bg-accent-contrast" : "bg-accent-contrast/55",
               )}
               style={{
                 width: `${Math.round((isDone ? 1 : isNow ? fraction : 0) * 100)}%`,
@@ -388,7 +494,13 @@ function ProgressSegments({ state }: { state: GuidedRunState }) {
   );
 }
 
-function InfoButton({ stepName, onOpen }: { stepName: string; onOpen: () => void }) {
+function InfoButton({
+  stepName,
+  onOpen,
+}: {
+  stepName: string;
+  onOpen: () => void;
+}) {
   return (
     <button
       type="button"
@@ -437,10 +549,12 @@ function ExerciseLeft({
       >
         {step.name}
         {current?.side ? <GuidedSideTag side={current.side} /> : null}
-        {step.hint ? <InfoButton stepName={step.name} onOpen={onOpenHint} /> : null}
+        {step.hint ? (
+          <InfoButton stepName={step.name} onOpen={onOpenHint} />
+        ) : null}
       </h1>
 
-      <p className={cn(CAPTION_CLASSES, 'mt-4')}>Als Nächstes</p>
+      <p className={cn(CAPTION_CLASSES, "mt-4")}>Als Nächstes</p>
       {next && nextStep ? (
         <>
           <p
@@ -476,11 +590,13 @@ function TransitionLeft({
   step: GuidedStep;
   onOpenHint: () => void;
 }) {
-  const isSideSwitch = section.kind === 'sideSwitch';
+  const isSideSwitch = section.kind === "sideSwitch";
 
   return (
     <div className="flex min-w-0 flex-col justify-center">
-      <p className={CAPTION_CLASSES}>{isSideSwitch ? 'Seite wechseln' : 'Als Nächstes'}</p>
+      <p className={CAPTION_CLASSES}>
+        {isSideSwitch ? "Seite wechseln" : "Als Nächstes"}
+      </p>
       <h1
         data-guided-name
         className="mt-1 break-words font-display text-[34px] font-extrabold leading-[1.02] tracking-[-0.03em]"
@@ -488,7 +604,9 @@ function TransitionLeft({
         {step.name}
         {isSideSwitch ? <GuidedSideTag side="left" done /> : null}
         {section.side ? <GuidedSideTag side={section.side} /> : null}
-        {step.hint ? <InfoButton stepName={step.name} onOpen={onOpenHint} /> : null}
+        {step.hint ? (
+          <InfoButton stepName={step.name} onOpen={onOpenHint} />
+        ) : null}
       </h1>
       <p className="mt-[5px] text-[13px] tabular-nums text-accent-contrast/60">
         {describeUpcomingDuration(step)}
@@ -566,14 +684,22 @@ function GuidedFinishedScreen({
         data-guided-done
         className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_13.1rem] items-center gap-[18px]"
       >
-        <section className={cn(DONE_SURFACE, 'p-4')}>
-          <p className="text-[10px] font-bold uppercase tracking-[0.16em] opacity-75">Erledigt</p>
+        <section className={cn(DONE_SURFACE, "p-4")}>
+          <p className="text-[10px] font-bold uppercase tracking-[0.16em] opacity-75">
+            Erledigt
+          </p>
           <h1 className="mt-1 break-words font-display text-[26px] font-extrabold leading-[1.02] tracking-[-0.03em]">
             {name}
           </h1>
           <dl className="mt-3 grid grid-cols-2 gap-2">
-            <Stat label="Dauer" value={formatStepClock(Math.round(state.totalSeconds))} />
-            <Stat label="Schritte" value={`${steps.length}/${steps.length}`} />
+            <Stat
+              label="Dauer"
+              value={formatStepClock(Math.round(state.totalSeconds))}
+            />
+            <Stat
+              label="Schritte"
+              value={`${steps.length - state.skippedStepIndexes.length}/${steps.length}`}
+            />
           </dl>
         </section>
 
@@ -595,8 +721,12 @@ function GuidedFinishedScreen({
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-[16px] bg-success-contrast/10 px-2.5 py-[9px]">
-      <dt className="text-[10px] font-bold uppercase tracking-[0.12em] opacity-70">{label}</dt>
-      <dd className="font-display text-2xl font-extrabold tabular-nums">{value}</dd>
+      <dt className="text-[10px] font-bold uppercase tracking-[0.12em] opacity-70">
+        {label}
+      </dt>
+      <dd className="font-display text-2xl font-extrabold tabular-nums">
+        {value}
+      </dd>
     </div>
   );
 }

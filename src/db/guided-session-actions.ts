@@ -1,16 +1,20 @@
-import { db } from '@/db/appDb';
+import { db } from "@/db/appDb";
 import {
   abortSession,
   findActiveSession,
   findPlanEntryForStart,
   resolveSessionWeekContext,
   type StartSessionOptions,
-} from '@/db/session-actions';
-import { addGuidedEvent, deriveGuidedRunState, guidedRunEndsAt } from '@/domain/guided-run';
-import { isGuidedTemplate } from '@/domain/guided-steps';
-import type { WorkoutSession } from '@/domain/models';
-import { resolveWorkoutCategory } from '@/domain/workout-category';
-import { createId } from '@/lib/id';
+} from "@/db/session-actions";
+import {
+  addGuidedEvent,
+  deriveGuidedRunState,
+  guidedRunEndsAt,
+} from "@/domain/guided-run";
+import { isGuidedTemplate } from "@/domain/guided-steps";
+import type { WorkoutSession } from "@/domain/models";
+import { resolveWorkoutCategory } from "@/domain/workout-category";
+import { createId } from "@/lib/id";
 
 /*
  * Die Schreibwege einer geführten Einheit.
@@ -38,7 +42,7 @@ export async function startGuidedSession(
   const template = await db.workoutTemplates.get(templateId);
 
   if (!template) {
-    throw new Error('Workout nicht gefunden.');
+    throw new Error("Workout nicht gefunden.");
   }
 
   if (!isGuidedTemplate(template)) {
@@ -57,32 +61,42 @@ export async function startGuidedSession(
     usedWeekOverride,
     resolvedProgramWeek,
     startedAt: now.toISOString(),
-    status: 'active',
+    status: "active",
     // Eine Kopie: spätere Importe ersetzen die Schritte der Vorlage, nicht die dieser Einheit.
     guided: {
       steps: (template.steps ?? []).map((step) => ({ ...step })),
-      events: addGuidedEvent([], { type: 'start', at: now.getTime() }),
+      events: addGuidedEvent(
+        [],
+        { type: "start", at: now.getTime() },
+        template.steps ?? [],
+      ),
     },
   };
 
-  return db.transaction('rw', db.planEntries, db.runLogs, db.workoutSessions, async () => {
-    const existingActiveSession = await findActiveSession();
+  return db.transaction(
+    "rw",
+    db.planEntries,
+    db.runLogs,
+    db.workoutSessions,
+    async () => {
+      const existingActiveSession = await findActiveSession();
 
-    if (existingActiveSession) {
-      return existingActiveSession.id;
-    }
+      if (existingActiveSession) {
+        return existingActiveSession.id;
+      }
 
-    const planEntry = await findPlanEntryForStart(templateId, options, now);
+      const planEntry = await findPlanEntryForStart(templateId, options, now);
 
-    if (planEntry) {
-      session.planEntryId = planEntry.id;
-      session.planDateSnapshot = planEntry.date;
-    }
+      if (planEntry) {
+        session.planEntryId = planEntry.id;
+        session.planDateSnapshot = planEntry.date;
+      }
 
-    await db.workoutSessions.add(session);
+      await db.workoutSessions.add(session);
 
-    return session.id;
-  });
+      return session.id;
+    },
+  );
 }
 
 /**
@@ -100,14 +114,14 @@ export async function completeGuidedSession(
   sessionId: string,
   now: Date = new Date(),
 ): Promise<boolean> {
-  return db.transaction('rw', db.workoutSessions, async () => {
+  return db.transaction("rw", db.workoutSessions, async () => {
     const session = await db.workoutSessions.get(sessionId);
 
     if (!session) {
-      throw new Error('Session nicht gefunden');
+      throw new Error("Session nicht gefunden");
     }
 
-    if (session.status !== 'active' || !session.guided) {
+    if (session.status !== "active" || !session.guided) {
       return false;
     }
 
@@ -118,7 +132,7 @@ export async function completeGuidedSession(
     }
 
     await db.workoutSessions.update(sessionId, {
-      status: 'completed',
+      status: "completed",
       completedAt: new Date(endsAt).toISOString(),
     });
 
@@ -127,10 +141,11 @@ export async function completeGuidedSession(
 }
 
 /** Die Steuer-Ereignisse, die der Screen auslösen darf. */
-export type GuidedControl = 'pause' | 'resume' | 'restart';
+export type GuidedControl =
+  "pause" | "resume" | "restart" | "skip" | "extend" | "back" | "startNow";
 
 /**
- * Hängt ein Steuer-Ereignis (Pause, Weiter, Schritt neu starten) an die
+ * Hängt ein Steuer-Ereignis (Pause, Weiter, Schritt neu starten, Überspringen, +15 s, Zurück, Sofort starten) an die
  * laufende Einheit. Die Gültigkeit prüft `addGuidedEvent`; hier kommt dazu,
  * dass die Session aktiv und geführt ist und nicht schon zu Ende gelaufen
  * ist - nach dem letzten Abschnitt gibt es nichts mehr anzuhalten.
@@ -140,25 +155,34 @@ export async function recordGuidedControl(
   control: GuidedControl,
   now: Date = new Date(),
 ): Promise<void> {
-  await db.transaction('rw', db.workoutSessions, async () => {
+  await db.transaction("rw", db.workoutSessions, async () => {
     const session = await db.workoutSessions.get(sessionId);
 
     if (!session) {
-      throw new Error('Session nicht gefunden');
+      throw new Error("Session nicht gefunden");
     }
 
-    if (session.status !== 'active' || !session.guided) {
-      throw new Error('Die Einheit läuft nicht mehr.');
+    if (session.status !== "active" || !session.guided) {
+      throw new Error("Die Einheit läuft nicht mehr.");
     }
 
     const { steps, events } = session.guided;
 
-    if (deriveGuidedRunState(steps, events, now.getTime()).phase === 'finished') {
-      throw new Error('Die Einheit ist schon zu Ende.');
+    if (
+      deriveGuidedRunState(steps, events, now.getTime()).phase === "finished"
+    ) {
+      throw new Error("Die Einheit ist schon zu Ende.");
     }
 
     await db.workoutSessions.update(sessionId, {
-      guided: { steps, events: addGuidedEvent(events, { type: control, at: now.getTime() }) },
+      guided: {
+        steps,
+        events: addGuidedEvent(
+          events,
+          { type: control, at: now.getTime() },
+          steps,
+        ),
+      },
     });
   });
 }
@@ -173,11 +197,11 @@ export async function abortGuidedSession(sessionId: string): Promise<void> {
   const session = await db.workoutSessions.get(sessionId);
 
   if (!session) {
-    throw new Error('Session nicht gefunden');
+    throw new Error("Session nicht gefunden");
   }
 
   if (!session.guided) {
-    throw new Error('Das ist keine geführte Einheit.');
+    throw new Error("Das ist keine geführte Einheit.");
   }
 
   await abortSession(sessionId);

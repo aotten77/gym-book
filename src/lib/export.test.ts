@@ -863,12 +863,16 @@ describe('restoreDatabaseSnapshot', () => {
     const stamp = '2026-07-01T08:00:00.000Z';
     const guided = {
       steps: [{ name: 'Taube', seconds: 75, bothSides: true }],
-      // Pause, Weiter und Neustart: ohne ihre Schemas striche zod sie beim Restore.
+      // Alle Ereignistypen: ohne ihre Schemas striche zod sie beim Restore.
       events: [
         { type: 'start' as const, at: 1_790_000_000_000 },
         { type: 'pause' as const, at: 1_790_000_010_000 },
         { type: 'restart' as const, at: 1_790_000_011_000 },
         { type: 'resume' as const, at: 1_790_000_020_000 },
+        { type: 'extend' as const, at: 1_790_000_021_000 },
+        { type: 'skip' as const, at: 1_790_000_022_000 },
+        { type: 'back' as const, at: 1_790_000_023_000 },
+        { type: 'startNow' as const, at: 1_790_000_024_000 },
       ],
     };
     const parsed = parseDatabaseSnapshot(

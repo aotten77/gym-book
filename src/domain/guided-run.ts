@@ -2,8 +2,8 @@ import {
   resolveGuidedSections,
   sumGuidedSeconds,
   type GuidedSection,
-} from '@/domain/guided-steps';
-import type { GuidedEvent, GuidedStep, WorkoutSession } from '@/domain/models';
+} from "@/domain/guided-steps";
+import type { GuidedEvent, GuidedStep, WorkoutSession } from "@/domain/models";
 
 /*
  * Der Ablauf einer geführten Einheit.
@@ -17,10 +17,19 @@ import type { GuidedEvent, GuidedStep, WorkoutSession } from '@/domain/models';
  * Signal, und das fällt nach der Frische-Regel weg.
  *
  * Die Abschnitte kommen aus `resolveGuidedSections` und werden hier nicht
- * nachgerechnet. Ereignisse sind eine Union: Pause, Weiter und Neustart
- * falten sich in `foldTimeline` in die Spielzeit, weitere Eingriffe kommen
- * als weitere Typen dazu - der Rest dieses Moduls liest nur diese.
+ * nachgerechnet. Ereignisse sind eine Union: Pause, Weiter, Neustart,
+ * Überspringen, +15 s, Zurück und Sofort starten falten sich in
+ * `foldTimeline` in die Spielzeit, weitere Eingriffe kommen als weitere Typen
+ * dazu - der Rest dieses Moduls liest nur diese.
+ *
+ * Die Spielzeit steht als Abschnitt plus Versatz darin, nicht als Sekunde auf
+ * der Basis-Abfolge: ein „+15 s“ macht einen Abschnitt länger und schiebt alle
+ * danach. Die Abfolge, auf der der Stand gerechnet wird, ist deshalb die
+ * *wirksame* (`Timeline.sections`), nicht die aufgelöste.
  */
+
+/** So viel verlängert „+15 s“ die laufende Übung. */
+export const GUIDED_EXTEND_SECONDS = 15;
 
 /**
  * Ab dieser Verspätung bleibt ein Signal aus - dieselbe Regel und derselbe
@@ -29,7 +38,7 @@ import type { GuidedEvent, GuidedStep, WorkoutSession } from '@/domain/models';
  */
 export const GUIDED_SIGNAL_MAX_DELAY_MS = 2000;
 
-export type GuidedPhase = 'transition' | 'exercise' | 'paused' | 'finished';
+export type GuidedPhase = "transition" | "exercise" | "paused" | "finished";
 
 /** Ein fälliges Signal. Den `key` merkt sich der Aufrufer, damit es nicht doppelt klingt. */
 export interface GuidedDueSignal {
@@ -60,16 +69,20 @@ export interface GuidedRunState {
   progress: number;
   /** 0 bis 1 je Schritt - die Segmente des Fortschrittsbalkens. */
   stepProgress: number[];
+  /** Schritte, von denen eine Übung übersprungen wurde - der Abschluss zählt sie nicht als gemacht. */
+  skippedStepIndexes: number[];
   dueSignal: GuidedDueSignal | null;
 }
 
 /** Ob die Session eine geführte ist: sie trägt einen Ablauf. */
-export function isGuidedSession(session?: Pick<WorkoutSession, 'guided'> | null): boolean {
+export function isGuidedSession(
+  session?: Pick<WorkoutSession, "guided"> | null,
+): boolean {
   return Boolean(session?.guided);
 }
 
 function findStart(events: readonly GuidedEvent[]) {
-  return events.find((event) => event.type === 'start');
+  return events.find((event) => event.type === "start");
 }
 
 /** Ob die Einheit gestartet ist und gerade steht. */
@@ -77,9 +90,9 @@ function isPausedByEvents(events: readonly GuidedEvent[]): boolean {
   let paused = false;
 
   for (const event of events) {
-    if (event.type === 'pause') {
+    if (event.type === "pause") {
       paused = true;
-    } else if (event.type === 'resume') {
+    } else if (event.type === "resume") {
       paused = false;
     }
   }
@@ -88,72 +101,202 @@ function isPausedByEvents(events: readonly GuidedEvent[]): boolean {
 }
 
 interface Timeline {
-  /** Die Spielzeit (ms) auf der Abfolge, ohne Pausen, begrenzt auf die Gesamtdauer. */
+  /** Die wirksame Abfolge: Verlängerungen eingerechnet, `startSeconds` neu gelegt. */
+  sections: GuidedSection[];
+  /** Die Spielzeit (ms) auf der wirksamen Abfolge, ohne Pausen, begrenzt auf die Gesamtdauer. */
   positionMs: number;
   /** Wie `positionMs`, aber ohne Begrenzung: wie weit die Zeit über das Ende hinaus lief. */
   rawPositionMs: number;
   /** Seit wann die Zeit läuft; `null`, solange sie steht oder der Start fehlt. */
   runningSince: number | null;
+  /** Abschnitte der Abfolge, deren Ende kein Signal auslöst: sie wurden übersprungen. */
+  skipped: ReadonlySet<number>;
+  /** Wie oft die Zeit zurückgesprungen ist (Neustart, Zurück) - Teil des Signal-Schlüssels. */
+  rewinds: number;
+}
+
+function layOut(
+  sections: readonly GuidedSection[],
+  extra: readonly number[],
+): GuidedSection[] {
+  let startSeconds = 0;
+
+  return sections.map((section, index) => {
+    const seconds = section.seconds + (extra[index] ?? 0);
+    const laid = { ...section, seconds, startSeconds };
+
+    startSeconds += seconds;
+
+    return laid;
+  });
 }
 
 /**
  * Faltet die Ereignisse zur Spielzeit bis `until`: die Zeit läuft zwischen
- * Start/Weiter und Pause, ein Neustart springt auf den Anfang des Abschnitts,
+ * Start/Weiter und Pause. Ein Neustart springt auf den Anfang des Abschnitts,
  * in dem die Einheit gerade steht (die Seite bei beidseitigen Schritten, der
- * Wechsel im Wechsel). Ein Zeitstempel vor dem vorigen Ereignis zählt als
- * dessen Zeitpunkt, damit eine springende Uhr keine negative Zeit ergibt.
+ * Wechsel im Wechsel). Überspringen springt an den Anfang des nächsten
+ * Schritts und merkt sich die übergangenen Übungen (kein Wechselsignal),
+ * Zurück an den Anfang des vorigen, +15 s verlängert die laufende Übung,
+ * Sofort starten beendet den Wechsel. Ein Zeitstempel vor dem vorigen
+ * Ereignis zählt als dessen Zeitpunkt, damit eine springende Uhr keine
+ * negative Zeit ergibt. Ein Ereignis, das nicht (mehr) passt - etwa +15 s im
+ * Wechsel -, ändert nichts: `addGuidedEvent` hält es fern, hier bleibt die
+ * Rechnung bei einer alten oder importierten Liste trotzdem gültig.
  */
 function foldTimeline(
-  sections: readonly GuidedSection[],
+  baseSections: readonly GuidedSection[],
   events: readonly GuidedEvent[],
   until: number,
 ): Timeline {
-  const totalMs = sumGuidedSeconds(sections) * 1000;
-  let position = 0;
+  const count = baseSections.length;
+  const extra: number[] = baseSections.map(() => 0);
+  const skipped = new Set<number>();
+  let sections = layOut(baseSections, extra);
+  let index = 0;
+  let offsetMs = 0;
   let runningSince: number | null = null;
+  let rewinds = 0;
   let lastAt = Number.NEGATIVE_INFINITY;
 
-  const rawPositionAt = (time: number) =>
-    position + (runningSince === null ? 0 : Math.max(0, time - runningSince));
-  const positionAt = (time: number) => Math.min(totalMs, rawPositionAt(time));
+  const lengthMs = (at: number) => (sections[at]?.seconds ?? 0) * 1000;
+  const isOver = () => index >= count - 1 && offsetMs >= lengthMs(count - 1);
+
+  /** Läuft die Zeit bis `time` weiter und rückt in den Abschnitt, in dem sie dann steht. */
+  const advance = (time: number) => {
+    if (runningSince !== null) {
+      offsetMs += Math.max(0, time - runningSince);
+      runningSince = time;
+    }
+
+    while (index < count - 1 && offsetMs >= lengthMs(index)) {
+      offsetMs -= lengthMs(index);
+      index += 1;
+    }
+  };
+
+  const jumpTo = (target: number) => {
+    index = target;
+    offsetMs = 0;
+  };
+
+  const firstSectionOfStep = (stepIndex: number) =>
+    Math.max(
+      0,
+      baseSections.findIndex((section) => section.stepIndex === stepIndex),
+    );
 
   for (const event of events) {
     const at = Math.max(event.at, lastAt);
 
     lastAt = at;
 
+    if (event.type === "start") {
+      index = 0;
+      offsetMs = 0;
+      runningSince = at;
+      continue;
+    }
+
+    advance(at);
+
+    if (count === 0) {
+      continue;
+    }
+
     switch (event.type) {
-      case 'start':
-        position = 0;
-        runningSince = at;
-        break;
-      case 'pause':
-        position = positionAt(at);
+      case "pause":
         runningSince = null;
         break;
-      case 'resume':
+      case "resume":
         runningSince = at;
         break;
-      case 'restart': {
-        const seconds = positionAt(at) / 1000;
-        const section = sections.find(
-          (candidate) =>
-            seconds >= candidate.startSeconds &&
-            seconds < candidate.startSeconds + candidate.seconds,
+      case "restart":
+        if (!isOver()) {
+          offsetMs = 0;
+          rewinds += 1;
+        }
+        break;
+      case "extend":
+        if (!isOver() && sections[index].kind === "exercise") {
+          extra[index] += GUIDED_EXTEND_SECONDS;
+          sections = layOut(baseSections, extra);
+        }
+        break;
+      case "startNow":
+        if (!isOver() && sections[index].kind !== "exercise") {
+          jumpTo(index + 1);
+        }
+        break;
+      case "skip": {
+        if (isOver()) {
+          break;
+        }
+
+        const nextStart = baseSections.findIndex(
+          (section) => section.stepIndex > sections[index].stepIndex,
+        );
+        const target = nextStart < 0 ? count : nextStart;
+
+        // Die übergangenen Übungen enden nicht, sie werden verlassen: kein Signal.
+        for (let passed = index; passed < target; passed += 1) {
+          if (sections[passed].kind === "exercise") {
+            skipped.add(passed);
+          }
+        }
+
+        if (target >= count) {
+          index = count - 1;
+          offsetMs = lengthMs(count - 1);
+        } else {
+          jumpTo(target);
+        }
+        break;
+      }
+      case "back": {
+        if (isOver()) {
+          break;
+        }
+
+        const target = firstSectionOfStep(
+          Math.max(0, sections[index].stepIndex - 1),
         );
 
-        if (section) {
-          position = section.startSeconds * 1000;
-          runningSince = runningSince === null ? null : at;
+        // Was ab hier noch einmal läuft, endet wieder mit Signal und mit seiner
+        // eigenen Dauer: ein „+15 s“ galt dem vorigen Durchgang.
+        for (const passed of [...skipped]) {
+          if (passed >= target) {
+            skipped.delete(passed);
+          }
         }
+
+        for (let again = target; again < count; again += 1) {
+          extra[again] = 0;
+        }
+
+        sections = layOut(baseSections, extra);
+
+        jumpTo(target);
+        rewinds += 1;
         break;
       }
     }
   }
 
-  const end = Math.max(until, lastAt);
+  advance(Math.max(until, lastAt));
 
-  return { positionMs: positionAt(end), rawPositionMs: rawPositionAt(end), runningSince };
+  const totalMs = sumGuidedSeconds(sections) * 1000;
+  const startMs = (sections[index]?.startSeconds ?? 0) * 1000;
+  const rawPositionMs = startMs + offsetMs;
+
+  return {
+    sections,
+    positionMs: Math.min(totalMs, rawPositionMs),
+    rawPositionMs,
+    runningSince,
+    skipped,
+    rewinds,
+  };
 }
 
 /**
@@ -163,19 +306,43 @@ function foldTimeline(
 export function addGuidedEvent(
   events: readonly GuidedEvent[],
   event: GuidedEvent,
+  steps: readonly GuidedStep[],
 ): GuidedEvent[] {
   const started = Boolean(findStart(events));
 
-  if (event.type === 'start') {
+  if (event.type === "start") {
     if (started) {
-      throw new Error('Die Einheit läuft bereits.');
+      throw new Error("Die Einheit läuft bereits.");
     }
   } else if (!started) {
-    throw new Error('Die Einheit hat noch nicht begonnen.');
-  } else if (event.type === 'pause' && isPausedByEvents(events)) {
-    throw new Error('Die Einheit ist schon pausiert.');
-  } else if (event.type === 'resume' && !isPausedByEvents(events)) {
-    throw new Error('Die Einheit ist nicht pausiert.');
+    throw new Error("Die Einheit hat noch nicht begonnen.");
+  } else if (event.type === "pause" && isPausedByEvents(events)) {
+    throw new Error("Die Einheit ist schon pausiert.");
+  } else if (event.type === "resume" && !isPausedByEvents(events)) {
+    throw new Error("Die Einheit ist nicht pausiert.");
+  } else if (
+    event.type === "skip" ||
+    event.type === "extend" ||
+    event.type === "back" ||
+    event.type === "startNow"
+  ) {
+    const state = deriveGuidedRunState(steps, events, event.at);
+
+    if (state.phase === "finished") {
+      throw new Error("Die Einheit ist schon zu Ende.");
+    }
+
+    if (state.phase === "paused") {
+      throw new Error("Die Einheit ist pausiert.");
+    }
+
+    if (event.type === "extend" && state.current?.kind !== "exercise") {
+      throw new Error("Verlängern geht nur in einer Übung.");
+    }
+
+    if (event.type === "startNow" && state.current?.kind === "exercise") {
+      throw new Error("Sofort starten geht nur im Wechsel.");
+    }
   }
 
   return [...events, event];
@@ -193,9 +360,15 @@ export function guidedRunEndsAt(
     return null;
   }
 
-  const sections = resolveGuidedSections(steps);
-  const lastAt = events.reduce((latest, event) => Math.max(latest, event.at), 0);
-  const { positionMs, runningSince } = foldTimeline(sections, events, lastAt);
+  const lastAt = events.reduce(
+    (latest, event) => Math.max(latest, event.at),
+    0,
+  );
+  const { sections, positionMs, runningSince } = foldTimeline(
+    resolveGuidedSections(steps),
+    events,
+    lastAt,
+  );
 
   return runningSince === null
     ? null
@@ -204,13 +377,12 @@ export function guidedRunEndsAt(
 
 /**
  * Das Signal am Ende der Übung `index` - und `null`, wenn keines frisch fällig
- * ist oder die Zeit steht. Ein Neustart hängt seine Nummer an den Schlüssel:
- * die neu gespielte Übung endet noch einmal und soll noch einmal klingen.
+ * ist oder die Zeit steht. Ein Neustart oder Zurück hängt seine Nummer an
+ * den Schlüssel: die neu gespielte Übung endet noch einmal und soll noch
+ * einmal klingen. Eine übersprungene Übung endet nie - ohne Signal.
  */
 function findDueSignal(
-  sections: readonly GuidedSection[],
   timeline: Timeline,
-  restartCount: number,
   now: number,
 ): GuidedDueSignal | null {
   if (timeline.runningSince === null) {
@@ -219,16 +391,20 @@ function findDueSignal(
 
   let due: GuidedDueSignal | null = null;
 
-  sections.forEach((section, index) => {
-    if (section.kind !== 'exercise') {
+  timeline.sections.forEach((section, index) => {
+    if (section.kind !== "exercise" || timeline.skipped.has(index)) {
       return;
     }
 
-    const delay = timeline.rawPositionMs - (section.startSeconds + section.seconds) * 1000;
+    const delay =
+      timeline.rawPositionMs - (section.startSeconds + section.seconds) * 1000;
 
     if (delay >= 0 && delay <= GUIDED_SIGNAL_MAX_DELAY_MS) {
       due = {
-        key: restartCount > 0 ? `exercise-end:${index}:${restartCount}` : `exercise-end:${index}`,
+        key:
+          timeline.rewinds > 0
+            ? `exercise-end:${index}:${timeline.rewinds}`
+            : `exercise-end:${index}`,
         dueAt: now - delay,
       };
     }
@@ -242,12 +418,20 @@ export function deriveGuidedRunState(
   events: readonly GuidedEvent[],
   now: number,
 ): GuidedRunState {
-  const sections = resolveGuidedSections(steps);
-  const totalSeconds = sumGuidedSeconds(sections);
+  const baseSections = resolveGuidedSections(steps);
   const started = Boolean(findStart(events));
-  const timeline = started
-    ? foldTimeline(sections, events, now)
-    : { positionMs: 0, rawPositionMs: 0, runningSince: null };
+  const timeline: Timeline = started
+    ? foldTimeline(baseSections, events, now)
+    : {
+        sections: baseSections,
+        positionMs: 0,
+        rawPositionMs: 0,
+        runningSince: null,
+        skipped: new Set(),
+        rewinds: 0,
+      };
+  const sections = timeline.sections;
+  const totalSeconds = sumGuidedSeconds(sections);
   const elapsedSeconds = timeline.positionMs / 1000;
   const finished = elapsedSeconds >= totalSeconds;
 
@@ -265,23 +449,25 @@ export function deriveGuidedRunState(
     const from = own[0]?.startSeconds ?? 0;
     const length = own.reduce((sum, section) => sum + section.seconds, 0);
 
-    return length > 0 ? Math.min(1, Math.max(0, (elapsedSeconds - from) / length)) : 1;
+    return length > 0
+      ? Math.min(1, Math.max(0, (elapsedSeconds - from) / length))
+      : 1;
   });
 
   return {
     phase: !current
-      ? 'finished'
+      ? "finished"
       : started && timeline.runningSince === null
-        ? 'paused'
-        : current.kind === 'exercise'
-          ? 'exercise'
-          : 'transition',
+        ? "paused"
+        : current.kind === "exercise"
+          ? "exercise"
+          : "transition",
     sectionIndex,
     current,
     nextExercise:
-      sections.slice(sectionIndex + (current?.kind === 'exercise' ? 1 : 0)).find(
-        (section) => section.kind === 'exercise',
-      ) ?? null,
+      sections
+        .slice(sectionIndex + (current?.kind === "exercise" ? 1 : 0))
+        .find((section) => section.kind === "exercise") ?? null,
     stepIndex: current?.stepIndex ?? lastIndex,
     remainingSeconds: current
       ? Math.ceil(current.startSeconds + current.seconds - elapsedSeconds)
@@ -291,13 +477,13 @@ export function deriveGuidedRunState(
     remainingTotalSeconds: Math.ceil(totalSeconds - elapsedSeconds),
     progress: totalSeconds > 0 ? elapsedSeconds / totalSeconds : 1,
     stepProgress,
-    dueSignal: started
-      ? findDueSignal(
-          sections,
-          timeline,
-          events.filter((event) => event.type === 'restart').length,
-          now,
-        )
-      : null,
+    skippedStepIndexes: [
+      ...new Set(
+        [...timeline.skipped].map(
+          (skippedIndex) => sections[skippedIndex].stepIndex,
+        ),
+      ),
+    ].sort((a, b) => a - b),
+    dueSignal: started ? findDueSignal(timeline, now) : null,
   };
 }
