@@ -12,7 +12,7 @@ import {
   utcMonthKey,
   type Quota,
 } from '@/domain/tts-quota';
-import { toStorableBlob } from '@/lib/media';
+import { readBlobBuffer } from '@/lib/media';
 import { synthesizeSpeech, type SynthesizeOptions } from '@/lib/tts-client';
 
 /*
@@ -53,6 +53,14 @@ async function changeConfig(change: (current: TtsConfig) => TtsConfig) {
 
     await db.ttsConfig.put({ ...next, id: CONFIG_ID, updatedAt: new Date().toISOString() });
   });
+}
+
+/**
+ * Die ganze Zeile samt Schlüssel - nur für andere Dateien in `db/`, die ihn an
+ * den TTS-Client weiterreichen. Die Oberfläche liest [getTtsView].
+ */
+export async function readTtsSettings(): Promise<TtsConfig> {
+  return readConfig();
 }
 
 export interface TtsView {
@@ -173,7 +181,7 @@ export async function checkApiKey(options: CheckApiKeyOptions = {}) {
 export async function saveAnnouncement(text: string, voice: string, blob: Blob) {
   const id = announcementKey(text, voice);
   // Vor der Transaktion: ein `await` auf Nicht-Dexie-Arbeit schlösse sie früh.
-  const stored = await toStorableBlob(blob);
+  const audio = await readBlobBuffer(blob);
 
   await db.transaction('rw', db.announcements, async () => {
     if (await db.announcements.get(id)) {
@@ -184,8 +192,8 @@ export async function saveAnnouncement(text: string, voice: string, blob: Blob) 
       id,
       text,
       voice,
-      blob: stored,
-      byteSize: stored.size,
+      audio,
+      byteSize: audio.byteLength,
       createdAt: new Date().toISOString(),
     });
   });

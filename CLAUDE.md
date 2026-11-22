@@ -52,6 +52,7 @@ Further core rules (details in `docs/architecture/core-invariants.md`):
 
 - **Dexie `update` with `undefined` deletes the field.** Only pass keys you mean to change.
 - **Prepare blobs before the Dexie transaction** — an `await` on non-Dexie work inside a transaction commits it early.
+- Playwright's WebKit refuses `Blob` writes to IndexedDB; announcements are stored as `ArrayBuffer` (`Announcement.audio`) for that reason and because Web Audio needs one anyway.
 - **No `await` before a clipboard call** — iOS Safari drops the user gesture and rejects the write (`docs/architecture/import-export.md`).
 - **One lime surface per screen** — the three signal colours carry meaning (`docs/architecture/ui-palette.md`).
 - **Do not rebuild the strength session screen** — list outside, focus sheet inside, one big set (`docs/architecture/session-screen.md`).

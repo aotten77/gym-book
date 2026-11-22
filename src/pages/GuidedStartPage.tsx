@@ -7,8 +7,10 @@ import { GuidedHintDialog } from '@/components/GuidedHintDialog';
 import { GuidedStage } from '@/components/GuidedStage';
 import { Button, IconButton } from '@/components/ui/Button';
 import { db } from '@/db/appDb';
+import { getAnnouncementAvailability } from '@/db/announcement-actions';
 import { startGuidedSession } from '@/db/guided-session-actions';
 import { describeGuidedFacts, describeGuidedStepDuration, isGuidedTemplate } from '@/domain/guided-steps';
+import { describeOverage, useAnnouncementGeneration } from '@/hooks/useAnnouncementGeneration';
 import { describeWorkoutCategory, resolveWorkoutCategory } from '@/domain/workout-category';
 import { primeTimerSound, setAmbientAudioSession } from '@/lib/sound';
 import { readGuidedStartState } from '@/lib/session-navigation';
@@ -38,10 +40,19 @@ export function GuidedStartPage() {
   const [hintStepIndex, setHintStepIndex] = useState<number | null>(null);
   const [isStarting, setIsStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
+  // Die Wahl „Nur Ton“ gilt nur, wo sie gewählt wird; ohne vollständige Ansagen ist sie ohnehin die einzige.
+  const [wantsVoice, setWantsVoice] = useState(true);
+  const announcements = useAnnouncementGeneration();
 
   // `null` heißt „gibt es nicht“, `undefined` „noch nicht geladen“.
   const template = useLiveQuery(
     async () => (templateId ? ((await db.workoutTemplates.get(templateId)) ?? null) : null),
+    [templateId],
+  );
+
+  // Alle Ansagen da? Steuert die Ton-Wahl; live, weil „Ansagen erzeugen“ sie nebenher füllt.
+  const availability = useLiveQuery(
+    async () => (templateId ? await getAnnouncementAvailability(templateId) : null),
     [templateId],
   );
 
@@ -76,6 +87,12 @@ export function GuidedStartPage() {
         error instanceof Error ? error.message : 'Die Einheit konnte nicht gestartet werden.',
       );
       setIsStarting(false);
+    }
+  }
+
+  async function handleGenerate() {
+    if (template) {
+      await announcements.run([template.id]);
     }
   }
 
@@ -120,6 +137,8 @@ export function GuidedStartPage() {
 
   const steps = template.steps ?? [];
   const category = resolveWorkoutCategory(template.category);
+  const voiceAvailable = availability?.complete === true;
+  const voiceSelected = voiceAvailable && wantsVoice;
   const hintStep = hintStepIndex === null ? undefined : steps[hintStepIndex];
 
   return (
@@ -207,6 +226,69 @@ export function GuidedStartPage() {
 
           <div className="min-h-2 flex-1" />
 
+          <div data-guided-announcements className="mb-2">
+            <p className={CAPTION_CLASSES}>Ansagen</p>
+            <div role="radiogroup" aria-label="Ton" className="mt-1 flex gap-1 rounded-control bg-surface-sunken p-[3px]">
+              {[
+                { value: true, label: 'Stimme + Ton', detail: 'nennt die nächste Übung' },
+                { value: false, label: 'Nur Ton', detail: 'nur das Wechselsignal' },
+              ].map((option) => {
+                const disabled = option.value && !voiceAvailable;
+                const checked = option.value === voiceSelected;
+
+                return (
+                  <button
+                    key={option.label}
+                    type="button"
+                    role="radio"
+                    aria-checked={checked}
+                    disabled={disabled}
+                    onClick={() => setWantsVoice(option.value)}
+                    className={cn(
+                      'min-h-touch flex-1 rounded-[10px] px-2 py-1 text-left text-xs leading-tight',
+                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+                      checked ? 'bg-surface text-content shadow-sm' : 'text-content-muted',
+                      disabled && 'cursor-not-allowed opacity-45',
+                    )}
+                  >
+                    <b className="block text-[12.5px]">{option.label}</b>
+                    {option.detail}
+                  </button>
+                );
+              })}
+            </div>
+
+            {availability && !voiceAvailable ? (
+              <div className="mt-1.5 flex items-center justify-between gap-2">
+                <p data-guided-no-announcements className="text-xs text-content-muted">
+                  Keine Ansagen für diese Vorlage
+                </p>
+                <Button
+                  variant="secondary"
+                  size="md"
+                  className="rounded-full !py-1 text-xs"
+                  disabled={announcements.isRunning}
+                  onClick={() => void handleGenerate()}
+                >
+                  {announcements.isRunning ? 'Erzeuge …' : 'Ansagen erzeugen'}
+                </Button>
+              </div>
+            ) : null}
+
+            {announcements.message ? (
+              <p
+                role={announcements.message.tone === 'error' ? 'alert' : 'status'}
+                data-guided-announcements-message
+                className={cn(
+                  'mt-1 text-xs',
+                  announcements.message.tone === 'error' ? 'text-danger' : 'text-content-secondary',
+                )}
+              >
+                {announcements.message.text}
+              </p>
+            ) : null}
+          </div>
+
           {startError ? (
             <p role="alert" data-guided-error className="mb-2 text-xs text-danger">
               {startError}
@@ -240,6 +322,32 @@ export function GuidedStartPage() {
           )}
         </div>
       </div>
+
+      {announcements.overage ? (
+        /* Innerhalb der Bühne, nicht im Portal: sie ist gedreht, ein Dialog daneben stünde quer. */
+        <div
+          data-guided-overage
+          className="absolute inset-0 z-10 flex items-center justify-center bg-content/45 px-[max(1.125rem,var(--stage-inset-left))]"
+        >
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-label="Ansagen erzeugen"
+            className="w-full max-w-[25rem] rounded-card border border-line bg-surface p-5 shadow-soft"
+          >
+            <h2 className="text-lg font-semibold text-content">Ansagen erzeugen?</h2>
+            <p className="mt-2 text-sm text-content-muted">{describeOverage(announcements.overage)}</p>
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <Button variant="ghost" onClick={() => announcements.answerOverage(false)}>
+                Abbrechen
+              </Button>
+              <Button variant="primary" onClick={() => announcements.answerOverage(true)}>
+                Erzeugen
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {hintStep?.hint ? (
         <GuidedHintDialog

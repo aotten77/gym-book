@@ -634,7 +634,11 @@ export interface Announcement {
   id: string;
   text: string;
   voice: string;
-  blob: Blob;
+  /**
+   * Die MP3 als Bytes, nicht als `Blob`: Web Audio braucht ohnehin einen
+   * `ArrayBuffer`, und WebKit lehnt Blobs in IndexedDB je nach Kontext ab.
+   */
+  audio: ArrayBuffer;
   byteSize: number;
   createdAt: string;
 }

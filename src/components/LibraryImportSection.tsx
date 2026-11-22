@@ -3,6 +3,7 @@ import { ChevronDown, ChevronUp, FileJson, Upload } from 'lucide-react';
 import { Alert } from '@/components/Alert';
 import { SectionCard } from '@/components/SectionCard';
 import { Button } from '@/components/ui/Button';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { TextArea } from '@/components/ui/Field';
 import { applyLibraryImport, buildLibraryImportPlan } from '@/db/library-import-actions';
 import {
@@ -12,6 +13,7 @@ import {
   type LibraryImportPayload,
   type LibraryImportPlan,
 } from '@/domain/library-import';
+import { describeOverage, useAnnouncementGeneration } from '@/hooks/useAnnouncementGeneration';
 import { exportDatabaseSnapshot } from '@/lib/export';
 import { cn } from '@/lib/utils';
 import { formatNumber } from '@/lib/format';
@@ -227,6 +229,7 @@ export function LibraryImportSection() {
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const announcements = useAnnouncementGeneration();
 
   async function preview(json: string, sourceName: string) {
     setIsBusy(true);
@@ -305,6 +308,19 @@ export function LibraryImportSection() {
       setError(null);
       setPending(null);
       setText('');
+      setIsBusy(false);
+
+      /*
+       * Nach der Import-Transaktion und ohne dass der Import darauf wartet: er
+       * ist fertig, die Meldung kommt zusätzlich. Die Erzeugung wirft nie.
+       */
+      const guidedIds = plan.templates
+        .filter((entry) => entry.kind === 'new' || entry.kind === 'update')
+        .map((entry) => entry.id);
+
+      if (guidedIds.length > 0) {
+        void announcements.run(guidedIds);
+      }
     } catch (nextError) {
       setSuccess(null);
       setError(
@@ -407,6 +423,14 @@ export function LibraryImportSection() {
         ) : null}
 
         {success ? <Alert variant="success">{success}</Alert> : null}
+        {announcements.isRunning ? (
+          <Alert variant="info">Ansagen werden erzeugt …</Alert>
+        ) : null}
+        {announcements.message ? (
+          <Alert variant={announcements.message.tone === 'success' ? 'success' : 'warning'}>
+            {announcements.message.text}
+          </Alert>
+        ) : null}
         {/* Mehrzeilig, weil die Prüfung jede beanstandete Zeile einzeln nennt. */}
         {error ? (
           <Alert variant="error">
@@ -414,6 +438,15 @@ export function LibraryImportSection() {
           </Alert>
         ) : null}
       </div>
+      <ConfirmDialog
+        open={announcements.overage !== null}
+        title="Ansagen erzeugen?"
+        description={announcements.overage ? describeOverage(announcements.overage) : ''}
+        confirmLabel="Erzeugen"
+        destructive={false}
+        onConfirm={() => announcements.answerOverage(true)}
+        onCancel={() => announcements.answerOverage(false)}
+      />
     </SectionCard>
   );
 }

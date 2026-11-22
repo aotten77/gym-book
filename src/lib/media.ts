@@ -19,7 +19,12 @@ export function isSupportedMediaType(mimeType: string) {
  * `await` auf etwas anderes als Dexie würde sie sonst schließen.
  */
 export async function toStorableBlob(file: Blob) {
-  const buffer = await new Promise<ArrayBuffer>((resolve, reject) => {
+  return new Blob([await readBlobBuffer(file)], { type: file.type });
+}
+
+/** Liest den Inhalt eines Blobs in den Speicher - siehe [toStorableBlob]. */
+export async function readBlobBuffer(file: Blob) {
+  return new Promise<ArrayBuffer>((resolve, reject) => {
     const reader = new FileReader();
 
     reader.onload = () => {
@@ -37,8 +42,6 @@ export async function toStorableBlob(file: Blob) {
 
     reader.readAsArrayBuffer(file);
   });
-
-  return new Blob([buffer], { type: file.type });
 }
 
 export async function blobToDataUrl(blob: Blob) {
