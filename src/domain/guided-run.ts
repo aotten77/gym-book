@@ -136,6 +136,12 @@ interface Timeline {
   /** Wie oft die Zeit zurückgesprungen ist (Neustart, Zurück) - Teil des Signal-Schlüssels. */
   rewinds: number;
   /**
+   * Der letzte Sprung (Überspringen, Zurück): seine Nummer, wo er landete
+   * (ms auf der wirksamen Abfolge) und ab welchem Abschnitt die nächste Übung
+   * gesucht wird - hinter dem letzten heißt: zu Ende.
+   */
+  lastJump: { count: number; atMs: number; from: number } | null;
+  /**
    * Wie lange (ms) die Zeit je Abschnitt der wirksamen Abfolge gelaufen ist,
    * ohne Pausen - nur der letzte Durchgang: Neustart und Zurück setzen zurück.
    */
@@ -189,6 +195,7 @@ function foldTimeline(
   let offsetMs = 0;
   let runningSince: number | null = null;
   let rewinds = 0;
+  let lastJump: Timeline["lastJump"] = null;
   let lastAt = Number.NEGATIVE_INFINITY;
 
   const lengthMs = (at: number) => (sections[at]?.seconds ?? 0) * 1000;
@@ -230,6 +237,14 @@ function foldTimeline(
   const jumpTo = (target: number) => {
     index = target;
     offsetMs = 0;
+  };
+
+  const noteJump = (from: number) => {
+    lastJump = {
+      count: (lastJump?.count ?? 0) + 1,
+      atMs: (sections[index].startSeconds * 1000) + offsetMs,
+      from,
+    };
   };
 
   const firstSectionOfStep = (stepIndex: number) =>
@@ -304,6 +319,7 @@ function foldTimeline(
         } else {
           jumpTo(target);
         }
+        noteJump(target);
         break;
       }
       case "back": {
@@ -331,6 +347,7 @@ function foldTimeline(
         sections = layOut(baseSections, extra);
 
         jumpTo(target);
+        noteJump(target);
         rewinds += 1;
         break;
       }
@@ -350,6 +367,7 @@ function foldTimeline(
     runningSince,
     skipped,
     rewinds,
+    lastJump,
     playedMs,
     index,
     isOver: index >= count - 1 && offsetMs >= lengthMs(count - 1),
@@ -474,11 +492,13 @@ function findDueSignal(
  * Die Ansage, die zur Zeit fällig ist - mit derselben Frische-Regel wie das
  * Signal und `null`, wenn die Zeit steht.
  *
- * Zwei Anlässe: der Anfang des ersten Wechsels (die erste Übung, ohne Signal
- * davor) und das Ende einer Übung, gleichzeitig mit ihrem Signal (die nächste
- * Übung samt Seite, nach der letzten „Geschafft.“). Der Schlüssel trägt wie
- * der des Signals die Nummer nach Neustart oder Zurück. Eine übersprungene
- * Übung endet nie und sagt deshalb auch nichts an.
+ * Drei Anlässe: der Anfang des ersten Wechsels (die erste Übung, ohne Signal
+ * davor), ein Sprung durch Überspringen oder Zurück (die Übung, in die er
+ * führt, ohne Signal davor; endet die Einheit damit, „Geschafft.“) und das
+ * Ende einer Übung, gleichzeitig mit ihrem Signal (die nächste Übung samt
+ * Seite, nach der letzten „Geschafft.“). Der Schlüssel trägt wie der des
+ * Signals die Nummer nach Neustart oder Zurück, der eines Sprungs dessen
+ * Nummer. Eine übersprungene Übung endet nie und sagt an ihrem Ende nichts an.
  */
 function findDueAnnouncement(
   timeline: Timeline,
@@ -509,6 +529,16 @@ function findDueAnnouncement(
 
     if (delay >= 0 && delay <= GUIDED_SIGNAL_MAX_DELAY_MS) {
       due = { key: `announce:start${suffix}`, text: textFrom(1), dueAt: now - delay };
+    }
+  }
+
+  const jump = timeline.lastJump;
+
+  if (jump) {
+    const delay = timeline.rawPositionMs - jump.atMs;
+
+    if (delay >= 0 && delay <= GUIDED_SIGNAL_MAX_DELAY_MS) {
+      due = { key: `announce:jump:${jump.count}`, text: textFrom(jump.from), dueAt: now - delay };
     }
   }
 
@@ -610,6 +640,7 @@ export function deriveGuidedRunState(
         runningSince: null,
         skipped: new Set(),
         rewinds: 0,
+        lastJump: null,
         playedMs: [],
         index: 0,
         isOver: false,

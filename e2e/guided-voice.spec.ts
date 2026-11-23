@@ -182,6 +182,32 @@ test.describe("Geführte Einheit: Stimme + Ton", () => {
     expect(errors).toEqual([]);
   });
 
+  test("nach dem Überspringen kommt gleich die Ansage der nächsten Übung", async ({
+    page,
+  }) => {
+    const errors = collectPageErrors(page);
+
+    await interceptGoogle(page);
+    await saveKey(page);
+    await importTemplate(page, { withKey: true });
+    await openStart(page);
+    await startRun(page);
+
+    await expect(stage(page)).toHaveAttribute(
+      "data-guided-announced",
+      "announce:start",
+    );
+
+    // Mitten in der Kindhaltung (5-9 s) überspringen: die Ansage wartet nicht auf ein Übungsende.
+    await page.clock.runFor(6500);
+    await page.getByRole("button", { name: "Überspringen" }).click();
+    await expect(stage(page)).toHaveAttribute(
+      "data-guided-announced",
+      "announce:jump:1",
+    );
+    expect(errors).toEqual([]);
+  });
+
   test("die letzte Wahl bleibt für die nächste Einheit vorgemerkt", async ({
     page,
   }) => {

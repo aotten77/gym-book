@@ -881,14 +881,60 @@ describe("fällige Ansage", () => {
 
     const back: GuidedEvent[] = [...START, { type: "back", at: at(20) }];
 
-    expect(deriveGuidedRunState(STEPS, back, at(20.4)).dueAnnouncement?.key).toBe(
-      "announce:start:1",
-    );
+    expect(deriveGuidedRunState(STEPS, back, at(20.4)).dueAnnouncement).toMatchObject({
+      key: "announce:jump:1",
+      text: "Als Nächstes: Hund, 10 Sekunden",
+    });
   });
 
-  it("schweigt, wo die Übung übersprungen wurde - wie das Signal", () => {
+  it("nennt nach dem Überspringen gleich die Übung, in die der Sprung führt", () => {
     const events: GuidedEvent[] = [...START, { type: "skip", at: at(8) }];
 
-    expect(deriveGuidedRunState(STEPS, events, at(8.2)).dueAnnouncement).toBeNull();
+    expect(deriveGuidedRunState(STEPS, events, at(8.2)).dueAnnouncement).toEqual({
+      key: "announce:jump:1",
+      text: "Als Nächstes: Taube, links, 20 Sekunden",
+      dueAt: at(8),
+    });
+    expect(deriveGuidedRunState(STEPS, events, at(8 + 2.5)).dueAnnouncement).toBeNull();
+  });
+
+  it("schweigt am Ende einer übersprungenen Übung - wie das Signal", () => {
+    // Übersprungen in der Übung Hund (5-15 s): sie endet nie.
+    const events: GuidedEvent[] = [...START, { type: "skip", at: at(14) }];
+
+    expect(deriveGuidedRunState(STEPS, events, at(16.5)).dueAnnouncement).toBeNull();
+  });
+
+  it("zählt Sprünge im Schlüssel, damit jeder einmal ansagt", () => {
+    const events: GuidedEvent[] = [
+      ...START,
+      { type: "skip", at: at(8) },
+      { type: "back", at: at(12) },
+    ];
+
+    expect(deriveGuidedRunState(STEPS, events, at(12.3)).dueAnnouncement).toMatchObject({
+      key: "announce:jump:2",
+      text: "Als Nächstes: Hund, 10 Sekunden",
+    });
+  });
+
+  it("nennt nach Zurück die Übung des vorigen Schritts", () => {
+    const events: GuidedEvent[] = [...START, { type: "back", at: at(50) }];
+
+    expect(deriveGuidedRunState(STEPS, events, at(50.3)).dueAnnouncement).toMatchObject({
+      key: "announce:jump:1",
+      text: "Als Nächstes: Hund, 10 Sekunden",
+    });
+  });
+
+  it("sagt „Geschafft.“, wenn das Überspringen der letzten Übung die Einheit beendet", () => {
+    const events: GuidedEvent[] = [...START, { type: "skip", at: at(30) }];
+    const state = deriveGuidedRunState(STEPS, events, at(30.2));
+
+    expect(state.phase).toBe("finished");
+    expect(state.dueAnnouncement).toMatchObject({
+      key: "announce:jump:1",
+      text: "Geschafft.",
+    });
   });
 });

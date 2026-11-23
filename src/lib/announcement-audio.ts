@@ -40,10 +40,12 @@ export async function playAnnouncementFromGesture(blob: Blob): Promise<void> {
  * Dekodiert die Ansagen einer Einheit einmal beim Start, damit beim Wechsel
  * nichts mehr geladen oder dekodiert wird. Der Kontext darf noch gesperrt
  * sein. Was sich nicht dekodieren lässt, fehlt in der Antwort - dann bleibt
- * es bei dem Signal. Die Eingabepuffer werden dabei abgelöst.
+ * es bei dem Signal. Die Eingabepuffer werden dabei abgelöst. `onDecoded`
+ * meldet jede Ansage, sobald sie fertig ist - in der Reihenfolge der Eingabe.
  */
 export async function decodeAnnouncements(
   audio: ReadonlyMap<string, ArrayBuffer>,
+  onDecoded?: (text: string, buffer: AudioBuffer) => void,
 ): Promise<Map<string, AudioBuffer>> {
   const decoded = new Map<string, AudioBuffer>();
   const context = getSharedAudioContext();
@@ -54,7 +56,10 @@ export async function decodeAnnouncements(
 
   for (const [text, data] of audio) {
     try {
-      decoded.set(text, await context.decodeAudioData(data));
+      const buffer = await context.decodeAudioData(data);
+
+      decoded.set(text, buffer);
+      onDecoded?.(text, buffer);
     } catch {
       // Eine kaputte Ansage ist kein Grund, die Einheit zu stören.
     }

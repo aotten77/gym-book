@@ -165,8 +165,12 @@ function GuidedRunScreen({
   const buffers = useRef<Map<string, AudioBuffer>>(new Map());
   const playedAnnouncements = useRef<Set<string>>(new Set());
   const [announcedKey, setAnnouncedKey] = useState<string | null>(null);
+  // Jede fertig dekodierte Ansage weckt die Ansage-Wirkung: die erste ist beim Start fällig.
+  const [decodedCount, setDecodedCount] = useState(0);
+  const [isDecodingDone, setIsDecodingDone] = useState(false);
 
   // Einmal dekodieren, in beiden Modi: so kostet das Umschalten nichts.
+  // In Ablauf-Reihenfolge und einzeln bereitgestellt, damit die erste Ansage nicht wartet.
   useEffect(() => {
     if (!isActive || !isVoiceAvailable) {
       return undefined;
@@ -174,14 +178,26 @@ function GuidedRunScreen({
 
     let cancelled = false;
 
+    buffers.current = new Map();
+    setIsDecodingDone(false);
+
     void loadAnnouncementAudio(guided.steps)
-      .then((audio) => (audio ? decodeAnnouncements(audio) : null))
-      .then((decoded) => {
-        if (!cancelled && decoded) {
-          buffers.current = decoded;
+      .then((audio) =>
+        audio
+          ? decodeAnnouncements(audio, (text, buffer) => {
+              if (!cancelled) {
+                buffers.current.set(text, buffer);
+                setDecodedCount((count) => count + 1);
+              }
+            })
+          : null,
+      )
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) {
+          setIsDecodingDone(true);
         }
-      })
-      .catch(() => {});
+      });
 
     return () => {
       cancelled = true;
@@ -207,23 +223,28 @@ function GuidedRunScreen({
       return;
     }
 
+    const buffer = buffers.current.get(announcement.text);
+
+    // Beim Start dekodiert sie womöglich noch: warten, solange sie frisch ist.
+    if (!buffer && !isDecodingDone) {
+      return;
+    }
+
     playedAnnouncements.current.add(announcement.key);
     setAnnouncedKey(announcement.key);
 
-    const buffer = buffers.current.get(announcement.text);
-
     if (buffer) {
-      // Die erste Ansage hat kein Signal vor sich; die übrigen folgen ihm.
+      // Nur das Ende einer Übung hat ein Signal vor sich; Start und Sprung nicht.
       playDecodedAnnouncement(
         buffer,
-        announcement.key.startsWith("announce:start")
-          ? 0
-          : ANNOUNCEMENT_AFTER_SIGNAL_SECONDS,
+        announcement.key.startsWith("announce:exercise-end")
+          ? ANNOUNCEMENT_AFTER_SIGNAL_SECONDS
+          : 0,
       );
     }
     // Der Schlüssel genügt: `announcement` ist bei jedem Takt ein neues Objekt.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [announcementKey]);
+  }, [announcementKey, decodedCount, isDecodingDone]);
 
   const anchors = {
     "data-guided-audio": audioMode,
