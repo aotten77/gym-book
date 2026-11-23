@@ -223,6 +223,17 @@ test.describe('Geführte Vorlage: Start-Screen', () => {
     await expect(dialog).toBeVisible();
     await expect(dialog).toContainText('Das vordere Schienbein liegt quer.');
 
+    // Die Karte ist Tinte auch auf der hellen Bühne: Titel und Text dürfen
+    // deren Tinte nicht erben, sonst steht dunkel auf dunkel.
+    const colors = await dialog.evaluate((card) => ({
+      card: getComputedStyle(card).backgroundColor,
+      title: getComputedStyle(card.querySelector('h2')!).color,
+      text: getComputedStyle(card.querySelector('p:not(:first-child)')!).color,
+    }));
+
+    expect(colors.title).not.toBe(colors.card);
+    expect(colors.text).not.toBe(colors.card);
+
     await dialog.getByRole('button', { name: 'Hinweis schließen' }).click();
     await expect(page.getByRole('dialog')).toHaveCount(0);
 

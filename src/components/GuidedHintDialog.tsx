@@ -62,8 +62,9 @@ export function GuidedHintDialog({ title, hint, footer, onClose }: GuidedHintDia
         role="dialog"
         aria-modal="true"
         aria-label={`Hinweis · ${title}`}
+        // Eigene Textfarbe: auf der hellen Bühne erbte die Karte sonst Tinte auf Tinte.
         onClick={(event) => event.stopPropagation()}
-        className="flex max-h-full w-full max-w-[25rem] flex-col rounded-card border border-accent-contrast/20 bg-accent px-5 pb-4 pt-[1.125rem] shadow-soft"
+        className="flex max-h-full w-full max-w-[25rem] flex-col rounded-card border border-accent-contrast/20 bg-accent text-accent-contrast px-5 pb-4 pt-[1.125rem] shadow-soft"
       >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
