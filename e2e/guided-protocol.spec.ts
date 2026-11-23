@@ -17,7 +17,7 @@ const TEMPLATE_NAME = "Yoga Kurzflow";
 
 const STEPS = [
   { name: "Kindhaltung", seconds: 4 },
-  { name: "Taube", seconds: 3, bothSides: true },
+  { name: "Taube", seconds: 6, bothSides: true },
 ];
 
 function localDateKey(date = new Date()) {

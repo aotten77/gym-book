@@ -587,7 +587,7 @@ describe('loadTemplateMinutes', () => {
       // 5 + 60 + 5 + 75 + 3 + 75 = 223 s
       steps: [
         { name: 'Kindhaltung', seconds: 60 },
-        { name: 'Taube', seconds: 75, bothSides: true },
+        { name: 'Taube', seconds: 150, bothSides: true },
       ],
       createdAt: stamp,
       updatedAt: stamp,

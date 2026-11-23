@@ -22,7 +22,7 @@ const STEPS = [
     seconds: 60,
     hint: 'Hüfte nach hinten oben schieben, Fersen Richtung Boden.',
   },
-  { name: 'Taube', seconds: 75, bothSides: true, hint: 'Das vordere Schienbein liegt quer.' },
+  { name: 'Taube', seconds: 150, bothSides: true, hint: 'Das vordere Schienbein liegt quer.' },
 ];
 
 /** Das Papier der App, wie `app` in tailwind.config.js und `theme-color` in index.html. */

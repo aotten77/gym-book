@@ -57,6 +57,15 @@ export interface GuidedSection {
 }
 
 /** Ob die Vorlage eine geführte ist: mindestens ein Schritt. */
+/**
+ * So lange läuft eine Seite eines Schritts: bei einem beidseitigen die Hälfte
+ * von `seconds` (abgerundet, mindestens 1), sonst `seconds`. `seconds` ist
+ * also immer die Übungszeit des ganzen Schritts - so steht es im Import.
+ */
+export function guidedSideSeconds(step: Pick<GuidedStep, 'seconds' | 'bothSides'>): number {
+  return step.bothSides ? Math.max(1, Math.floor(step.seconds / 2)) : step.seconds;
+}
+
 export function isGuidedTemplate(template?: Pick<WorkoutTemplate, 'steps'> | null): boolean {
   return (template?.steps?.length ?? 0) > 0;
 }
@@ -67,7 +76,7 @@ export function isGuidedTemplate(template?: Pick<WorkoutTemplate, 'steps'> | nul
  * Vor jedem Schritt steht ein Wechsel: vor dem ersten fest 5 Sekunden, vor
  * jedem weiteren die `transitionSeconds` dieses Schritts (Standard 5). Ein
  * beidseitiger Schritt wird links, 3 Sekunden Seitenwechsel, rechts - jede
- * Seite mit der vollen Dauer des Schritts. Nach dem letzten Schritt folgt
+ * Seite mit der Hälfte der Dauer des Schritts (`guidedSideSeconds`). Nach dem letzten Schritt folgt
  * nichts: das Ende ist ein Ereignis (Signal und „Geschafft.“), kein Abschnitt.
  */
 export function resolveGuidedSections(steps: readonly GuidedStep[]): GuidedSection[] {
@@ -91,7 +100,7 @@ export function resolveGuidedSections(steps: readonly GuidedStep[]): GuidedSecti
           ? GUIDED_START_TRANSITION_SECONDS
           : (step.transitionSeconds ?? GUIDED_DEFAULT_TRANSITION_SECONDS),
     });
-    push({ kind: 'exercise', stepIndex, ...first, seconds: step.seconds });
+    push({ kind: 'exercise', stepIndex, ...first, seconds: guidedSideSeconds(step) });
 
     if (step.bothSides) {
       push({
@@ -100,7 +109,7 @@ export function resolveGuidedSections(steps: readonly GuidedStep[]): GuidedSecti
         side: 'right',
         seconds: GUIDED_SIDE_SWITCH_SECONDS,
       });
-      push({ kind: 'exercise', stepIndex, side: 'right', seconds: step.seconds });
+      push({ kind: 'exercise', stepIndex, side: 'right', seconds: guidedSideSeconds(step) });
     }
   });
 
@@ -161,9 +170,9 @@ export function describeGuidedSummary(steps: readonly GuidedStep[]): string {
   return describeGuidedFacts(steps).slice(0, 2).join(' · ');
 }
 
-/** Die Dauer in der Schrittliste: „1:00“, bei einem beidseitigen Schritt „2 × 1:15“. */
+/** Die Dauer in der Schrittliste: „1:00“, bei einem beidseitigen Schritt je Seite „2 × 1:15“. */
 export function describeGuidedStepDuration(step: GuidedStep): string {
-  const clock = formatStepClock(step.seconds);
+  const clock = formatStepClock(guidedSideSeconds(step));
 
   return step.bothSides ? `2 × ${clock}` : clock;
 }

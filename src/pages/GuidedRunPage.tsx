@@ -38,7 +38,7 @@ import {
   deriveGuidedRunState,
   type GuidedRunState,
 } from "@/domain/guided-run";
-import type { GuidedSection } from "@/domain/guided-steps";
+import { guidedSideSeconds, type GuidedSection } from "@/domain/guided-steps";
 import type {
   GuidedAudioMode,
   GuidedRun,
@@ -675,7 +675,7 @@ function InfoButton({
 
 /** Dauer der Übung für den Vorschau-Block: „0:45“, bei einem beidseitigen Schritt „je Seite“. */
 function describeUpcomingDuration(step: GuidedStep): string {
-  const clock = formatStepClock(step.seconds);
+  const clock = formatStepClock(guidedSideSeconds(step));
 
   return step.bothSides ? `${clock} je Seite` : clock;
 }

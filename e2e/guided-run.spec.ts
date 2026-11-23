@@ -20,7 +20,7 @@ const TEMPLATE_NAME = 'Yoga Kurzflow';
 
 const STEPS = [
   { name: 'Kindhaltung', seconds: 4, hint: 'Stirn auf den Boden legen.' },
-  { name: 'Taube', seconds: 3, bothSides: true },
+  { name: 'Taube', seconds: 6, bothSides: true },
 ];
 
 const INK = 'rgb(12, 18, 16)';

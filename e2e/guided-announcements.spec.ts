@@ -13,7 +13,7 @@ const GOOGLE = 'https://texttospeech.googleapis.com/**';
 
 const STEPS = [
   { name: 'Kindhaltung', seconds: 60 },
-  { name: 'Taube', seconds: 75, bothSides: true },
+  { name: 'Taube', seconds: 150, bothSides: true },
 ];
 // Kindhaltung, Taube links, Taube rechts, Geschafft.
 const SENTENCES = 4;

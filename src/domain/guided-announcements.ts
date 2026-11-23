@@ -1,5 +1,5 @@
 import type { GuidedStep } from '@/domain/models';
-import { resolveGuidedSections, type GuidedSide } from '@/domain/guided-steps';
+import { guidedSideSeconds, resolveGuidedSections, type GuidedSide } from '@/domain/guided-steps';
 
 /*
  * Der Text der Ansagen einer geführten Vorlage. Rein: dieselbe Funktion, die
@@ -29,7 +29,7 @@ export function describeSpokenDuration(seconds: number): string {
 
 /** „Als Nächstes: Taube, links, 75 Sekunden“; die Seite fehlt bei einseitigen Schritten. */
 export function buildNextAnnouncement(
-  step: Pick<GuidedStep, 'name' | 'spokenName' | 'seconds'>,
+  step: Pick<GuidedStep, 'name' | 'spokenName' | 'seconds' | 'bothSides'>,
   side?: GuidedSide,
 ): string {
   const name = step.spokenName?.trim() || step.name;
@@ -39,7 +39,8 @@ export function buildNextAnnouncement(
     parts.push(side === 'left' ? 'links' : 'rechts');
   }
 
-  parts.push(describeSpokenDuration(step.seconds));
+  // Bei einem beidseitigen Schritt die Zeit dieser Seite, nicht die des ganzen Schritts.
+  parts.push(describeSpokenDuration(guidedSideSeconds(step)));
 
   return `Als Nächstes: ${parts.join(', ')}`;
 }

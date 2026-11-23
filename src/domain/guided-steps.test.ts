@@ -6,6 +6,7 @@ import {
   describeGuidedSteps,
   GUIDED_SIDE_SWITCH_SECONDS,
   GUIDED_START_TRANSITION_SECONDS,
+  guidedSideSeconds,
   isGuidedTemplate,
   resolveGuidedSections,
   sumGuidedSeconds,
@@ -15,7 +16,7 @@ import type { GuidedStep } from '@/domain/models';
 
 const KINDHALTUNG: GuidedStep = { name: 'Kindhaltung', seconds: 60 };
 const KATZE_KUH: GuidedStep = { name: 'Katze-Kuh', seconds: 45 };
-const TAUBE: GuidedStep = { name: 'Taube', seconds: 75, bothSides: true };
+const TAUBE: GuidedStep = { name: 'Taube', seconds: 150, bothSides: true };
 
 describe('isGuidedTemplate', () => {
   it('kennt eine Vorlage mit mindestens einem Schritt', () => {
@@ -72,6 +73,27 @@ describe('resolveGuidedSections', () => {
       ['sideSwitch', 'right', GUIDED_SIDE_SWITCH_SECONDS],
       ['exercise', 'right', 75],
     ]);
+  });
+
+  it('teilt seconds eines beidseitigen Schritts auf die Seiten, abgerundet', () => {
+    expect(guidedSideSeconds({ seconds: 240, bothSides: true })).toBe(120);
+    expect(guidedSideSeconds({ seconds: 75, bothSides: true })).toBe(37);
+    expect(guidedSideSeconds({ seconds: 1, bothSides: true })).toBe(1);
+    expect(guidedSideSeconds({ seconds: 75 })).toBe(75);
+  });
+
+  it('rechnet die Gesamtdauer aus 5 s Start, Wechseln, allen seconds und 3 s je beidseitigem Schritt', () => {
+    // Die Faszien-Einheit aus dem Import: 17:54.
+    const steps: GuidedStep[] = [
+      { name: 'Waden', seconds: 180, bothSides: true },
+      { name: 'Hamstrings', seconds: 240, bothSides: true, transitionSeconds: 8 },
+      { name: 'Quadrizeps', seconds: 180, bothSides: true, transitionSeconds: 8 },
+      { name: 'Gesäß', seconds: 240, bothSides: true, transitionSeconds: 10 },
+      { name: 'Hüftaußenseite', seconds: 180, bothSides: true, transitionSeconds: 8 },
+    ];
+
+    expect(summarizeGuidedSteps(steps).totalSeconds).toBe(17 * 60 + 54);
+    expect(describeGuidedStepDuration(steps[1])).toBe('2 × 2:00');
   });
 
   it('gibt einseitigen Abschnitten keine Seite', () => {

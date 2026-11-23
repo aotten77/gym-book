@@ -16,7 +16,7 @@ const START: GuidedEvent[] = [{ type: "start", at: T0 }];
 // Summe 63 s.
 const STEPS: GuidedStep[] = [
   { name: "Hund", seconds: 10 },
-  { name: "Taube", seconds: 20, bothSides: true },
+  { name: "Taube", seconds: 40, bothSides: true },
 ];
 
 const at = (seconds: number) => T0 + seconds * 1000;

@@ -8,7 +8,7 @@ describe('GuidedStepsCard', () => {
       <GuidedStepsCard
         steps={[
           { name: 'Kindhaltung', seconds: 60 },
-          { name: 'Taube', seconds: 75, bothSides: true, hint: 'Hüfte sinken lassen.' },
+          { name: 'Taube', seconds: 150, bothSides: true, hint: 'Hüfte sinken lassen.' },
         ]}
       />,
     );

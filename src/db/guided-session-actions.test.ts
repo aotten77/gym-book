@@ -19,7 +19,7 @@ const DO = new Date(2026, 9, 8, 18, 0, 0);
 
 const STEPS: GuidedStep[] = [
   { name: "Hund", seconds: 10 },
-  { name: "Taube", seconds: 20, bothSides: true, hint: "Hüfte sinken lassen" },
+  { name: "Taube", seconds: 40, bothSides: true, hint: "Hüfte sinken lassen" },
 ];
 // 5 + 10 + 5 + 20 + 3 + 20 = 63 s.
 const TOTAL_MS = 63_000;

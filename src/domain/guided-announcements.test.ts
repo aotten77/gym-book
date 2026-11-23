@@ -31,6 +31,12 @@ describe('buildNextAnnouncement', () => {
     );
   });
 
+  it('nennt bei einem beidseitigen Schritt die Zeit einer Seite', () => {
+    expect(buildNextAnnouncement({ name: 'Hamstrings', seconds: 240, bothSides: true }, 'left')).toBe(
+      'Als Nächstes: Hamstrings, links, 2 Minuten',
+    );
+  });
+
   it('lässt die Seite bei einseitigen Schritten weg', () => {
     expect(buildNextAnnouncement({ name: 'Kindhaltung', seconds: 60 })).toBe(
       'Als Nächstes: Kindhaltung, 60 Sekunden',
@@ -42,7 +48,7 @@ describe('requiredAnnouncementTexts', () => {
   it('liefert je Übungsabschnitt einen Satz plus „Geschafft.“, ohne Duplikate', () => {
     const texts = requiredAnnouncementTexts([
       { name: 'Kindhaltung', seconds: 60 },
-      { name: 'Taube', seconds: 75, bothSides: true },
+      { name: 'Taube', seconds: 150, bothSides: true },
       { name: 'Kindhaltung', seconds: 60 },
     ]);
 
