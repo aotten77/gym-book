@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { importPlan, openRunLogFromNow, resetDatabase, seedSampleData } from './helpers';
+import { clearPlanEntries, importPlan, openRunLogFromNow, resetDatabase, seedSampleData } from './helpers';
 
 /*
  * Ein Lauf über Heute: Sheet, Pace-Zeile, Sprung über die Tastaturleiste.
@@ -120,6 +120,8 @@ test.describe('Lauf-Sheet und Termine', () => {
   test('Lauf-Sheet wählt den heutigen Termin vor', async ({ page }) => {
     await resetDatabase(page);
     await seedSampleData(page);
+    // Die Beispieltermine weg: an einem Montag wäre sonst „Einheit A“ die Lime-Karte, nicht der Lauf.
+    await clearPlanEntries(page);
     await page.goto('./');
     await page.waitForTimeout(1200);
 

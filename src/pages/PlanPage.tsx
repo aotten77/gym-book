@@ -505,6 +505,26 @@ export function PlanPage() {
     setEntrySheetOpen(true);
   }
 
+  /** Die Minuten der offenen Termine eines Tages - nur, wenn jede bekannt ist. */
+  function plannedMinutes(day: CalendarWeekDay): number | undefined {
+    let sum = 0;
+
+    for (const unit of day.units) {
+      const minutes =
+        unit.ref.type === 'entry' && unit.ref.entry.templateId
+          ? templateMinutes?.[unit.ref.entry.templateId]
+          : undefined;
+
+      if (minutes === undefined) {
+        return undefined;
+      }
+
+      sum += minutes;
+    }
+
+    return sum;
+  }
+
   function renderDay(day: CalendarWeekDay) {
     const nowEntryId = pickTodayNowEntryId(day, hasActiveSession);
     const links = timeline?.plan.links ?? {};
@@ -681,6 +701,7 @@ export function PlanPage() {
                 week={week}
                 onOpenWeek={setSheetWeek}
                 renderDay={renderDay}
+                plannedMinutes={plannedMinutes}
               />
             ))}
           </div>

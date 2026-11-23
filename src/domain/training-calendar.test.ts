@@ -6,6 +6,7 @@ import {
   buildCalendarWeeks,
   TIMELINE_INITIAL_PAST_WEEKS,
   TIMELINE_LOAD_STEP_WEEKS,
+  describeTimelineDayHead,
   describeTimelineWeekHead,
   pickTodayNowEntryId,
   timelineFirstMonday,
@@ -658,5 +659,32 @@ describe('Zeitstrahl', () => {
 
       expect(pickTodayNowEntryId(friday, false)).toBeUndefined();
     });
+  });
+});
+
+describe('describeTimelineDayHead', () => {
+  const unit = (state: CalendarUnit['state']): CalendarUnit => ({
+    kind: 'yoga',
+    state,
+    name: 'Yoga Morgen',
+    ref: { type: 'session', sessionId: 's' },
+  });
+  const monday = { date: new Date(2026, 10, 23), isoWeekday: 1 as const };
+
+  it('zählt Erledigtes gegen alle Einheiten des Tages', () => {
+    expect(
+      describeTimelineDayHead({ ...monday, units: [unit('erledigt'), unit('geplant'), unit('geplant'), unit('geplant')] }, 79),
+    ).toEqual({ title: 'Mo 23.', summary: '1 von 4 erledigt' });
+  });
+
+  it('nennt ohne Erledigtes Anzahl und geplante Minuten', () => {
+    expect(describeTimelineDayHead({ ...monday, units: [unit('geplant'), unit('geplant')] }, 29).summary).toBe(
+      '2 Einheiten · ~29 min',
+    );
+    expect(describeTimelineDayHead({ ...monday, units: [unit('geplant')] }).summary).toBe('1 Einheit');
+  });
+
+  it('sagt an einem leeren Tag, dass nichts geplant ist', () => {
+    expect(describeTimelineDayHead({ ...monday, units: [] }).summary).toBe('nichts geplant');
   });
 });

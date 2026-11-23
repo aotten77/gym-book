@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { ChevronRight } from 'lucide-react';
 import {
+  describeTimelineDayHead,
   describeTimelineWeekHead,
   weekdayShortLabel,
   type CalendarWeek,
@@ -18,6 +19,8 @@ interface TimelineWeekProps {
    * dazu - welche Einheit was tut, entscheidet die Seite, nicht die Woche.
    */
   renderDay: (day: CalendarWeekDay) => ReactNode;
+  /** Die geplanten Minuten eines Tages für seinen Kopf; `undefined`, wo sie nicht alle bekannt sind. */
+  plannedMinutes?: (day: CalendarWeekDay) => number | undefined;
 }
 
 /**
@@ -25,9 +28,11 @@ interface TimelineWeekProps {
  *
  * Der Kopf klebt nur innerhalb seines Abschnitts, deshalb schiebt der nächste
  * ihn beim Scrollen hinaus, statt sich darüberzulegen. Freie Tage sind eine
- * dünne gestrichelte Zeile; heute steht immer mit seiner Spalte da, auch leer.
+ * dünne gestrichelte Zeile. Ein Tag mit Einheiten ist ein Kasten mit eigenem
+ * Kopf, damit zusammensteht, was zu ihm gehört; heute ist er dunkel umrandet
+ * wie der Kopf der laufenden Woche und steht immer da, auch leer.
  */
-export function TimelineWeek({ week, onOpenWeek, renderDay }: TimelineWeekProps) {
+export function TimelineWeek({ week, onOpenWeek, renderDay, plannedMinutes }: TimelineWeekProps) {
   const head = describeTimelineWeekHead(week);
   const share = head.planned > 0 ? Math.min(1, head.done / head.planned) : 0;
 
@@ -76,27 +81,36 @@ export function TimelineWeek({ week, onOpenWeek, renderDay }: TimelineWeekProps)
           );
         }
 
+        const dayHead = describeTimelineDayHead(day, plannedMinutes?.(day));
+
         return (
           <div
             key={day.key}
             data-timeline-day={day.key}
             data-timeline-today={day.isToday ? '' : undefined}
-            className={cn('flex gap-2', day.isToday && 'scroll-mt-16')}
+            className={cn(
+              'rounded-[1.5rem] p-2',
+              day.isToday ? 'scroll-mt-16 border-2 border-accent bg-app' : 'bg-surface-sunken',
+            )}
           >
             <div
-              className={cn(
-                'flex w-10 shrink-0 flex-col items-center pt-2 text-xs font-semibold leading-tight',
-                day.isToday ? 'text-content' : 'text-content-muted',
-              )}
+              data-timeline-day-head=""
+              className="flex min-w-0 items-center justify-between gap-2 px-1.5 pb-2 pt-0.5"
             >
-              <span>{weekday}</span>
-              {day.isToday ? (
-                <span className="mt-0.5 rounded-full bg-accent px-1.5 text-[11px] text-accent-contrast">heute</span>
-              ) : (
-                <span>{formatNumber(day.date.getDate())}</span>
-              )}
+              <span
+                className={cn(
+                  'flex shrink-0 items-center gap-2 text-sm font-bold',
+                  day.isToday ? 'text-content' : 'text-content-secondary',
+                )}
+              >
+                {dayHead.title}
+                {day.isToday ? (
+                  <span className="rounded-full bg-accent px-2 text-xs font-semibold text-accent-contrast">heute</span>
+                ) : null}
+              </span>
+              <span className="min-w-0 truncate text-xs text-content-muted">{dayHead.summary}</span>
             </div>
-            <div className="flex min-w-0 flex-1 flex-col gap-2">{renderDay(day)}</div>
+            <div className="flex min-w-0 flex-col gap-2">{renderDay(day)}</div>
           </div>
         );
       })}

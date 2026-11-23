@@ -502,6 +502,35 @@ export function describeTimelineWeekHead(week: CalendarWeek): {
   };
 }
 
+/**
+ * Der Kopf eines Tageskastens im Zeitstrahl: „Mo 23.“ und rechts der Stand.
+ * Ist schon etwas erledigt, zählt er „1 von 4 erledigt“; sonst nennt er die
+ * Einheiten und - wenn die Seite sie kennt - deren geplante Minuten.
+ */
+export function describeTimelineDayHead(
+  day: Pick<CalendarWeekDay, 'date' | 'isoWeekday' | 'units'>,
+  plannedMinutes?: number,
+): { title: string; summary: string } {
+  const title = `${weekdayShortLabel(day.isoWeekday)} ${formatNumber(day.date.getDate())}.`;
+  const total = day.units.length;
+  const done = day.units.filter((unit) => unit.state === 'erledigt').length;
+
+  if (total === 0) {
+    return { title, summary: 'nichts geplant' };
+  }
+
+  if (done > 0) {
+    return { title, summary: `${formatNumber(done)} von ${formatNumber(total)} erledigt` };
+  }
+
+  const count = `${formatNumber(total)} ${total === 1 ? 'Einheit' : 'Einheiten'}`;
+
+  return {
+    title,
+    summary: plannedMinutes && plannedMinutes > 0 ? `${count} · ~${formatNumber(plannedMinutes)} min` : count,
+  };
+}
+
 /** Die Termin-Id, die heute "jetzt dran" ist: die erste Termin-Einheit, nur heute und nur ohne laufende Session. */
 export function pickTodayNowEntryId(day: CalendarWeekDay, hasActiveSession: boolean): string | undefined {
   if (!day.isToday || hasActiveSession) {
