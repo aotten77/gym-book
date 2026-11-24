@@ -138,6 +138,8 @@ const state: LibraryImportState = {
   progressionRules,
   planEntries: [],
   takenPlanEntryIds: new Set(),
+  today: '2026-11-24',
+  restrictions: [],
 };
 
 describe('buildLibraryInventory', () => {

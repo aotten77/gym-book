@@ -33,6 +33,20 @@ describe('describeImportCounts', () => {
     expect(describeImportCounts({ ...none, createdBandLevels: 1 })).toBe('1 Bandstufe');
   });
 
+  it('nennt Einschränkungen, auch wenn eine Datei nur aufhebt', () => {
+    expect(describeImportCounts({ ...none, liftedRestrictions: 1 })).toBe(
+      '1 Einschränkung aufgehoben',
+    );
+    expect(
+      describeImportCounts({
+        ...none,
+        createdRestrictions: 1,
+        updatedRestrictions: 1,
+        reactivatedRestrictions: 1,
+      }),
+    ).toBe('2 Einschränkungen, 1 Einschränkung wieder aktiv');
+  });
+
   it('nennt Entfernungen, auch wenn sie das Einzige sind', () => {
     expect(describeImportCounts({ ...none, removedPlanEntries: 4 })).toBe('4 Termine entfernt');
     expect(describeImportCounts({ ...none, removedAssignments: 1 })).toBe('1 Zuordnung entfernt');

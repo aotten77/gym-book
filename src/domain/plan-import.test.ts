@@ -375,6 +375,8 @@ describe('planPlanEntries', () => {
       progressionRules: [],
       planEntries: [],
       takenPlanEntryIds: new Set(),
+      today: '2026-11-24',
+      restrictions: [],
     });
 
     expect(result.planEntries).toHaveLength(1);
@@ -477,6 +479,8 @@ describe('planLibraryImport mit Terminen', () => {
       progressionRules: [],
       planEntries: [buildEntry({ id: 'open', date: '2026-10-07', templateId: 'tB' })],
       takenPlanEntryIds: new Set<string>(),
+      today: '2026-11-24',
+      restrictions: [],
     };
     const result = planLibraryImport(payload, state);
 

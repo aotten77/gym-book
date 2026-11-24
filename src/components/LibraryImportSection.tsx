@@ -13,6 +13,7 @@ import {
   type LibraryImportPayload,
   type LibraryImportPlan,
 } from '@/domain/library-import';
+import type { RestrictionPlanKind } from '@/domain/restriction-import';
 import { describeOverage, useAnnouncementGeneration } from '@/hooks/useAnnouncementGeneration';
 import { exportDatabaseSnapshot } from '@/lib/export';
 import { cn } from '@/lib/utils';
@@ -33,20 +34,26 @@ import { formatNumber } from '@/lib/format';
  * Importe“ der Abgleich-Seite: eine Liste, ein Ort.
  */
 
-const KIND_LABELS: Record<ImportEntryKind, string> = {
+type PreviewKind = ImportEntryKind | RestrictionPlanKind;
+
+const KIND_LABELS: Record<PreviewKind, string> = {
   new: 'NEU',
   update: 'AKTUALISIERT',
   unchanged: 'UNVERÄNDERT',
   removed: 'ENTFERNT',
+  lifted: 'AUFGEHOBEN',
+  reactivated: 'WIEDER AKTIV',
 };
 
 interface PreviewRow {
   key: string;
-  kind: ImportEntryKind;
+  kind: PreviewKind;
   label: string;
   detail?: string;
   note?: string;
   changes: Array<{ field: string; from: string; to: string }>;
+  /** Weitere Zeilen unter dem Eintrag - die Ziele einer Einschränkung in Klarnamen. */
+  lines?: string[];
   /** Auch zwischen den unveränderten sichtbar - belegte Termine, die die Datei nicht ändern kann. */
   pinned?: boolean;
 }
@@ -96,6 +103,18 @@ function toRows(plan: LibraryImportPlan) {
         note: entry.taken ? 'belegt, bleibt' : undefined,
         changes: entry.changes,
         pinned: entry.taken,
+      })),
+    },
+    {
+      title: 'Einschränkungen',
+      rows: plan.restrictions.map((entry): PreviewRow => ({
+        key: `r-${entry.id}`,
+        kind: entry.kind,
+        label: entry.label,
+        detail: `danach ${entry.stateAfter}`,
+        note: entry.note,
+        changes: entry.changes,
+        lines: entry.targets,
       })),
     },
     {
@@ -178,7 +197,9 @@ function PreviewGroup({ title, rows }: { title: string; rows: PreviewRow[] }) {
                     'text-xs uppercase tracking-[0.14em]',
                     row.kind === 'unchanged' && 'text-content-muted',
                     row.kind === 'removed' && 'text-danger',
-                    (row.kind === 'new' || row.kind === 'update') && 'text-content-secondary',
+                    row.kind !== 'unchanged' &&
+                      row.kind !== 'removed' &&
+                      'text-content-secondary',
                   )}
                 >
                   {KIND_LABELS[row.kind]}
@@ -189,6 +210,11 @@ function PreviewGroup({ title, rows }: { title: string; rows: PreviewRow[] }) {
               {row.changes.map((change) => (
                 <p key={change.field} className="mt-0.5 text-content-muted">
                   {change.field}: {change.from} → {change.to}
+                </p>
+              ))}
+              {row.lines?.map((line) => (
+                <p key={line} data-import-target className="mt-0.5 text-content-secondary">
+                  {line}
                 </p>
               ))}
               {row.note ? <p className="mt-0.5 text-content-muted">{row.note}</p> : null}

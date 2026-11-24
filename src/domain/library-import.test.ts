@@ -68,6 +68,8 @@ function emptyState(overrides: Partial<LibraryImportState> = {}): LibraryImportS
     progressionRules: [],
     planEntries: [],
     takenPlanEntryIds: new Set(),
+    today: '2026-11-24',
+    restrictions: [],
     ...overrides,
   };
 }
@@ -169,6 +171,8 @@ function applyPlan(
     progressionRules: state.progressionRules.filter((rule) => !removedIds.has(rule.templateExerciseId)),
     planEntries: state.planEntries,
     takenPlanEntryIds: state.takenPlanEntryIds,
+    today: state.today,
+    restrictions: state.restrictions,
   };
 }
 
@@ -1049,6 +1053,10 @@ describe('planLibraryImport - Idempotenz', () => {
       createdPlanEntries: 0,
       updatedPlanEntries: 0,
       removedPlanEntries: 0,
+      createdRestrictions: 0,
+      updatedRestrictions: 0,
+      liftedRestrictions: 0,
+      reactivatedRestrictions: 0,
     });
     expect(second.templateOrder).toHaveLength(0);
     expect(second.bandOrder).toBeNull();
@@ -1173,6 +1181,39 @@ describe('Import - geführte Schritte', () => {
     );
 
     expect('steps' in (payload.templates[0] ?? {})).toBe(false);
+    expect(hashImportPayload(payload)).toBe('f89ab3cc');
+  });
+
+  it('bricht bei einem unbekannten Block ab', () => {
+    expect(() =>
+      parseLibraryImportPayload(JSON.stringify({ schemaVersion: 1, overrides: [] })),
+    ).toThrow('Unbekannter Block „overrides“ – ist die App aktuell?');
+  });
+
+  it('lässt _hinweis durch und ändert den Hash nicht', () => {
+    const payload = parseLibraryImportPayload(
+      JSON.stringify({
+        schemaVersion: 1,
+        _hinweis: 'Für die App ab Version mit Einschränkungen',
+        templates: [{ name: 'Yoga Abendflow', category: 'yoga', notes: 'ruhig' }],
+        exercises: [{ name: 'Taube', trackingMode: 'time', unilateral: true }],
+      }),
+    );
+
+    expect('_hinweis' in payload).toBe(false);
+    expect(hashImportPayload(payload)).toBe('f89ab3cc');
+  });
+
+  it('behält den Hash einer Datei ohne Einschränkungen', () => {
+    const payload = parseLibraryImportPayload(
+      JSON.stringify({
+        schemaVersion: 1,
+        templates: [{ name: 'Yoga Abendflow', category: 'yoga', notes: 'ruhig' }],
+        exercises: [{ name: 'Taube', trackingMode: 'time', unilateral: true }],
+      }),
+    );
+
+    expect('restrictions' in payload).toBe(false);
     expect(hashImportPayload(payload)).toBe('f89ab3cc');
   });
 

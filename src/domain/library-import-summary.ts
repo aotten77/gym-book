@@ -15,6 +15,10 @@ type ImportCounts = Pick<
   | 'createdPlanEntries'
   | 'updatedPlanEntries'
   | 'removedPlanEntries'
+  | 'createdRestrictions'
+  | 'updatedRestrictions'
+  | 'liftedRestrictions'
+  | 'reactivatedRestrictions'
 >;
 
 function count(value: number, singular: string, plural: string) {
@@ -59,6 +63,11 @@ export function describeImportCounts(log: ImportCounts): string {
       singular: 'Termin',
       plural: 'Termine',
     },
+    {
+      value: (log.createdRestrictions ?? 0) + (log.updatedRestrictions ?? 0),
+      singular: 'Einschränkung',
+      plural: 'Einschränkungen',
+    },
   ];
   const removed = [
     { value: log.removedAssignments ?? 0, singular: 'Zuordnung', plural: 'Zuordnungen' },
@@ -71,6 +80,17 @@ export function describeImportCounts(log: ImportCounts): string {
 
   for (const item of removed.filter((entry) => entry.value > 0)) {
     parts.push(`${count(item.value, item.singular, item.plural)} entfernt`);
+  }
+
+  // Aufheben und Wiederaktivieren schreiben, auch wenn sonst nichts geschieht.
+  if (log.liftedRestrictions) {
+    parts.push(`${count(log.liftedRestrictions, 'Einschränkung', 'Einschränkungen')} aufgehoben`);
+  }
+
+  if (log.reactivatedRestrictions) {
+    parts.push(
+      `${count(log.reactivatedRestrictions, 'Einschränkung', 'Einschränkungen')} wieder aktiv`,
+    );
   }
 
   return parts.length > 0 ? parts.join(', ') : 'keine Änderungen';

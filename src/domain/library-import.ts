@@ -24,10 +24,17 @@ import type {
   LoadKind,
   PlanEntry,
   ProgressionRule,
+  Restriction,
   TrackingMode,
   WorkoutTemplate,
   WorkoutTemplateExercise,
 } from '@/domain/models';
+import {
+  findLostRestrictedSteps,
+  importRestrictionSchema,
+  planRestrictions,
+  type RestrictionPlanEntry,
+} from '@/domain/restriction-import';
 import { TRACKING_MODE_LABELS } from '@/domain/tracking';
 import { createId } from '@/lib/id';
 import { formatNumber } from '@/lib/format';
@@ -184,7 +191,24 @@ const libraryImportPayloadSchema = z.object({
    */
   planRange: planRangeSchema.optional(),
   planEntries: z.array(importPlanEntrySchema).optional(),
+  // Einschränkungen: aus demselben Grund ohne `.default([])` wie die Termine.
+  restrictions: z.array(importRestrictionSchema).optional(),
 });
+
+/** Die Blöcke, die die App kennt; ein anderer Schlüssel bricht ab. */
+const KNOWN_TOP_LEVEL_KEYS = new Set([
+  'schemaVersion',
+  'exercises',
+  'templates',
+  'templateAssignments',
+  'bandLevels',
+  'planRange',
+  'planEntries',
+  'restrictions',
+]);
+
+/** Ein Kommentar für Menschen, den der Trainings-Assistent in die Datei schreiben darf. */
+const COMMENT_KEY = '_hinweis';
 
 export type ImportExerciseInput = z.infer<typeof importExerciseSchema>;
 export type ImportTemplateInput = z.infer<typeof importTemplateSchema>;
@@ -203,6 +227,9 @@ export interface LibraryImportState {
   planEntries: PlanEntry[];
   /** Termine, auf die eine laufende oder abgeschlossene Session oder ein Lauf zeigt. */
   takenPlanEntryIds: ReadonlySet<string>;
+  /** Der heutige Ortszeit-Tag (`YYYY-MM-DD`) - für den Zustand einer Einschränkung nach dem Import. */
+  today: string;
+  restrictions: Restriction[];
 }
 
 /** `removed` gibt es für Zuordnungen eines ersetzten Workouts und für Termine in `planRange`. */
@@ -278,6 +305,10 @@ export interface LibraryImportSummary {
   createdPlanEntries: number;
   updatedPlanEntries: number;
   removedPlanEntries: number;
+  createdRestrictions: number;
+  updatedRestrictions: number;
+  liftedRestrictions: number;
+  reactivatedRestrictions: number;
 }
 
 export interface LibraryImportPlan {
@@ -286,6 +317,7 @@ export interface LibraryImportPlan {
   assignments: AssignmentPlanEntry[];
   bandLevels: BandLevelPlanEntry[];
   planEntries: PlanEntryPlanEntry[];
+  restrictions: RestrictionPlanEntry[];
   templateOrder: TemplateOrderPlan[];
   /** Zielreihenfolge des Band-Katalogs, oder `null`, wenn er unberührt bleibt. */
   bandOrder: string[] | null;
@@ -358,11 +390,36 @@ export function parseLibraryImportPayload(json: string): LibraryImportPayload {
     );
   }
 
+  /*
+   * Unbekannte Blöcke brechen ab: zod verwürfe sie still, und eine Datei mit
+   * einem Block, den diese App noch nicht kennt, liefe ohne ihn durch.
+   * `_hinweis` ist erlaubt und fällt vor dem Parsen weg - der Hash bleibt der
+   * der Datei ohne ihn.
+   */
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    const rest = { ...(parsed as Record<string, unknown>) };
+
+    delete rest[COMMENT_KEY];
+
+    const unknown = Object.keys(rest).find((key) => !KNOWN_TOP_LEVEL_KEYS.has(key));
+
+    if (unknown !== undefined) {
+      throw new Error(`Unbekannter Block „${unknown}“ – ist die App aktuell?`);
+    }
+
+    parsed = rest;
+  }
+
   const result = libraryImportPayloadSchema.safeParse(parsed);
 
   if (!result.success) {
     const issue = result.error.issues[0];
-    throw new Error(`Import-Datei ungültig bei ${describeIssuePath(issue.path)}: ${issue.message}`);
+    const message =
+      issue.code === 'unrecognized_keys'
+        ? `Unbekanntes Feld „${issue.keys.join('“, „')}“.`
+        : issue.message;
+
+    throw new Error(`Import-Datei ungültig bei ${describeIssuePath(issue.path)}: ${message}`);
   }
 
   return result.data;
@@ -375,6 +432,12 @@ const BLOCK_LABELS: Record<string, string> = {
   bandLevels: 'Band',
   planEntries: 'Termin',
   planRange: 'planRange',
+  restrictions: 'Einschränkung',
+};
+
+const RESTRICTION_LIST_LABELS: Record<string, string> = {
+  pauses: 'Pause',
+  adjustments: 'Anpassung',
 };
 
 function describeIssuePath(path: Array<string | number>) {
@@ -388,6 +451,23 @@ function describeIssuePath(path: Array<string | number>) {
 
   if (typeof index !== 'number') {
     return label;
+  }
+
+  // Eine Pause oder Anpassung nennt ihre Position: „Einschränkung 1, Pause 2“.
+  if (
+    block === 'restrictions' &&
+    typeof field === 'string' &&
+    field in RESTRICTION_LIST_LABELS &&
+    typeof stepIndex === 'number'
+  ) {
+    const item = `${label} ${index + 1}, ${RESTRICTION_LIST_LABELS[field]} ${stepIndex + 1}`;
+    const rest = path.slice(5).map(String);
+
+    if (rest[0] === 'replacement') {
+      return rest[1] ? `${item}, Ersatz, Feld "${rest[1]}"` : `${item}, Ersatz`;
+    }
+
+    return stepField ? `${item}, Feld "${String(stepField)}"` : item;
   }
 
   // Ein Fehler in einem Schritt nennt den Schritt, nicht nur die Vorlage.
@@ -1515,6 +1595,18 @@ export function planLibraryImport(
   );
   const { entries: bandLevels, bandOrder } = planBandLevels(payload, state, problems);
   const planEntries = planImportedPlanEntries(payload, state, templates, problems);
+  const restrictions = payload.restrictions
+    ? planRestrictions({
+        restrictions: payload.restrictions,
+        state,
+        exercises,
+        templates,
+        assignments,
+        problems,
+      })
+    : [];
+
+  problems.push(...findLostRestrictedSteps({ state, templates, restrictionEntries: restrictions }));
 
   if (problems.length > 0) {
     throw new Error(problems.slice(0, 5).join('\n'));
@@ -1526,6 +1618,7 @@ export function planLibraryImport(
     assignments,
     bandLevels,
     planEntries,
+    restrictions,
     templateOrder,
     bandOrder,
     payloadHash: hashImportPayload(payload),
@@ -1542,6 +1635,10 @@ export function planLibraryImport(
       createdPlanEntries: countKind(planEntries, 'new'),
       updatedPlanEntries: countKind(planEntries, 'update'),
       removedPlanEntries: countKind(planEntries, 'removed'),
+      createdRestrictions: restrictions.filter((entry) => entry.kind === 'new').length,
+      updatedRestrictions: restrictions.filter((entry) => entry.kind === 'update').length,
+      liftedRestrictions: restrictions.filter((entry) => entry.kind === 'lifted').length,
+      reactivatedRestrictions: restrictions.filter((entry) => entry.kind === 'reactivated').length,
     },
   };
 }
@@ -1553,6 +1650,7 @@ export function planHasChanges(plan: LibraryImportPlan) {
     plan.templates.some((entry) => entry.kind !== 'unchanged') ||
     plan.assignments.some((entry) => entry.kind !== 'unchanged') ||
     plan.bandLevels.some((entry) => entry.kind !== 'unchanged') ||
-    plan.planEntries.some((entry) => entry.kind !== 'unchanged')
+    plan.planEntries.some((entry) => entry.kind !== 'unchanged') ||
+    plan.restrictions.some((entry) => entry.kind !== 'unchanged')
   );
 }

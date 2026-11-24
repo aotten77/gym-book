@@ -1189,7 +1189,6 @@ describe('restoreDatabaseSnapshot', () => {
       name,
       trackingMode: 'reps_weight' as const,
       unilateral: false,
-      mediaAssetIds: [] as string[],
       createdAt: stamp,
       updatedAt: stamp,
     });

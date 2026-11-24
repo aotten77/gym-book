@@ -1,4 +1,5 @@
 import { normalizeImportKey } from '@/domain/import-key';
+import { formatNumber } from '@/lib/format';
 import type {
   ExerciseAdjustment,
   ExerciseTarget,
@@ -461,4 +462,122 @@ export function suppressesProgressionHint(row: WorkoutSessionExercise): boolean 
   const kind = sessionRestrictionKind(row);
 
   return kind === 'trotzdem' || kind === 'angepasst' || row.progressionHeld === true;
+}
+
+/** `2026-12-14` → `14.12.`, für Etiketten und Hinweise. */
+export function formatRestrictionDay(day: string): string {
+  const [, month, date] = day.split('-');
+
+  return `${date}.${month}.`;
+}
+
+/** `2026-12-14` → `14.12.2026`, für die Vorschau „alt → neu“. */
+export function formatRestrictionDate(day: string): string {
+  const [year] = day.split('-');
+
+  return `${formatRestrictionDay(day)}${year}`;
+}
+
+/** Wie Ziele in Klarnamen heißen; fehlt ein Name, gibt es das Ding nicht mehr. */
+export interface RestrictionNameLookup {
+  exerciseName: (id: string) => string | undefined;
+  templateName: (id: string) => string | undefined;
+}
+
+type TargetValues = Partial<AdjustableTargets> & { restSeconds?: number };
+
+/** `3 Sätze, 8–10 Wdh., 40 kg` - die gesetzten Werte, in fester Reihenfolge. */
+export function describeTargetValues(values: TargetValues): string[] {
+  const parts: string[] = [];
+
+  if (values.workSetCount !== undefined) {
+    parts.push(`${formatNumber(values.workSetCount)} ${values.workSetCount === 1 ? 'Satz' : 'Sätze'}`);
+  }
+
+  if (values.targetReps !== undefined) {
+    parts.push(
+      values.targetRepsMax !== undefined
+        ? `${formatNumber(values.targetReps)}–${formatNumber(values.targetRepsMax)} Wdh.`
+        : `${formatNumber(values.targetReps)} Wdh.`,
+    );
+  } else if (values.targetRepsMax !== undefined) {
+    parts.push(`bis ${formatNumber(values.targetRepsMax)} Wdh.`);
+  }
+
+  if (values.targetSeconds !== undefined) {
+    parts.push(`${formatNumber(values.targetSeconds)} s`);
+  }
+
+  if (values.targetWeight !== undefined) {
+    parts.push(`${formatNumber(values.targetWeight)} kg`);
+  }
+
+  if (values.targetHeightCm !== undefined) {
+    parts.push(`${formatNumber(values.targetHeightCm)} cm`);
+  }
+
+  if (values.restSeconds !== undefined) {
+    parts.push(`Pause ${formatNumber(values.restSeconds)} s`);
+  }
+
+  return parts;
+}
+
+const UNKNOWN_NAME = '(gibt es nicht mehr)';
+
+/** `Kniebeuge (LH) in Einheit B` bzw. `Schritt Taubenpose in allen geführten Vorlagen`. */
+export function describeRestrictionTarget(
+  target: ExerciseTarget | StepTarget,
+  names: RestrictionNameLookup,
+): string {
+  const template =
+    target.templateId === undefined
+      ? undefined
+      : (names.templateName(target.templateId) ?? UNKNOWN_NAME);
+
+  if (isStepTarget(target)) {
+    return `Schritt ${target.stepName} in ${template ?? 'allen geführten Vorlagen'}`;
+  }
+
+  const exercise = names.exerciseName(target.exerciseId) ?? UNKNOWN_NAME;
+
+  return template === undefined ? exercise : `${exercise} in ${template}`;
+}
+
+/** `Pause: Sprungkniebeuge → Ersatz Step-up, 3 Sätze, 8 Wdh.` */
+export function describePauseLine(
+  pause: Restriction['pauses'][number],
+  names: RestrictionNameLookup,
+): string {
+  const line = `Pause: ${describeRestrictionTarget(pause, names)}`;
+
+  if (isStepTarget(pause) || !pause.replacement) {
+    return line;
+  }
+
+  const { exerciseId, ...values } = pause.replacement;
+  const replacement = names.exerciseName(exerciseId) ?? UNKNOWN_NAME;
+
+  return `${line} → ${[`Ersatz ${replacement}`, ...describeTargetValues(values)].join(', ')}`;
+}
+
+/** `Anpassung: Kniebeuge (LH) – 40 kg, Notiz „nur bis Parallel“` */
+export function describeAdjustmentLine(
+  adjustment: Restriction['adjustments'][number],
+  names: RestrictionNameLookup,
+): string {
+  const parts = isStepTarget(adjustment)
+    ? adjustment.seconds === undefined
+      ? []
+      : [`${formatNumber(adjustment.seconds)} s`]
+    : [
+        ...describeTargetValues(adjustment),
+        ...(adjustment.holdProgression ? ['Steigerung gehalten'] : []),
+      ];
+
+  if (adjustment.note) {
+    parts.push(`Notiz „${adjustment.note}“`);
+  }
+
+  return `Anpassung: ${describeRestrictionTarget(adjustment, names)} – ${parts.join(', ')}`;
 }

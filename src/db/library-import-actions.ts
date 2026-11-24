@@ -8,6 +8,7 @@ import {
   type LibraryImportState,
 } from '@/domain/library-import';
 import { buildImportedPlanEntryRecord, orderPlanDay } from '@/domain/plan-import';
+import { toDateInputValue } from '@/domain/program';
 import { createId } from '@/lib/id';
 
 /*
@@ -33,6 +34,8 @@ export async function loadLibraryImportState(): Promise<LibraryImportState> {
     progressionRules: await db.progressionRules.toArray(),
     planEntries,
     takenPlanEntryIds: await loadTakenPlanEntryIds(planEntries.map((entry) => entry.id)),
+    today: toDateInputValue(new Date()),
+    restrictions: await db.restrictions.toArray(),
   };
 }
 
@@ -76,6 +79,7 @@ export async function applyLibraryImport(
       db.planEntries,
       db.workoutSessions,
       db.runLogs,
+      db.restrictions,
     ],
     async () => {
       const state = await loadLibraryImportState();
