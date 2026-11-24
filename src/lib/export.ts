@@ -21,6 +21,7 @@ import type {
   Program,
   ProgramWeek,
   ProgressionRule,
+  Restriction,
   RunLog,
   WorkoutSession,
   WorkoutSessionExercise,
@@ -143,16 +144,41 @@ const guidedProtocolEntrySchema = z.object({
   stepIndex: z.number().int().min(0),
   name: z.string().min(1),
   side: z.enum(['left', 'right']).optional(),
-  status: z.enum(['done', 'skipped', 'extended', 'aborted']),
+  status: z.enum(['done', 'skipped', 'extended', 'aborted', 'paused']),
   plannedSeconds: z.number().min(0),
   actualSeconds: z.number().min(0),
+  /* Einschränkungen, additiv: ohne Eintrag hier verwürfe Zod die Namen still. */
+  restrictedBy: z.array(z.string()).optional(),
 });
+
+const restrictionNoteSchema = z.object({ by: z.string(), note: z.string() });
 
 const guidedRunSchema = z.object({
   steps: z.array(guidedStepSchema),
   events: z.array(guidedEventSchema),
   protocol: z.array(guidedProtocolEntrySchema).optional(),
   audioMode: z.enum(['voice', 'tone']).optional(),
+  /* Der Snapshot der Einschränkungen beim Start - additiv, kein Bump. */
+  pausedSteps: z
+    .array(
+      z.object({
+        index: z.number().int().min(0),
+        step: guidedStepSchema,
+        pausedBy: z.array(z.string()),
+        pausedUntil: z.string().optional(),
+      }),
+    )
+    .optional(),
+  adjustedSteps: z
+    .array(
+      z.object({
+        index: z.number().int().min(0),
+        adjustedBy: z.array(z.string()),
+        secondsBefore: z.number().optional(),
+        notes: z.array(restrictionNoteSchema).optional(),
+      }),
+    )
+    .optional(),
 });
 
 const workoutSessionSchema = z.object({
@@ -201,6 +227,31 @@ const workoutSessionExerciseSchema = z.object({
   targetHeightCm: z.number().nonnegative().optional(),
   restSeconds: z.number().nonnegative().optional(),
   notes: z.string().optional(),
+  /*
+   * Der Snapshot der Einschränkungen, additiv und ohne Bump. Ohne diese
+   * Einträge verwürfe Zod die Felder still, und eine Wiederherstellung machte
+   * aus jeder pausierten Übung eine normale offene.
+   */
+  pausedBy: z.array(z.string()).optional(),
+  pausedUntil: z.string().optional(),
+  pauseOverriddenAt: z.string().optional(),
+  adjustedBy: z.array(z.string()).optional(),
+  adjustmentNotes: z.array(restrictionNoteSchema).optional(),
+  targetsBeforeAdjustment: z
+    .object({
+      workSetCount: z.number().optional(),
+      targetReps: z.number().optional(),
+      targetRepsMax: z.number().optional(),
+      targetSeconds: z.number().optional(),
+      targetWeight: z.number().optional(),
+      targetHeightCm: z.number().optional(),
+    })
+    .optional(),
+  progressionHeld: z.boolean().optional(),
+  replacementFor: z
+    .object({ sessionExerciseId: z.string().min(1), restrictionName: z.string() })
+    .optional(),
+  excludedFromProgressAt: z.string().optional(),
 });
 
 const workoutSetLogSchema = z.object({
@@ -263,6 +314,76 @@ const libraryImportLogSchema = z.object({
   createdPlanEntries: z.number().int().nonnegative().optional(),
   updatedPlanEntries: z.number().int().nonnegative().optional(),
   removedPlanEntries: z.number().int().nonnegative().optional(),
+  createdRestrictions: z.number().int().nonnegative().optional(),
+  updatedRestrictions: z.number().int().nonnegative().optional(),
+  liftedRestrictions: z.number().int().nonnegative().optional(),
+  reactivatedRestrictions: z.number().int().nonnegative().optional(),
+});
+
+const restrictionTargetFields = { templateId: z.string().min(1).optional() };
+const exerciseTargetFields = { exerciseId: z.string().min(1), ...restrictionTargetFields };
+const stepTargetFields = { stepName: z.string().min(1), ...restrictionTargetFields };
+const adjustableTargetFields = {
+  workSetCount: z.number().int().positive().optional(),
+  targetReps: z.number().nonnegative().optional(),
+  targetRepsMax: z.number().nonnegative().optional(),
+  targetSeconds: z.number().nonnegative().optional(),
+  targetWeight: z.number().nonnegative().optional(),
+  targetHeightCm: z.number().nonnegative().optional(),
+};
+
+/*
+ * Eine Einschränkung im Backup. Die Ziele unterscheiden sich am Schlüssel
+ * (`exerciseId` oder `stepName`); `.strict()` hält eine Schrittanpassung davon
+ * ab, als Übungsanpassung mit fehlendem `exerciseId` durchzurutschen.
+ */
+const restrictionSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  reason: z.string().optional(),
+  from: z.string().min(1),
+  until: z.string().optional(),
+  liftedAt: z.string().optional(),
+  pauses: z.array(
+    z.union([
+      z
+        .object({
+          ...exerciseTargetFields,
+          replacement: z
+            .object({
+              exerciseId: z.string().min(1),
+              ...adjustableTargetFields,
+              workSetCount: z.number().int().positive(),
+              restSeconds: z.number().nonnegative().optional(),
+            })
+            .strict()
+            .optional(),
+        })
+        .strict(),
+      z.object(stepTargetFields).strict(),
+    ]),
+  ),
+  adjustments: z.array(
+    z.union([
+      z
+        .object({
+          ...exerciseTargetFields,
+          ...adjustableTargetFields,
+          note: z.string().optional(),
+          holdProgression: z.boolean().optional(),
+        })
+        .strict(),
+      z
+        .object({
+          ...stepTargetFields,
+          seconds: z.number().int().positive().optional(),
+          note: z.string().optional(),
+        })
+        .strict(),
+    ]),
+  ),
+  createdAt: z.string(),
+  updatedAt: z.string(),
 });
 
 const programWeekSchema = z.object({
@@ -397,6 +518,8 @@ const databaseSnapshotSchema = z.object({
   runLogs: z.array(runLogSchema).optional().default([]),
   // Und für den Plan: neue Tabelle, kein Bump des Literals.
   planEntries: z.array(planEntrySchema).optional().default([]),
+  // Und für die Einschränkungen: neue Tabelle (DB-Version 8), kein Bump.
+  restrictions: z.array(restrictionSchema).optional().default([]),
 });
 
 export interface DatabaseSnapshot {
@@ -418,6 +541,8 @@ export interface DatabaseSnapshot {
   libraryImports: LibraryImportLog[];
   runLogs: RunLog[];
   planEntries: PlanEntry[];
+  /** Fehlt in Snapshots, die vor den Einschränkungen gebaut wurden; der Parser setzt `[]`. */
+  restrictions?: Restriction[];
 }
 
 export interface DatabaseSnapshotSummary {
@@ -449,6 +574,7 @@ async function createDatabaseSnapshot(): Promise<DatabaseSnapshot> {
     libraryImports: await db.libraryImports.toArray(),
     runLogs: await db.runLogs.toArray(),
     planEntries: await db.planEntries.toArray(),
+    restrictions: await db.restrictions.toArray(),
   };
 }
 
@@ -616,6 +742,7 @@ export async function restoreDatabaseSnapshot(snapshot: DatabaseSnapshot) {
       db.libraryImports,
       db.runLogs,
       db.planEntries,
+      db.restrictions,
     ],
     async () => {
       await db.workoutSetLogs.clear();
@@ -634,6 +761,7 @@ export async function restoreDatabaseSnapshot(snapshot: DatabaseSnapshot) {
       await db.libraryImports.clear();
       await db.runLogs.clear();
       await db.planEntries.clear();
+      await db.restrictions.clear();
 
       if (snapshot.exercises.length) {
         await db.exercises.bulkAdd(snapshot.exercises);
@@ -697,6 +825,10 @@ export async function restoreDatabaseSnapshot(snapshot: DatabaseSnapshot) {
 
       if (snapshot.runLogs?.length) {
         await db.runLogs.bulkAdd(snapshot.runLogs);
+      }
+
+      if (snapshot.restrictions?.length) {
+        await db.restrictions.bulkAdd(snapshot.restrictions);
       }
     },
   );

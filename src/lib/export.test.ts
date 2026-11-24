@@ -1161,6 +1161,174 @@ describe('restoreDatabaseSnapshot', () => {
     expect(await db.planEntries.count()).toBe(0);
   });
 
+  it('stellt Einschränkungen und Snapshot-Felder wieder her', async () => {
+    const stamp = '2026-12-02T10:00:00.000Z';
+    const restriction = {
+      id: 'r1',
+      name: 'Beispiel A',
+      reason: 'erfunden',
+      from: '2026-12-01',
+      until: '2026-12-14',
+      pauses: [
+        {
+          exerciseId: 'e1',
+          replacement: { exerciseId: 'e2', workSetCount: 3, targetReps: 8, restSeconds: 60 },
+        },
+        { stepName: 'Tiefe Hocke', templateId: 'g1' },
+      ],
+      adjustments: [
+        { exerciseId: 'e1', templateId: 't1', targetWeight: 40, note: 'nur bis Parallel' },
+        { exerciseId: 'e2', holdProgression: true },
+        { stepName: 'Taubenpose', seconds: 30, note: 'langsam ausführen' },
+      ],
+      createdAt: stamp,
+      updatedAt: stamp,
+    };
+    const exercise = (id: string, name: string) => ({
+      id,
+      name,
+      trackingMode: 'reps_weight' as const,
+      unilateral: false,
+      mediaAssetIds: [] as string[],
+      createdAt: stamp,
+      updatedAt: stamp,
+    });
+    const session = {
+      id: 's1',
+      templateId: 't1',
+      templateNameSnapshot: 'Einheit A',
+      resolvedProgramWeek: 1,
+      startedAt: stamp,
+      status: 'completed' as const,
+      completedAt: stamp,
+    };
+    const base = {
+      sessionId: 's1',
+      exerciseNameSnapshot: 'Sprungkniebeuge',
+      trackingMode: 'reps_weight' as const,
+      unilateral: false,
+      wasSkipped: false,
+      addedInSession: false,
+      workSetCount: 3,
+    };
+    const paused = {
+      ...base,
+      id: 'se1',
+      exerciseId: 'e1',
+      orderIndex: 1,
+      pausedBy: ['Beispiel A'],
+      pausedUntil: '2026-12-14',
+      pauseOverriddenAt: stamp,
+      adjustedBy: ['Beispiel A'],
+      adjustmentNotes: [{ by: 'Beispiel A', note: 'nur bis Parallel' }],
+      targetsBeforeAdjustment: { targetWeight: 45 },
+      targetWeight: 40,
+      excludedFromProgressAt: stamp,
+    };
+    const replacement = {
+      ...base,
+      id: 'se2',
+      exerciseId: 'e2',
+      exerciseNameSnapshot: 'Step-up',
+      orderIndex: 2,
+      progressionHeld: true,
+      replacementFor: { sessionExerciseId: 'se1', restrictionName: 'Beispiel A' },
+    };
+    const guidedSession = {
+      id: 's2',
+      templateId: 'g1',
+      templateNameSnapshot: 'Mobility',
+      resolvedProgramWeek: 1,
+      startedAt: stamp,
+      status: 'completed' as const,
+      completedAt: stamp,
+      guided: {
+        steps: [{ name: 'Taubenpose', seconds: 30, bothSides: true }],
+        events: [{ type: 'start' as const, at: 0 }],
+        pausedSteps: [
+          {
+            index: 0,
+            step: { name: 'Tiefe Hocke', seconds: 60 },
+            pausedBy: ['Beispiel A'],
+            pausedUntil: '2026-12-14',
+          },
+        ],
+        adjustedSteps: [
+          {
+            index: 0,
+            adjustedBy: ['Beispiel A'],
+            secondsBefore: 45,
+            notes: [{ by: 'Beispiel A', note: 'langsam ausführen' }],
+          },
+        ],
+        protocol: [
+          {
+            stepIndex: 0,
+            name: 'Tiefe Hocke',
+            status: 'paused' as const,
+            plannedSeconds: 60,
+            actualSeconds: 0,
+            restrictedBy: ['Beispiel A'],
+          },
+        ],
+      },
+    };
+    const importLog = {
+      id: 'l1',
+      importedAt: stamp,
+      payloadHash: 'abc',
+      createdExercises: 0,
+      updatedExercises: 0,
+      createdTemplates: 0,
+      updatedTemplates: 0,
+      createdAssignments: 0,
+      updatedAssignments: 0,
+      createdBandLevels: 0,
+      updatedBandLevels: 0,
+      createdRestrictions: 1,
+      updatedRestrictions: 2,
+      liftedRestrictions: 3,
+      reactivatedRestrictions: 4,
+    };
+    const parsed = parseDatabaseSnapshot(
+      JSON.stringify(
+        createSnapshot({
+          exercises: [exercise('e1', 'Sprungkniebeuge'), exercise('e2', 'Step-up')],
+          workoutSessions: [session, guidedSession],
+          workoutSessionExercises: [paused, replacement],
+          libraryImports: [importLog],
+          restrictions: [restriction],
+        }),
+      ),
+    );
+
+    await restoreDatabaseSnapshot(parsed);
+
+    expect(await db.restrictions.toArray()).toEqual([restriction]);
+    expect(await db.workoutSessionExercises.get('se1')).toEqual(paused);
+    expect(await db.workoutSessionExercises.get('se2')).toEqual(replacement);
+    expect(await db.workoutSessions.get('s2')).toEqual(guidedSession);
+    expect(await db.libraryImports.get('l1')).toEqual(importLog);
+  });
+
+  it('nimmt ein Backup ohne restrictions an', async () => {
+    await db.restrictions.add({
+      id: 'alt',
+      name: 'Alt',
+      from: '2026-12-01',
+      pauses: [],
+      adjustments: [],
+      createdAt: '2026-11-01T00:00:00.000Z',
+      updatedAt: '2026-11-01T00:00:00.000Z',
+    });
+    const legacy = createSnapshot();
+    delete (legacy as Partial<DatabaseSnapshot>).restrictions;
+
+    await restoreDatabaseSnapshot(parseDatabaseSnapshot(JSON.stringify(legacy)));
+
+    expect(await db.restrictions.count()).toBe(0);
+  });
+
   it('Termin mit gelöschtem Workout wird nicht abgelehnt', () => {
     const stamp = '2026-10-05T10:00:00.000Z';
     const parsed = parseDatabaseSnapshot(

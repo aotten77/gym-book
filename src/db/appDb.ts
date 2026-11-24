@@ -11,6 +11,7 @@ import type {
   Program,
   ProgramWeek,
   ProgressionRule,
+  Restriction,
   RunLog,
   TtsConfig,
   WorkoutSession,
@@ -39,6 +40,7 @@ class GymBookDatabase extends Dexie {
   planEntries!: Table<PlanEntry, string>;
   announcements!: Table<Announcement, string>;
   ttsConfig!: Table<TtsConfig, string>;
+  restrictions!: Table<Restriction, string>;
 
   constructor() {
     super('gym-book-db');
@@ -126,6 +128,12 @@ class GymBookDatabase extends Dexie {
     this.version(7).stores({
       announcements: 'id, createdAt',
       ttsConfig: 'id',
+    });
+    // Einschränkungen: eigene kleine Tabelle, wird ganz gelesen. Kein Index auf
+    // `liftedAt` (boolean-artig, kann IndexedDB nicht) und kein `upgrade()` -
+    // es gibt nichts umzubauen.
+    this.version(8).stores({
+      restrictions: 'id',
     });
   }
 }
