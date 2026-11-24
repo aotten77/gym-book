@@ -14,7 +14,9 @@ import { pickPlanEntryForStart } from '@/domain/plan';
 import { toDateInputValue } from '@/domain/program';
 import { findRestTrack, removeRestTrack, removeRestTracksForExercise } from '@/domain/rest-timer';
 import type { SetLogValuesInput } from '@/domain/history';
+import { applyRestrictionEffect, resolveRestrictionEffect } from '@/domain/restriction';
 import { materializeSession } from '@/domain/session';
+import { loadRestrictions } from '@/db/restriction-actions';
 import {
   areGroupsContiguous,
   planGroupWithPrevious,
@@ -180,7 +182,21 @@ export async function startSessionFromTemplate(
     .equals(templateId)
     .sortBy('orderIndex');
 
-  const exercises = await db.exercises.bulkGet(templateExercises.map((item) => item.exerciseId));
+  // Mit den Wochenregeln und vor der Transaktion gelesen: ausgewertet wird
+  // für den Starttag, das Ergebnis friert als Snapshot an den Zeilen ein.
+  const restrictions = await loadRestrictions();
+  const startDay = toDateInputValue(now);
+  const resolveRestrictions = (exerciseId: string, forTemplateId?: string) =>
+    resolveRestrictionEffect({ restrictions, day: startDay, exerciseId, templateId: forTemplateId });
+  // Ersatzübungen stehen in keinem Workout und werden deshalb mitgeladen.
+  const replacementExerciseIds = templateExercises.flatMap((item) =>
+    resolveRestrictions(item.exerciseId, templateId).replacements.map(
+      ({ replacement }) => replacement.exerciseId,
+    ),
+  );
+  const exercises = await db.exercises.bulkGet([
+    ...new Set([...templateExercises.map((item) => item.exerciseId), ...replacementExerciseIds]),
+  ]);
   const { program, programWeek, resolvedProgramWeek, usedWeekOverride } =
     await resolveSessionWeekContext();
   const progressionRules =
@@ -212,6 +228,7 @@ export async function startSessionFromTemplate(
     usedWeekOverride,
     resolvedProgramWeek,
     startedAt: now.toISOString(),
+    resolveRestrictions,
   });
 
   return db.transaction(
@@ -503,7 +520,15 @@ export async function addSetLog(sessionExerciseId: string) {
   );
 }
 
-export async function addSessionExercise(input: AddSessionExerciseInput) {
+/**
+ * Hängt eine bestehende Übung an die laufende Session. Die Einschränkungen
+ * werden für den heutigen Tag ausgewertet wie beim Start - die eingegebenen
+ * Ziele sind dabei der Plan, den eine Anpassung überschreibt.
+ */
+export async function addSessionExercise(
+  input: AddSessionExerciseInput,
+  options: { now?: Date } = {},
+) {
   const session = await db.workoutSessions.get(input.sessionId);
 
   if (!session || session.status !== 'active') {
@@ -518,20 +543,36 @@ export async function addSessionExercise(input: AddSessionExerciseInput) {
     existingSessionExercises.length > 0
       ? Math.max(...existingSessionExercises.map((item) => item.orderIndex)) + 1
       : 1;
-  const workSetCount = Math.max(1, input.workSetCount);
   const exercise = await db.exercises.get(input.exerciseId);
 
   if (!exercise) {
     throw new Error('Exercise not found');
   }
 
+  const effect = resolveRestrictionEffect({
+    restrictions: await loadRestrictions(),
+    day: toDateInputValue(options.now ?? new Date()),
+    exerciseId: exercise.id,
+    templateId: session.templateId,
+  });
+  const { targets, snapshot } = applyRestrictionEffect(
+    {
+      workSetCount: Math.max(1, input.workSetCount),
+      targetReps: normalizeOptionalNumber(input.targetReps),
+      targetRepsMax: normalizeOptionalNumber(input.targetRepsMax),
+      targetSeconds: normalizeOptionalNumber(input.targetSeconds),
+      targetWeight: normalizeOptionalNumber(input.targetWeight),
+      targetHeightCm: normalizeOptionalNumber(input.targetHeightCm),
+    },
+    effect,
+  );
   const { trackingMode, loadKind, tracksHeight, suggestProgression, unilateral } = exercise;
   const targetBandId = normalizeOptionalText(input.targetBandId);
   const targetBand = targetBandId ? await db.bandLevels.get(targetBandId) : undefined;
   const sessionExerciseId = createId();
   const setLogs = createSetLogs(
     sessionExerciseId,
-    workSetCount,
+    targets.workSetCount,
     unilateral,
     input.includeWarmup !== false,
   );
@@ -552,16 +593,12 @@ export async function addSessionExercise(input: AddSessionExerciseInput) {
       orderIndex: nextOrderIndex,
       wasSkipped: false,
       addedInSession: true,
-      workSetCount,
-      targetReps: normalizeOptionalNumber(input.targetReps),
-      targetRepsMax: normalizeOptionalNumber(input.targetRepsMax),
-      targetSeconds: normalizeOptionalNumber(input.targetSeconds),
-      targetWeight: normalizeOptionalNumber(input.targetWeight),
+      ...targets,
       targetBandId,
       targetBandNameSnapshot: targetBand?.name,
-      targetHeightCm: normalizeOptionalNumber(input.targetHeightCm),
       restSeconds: normalizeOptionalNumber(input.restSeconds),
       notes: normalizeOptionalText(input.notes),
+      ...snapshot,
     });
 
     await db.workoutSetLogs.bulkAdd(setLogs);

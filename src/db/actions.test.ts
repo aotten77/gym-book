@@ -38,6 +38,7 @@ import {
   saveProgressionRule,
   ungroupTemplateExercise,
 } from '@/db/template-actions';
+import { liftRestriction } from '@/db/restriction-actions';
 import { seedRestSession } from '@/test/session-fixtures';
 
 describe('addSessionExercise', () => {
@@ -1688,6 +1689,84 @@ describe('Höhe als Einheit', () => {
     expect(await db.workoutSessionExercises.get(sessionExerciseId)).toMatchObject({
       tracksHeight: true,
       targetHeightCm: 30,
+    });
+  });
+});
+
+describe('Einschränkungen beim Start', () => {
+  const STAMP = '2026-11-24T10:00:00.000Z';
+  const DAY = new Date(2026, 11, 1, 9, 0);
+
+  async function seed() {
+    const exercise = { trackingMode: 'reps_weight' as const, unilateral: false, createdAt: STAMP };
+
+    await db.exercises.bulkAdd([
+      { ...exercise, id: 'jump', name: 'Sprungkniebeuge', updatedAt: STAMP },
+      { ...exercise, id: 'step', name: 'Step-up', updatedAt: STAMP },
+    ]);
+    await db.workoutTemplates.add({
+      id: 't1',
+      name: 'Einheit B',
+      createdAt: STAMP,
+      updatedAt: STAMP,
+    });
+    await db.workoutTemplateExercises.add({
+      id: 'te1',
+      templateId: 't1',
+      exerciseId: 'jump',
+      orderIndex: 1,
+      workSetCount: 3,
+    });
+    await db.restrictions.add({
+      id: 'r1',
+      name: 'Beispiel A',
+      from: '2026-12-01',
+      until: '2026-12-14',
+      pauses: [{ exerciseId: 'jump' }, { exerciseId: 'step' }],
+      adjustments: [],
+      createdAt: STAMP,
+      updatedAt: STAMP,
+    });
+  }
+
+  const rows = (sessionId: string) =>
+    db.workoutSessionExercises.where('sessionId').equals(sessionId).sortBy('orderIndex');
+
+  it('friert die Pause am Starttag ein und lässt sie nach dem Aufheben stehen', async () => {
+    await seed();
+
+    const sessionId = await startSessionFromTemplate('t1', { now: DAY });
+
+    expect((await rows(sessionId))[0]).toMatchObject({
+      pausedBy: ['Beispiel A'],
+      pausedUntil: '2026-12-14',
+    });
+
+    await liftRestriction('r1', DAY);
+
+    expect((await rows(sessionId))[0].pausedBy).toEqual(['Beispiel A']);
+  });
+
+  it('wertet am Tag vor dem Beginn nichts aus', async () => {
+    await seed();
+
+    const sessionId = await startSessionFromTemplate('t1', { now: new Date(2026, 10, 30, 9, 0) });
+
+    expect('pausedBy' in (await rows(sessionId))[0]).toBe(false);
+  });
+
+  it('wertet eine in der Session hinzugefügte Übung aus', async () => {
+    await seed();
+    const sessionId = await startSessionFromTemplate('t1', { now: DAY });
+
+    const id = await addSessionExercise(
+      { sessionId, exerciseId: 'step', workSetCount: 2 },
+      { now: DAY },
+    );
+
+    expect(await db.workoutSessionExercises.get(id)).toMatchObject({
+      pausedBy: ['Beispiel A'],
+      addedInSession: true,
     });
   });
 });

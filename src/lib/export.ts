@@ -239,12 +239,12 @@ const workoutSessionExerciseSchema = z.object({
   adjustmentNotes: z.array(restrictionNoteSchema).optional(),
   targetsBeforeAdjustment: z
     .object({
-      workSetCount: z.number().optional(),
-      targetReps: z.number().optional(),
-      targetRepsMax: z.number().optional(),
-      targetSeconds: z.number().optional(),
-      targetWeight: z.number().optional(),
-      targetHeightCm: z.number().optional(),
+      workSetCount: z.number().nullable().optional(),
+      targetReps: z.number().nullable().optional(),
+      targetRepsMax: z.number().nullable().optional(),
+      targetSeconds: z.number().nullable().optional(),
+      targetWeight: z.number().nullable().optional(),
+      targetHeightCm: z.number().nullable().optional(),
     })
     .optional(),
   progressionHeld: z.boolean().optional(),

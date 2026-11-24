@@ -11,6 +11,7 @@ import type {
   WorkoutTemplateExercise,
 } from '@/domain/models';
 import { foldProgressionRule } from '@/domain/progression-fold';
+import { applyRestrictionEffect, type RestrictionEffect } from '@/domain/restriction';
 import { createId } from '@/lib/id';
 
 interface MaterializeSessionInput {
@@ -25,6 +26,51 @@ interface MaterializeSessionInput {
   usedWeekOverride?: boolean;
   resolvedProgramWeek: number;
   startedAt: string;
+  /**
+   * Was die Einschränkungen am Starttag an einer Übung bewirken - eine pure
+   * Closure des Aufrufers über Einschränkungen und Tag. `materializeSession`
+   * kennt kein Datum. Fehlt sie, gibt es keine Einschränkungen.
+   */
+  resolveRestrictions?: (exerciseId: string, templateId?: string) => RestrictionEffect;
+}
+
+/** Aufwärmrunde und Arbeitssätze einer Zeile, je Seite gespiegelt. */
+function buildSetLogs(
+  sessionExerciseId: string,
+  workSetCount: number,
+  unilateral: boolean,
+  includeWarmup: boolean,
+): WorkoutSetLog[] {
+  const sides = unilateral ? (['left', 'right'] as const) : (['both'] as const);
+  const setLogs: WorkoutSetLog[] = [];
+
+  if (includeWarmup) {
+    for (const side of sides) {
+      setLogs.push({
+        id: createId(),
+        sessionExerciseId,
+        setKind: 'warmup',
+        side,
+        setNumber: 0,
+        completed: false,
+      });
+    }
+  }
+
+  for (let setNumber = 1; setNumber <= workSetCount; setNumber += 1) {
+    for (const side of sides) {
+      setLogs.push({
+        id: createId(),
+        sessionExerciseId,
+        setKind: 'work',
+        side,
+        setNumber,
+        completed: false,
+      });
+    }
+  }
+
+  return setLogs;
 }
 
 export function materializeSession({
@@ -38,6 +84,7 @@ export function materializeSession({
   usedWeekOverride,
   resolvedProgramWeek,
   startedAt,
+  resolveRestrictions,
 }: MaterializeSessionInput): SessionBundle {
   const sessionId = createId();
 
@@ -61,6 +108,7 @@ export function materializeSession({
 
   const sessionExercises: WorkoutSessionExercise[] = [];
   const setLogs: WorkoutSetLog[] = [];
+  let hasReplacement = false;
 
   for (const templateExercise of [...templateExercises].sort(
     (left, right) => left.orderIndex - right.orderIndex,
@@ -75,8 +123,13 @@ export function materializeSession({
     const sessionExerciseId = createId();
     // Die eine Stelle, an der Wochenvorgabe und Workout zusammenfallen - die
     // Programm-Seite zeigt dieselbe Funktion an, statt sie nachzubauen.
-    const targets = foldProgressionRule(templateExercise, progressionRule);
-    const targetBandId = targets.targetBandId;
+    const folded = foldProgressionRule(templateExercise, progressionRule);
+    const targetBandId = folded.targetBandId;
+    // Reihenfolge der Zielwerte: Zuordnung → Wochenregel → Anpassung.
+    const effect = resolveRestrictions?.(exercise.id, template.id);
+    const { targets, snapshot } = effect
+      ? applyRestrictionEffect(folded, effect)
+      : { targets: folded, snapshot: {} };
 
     sessionExercises.push({
       id: sessionExerciseId,
@@ -109,40 +162,95 @@ export function materializeSession({
       targetHeightCm: targets.targetHeightCm,
       // Die Pause kennt keine Wochenvorgabe - sie steht nicht in der Regel.
       restSeconds: templateExercise.restSeconds,
-      notes: targets.notes,
+      notes: folded.notes,
+      ...snapshot,
     });
-
-    const sides = exercise.unilateral ? (['left', 'right'] as const) : (['both'] as const);
 
     // Der Schalter ist optional: alles außer einem ausdrücklichen `false`
     // bekommt weiterhin genau eine Aufwärmrunde - bei einer einbeinigen Übung
     // sind das wie beim Arbeitssatz zwei Zeilen, weil auch aufgewärmt wird,
     // was danach einzeln belastet wird.
-    if (templateExercise.includeWarmup !== false) {
-      for (const side of sides) {
-        setLogs.push({
-          id: createId(),
-          sessionExerciseId,
-          setKind: 'warmup',
-          side,
-          setNumber: 0,
-          completed: false,
-        });
-      }
+    setLogs.push(
+      ...buildSetLogs(
+        sessionExerciseId,
+        targets.workSetCount,
+        exercise.unilateral,
+        templateExercise.includeWarmup !== false,
+      ),
+    );
+
+    if (snapshot.pausedBy === undefined) {
+      continue;
     }
 
-    for (let setNumber = 1; setNumber <= targets.workSetCount; setNumber += 1) {
-      for (const side of sides) {
-        setLogs.push({
-          id: createId(),
-          sessionExerciseId,
-          setKind: 'work',
-          side,
-          setNumber,
-          completed: false,
-        });
+    /*
+     * Der Ersatz steht direkt hinter der pausierten Übung, das Workout bleibt
+     * unverändert. Er hat keine Zuordnung und deshalb keine Wochenregel, wird
+     * aber selbst ausgewertet wie eine hinzugefügte Übung - pausiert oder
+     * angepasst kann auch er sein, einen eigenen Ersatz bekommt er nicht.
+     * Gibt es seine Übung nicht mehr, fällt er weg wie jedes tote Ziel.
+     */
+    for (const { restrictionName, replacement } of effect?.replacements ?? []) {
+      const replacementExercise = exercisesById[replacement.exerciseId];
+
+      if (!replacementExercise) {
+        continue;
       }
+
+      const replacementId = createId();
+      const replacementEffect = resolveRestrictions?.(replacementExercise.id, template.id);
+      const planned = {
+        workSetCount: replacement.workSetCount,
+        targetReps: replacement.targetReps,
+        targetRepsMax: replacement.targetRepsMax,
+        targetSeconds: replacement.targetSeconds,
+        targetWeight: replacement.targetWeight,
+        targetHeightCm: replacement.targetHeightCm,
+      };
+      const adjusted = replacementEffect
+        ? applyRestrictionEffect(planned, replacementEffect)
+        : { targets: planned, snapshot: {} };
+
+      sessionExercises.push({
+        id: replacementId,
+        sessionId,
+        exerciseId: replacementExercise.id,
+        exerciseNameSnapshot: replacementExercise.name,
+        trackingMode: replacementExercise.trackingMode,
+        loadKind: replacementExercise.loadKind,
+        tracksHeight: replacementExercise.tracksHeight,
+        suggestProgression: replacementExercise.suggestProgression,
+        unilateral: replacementExercise.unilateral,
+        // Vorläufig hinter der pausierten; unten wird dicht neu nummeriert.
+        orderIndex: templateExercise.orderIndex,
+        // Im Supersatz nimmt der Ersatz den Platz der pausierten Übung ein.
+        supersetGroupId: templateExercise.supersetGroupId,
+        wasSkipped: false,
+        addedInSession: false,
+        ...adjusted.targets,
+        restSeconds: replacement.restSeconds ?? templateExercise.restSeconds,
+        replacementFor: { sessionExerciseId, restrictionName },
+        ...adjusted.snapshot,
+      });
+      // Aufwärmrunde wie bei einer in der Session hinzugefügten Übung.
+      setLogs.push(
+        ...buildSetLogs(
+          replacementId,
+          adjusted.targets.workSetCount,
+          replacementExercise.unilateral,
+          true,
+        ),
+      );
+      hasReplacement = true;
     }
+  }
+
+  // Nur mit Ersatz wird neu nummeriert: dicht `1..n` in Listenreihenfolge,
+  // sonst hätten Ersatz und pausierte Übung denselben Platz.
+  if (hasReplacement) {
+    sessionExercises.forEach((row, index) => {
+      row.orderIndex = index + 1;
+    });
   }
 
   return {

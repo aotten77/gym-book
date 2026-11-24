@@ -409,18 +409,21 @@ export interface WorkoutSessionExercise {
   adjustedBy?: string[];
   /** Die Notizen der Anpassungen, je eine Zeile unter dem Übungsnamen. */
   adjustmentNotes?: RestrictionNote[];
-  /** Nur die tatsächlich geänderten Werte, mit ihrem Wert vor der Anpassung - das „statt …“. */
-  targetsBeforeAdjustment?: Partial<
-    Pick<
-      WorkoutSessionExercise,
+  /**
+   * Nur die tatsächlich geänderten Werte, mit ihrem Wert vor der Anpassung - das
+   * „statt …“. `null` heißt: Der Plan hatte keinen Wert, erst die Anpassung setzt
+   * einen. Auch das ist eine Abweichung - 40 kg statt der freien Wahl nach den
+   * letzten Werten.
+   */
+  targetsBeforeAdjustment?: {
+    [Field in
       | 'workSetCount'
       | 'targetReps'
       | 'targetRepsMax'
       | 'targetSeconds'
       | 'targetWeight'
-      | 'targetHeightCm'
-    >
-  >;
+      | 'targetHeightCm']?: number | null;
+  };
   /** Eine Anpassung trägt `holdProgression`: kein Steigerungshinweis. */
   progressionHeld?: boolean;
   /** Bei einem Ersatz: die Session-Zeile der pausierten Übung und der Name der Einschränkung. */

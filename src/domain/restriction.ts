@@ -160,7 +160,8 @@ function uniqueInOrder(values: string[]): string[] {
  * Wendet die Anpassungen auf die Zielwerte an. `targets` sind die Werte nach
  * Zuordnung und Wochenregel; `targetsBeforeAdjustment` hält **nur** die Felder,
  * deren Wert sich dadurch tatsächlich geändert hat - eine Anpassung gleich dem
- * Wochenwert ist keine Abweichung. Leere Felder fehlen im Snapshot ganz.
+ * Wochenwert ist keine Abweichung. Setzt erst die Anpassung einen Wert, steht
+ * dort `null`. Leere Felder fehlen im Snapshot ganz.
  */
 export function applyRestrictionEffect(
   targets: AdjustableTargets,
@@ -202,8 +203,8 @@ export function applyRestrictionEffect(
   const before: NonNullable<RestrictionSnapshot['targetsBeforeAdjustment']> = {};
 
   for (const field of ADJUSTABLE_FIELDS) {
-    if (adjusted[field] !== targets[field] && targets[field] !== undefined) {
-      before[field] = targets[field];
+    if (adjusted[field] !== targets[field]) {
+      before[field] = targets[field] ?? null;
     }
   }
 

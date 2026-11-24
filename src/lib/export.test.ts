@@ -1220,7 +1220,7 @@ describe('restoreDatabaseSnapshot', () => {
       pauseOverriddenAt: stamp,
       adjustedBy: ['Beispiel A'],
       adjustmentNotes: [{ by: 'Beispiel A', note: 'nur bis Parallel' }],
-      targetsBeforeAdjustment: { targetWeight: 45 },
+      targetsBeforeAdjustment: { targetWeight: 45, targetReps: null as number | null },
       targetWeight: 40,
       excludedFromProgressAt: stamp,
     };

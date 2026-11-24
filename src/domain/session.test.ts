@@ -6,9 +6,12 @@ import {
   materializeSession,
   resolveNextFocus,
 } from '@/domain/session';
+import { resolveRestrictionEffect } from '@/domain/restriction';
 import type {
   Exercise,
   ProgressionRule,
+  Restriction,
+  RestrictionReplacement,
   WorkoutSessionExercise,
   WorkoutSetLog,
   WorkoutTemplate,
@@ -691,5 +694,233 @@ describe('calculateAsymmetryPercent', () => {
 
   it('returns zero when both sides are zero', () => {
     expect(calculateAsymmetryPercent(0, 0)).toBe(0);
+  });
+});
+
+describe('materializeSession mit Einschränkungen', () => {
+  const STAMP = '2026-11-24T10:00:00.000Z';
+  const template: WorkoutTemplate = {
+    id: 't1',
+    name: 'Einheit B',
+    createdAt: STAMP,
+    updatedAt: STAMP,
+  };
+  const exercise = (id: string, name: string, unilateral = false): Exercise => ({
+    id,
+    name,
+    trackingMode: 'reps_weight',
+    unilateral,
+    createdAt: STAMP,
+    updatedAt: STAMP,
+  });
+  const exercisesById: Record<string, Exercise> = {
+    squat: exercise('squat', 'Kniebeuge (LH)'),
+    jump: exercise('jump', 'Sprungkniebeuge'),
+    step: exercise('step', 'Step-up', true),
+    thrust: exercise('thrust', 'Hip Thrust'),
+  };
+  const assignment = (
+    id: string,
+    exerciseId: string,
+    orderIndex: number,
+    extra: Partial<WorkoutTemplateExercise> = {},
+  ): WorkoutTemplateExercise => ({
+    id,
+    templateId: 't1',
+    exerciseId,
+    orderIndex,
+    workSetCount: 4,
+    ...extra,
+  });
+  const knee = (overrides: Partial<Restriction>): Restriction => ({
+    id: 'r1',
+    name: 'Beispiel A',
+    from: '2026-12-01',
+    until: '2026-12-14',
+    pauses: [],
+    adjustments: [],
+    createdAt: STAMP,
+    updatedAt: STAMP,
+    ...overrides,
+  });
+
+  const pauseWith = (replacement: RestrictionReplacement) =>
+    knee({ pauses: [{ exerciseId: 'jump', replacement }] });
+
+  function run(
+    templateExercises: WorkoutTemplateExercise[],
+    restrictions: Restriction[],
+    progressionRulesByTemplateExerciseId?: Record<string, ProgressionRule>,
+  ) {
+    return materializeSession({
+      template,
+      templateExercises,
+      exercisesById,
+      progressionRulesByTemplateExerciseId,
+      resolveRestrictions: (exerciseId, templateId) =>
+        resolveRestrictionEffect({ restrictions, day: '2026-12-02', exerciseId, templateId }),
+      resolvedProgramWeek: 1,
+      startedAt: '2026-12-02T09:00:00.000Z',
+    });
+  }
+
+  const workSets = (bundle: ReturnType<typeof run>, sessionExerciseId: string) =>
+    bundle.setLogs.filter(
+      (log) => log.sessionExerciseId === sessionExerciseId && log.setKind === 'work',
+    );
+
+  it('lässt die Anpassung über die Wochenregel gewinnen, „statt“ ist der Wochenwert', () => {
+    const bundle = run(
+      [assignment('te1', 'squat', 1, { targetWeight: 50 })],
+      [knee({ adjustments: [{ exerciseId: 'squat', targetWeight: 40 }] })],
+      { te1: { id: 'rule', templateExerciseId: 'te1', programWeekId: 'w1', targetWeight: 45 } },
+    );
+
+    expect(bundle.sessionExercises[0]).toMatchObject({
+      targetWeight: 40,
+      targetsBeforeAdjustment: { targetWeight: 45 },
+      adjustedBy: ['Beispiel A'],
+    });
+  });
+
+  it('legt bei angepasster Satzzahl genau so viele Arbeitssätze je Seite an', () => {
+    const bundle = run(
+      [assignment('te1', 'step', 1)],
+      [knee({ adjustments: [{ exerciseId: 'step', workSetCount: 2 }] })],
+    );
+    const row = bundle.sessionExercises[0];
+
+    expect(row.workSetCount).toBe(2);
+    expect(workSets(bundle, row.id)).toHaveLength(4);
+    expect(workSets(bundle, row.id).filter((log) => log.side === 'left')).toHaveLength(2);
+  });
+
+  it('lässt bei holdProgression die Wochenregel wirken und hält nur den Hinweis', () => {
+    const bundle = run(
+      [assignment('te1', 'squat', 1, { targetWeight: 50 })],
+      [knee({ adjustments: [{ exerciseId: 'squat', holdProgression: true }] })],
+      { te1: { id: 'rule', templateExerciseId: 'te1', programWeekId: 'w1', targetWeight: 55 } },
+    );
+
+    expect(bundle.sessionExercises[0].targetWeight).toBe(55);
+    expect(bundle.sessionExercises[0].progressionHeld).toBe(true);
+    expect(bundle.sessionExercises[0].targetsBeforeAdjustment).toBeUndefined();
+  });
+
+  it('hält einen Wert, den erst die Anpassung setzt, als Abweichung fest', () => {
+    const bundle = run(
+      [assignment('te1', 'squat', 1)],
+      [knee({ adjustments: [{ exerciseId: 'squat', targetWeight: 40 }] })],
+    );
+
+    expect(bundle.sessionExercises[0].targetsBeforeAdjustment).toEqual({ targetWeight: null });
+  });
+
+  it('legt den Ersatz direkt hinter der pausierten Übung an und nummeriert dicht', () => {
+    const bundle = run(
+      [
+        assignment('te1', 'squat', 1),
+        assignment('te2', 'jump', 2, { restSeconds: 120 }),
+        assignment('te3', 'thrust', 3),
+      ],
+      [
+        knee({
+          pauses: [
+            {
+              exerciseId: 'jump',
+              replacement: { exerciseId: 'step', workSetCount: 3, targetReps: 8 },
+            },
+          ],
+        }),
+      ],
+    );
+    const [squat, jump, replacement, thrust] = bundle.sessionExercises;
+
+    expect(bundle.sessionExercises.map((row) => row.exerciseId)).toEqual([
+      'squat',
+      'jump',
+      'step',
+      'thrust',
+    ]);
+    expect(bundle.sessionExercises.map((row) => row.orderIndex)).toEqual([1, 2, 3, 4]);
+    expect(squat.orderIndex).toBe(1);
+    expect(thrust.orderIndex).toBe(4);
+    expect(jump).toMatchObject({ pausedBy: ['Beispiel A'], pausedUntil: '2026-12-14' });
+    expect(replacement).toMatchObject({
+      exerciseNameSnapshot: 'Step-up',
+      addedInSession: false,
+      wasSkipped: false,
+      replacementFor: { sessionExerciseId: jump.id, restrictionName: 'Beispiel A' },
+      workSetCount: 3,
+      targetReps: 8,
+      restSeconds: 120,
+      unilateral: true,
+    });
+    expect('sourceTemplateExerciseId' in replacement).toBe(false);
+    // Einseitig: drei Arbeitssätze je Seite plus die Aufwärmrunde links und rechts.
+    expect(workSets(bundle, replacement.id)).toHaveLength(6);
+    expect(
+      bundle.setLogs.filter(
+        (log) => log.sessionExerciseId === replacement.id && log.setKind === 'warmup',
+      ),
+    ).toHaveLength(2);
+  });
+
+  it('lässt die Reihenfolge ohne Ersatz wie im Workout', () => {
+    const bundle = run(
+      [assignment('te1', 'squat', 2), assignment('te2', 'jump', 5)],
+      [knee({ pauses: [{ exerciseId: 'jump' }] })],
+    );
+
+    expect(bundle.sessionExercises.map((row) => row.orderIndex)).toEqual([2, 5]);
+  });
+
+  it('gibt dem Ersatz im Supersatz die Gruppe der pausierten Übung', () => {
+    const bundle = run(
+      [
+        assignment('te1', 'jump', 1, { supersetGroupId: 'g1' }),
+        assignment('te2', 'thrust', 2, { supersetGroupId: 'g1' }),
+      ],
+      [pauseWith({ exerciseId: 'step', workSetCount: 2 })],
+    );
+
+    expect(bundle.sessionExercises.map((row) => [row.exerciseId, row.supersetGroupId])).toEqual([
+      ['jump', 'g1'],
+      ['step', 'g1'],
+      ['thrust', 'g1'],
+    ]);
+  });
+
+  it('wendet eine Anpassung der Ersatzübung am Ersatz an', () => {
+    const bundle = run(
+      [assignment('te1', 'jump', 1)],
+      [
+        knee({
+          pauses: [
+            {
+              exerciseId: 'jump',
+              replacement: { exerciseId: 'step', workSetCount: 3, targetWeight: 20 },
+            },
+          ],
+          adjustments: [{ exerciseId: 'step', targetWeight: 10, note: 'langsam' }],
+        }),
+      ],
+    );
+    const replacement = bundle.sessionExercises[1];
+
+    expect(replacement).toMatchObject({
+      targetWeight: 10,
+      targetsBeforeAdjustment: { targetWeight: 20 },
+      adjustmentNotes: [{ by: 'Beispiel A', note: 'langsam' }],
+    });
+  });
+
+  it('übergeht einen Ersatz, dessen Übung es nicht mehr gibt', () => {
+    const bundle = run(
+      [assignment('te1', 'jump', 1)],
+      [pauseWith({ exerciseId: 'weg', workSetCount: 3 })],
+    );
+
+    expect(bundle.sessionExercises.map((row) => row.exerciseId)).toEqual(['jump']);
   });
 });
