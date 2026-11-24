@@ -8,6 +8,8 @@ export interface ProgressPoint {
   /** Summe aus Gewicht x Wiederholungen bzw. Gewicht x Sekunden. */
   volume: number;
   setCount: number;
+  /** Unter Einschränkung gemessen: echter Wert, aber kein Leistungsstand. */
+  restricted?: boolean;
 }
 
 export type ProgressMetricKey = 'weight' | 'seconds' | 'band' | 'height';
@@ -92,14 +94,14 @@ interface ProgressSeriesOptions {
  * getrennt geloggt werden.
  */
 export function buildProgressSeries(
-  executions: Array<{ completedAt: string; workLogs: WorkoutSetLog[] }>,
+  executions: Array<{ completedAt: string; workLogs: WorkoutSetLog[]; restricted?: boolean }>,
   trackingMode: TrackingMode,
   { loadKind, tracksHeight, bandRank }: ProgressSeriesOptions = {},
 ): ProgressPoint[] {
   const metric = progressMetricFor(trackingMode, loadKind, tracksHeight).key;
 
   return executions
-    .map((execution) => {
+    .map((execution): ProgressPoint | null => {
       const values = execution.workLogs
         .map((log) => valueOf(log, metric, bandRank))
         .filter((value): value is number => typeof value === 'number');
@@ -119,6 +121,7 @@ export function buildProgressSeries(
         topValue: Math.max(...values),
         volume,
         setCount: execution.workLogs.length,
+        restricted: execution.restricted === true,
       };
     })
     .filter((point): point is ProgressPoint => point !== null)

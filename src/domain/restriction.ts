@@ -416,11 +416,23 @@ export function isInactiveSessionExercise(row: WorkoutSessionExercise): boolean 
   return row.wasSkipped || isPausedSessionExercise(row);
 }
 
+/** Die Felder einer Session-Zeile, aus denen ihre Art folgt. */
+export type RestrictionKindFields = Pick<
+  WorkoutSessionExercise,
+  | 'pausedBy'
+  | 'pauseOverriddenAt'
+  | 'targetsBeforeAdjustment'
+  | 'excludedFromProgressAt'
+  | 'replacementFor'
+  | 'progressionHeld'
+  | 'adjustmentNotes'
+>;
+
 /**
  * Die Art einer Session-Zeile; die erste zutreffende gilt:
  * `pausiert` > `trotzdem` > `angepasst` > `ausgenommen` > `ersatz` > `gehalten` > `hinweis`.
  */
-export function sessionRestrictionKind(row: WorkoutSessionExercise): RestrictionKind | undefined {
+export function sessionRestrictionKind(row: RestrictionKindFields): RestrictionKind | undefined {
   if ((row.pausedBy?.length ?? 0) > 0) {
     return row.pauseOverriddenAt ? 'trotzdem' : 'pausiert';
   }
@@ -448,7 +460,7 @@ export function sessionRestrictionKind(row: WorkoutSessionExercise): Restriction
  * Zählt nicht als letzte Werte und nicht für den Steigerungshinweis:
  * `trotzdem`, `angepasst`, `ausgenommen`. Die einzige Stelle, die das entscheidet.
  */
-export function isRestrictedExecution(row: WorkoutSessionExercise): boolean {
+export function isRestrictedExecution(row: RestrictionKindFields): boolean {
   const kind = sessionRestrictionKind(row);
 
   return kind === 'trotzdem' || kind === 'angepasst' || kind === 'ausgenommen';
@@ -459,7 +471,7 @@ export function isRestrictedExecution(row: WorkoutSessionExercise): boolean {
  * und `gehalten`. Gefragt wird `progressionHeld` direkt, nicht nur die Art -
  * ein gehaltener Ersatz hat die Art `ersatz` und bekommt trotzdem keinen.
  */
-export function suppressesProgressionHint(row: WorkoutSessionExercise): boolean {
+export function suppressesProgressionHint(row: RestrictionKindFields): boolean {
   const kind = sessionRestrictionKind(row);
 
   return kind === 'trotzdem' || kind === 'angepasst' || row.progressionHeld === true;

@@ -4,7 +4,9 @@ import {
   loadActiveSessionProgress,
   loadCompletedSessionsBetween,
   loadEarliestTimelineDate,
+  loadExerciseExecutions,
   loadExercisesTrainedSince,
+  loadLastValuesForExercises,
   loadRunsBetween,
   loadSyncActivitySince,
   loadSessionVolumes,
@@ -15,7 +17,7 @@ import {
   loadWeekSummary,
   loadWeeklyVolume,
 } from '@/db/history-queries';
-import type { SessionStatus } from '@/domain/models';
+import type { SessionStatus, WorkoutSessionExercise } from '@/domain/models';
 import type { WorkoutCategory } from '@/domain/workout-category';
 
 interface SessionSeed {
@@ -704,5 +706,62 @@ describe('loadActiveSessionProgress', () => {
       completedCount: 6,
       totalCount: 18,
     });
+  });
+});
+
+describe('loadLastValuesForExercises unter Einschränkungen', () => {
+  /** Eine ältere freie Ausführung mit 60 kg und eine jüngere mit 40 kg und `snapshot`. */
+  async function seedTwo(snapshot: Partial<WorkoutSessionExercise>) {
+    await addSession({
+      id: 'old',
+      templateId: 'template-a',
+      status: 'completed',
+      completedAt: '2026-08-01T10:00:00.000Z',
+    });
+    await addSession({
+      id: 'new',
+      templateId: 'template-a',
+      status: 'completed',
+      completedAt: '2026-08-08T10:00:00.000Z',
+    });
+    await addSessionExercise({ id: 'se-old', sessionId: 'old', exerciseId: 'squat' });
+    await addSessionExercise({ id: 'se-new', sessionId: 'new', exerciseId: 'squat' });
+    await db.workoutSessionExercises.update('se-new', snapshot);
+    await addSetLog({ id: 'log-old', sessionExerciseId: 'se-old', weight: 60, reps: 5 });
+    await addSetLog({ id: 'log-new', sessionExerciseId: 'se-new', weight: 40, reps: 5 });
+  }
+
+  const lastWeight = async () =>
+    (await loadLastValuesForExercises(['squat'])).squat?.logs[0]?.weight;
+
+  it.each<[string, Partial<WorkoutSessionExercise>]>([
+    ['angepasst', { adjustedBy: ['Beispiel A'], targetsBeforeAdjustment: { targetWeight: 60 } }],
+    ['trotzdem', { pausedBy: ['Beispiel A'], pauseOverriddenAt: '2026-08-08T09:00:00.000Z' }],
+    ['ausgenommen', { excludedFromProgressAt: '2026-08-09T09:00:00.000Z' }],
+  ])('überspringt eine jüngere Ausführung der Art %s', async (_kind, snapshot) => {
+    await seedTwo(snapshot);
+
+    expect(await lastWeight()).toBe(60);
+  });
+
+  it.each<[string, Partial<WorkoutSessionExercise>]>([
+    ['ersatz', { replacementFor: { sessionExerciseId: 'x', restrictionName: 'Beispiel A' } }],
+    ['gehalten', { adjustedBy: ['Beispiel A'], progressionHeld: true }],
+    ['hinweis', { adjustedBy: ['Beispiel A'], adjustmentNotes: [{ by: 'Beispiel A', note: 'ruhig' }] }],
+  ])('nimmt eine jüngere Ausführung der Art %s', async (_kind, snapshot) => {
+    await seedTwo(snapshot);
+
+    expect(await lastWeight()).toBe(40);
+  });
+
+  it('markiert eingeschränkte Ausführungen im Verlauf, statt sie wegzulassen', async () => {
+    await seedTwo({ excludedFromProgressAt: '2026-08-09T09:00:00.000Z' });
+
+    const executions = await loadExerciseExecutions('squat');
+
+    expect(executions.map((item) => [item.sessionId, item.restricted])).toEqual([
+      ['old', false],
+      ['new', true],
+    ]);
   });
 });

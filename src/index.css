@@ -47,10 +47,12 @@
   /*
    * Diagrammfarben als Variablen, weil SVG-Attribute keine Tailwind-Klassen
    * kennen. Sie gehoeren zu denselben Tokens wie der Rest: Waldgruen ist die
-   * Linie, Papier der Punkt darauf.
+   * Linie, Papier der Punkt darauf. Ein Punkt unter Einschränkung ist hohl in
+   * neutraler Tinte (`content.muted`) - kein Signal, nur abgesetzt.
    */
   --chart-line: #1d4b3a;
   --chart-dot: #ffffff;
+  --chart-muted: #5c625f;
 }
 
 * {

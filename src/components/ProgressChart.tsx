@@ -37,7 +37,13 @@ export function ProgressChart({ points, unit, label, formatValue, lowerIsBetter 
     return null;
   }
 
-  const trend = summarizeTrend(points);
+  /*
+   * Der Trend nennt Leistungsstand und lässt deshalb Punkte unter
+   * Einschränkung aus - sonst stünde nach einer Schonphase ein rotes Minus,
+   * das nichts über die Leistung sagt. Gezeichnet werden sie trotzdem, hohl.
+   */
+  const trend = summarizeTrend(points.filter((point) => !point.restricted));
+  const hasRestricted = points.some((point) => point.restricted);
   const values = points.map((point) => point.topValue);
   const min = Math.min(...values);
   const max = Math.max(...values);
@@ -103,9 +109,11 @@ export function ProgressChart({ points, unit, label, formatValue, lowerIsBetter 
             cy={y}
             r="3"
             fill="var(--chart-dot)"
-            stroke="var(--chart-line)"
+            stroke={point.restricted ? 'var(--chart-muted)' : 'var(--chart-line)'}
             strokeWidth="2"
+            strokeDasharray={point.restricted ? '2 2' : undefined}
             vectorEffect="non-scaling-stroke"
+            data-restricted={point.restricted ? 'true' : undefined}
           />
         ))}
       </svg>
@@ -128,6 +136,23 @@ export function ProgressChart({ points, unit, label, formatValue, lowerIsBetter 
         </span>
         <span>{formatDate(points[points.length - 1].completedAt)}</span>
       </figcaption>
+
+      {hasRestricted ? (
+        <p className="mt-1 flex items-center gap-1.5 text-xs text-content-muted">
+          <svg viewBox="0 0 10 10" className="h-2.5 w-2.5" aria-hidden="true">
+            <circle
+              cx="5"
+              cy="5"
+              r="3.5"
+              fill="var(--chart-dot)"
+              stroke="var(--chart-muted)"
+              strokeWidth="1.5"
+              strokeDasharray="1.5 1.5"
+            />
+          </svg>
+          unter Einschränkung
+        </p>
+      ) : null}
     </figure>
   );
 }

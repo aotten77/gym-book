@@ -1,5 +1,6 @@
 import type { SetValues } from '@/domain/history';
 import type { BandLevel, WorkoutSessionExercise, WorkoutSetLog } from '@/domain/models';
+import { suppressesProgressionHint, type RestrictionKindFields } from '@/domain/restriction';
 import {
   supportsBand,
   supportsHeight,
@@ -46,7 +47,8 @@ type HintExercise = Pick<
   | 'targetRepsMax'
   | 'targetSeconds'
   | 'suggestProgression'
->;
+> &
+  Partial<RestrictionKindFields>;
 
 export interface ProgressionHintInput {
   exercise: HintExercise;
@@ -152,6 +154,12 @@ export function hasProgressionHint({
   // Der Schalter der Übung sticht alles: Rotatorenmanschette wird nicht
   // gesteigert, egal wie gut die letzte Woche lief.
   if (exercise.suggestProgression === false) {
+    return false;
+  }
+
+  // Unter Einschränkung (trotzdem, angepasst, gehalten) gibt es in dieser
+  // Einheit keine Marke - die Schonphase ist kein Anlass zu steigern.
+  if (suppressesProgressionHint(exercise)) {
     return false;
   }
 

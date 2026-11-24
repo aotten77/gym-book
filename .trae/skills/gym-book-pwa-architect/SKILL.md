@@ -123,6 +123,8 @@ Recommended set log shape:
 - Do not scope this to the same template slot in v1.
 - If helpful in UI, show the source context such as the template name where the last values came from.
 - Keep test history separate from workout history.
+- An execution under a restriction (adjusted, done anyway despite a pause, or excluded in history) does not count as last values nor for the progression hint; a replacement counts normally.
+- The one exception to "a completed session is history": the history switch "Zählt nicht als Leistungsstand" sets or removes `excludedFromProgressAt` on one exercise of a completed session. No value, set or target changes — only the marker.
 
 ## Persistence and Import/Export
 

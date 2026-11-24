@@ -102,6 +102,25 @@ describe('buildProgressSeries', () => {
     expect(series[0].completedAt).toBe('2026-01-01T10:00:00.000Z');
   });
 
+  it('behält eine eingeschränkte Ausführung als Punkt und markiert sie', () => {
+    const series = buildProgressSeries(
+      [
+        { completedAt: '2026-02-01T10:00:00.000Z', workLogs: [log({ weight: 80, reps: 5 })] },
+        {
+          completedAt: '2026-02-08T10:00:00.000Z',
+          workLogs: [log({ weight: 40, reps: 5 })],
+          restricted: true,
+        },
+      ],
+      'reps_weight',
+    );
+
+    expect(series.map((point) => [point.topValue, point.restricted])).toEqual([
+      [80, false],
+      [40, true],
+    ]);
+  });
+
   it('takes the better side rather than the sum for unilateral work', () => {
     const series = buildProgressSeries(
       [

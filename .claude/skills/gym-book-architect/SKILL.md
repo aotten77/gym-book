@@ -62,6 +62,8 @@ Do not use it for generic framework tutorials or unrelated repositories.
 - "Last values" means the last **completed** execution of the same `Exercise` — not the last row, and not scoped to the same template slot.
 - Show source context (template name, date) where it helps.
 - Keep test history separate from workout history.
+- An execution under a restriction (adjusted, done anyway despite a pause, or excluded in history) does not count as last values nor for the progression hint; a replacement counts normally.
+- The one exception to "a completed session is history": the history switch "Zählt nicht als Leistungsstand" sets or removes `excludedFromProgressAt` on one exercise of a completed session. No value, set or target changes — only the marker.
 
 ## Persistence and import/export
 

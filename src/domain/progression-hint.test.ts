@@ -72,6 +72,27 @@ describe('hasProgressionHint', () => {
     ).toBe(false);
   });
 
+  it.each<[string, Partial<WorkoutSessionExercise>]>([
+    ['trotzdem', { pausedBy: ['Beispiel A'], pauseOverriddenAt: '2026-12-02T09:00:00.000Z' }],
+    ['angepasst', { targetsBeforeAdjustment: { targetReps: 12 } }],
+    ['gehalten', { progressionHeld: true }],
+  ])('schweigt an einer Übung der Art %s', (_kind, overrides) => {
+    expect(
+      hasProgressionHint({ exercise: exercise(overrides), log: log(), lastExact: { reps: 10 } }),
+    ).toBe(false);
+  });
+
+  it('markiert einen Ersatz und eine Übung mit bloßem Hinweis wie jede andere', () => {
+    const replacement = { sessionExerciseId: 'se1', restrictionName: 'Beispiel A' };
+    const notes = [{ by: 'Beispiel A', note: 'ruhig' }];
+
+    for (const overrides of [{ replacementFor: replacement }, { adjustmentNotes: notes }]) {
+      expect(
+        hasProgressionHint({ exercise: exercise(overrides), log: log(), lastExact: { reps: 10 } }),
+      ).toBe(true);
+    }
+  });
+
   it('zählt `undefined` als eingeschaltet, wie `includeWarmup`', () => {
     expect(
       hasProgressionHint({

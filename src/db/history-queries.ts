@@ -11,7 +11,7 @@ import type { RunLog, WorkoutSetLog } from '@/domain/models';
 import type { CalendarSession, CalendarTest } from '@/domain/training-calendar';
 import { startOfCalendarWeek } from '@/domain/calendar-week';
 import { toDateInputValue } from '@/domain/program';
-import { isInactiveSessionExercise } from '@/domain/restriction';
+import { isInactiveSessionExercise, isRestrictedExecution } from '@/domain/restriction';
 import { summarizeSessionProgress } from '@/domain/session-summary';
 import { sumWorkVolume } from '@/domain/volume';
 import { estimateTemplateMinutes } from '@/domain/today-units';
@@ -86,6 +86,9 @@ export async function loadExerciseExecutions(exerciseId: string) {
          */
         trackingMode: item.trackingMode,
         workLogs: sortSetLogs(workLogsBySessionExerciseId.get(item.id) ?? []),
+        // Unter Einschränkung bleibt der Punkt ein echter Messwert, aber
+        // abgesetzt - er zeigt keinen Leistungsstand.
+        restricted: isRestrictedExecution(item),
       };
     })
     .sort((left, right) => left.completedAt.localeCompare(right.completedAt));
@@ -477,7 +480,11 @@ export async function loadLastValuesForExercises(
       .map((session) => [session!.id, session!]),
   );
 
-  const candidates = relevantExercises.filter((item) => completedSessionById.has(item.sessionId));
+  // Eine Ausführung unter Einschränkung (angepasst, trotzdem, ausgenommen)
+  // ist kein Leistungsstand; es gilt die letzte ohne. Ein Ersatz zählt normal.
+  const candidates = relevantExercises.filter(
+    (item) => completedSessionById.has(item.sessionId) && !isRestrictedExecution(item),
+  );
 
   if (candidates.length === 0) {
     return {};
