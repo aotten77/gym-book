@@ -11,6 +11,7 @@ import type { RunLog, WorkoutSetLog } from '@/domain/models';
 import type { CalendarSession, CalendarTest } from '@/domain/training-calendar';
 import { startOfCalendarWeek } from '@/domain/calendar-week';
 import { toDateInputValue } from '@/domain/program';
+import { isInactiveSessionExercise } from '@/domain/restriction';
 import { summarizeSessionProgress } from '@/domain/session-summary';
 import { sumWorkVolume } from '@/domain/volume';
 import { estimateTemplateMinutes } from '@/domain/today-units';
@@ -406,8 +407,8 @@ export async function loadActiveSessionProgress(): Promise<
 /**
  * Welche Übungen seit `sinceIso` trainiert wurden.
  *
- * Ausgelassene Übungen zählen nicht: das waldgrüne Abzeichen behauptet
- * "erledigt", und eine übersprungene Übung ist das Gegenteil davon.
+ * Ausgelassene und pausierte Übungen zählen nicht: das waldgrüne Abzeichen
+ * behauptet "erledigt", und eine übersprungene Übung ist das Gegenteil davon.
  */
 export async function loadExercisesTrainedSince(sinceIso: string): Promise<Set<string>> {
   const sessions = (
@@ -424,7 +425,9 @@ export async function loadExercisesTrainedSince(sinceIso: string): Promise<Set<s
     .toArray();
 
   return new Set(
-    sessionExercises.filter((item) => !item.wasSkipped).map((item) => item.exerciseId),
+    sessionExercises
+      .filter((item) => !isInactiveSessionExercise(item))
+      .map((item) => item.exerciseId),
   );
 }
 

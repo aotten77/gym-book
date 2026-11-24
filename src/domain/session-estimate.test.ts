@@ -230,6 +230,24 @@ describe('estimateRemainingSessionSeconds', () => {
     expect(result.openRowCount).toBe(1);
   });
 
+  it('lässt eine pausierte Übung weg und rechnet ihren Ersatz mit', () => {
+    const paused = exercise({ id: 'a1', pausedBy: ['Beispiel A'] });
+    const replacement = exercise({
+      id: 'a2',
+      orderIndex: 2,
+      replacementFor: { sessionExerciseId: 'a1', restrictionName: 'Beispiel A' },
+    });
+
+    const result = estimate({
+      blocks: [single(paused), single(replacement)],
+      logsByExercise: { a1: workSets('a1', 4), a2: workSets('a2', 2) },
+    });
+
+    // Nur der Ersatz: (50 + 90) + 50.
+    expect(result.remainingSeconds).toBe(190);
+    expect(result.openRowCount).toBe(2);
+  });
+
   it('meldet keine offenen Zeilen, wenn alles erledigt ist', () => {
     const item = exercise({ id: 'a1' });
 

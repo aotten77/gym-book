@@ -255,6 +255,27 @@ describe('loadExercisesTrainedSince', () => {
     expect([...trained].sort()).toEqual(['press', 'squat']);
   });
 
+  it('lässt eine pausierte Übung weg, nimmt sie nach „Trotzdem“ aber mit', async () => {
+    await addSession({
+      id: 'session-1',
+      templateId: 'template-a',
+      status: 'completed',
+      completedAt: '2026-08-04T10:00:00.000Z',
+    });
+    await addSessionExercise({ id: 'se-1', sessionId: 'session-1', exerciseId: 'squat' });
+    await addSessionExercise({ id: 'se-2', sessionId: 'session-1', exerciseId: 'jump' });
+    await addSessionExercise({ id: 'se-3', sessionId: 'session-1', exerciseId: 'press' });
+    await db.workoutSessionExercises.update('se-2', { pausedBy: ['Beispiel A'] });
+    await db.workoutSessionExercises.update('se-3', {
+      pausedBy: ['Beispiel A'],
+      pauseOverriddenAt: '2026-08-04T09:00:00.000Z',
+    });
+
+    const trained = await loadExercisesTrainedSince('2026-08-03T00:00:00.000Z');
+
+    expect([...trained].sort()).toEqual(['press', 'squat']);
+  });
+
   it('leaves out skipped exercises and older sessions', async () => {
     await addSession({
       id: 'session-1',

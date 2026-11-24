@@ -607,6 +607,90 @@ export async function addSessionExercise(
   return sessionExerciseId;
 }
 
+/** Liest eine Zeile einer laufenden Einheit; wirft, wenn es keine ist. */
+async function getActiveSessionExercise(sessionExerciseId: string) {
+  const row = await db.workoutSessionExercises.get(sessionExerciseId);
+
+  if (!row || !(await isSessionExerciseEditable(sessionExerciseId))) {
+    throw new Error('Die Übung gehört zu keiner laufenden Einheit.');
+  }
+
+  return row;
+}
+
+/**
+ * „Trotzdem machen“: gibt eine pausierte Übung für diese Einheit frei. Es
+ * gelten ihre Werte, auch angepasste; ein Ersatz bleibt stehen. Das Workout
+ * und die Einschränkung bleiben unberührt.
+ */
+export async function overrideSessionExercisePause(sessionExerciseId: string) {
+  await db.transaction('rw', db.workoutSessions, db.workoutSessionExercises, async () => {
+    const row = await getActiveSessionExercise(sessionExerciseId);
+
+    if (!row.pausedBy?.length) {
+      throw new Error('Diese Übung ist nicht pausiert.');
+    }
+
+    if (!row.pauseOverriddenAt) {
+      await db.workoutSessionExercises.update(sessionExerciseId, {
+        pauseOverriddenAt: new Date().toISOString(),
+      });
+    }
+  });
+}
+
+/** „Wieder pausieren“ - nur, solange kein Satz der Übung abgehakt ist. */
+export async function restoreSessionExercisePause(sessionExerciseId: string) {
+  await db.transaction(
+    'rw',
+    db.workoutSessions,
+    db.workoutSessionExercises,
+    db.workoutSetLogs,
+    async () => {
+      await getActiveSessionExercise(sessionExerciseId);
+
+      const hasCompletedSet = (
+        await db.workoutSetLogs.where('sessionExerciseId').equals(sessionExerciseId).toArray()
+      ).some((log) => log.completed);
+
+      if (hasCompletedSet) {
+        throw new Error('Ein Satz ist schon abgehakt - die Übung lässt sich nicht mehr pausieren.');
+      }
+
+      // Gewollt: `undefined` entfernt den Zeitpunkt, die Zeile ist wieder pausiert.
+      await db.workoutSessionExercises.update(sessionExerciseId, { pauseOverriddenAt: undefined });
+    },
+  );
+}
+
+/**
+ * Der Schalter „Zählt nicht als Leistungsstand“ in der Historie. Die eine
+ * bewusste Ausnahme von „eine abgeschlossene Einheit ist Geschichte“: kein
+ * Wert, kein Satz, keine Zielgröße ändert sich, nur die Markierung.
+ */
+export async function setSessionExerciseExcludedFromProgress(
+  sessionExerciseId: string,
+  excluded: boolean,
+) {
+  await db.transaction('rw', db.workoutSessions, db.workoutSessionExercises, async () => {
+    const row = await db.workoutSessionExercises.get(sessionExerciseId);
+    const session = row ? await db.workoutSessions.get(row.sessionId) : undefined;
+
+    if (!row || session?.status !== 'completed') {
+      throw new Error('Nur eine Übung einer abgeschlossenen Einheit lässt sich ausnehmen.');
+    }
+
+    if (excluded === Boolean(row.excludedFromProgressAt)) {
+      return;
+    }
+
+    // Beim Zurücknehmen gewollt: `undefined` entfernt die Markierung.
+    await db.workoutSessionExercises.update(sessionExerciseId, {
+      excludedFromProgressAt: excluded ? new Date().toISOString() : undefined,
+    });
+  });
+}
+
 export async function toggleSkipSessionExercise(sessionExerciseId: string) {
   await db.transaction('rw', db.workoutSessions, db.workoutSessionExercises, async () => {
     if (!(await isSessionExerciseEditable(sessionExerciseId))) {

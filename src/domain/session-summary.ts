@@ -1,5 +1,6 @@
 import { sortSetLogs, type SetValues } from '@/domain/history';
 import type { SetKind, WorkoutSessionExercise, WorkoutSetLog } from '@/domain/models';
+import { isInactiveSessionExercise } from '@/domain/restriction';
 import { calculateAsymmetryPercent } from '@/domain/session';
 import type { SetLogFieldKey } from '@/domain/set-log-draft';
 import type { SupersetBlock } from '@/domain/superset';
@@ -8,7 +9,7 @@ import { formatNumber, formatSideLabel } from '@/lib/format';
 /**
  * Der Stand eines Blocks in der laufenden Einheit.
  *
- * `done` heißt: keine offene Zeile mehr, entweder abgehakt oder ausgelassen.
+ * `done` heißt: keine offene Zeile mehr - abgehakt, ausgelassen oder pausiert.
  * `current` ist der Block, in dem der Fokus steht - nicht zwingend der erste
  * offene, denn man darf zurückspringen. Alles andere ist `upcoming`.
  */
@@ -42,17 +43,17 @@ function exerciseProgress(
   logs: WorkoutSetLog[],
 ): SessionExerciseProgress {
   const completedCount = logs.filter((log) => log.completed).length;
-  const nextOpenLog = exercise.wasSkipped
-    ? undefined
-    : sortSetLogs(logs).find((log) => !log.completed);
+  const inactive = isInactiveSessionExercise(exercise);
+  const nextOpenLog = inactive ? undefined : sortSetLogs(logs).find((log) => !log.completed);
 
   return {
     exercise,
     logs,
     completedCount,
     totalCount: logs.length,
-    // Eine ausgelassene Übung gilt als erledigt: sie wartet auf nichts mehr.
-    isDone: exercise.wasSkipped || !nextOpenLog,
+    // Eine ausgelassene oder pausierte Übung gilt als erledigt: sie wartet auf
+    // nichts mehr. Ausgelassen ist sie deshalb nicht - das bleibt `wasSkipped`.
+    isDone: inactive || !nextOpenLog,
     nextOpenLog,
   };
 }

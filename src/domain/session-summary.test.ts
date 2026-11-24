@@ -102,6 +102,20 @@ describe('buildSessionBlockProgress', () => {
     expect(block.exercises[0].nextOpenLog).toBeUndefined();
   });
 
+  it('behandelt eine pausierte Übung als erledigt, ohne sie auszulassen', () => {
+    const blocks: SupersetBlock<WorkoutSessionExercise>[] = [
+      { kind: 'single', exercise: exercise({ id: 'paused', pausedBy: ['Beispiel A'] }) },
+    ];
+
+    const [block] = buildSessionBlockProgress(blocks, {
+      paused: [log({ id: '1', sessionExerciseId: 'paused' })],
+    });
+
+    expect(block.status).toBe('done');
+    expect(block.exercises[0].nextOpenLog).toBeUndefined();
+    expect(block.exercises[0].exercise.wasSkipped).toBe(false);
+  });
+
   it('liefert als nächsten offenen Satz die erste unerledigte Zeile in Satzreihenfolge', () => {
     const blocks: SupersetBlock<WorkoutSessionExercise>[] = [
       { kind: 'single', exercise: exercise({ id: 'a', unilateral: true }) },

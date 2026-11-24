@@ -11,7 +11,11 @@ import type {
   WorkoutTemplateExercise,
 } from '@/domain/models';
 import { foldProgressionRule } from '@/domain/progression-fold';
-import { applyRestrictionEffect, type RestrictionEffect } from '@/domain/restriction';
+import {
+  applyRestrictionEffect,
+  isInactiveSessionExercise,
+  type RestrictionEffect,
+} from '@/domain/restriction';
 import { createId } from '@/lib/id';
 
 interface MaterializeSessionInput {
@@ -305,8 +309,9 @@ export function findNextOpenExercise(
   }
 
   const hasLogs = new Set(setLogs.map((log) => log.sessionExerciseId));
+  // Pausiert zählt wie ausgelassen: die Übung wartet auf nichts.
   const isOpen = (exercise: WorkoutSessionExercise) =>
-    !exercise.wasSkipped &&
+    !isInactiveSessionExercise(exercise) &&
     (openBySessionExerciseId.has(exercise.id) || !hasLogs.has(exercise.id));
 
   const currentIndex = exercises.findIndex((item) => item.id === currentSessionExerciseId);
@@ -364,8 +369,10 @@ export function resolveNextFocus({
         ...members.slice(currentIndex + 1),
         ...members.slice(0, currentIndex),
       ];
+      // Ein pausierter Partner fällt aus der Runde; bleibt nur die aktuelle
+      // Übung, läuft sie wie eine einzelne weiter.
       const partner = searchOrder.find(
-        (item) => !item.wasSkipped && hasOpenSets(item.id, setLogs),
+        (item) => !isInactiveSessionExercise(item) && hasOpenSets(item.id, setLogs),
       );
 
       if (partner) {

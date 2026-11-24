@@ -1,6 +1,7 @@
 import { sortSetLogs } from '@/domain/history';
 import type { SetKind, WorkoutSessionExercise, WorkoutSetLog } from '@/domain/models';
 import { DEFAULT_REST_SECONDS } from '@/domain/rest-timer';
+import { isInactiveSessionExercise } from '@/domain/restriction';
 import type { SetLogsByExercise } from '@/domain/session-summary';
 import { resolveSetTimerSeconds } from '@/domain/set-timer';
 import type { SupersetBlock } from '@/domain/superset';
@@ -144,8 +145,9 @@ function buildPlannedRounds(
 
   for (const block of blocks) {
     const members = (block.kind === 'group' ? block.exercises : [block.exercise])
-      // Eine ausgelassene Übung wartet auf nichts mehr und kostet auch nichts.
-      .filter((exercise) => !exercise.wasSkipped)
+      // Eine ausgelassene oder pausierte Übung wartet auf nichts mehr und
+      // kostet auch nichts; ein Ersatz ist eine normale Zeile.
+      .filter((exercise) => !isInactiveSessionExercise(exercise))
       .map((exercise) => ({ exercise, logs: sortSetLogs(logsByExercise[exercise.id] ?? []) }));
 
     // Die Runden des Blocks in Ausführungsreihenfolge: Aufwärmen vor Satz 1.

@@ -411,6 +411,21 @@ describe('findNextOpenExercise', () => {
     expect(findNextOpenExercise([first, skipped, third], setLogs, 'first')?.id).toBe('third');
   });
 
+  it('überspringt eine pausierte Übung und nimmt sie nach „Trotzdem“ wieder auf', () => {
+    const paused = createExercise('second', 2, { pausedBy: ['Beispiel A'] });
+    const setLogs = [
+      createLog('first', 1, true),
+      createLog('second', 1, false),
+      createLog('third', 1, false),
+    ];
+
+    expect(findNextOpenExercise([first, paused, third], setLogs, 'first')?.id).toBe('third');
+
+    const overridden = { ...paused, pauseOverriddenAt: '2026-12-02T09:00:00.000Z' };
+
+    expect(findNextOpenExercise([first, overridden, third], setLogs, 'first')?.id).toBe('second');
+  });
+
   it('überspringt Übungen, die bereits vollständig abgehakt sind', () => {
     const setLogs = [
       createLog('first', 1, true),
@@ -517,6 +532,65 @@ describe('resolveNextFocus', () => {
         completedSetNumber: 1,
       })?.id,
     ).toBe('b');
+  });
+
+  it('springt im Supersatz nie auf einen pausierten Partner', () => {
+    const exercises = [
+      createExercise('a', 1, { supersetGroupId: 'g1' }),
+      createExercise('b', 2, { supersetGroupId: 'g1', pausedBy: ['Beispiel A'] }),
+    ];
+    const setLogs = [
+      createLog('a', 1, true),
+      createLog('a', 2, false),
+      createLog('b', 1, false),
+      createLog('b', 2, false),
+    ];
+
+    expect(
+      resolveNextFocus({
+        exercises,
+        setLogs,
+        currentSessionExerciseId: 'a',
+        completedSetNumber: 1,
+      }),
+    ).toBeUndefined();
+
+    const done = setLogs.map((log) => (log.sessionExerciseId === 'a' ? { ...log, completed: true } : log));
+
+    expect(
+      resolveNextFocus({
+        exercises,
+        setLogs: done,
+        currentSessionExerciseId: 'a',
+        completedSetNumber: 2,
+      }),
+    ).toBeUndefined();
+  });
+
+  it('wechselt im Supersatz zum Ersatz statt zum pausierten Partner', () => {
+    const exercises = [
+      createExercise('a', 1, { supersetGroupId: 'g1' }),
+      createExercise('b', 2, { supersetGroupId: 'g1', pausedBy: ['Beispiel A'] }),
+      createExercise('c', 3, {
+        supersetGroupId: 'g1',
+        replacementFor: { sessionExerciseId: 'b', restrictionName: 'Beispiel A' },
+      }),
+    ];
+    const setLogs = [
+      createLog('a', 1, true),
+      createLog('a', 2, false),
+      createLog('b', 1, false),
+      createLog('c', 1, false),
+    ];
+
+    expect(
+      resolveNextFocus({
+        exercises,
+        setLogs,
+        currentSessionExerciseId: 'a',
+        completedSetNumber: 1,
+      })?.id,
+    ).toBe('c');
   });
 
   it('kehrt nach dem letzten Mitglied zum ersten zurück', () => {

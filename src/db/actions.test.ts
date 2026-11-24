@@ -7,7 +7,10 @@ import {
   completeSession,
   deleteSetLog,
   groupSessionExerciseWithPrevious,
+  overrideSessionExercisePause,
   reorderSessionExercises,
+  restoreSessionExercisePause,
+  setSessionExerciseExcludedFromProgress,
   startSessionFromTemplate,
   toggleSetCompletion,
   ungroupSessionExercise,
@@ -1768,5 +1771,77 @@ describe('Einschränkungen beim Start', () => {
       pausedBy: ['Beispiel A'],
       addedInSession: true,
     });
+  });
+});
+
+describe('Pause einer Übung in der Session', () => {
+  const pause = () =>
+    db.workoutSessionExercises.update('exercise-b', { pausedBy: ['Beispiel A'] });
+
+  it('gibt eine pausierte Übung frei und pausiert sie wieder, solange kein Satz steht', async () => {
+    await seedRestSession();
+    await pause();
+
+    await overrideSessionExercisePause('exercise-b');
+    expect((await db.workoutSessionExercises.get('exercise-b'))?.pauseOverriddenAt).toEqual(
+      expect.any(String),
+    );
+
+    await restoreSessionExercisePause('exercise-b');
+    const row = await db.workoutSessionExercises.get('exercise-b');
+
+    expect('pauseOverriddenAt' in (row ?? {})).toBe(false);
+    expect(row?.pausedBy).toEqual(['Beispiel A']);
+  });
+
+  it('pausiert nicht wieder, sobald ein Satz abgehakt ist', async () => {
+    await seedRestSession();
+    await pause();
+    await overrideSessionExercisePause('exercise-b');
+    await toggleSetCompletion('b-1-left');
+
+    await expect(restoreSessionExercisePause('exercise-b')).rejects.toThrow(
+      'Ein Satz ist schon abgehakt',
+    );
+    expect((await db.workoutSessionExercises.get('exercise-b'))?.pauseOverriddenAt).toEqual(
+      expect.any(String),
+    );
+  });
+
+  it('gibt nur eine pausierte Übung einer laufenden Einheit frei', async () => {
+    await seedRestSession();
+
+    await expect(overrideSessionExercisePause('exercise-b')).rejects.toThrow('nicht pausiert');
+  });
+});
+
+describe('Zählt nicht als Leistungsstand', () => {
+  const logsOf = () =>
+    db.workoutSetLogs.where('sessionExerciseId').equals('exercise-a').sortBy('id');
+
+  it('wirft an einer laufenden Einheit', async () => {
+    await seedRestSession();
+
+    await expect(setSessionExerciseExcludedFromProgress('exercise-a', true)).rejects.toThrow(
+      'abgeschlossenen Einheit',
+    );
+    const row = await db.workoutSessionExercises.get('exercise-a');
+
+    expect('excludedFromProgressAt' in (row ?? {})).toBe(false);
+  });
+
+  it('setzt und entfernt die Markierung, ohne einen Satz anzufassen', async () => {
+    await seedRestSession('completed');
+    const before = await logsOf();
+    const rowBefore = await db.workoutSessionExercises.get('exercise-a');
+
+    await setSessionExerciseExcludedFromProgress('exercise-a', true);
+    expect((await db.workoutSessionExercises.get('exercise-a'))?.excludedFromProgressAt).toEqual(
+      expect.any(String),
+    );
+
+    await setSessionExerciseExcludedFromProgress('exercise-a', false);
+    expect(await db.workoutSessionExercises.get('exercise-a')).toEqual(rowBefore);
+    expect(await logsOf()).toEqual(before);
   });
 });
