@@ -9,7 +9,12 @@ import {
   buildLibraryImportPlan,
   listLibraryImports,
 } from '@/db/library-import-actions';
-import { parseLibraryImportPayload, type LibraryImportPayload } from '@/domain/library-import';
+import {
+  parseLibraryImportPayload,
+  planHasChanges,
+  type LibraryImportPayload,
+} from '@/domain/library-import';
+import { describeImportCounts } from '@/domain/library-import-summary';
 import { parseDatabaseSnapshot, SNAPSHOT_SCHEMA_VERSION } from '@/lib/export';
 
 const PAYLOAD: LibraryImportPayload = parseLibraryImportPayload(
@@ -795,5 +800,111 @@ describe('applyLibraryImport - geführte Schritte', () => {
     expect(parsed.workoutTemplates.find((template) => template.name === 'Yoga Abend')?.steps).toEqual(
       STEPS,
     );
+  });
+});
+
+describe('applyLibraryImport - Einschränkungen', () => {
+  const KNIE = {
+    name: 'Beispiel A',
+    reason: 'erfundener Grund',
+    from: '2026-12-01',
+    until: '2026-12-14',
+    pauses: [{ exercise: 'Hip Thrust' }],
+    adjustments: [{ template: 'Einheit B', exercise: 'Nordic Curl', targetSeconds: 30 }],
+  };
+
+  function restrictionPayload(restrictions: unknown[], extra: Record<string, unknown> = {}) {
+    return parseLibraryImportPayload(JSON.stringify({ schemaVersion: 1, restrictions, ...extra }));
+  }
+
+  const byName = async (name: string) => db.restrictions.filter((row) => row.name === name).first();
+
+  it('legt eine Einschränkung mit Zielen auf Ids und Zeitstempeln an', async () => {
+    await seedLibrary();
+
+    const { log } = await applyLibraryImport(restrictionPayload([KNIE]));
+    const row = await byName('Beispiel A');
+
+    expect(row).toMatchObject({
+      name: 'Beispiel A',
+      reason: 'erfundener Grund',
+      from: '2026-12-01',
+      until: '2026-12-14',
+      pauses: [{ exerciseId: 'e1' }],
+      adjustments: [{ exerciseId: 'e2', templateId: 't1', targetSeconds: 30 }],
+      createdAt: log.importedAt,
+      updatedAt: log.importedAt,
+    });
+    expect('liftedAt' in (row ?? {})).toBe(false);
+    expect(log).toMatchObject({
+      createdRestrictions: 1,
+      updatedRestrictions: 0,
+      liftedRestrictions: 0,
+      reactivatedRestrictions: 0,
+    });
+  });
+
+  it('schreibt beim zweiten Lauf derselben Datei nichts mehr', async () => {
+    await seedLibrary();
+    await applyLibraryImport(restrictionPayload([KNIE]));
+
+    const plan = await buildLibraryImportPlan(restrictionPayload([KNIE]));
+
+    expect(planHasChanges(plan)).toBe(false);
+    expect(await db.restrictions.count()).toBe(1);
+  });
+
+  it('ändert nur die genannten Felder und leert das Ende bei null', async () => {
+    await seedLibrary();
+    await applyLibraryImport(restrictionPayload([KNIE]));
+    const before = await byName('Beispiel A');
+
+    const { log } = await applyLibraryImport(
+      restrictionPayload([{ name: 'Beispiel A', until: null }]),
+    );
+    const row = await db.restrictions.get(before!.id);
+
+    expect(log.updatedRestrictions).toBe(1);
+    expect('until' in (row ?? {})).toBe(false);
+    expect(row?.pauses).toEqual(before?.pauses);
+    expect(row?.reason).toBe('erfundener Grund');
+    expect(row?.createdAt).toBe(before?.createdAt);
+    expect(row?.updatedAt).toBe(log.importedAt);
+  });
+
+  it('hebt mit lifted: true auf und aktiviert mit lifted: false wieder', async () => {
+    await seedLibrary();
+    await applyLibraryImport(restrictionPayload([KNIE]));
+
+    const lifted = await applyLibraryImport(restrictionPayload([{ name: 'Beispiel A', lifted: true }]));
+
+    expect((await byName('Beispiel A'))?.liftedAt).toBe(lifted.log.importedAt);
+    expect(lifted.log.liftedRestrictions).toBe(1);
+    // Eine Datei, die nur aufhebt, ist keine Datei ohne Änderungen.
+    expect(describeImportCounts(lifted.log)).not.toBe('keine Änderungen');
+
+    const reactivated = await applyLibraryImport(
+      restrictionPayload([{ name: 'Beispiel A', lifted: false }]),
+    );
+
+    expect('liftedAt' in ((await byName('Beispiel A')) ?? {})).toBe(false);
+    expect(reactivated.log.reactivatedRestrictions).toBe(1);
+  });
+
+  it('schreibt keine Einschränkung, wenn ein anderer Block ein Problem hat', async () => {
+    await seedLibrary();
+
+    await expect(
+      applyLibraryImport(
+        restrictionPayload([KNIE], {
+          templateAssignments: [
+            { template: 'Einheit C', exercise: 'Hip Thrust', orderIndex: 1, workSetCount: 3 },
+          ],
+        }),
+      ),
+    ).rejects.toThrow(/Einheit C/);
+
+    expect(await db.restrictions.count()).toBe(0);
+    expect(await listLibraryImports()).toHaveLength(0);
   });
 });

@@ -1,6 +1,6 @@
 import { db } from '@/db/appDb';
 import { loadTakenPlanEntryIds } from '@/db/plan-actions';
-import type { LibraryImportLog } from '@/domain/models';
+import type { LibraryImportLog, Restriction } from '@/domain/models';
 import {
   planLibraryImport,
   type LibraryImportPayload,
@@ -16,8 +16,8 @@ import { createId } from '@/lib/id';
  * [domain/library-import.ts]; hier wird nur gelesen, geschrieben und
  * protokolliert.
  *
- * Angefasst werden ausschließlich Übungen, Workouts, Zuordnungen, Bänder und
- * Termine. Sessions und Läufe stehen nur in der Transaktion, damit *in* ihr
+ * Angefasst werden ausschließlich Übungen, Workouts, Zuordnungen, Bänder,
+ * Termine und Einschränkungen. Sessions und Läufe stehen nur in der Transaktion, damit *in* ihr
  * gelesen wird, welche Termine belegt sind - geschrieben werden sie nie.
  * Satzprotokolle, Tests und Einstellungen stehen bewusst nicht darin: was der
  * Import nicht erreichen kann, kann er auch nicht beschädigen.
@@ -184,6 +184,7 @@ export async function applyLibraryImport(
       }
 
       await writePlanEntries(current, state, now);
+      await writeRestrictions(current, now);
 
       log = {
         id: createId(),
@@ -202,6 +203,10 @@ export async function applyLibraryImport(
         createdPlanEntries: current.summary.createdPlanEntries,
         updatedPlanEntries: current.summary.updatedPlanEntries,
         removedPlanEntries: current.summary.removedPlanEntries,
+        createdRestrictions: current.summary.createdRestrictions,
+        updatedRestrictions: current.summary.updatedRestrictions,
+        liftedRestrictions: current.summary.liftedRestrictions,
+        reactivatedRestrictions: current.summary.reactivatedRestrictions,
       };
 
       await db.libraryImports.add(log);
@@ -265,6 +270,42 @@ async function writePlanEntries(plan: LibraryImportPlan, state: LibraryImportSta
         await db.planEntries.put({ ...entry, orderInDay: index + 1 });
       }
     }
+  }
+}
+
+/**
+ * Schreibt die Einschränkungen nach den Übungen und Workouts, auf deren Ids
+ * ihre Ziele zeigen. Der Plan trägt beim Aufheben nur einen Tag als Marker;
+ * geschrieben wird der Zeitpunkt des Imports, wie beim Knopf „Aufheben“.
+ */
+async function writeRestrictions(plan: LibraryImportPlan, now: string) {
+  for (const entry of plan.restrictions) {
+    if (entry.record) {
+      await db.restrictions.add({
+        id: createId(),
+        ...entry.record,
+        ...(entry.liftedAt ? { liftedAt: now } : {}),
+        createdAt: now,
+        updatedAt: now,
+      });
+      continue;
+    }
+
+    if (entry.kind === 'unchanged') {
+      continue;
+    }
+
+    const changes: Partial<Restriction> = { ...entry.values, updatedAt: now };
+
+    if (entry.liftedAt === null) {
+      // Die eine gewollte Löschung per `Table.update` mit `undefined`: „wieder
+      // aktiv“ entfernt den Zeitpunkt des Aufhebens, statt ihn zu überschreiben.
+      changes.liftedAt = undefined;
+    } else if (entry.liftedAt !== undefined) {
+      changes.liftedAt = now;
+    }
+
+    await db.restrictions.update(entry.id, changes);
   }
 }
 
