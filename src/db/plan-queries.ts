@@ -1,7 +1,14 @@
 import { db } from '@/db/appDb';
+import { loadTakenPlanEntryIds } from '@/db/plan-actions';
 import { startOfCalendarWeek, parseLocalDate } from '@/domain/calendar-week';
 import type { PlanEntry } from '@/domain/models';
-import { buildPlanLinks, planEntryState, sortPlanEntries, type PlanEntryLink } from '@/domain/plan';
+import {
+  buildPlanLinks,
+  pickPlanEntryForStart,
+  planEntryState,
+  sortPlanEntries,
+  type PlanEntryLink,
+} from '@/domain/plan';
 import { toDateInputValue } from '@/domain/program';
 
 /*
@@ -86,4 +93,27 @@ export async function loadRunPlanOptions(day: string, currentRunId?: string): Pr
         (entry.id === ownEntryId || planEntryState(entry.id, links) === 'offen'),
     ),
   );
+}
+
+/**
+ * Die Notiz des Termins, den ein geführter Start verknüpfen würde: der
+ * ausdrücklich gewählte (`requestedId`), sonst der offene von heute. Dieselbe
+ * Regel und dieselben belegten Termine wie `findPlanEntryForStart`, damit der
+ * Startbildschirm nicht die Notiz eines anderen Termins zeigt.
+ */
+export async function loadPlanNoteForGuidedStart(
+  templateId: string,
+  requestedId: string | undefined,
+  now: Date,
+): Promise<string | undefined> {
+  const candidates = await db.planEntries.where('templateId').equals(templateId).toArray();
+  const takenIds = await loadTakenPlanEntryIds(candidates.map((candidate) => candidate.id));
+  const entry = pickPlanEntryForStart(candidates, {
+    templateId,
+    day: toDateInputValue(now),
+    takenIds,
+    requestedId,
+  });
+
+  return entry?.notes?.trim() ? entry.notes : undefined;
 }

@@ -4,6 +4,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { CheckCircle2, Clock3, Plus, Timer, X } from 'lucide-react';
 import { Alert } from '@/components/Alert';
 import { AppShell } from '@/components/AppShell';
+import { PlanNoteBanner } from '@/components/PlanNoteBanner';
 import { RestMode } from '@/components/RestMode';
 import { ExerciseInfoDialog } from '@/components/ExerciseInfoDialog';
 import { ExerciseMedia } from '@/components/ExerciseMedia';
@@ -256,6 +257,12 @@ export function SessionPage() {
    * laufen, sie brauchen aber dieselbe Sekundenauflösung.
    */
   const now = useNowTicker(hasRestTimers || setTimerEndsAt !== null);
+  const planEntryId = session?.planEntryId;
+  // Die Notiz des verknüpften Termins; spontane Einheiten haben keinen.
+  const planNote = useLiveQuery(
+    async () => (planEntryId ? (await db.planEntries.get(planEntryId))?.notes?.trim() : undefined),
+    [planEntryId],
+  );
   const appSettings = useLiveQuery(() => db.appSettings.get('app-settings'), []);
   // Additiv wie includeWarmup: nur ein ausdrückliches Aus schaltet den Ton ab.
   const timerSoundEnabled = appSettings?.timerSoundEnabled !== false;
@@ -1831,6 +1838,8 @@ export function SessionPage() {
     // ein Training läuft, ist ohnehin offensichtlich.
     <AppShell title={session.templateNameSnapshot} eyebrow={sessionWeekContext}>
       <div className="space-y-4">
+        {planNote ? <PlanNoteBanner note={planNote} /> : null}
+
         {/* Der Stand der Einheit, nicht der einer einzelnen Übung. */}
         {orderedSessionExercises.length > 0 ? (
           <SessionStatsHeader

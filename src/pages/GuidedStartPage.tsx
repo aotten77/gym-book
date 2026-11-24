@@ -5,10 +5,12 @@ import { X } from 'lucide-react';
 import { ActiveSessionHint } from '@/components/ActiveSessionHint';
 import { GuidedHintDialog } from '@/components/GuidedHintDialog';
 import { GuidedStage } from '@/components/GuidedStage';
+import { PlanNoteBanner } from '@/components/PlanNoteBanner';
 import { Button, IconButton } from '@/components/ui/Button';
 import { db } from '@/db/appDb';
 import { getAnnouncementAvailability } from '@/db/announcement-actions';
 import { startGuidedSession } from '@/db/guided-session-actions';
+import { loadPlanNoteForGuidedStart } from '@/db/plan-queries';
 import type { GuidedAudioMode } from '@/domain/models';
 import { describeGuidedFacts, describeGuidedStepDuration, isGuidedTemplate } from '@/domain/guided-steps';
 import { describeOverage, useAnnouncementGeneration } from '@/hooks/useAnnouncementGeneration';
@@ -55,6 +57,16 @@ export function GuidedStartPage() {
   const availability = useLiveQuery(
     async () => (templateId ? await getAnnouncementAvailability(templateId) : null),
     [templateId],
+  );
+
+  // Die Notiz des Termins, den der Start verknüpfen würde - gewählt oder der offene von heute.
+  const requestedPlanEntryId = readGuidedStartState(location.state).planEntryId;
+  const planNote = useLiveQuery(
+    async () =>
+      templateId
+        ? await loadPlanNoteForGuidedStart(templateId, requestedPlanEntryId, new Date())
+        : undefined,
+    [templateId, requestedPlanEntryId],
   );
 
   const lastChoice = useLiveQuery(
@@ -234,6 +246,8 @@ export function GuidedStartPage() {
               </li>
             ))}
           </ul>
+
+          {planNote ? <PlanNoteBanner note={planNote} className="mt-2 py-2" /> : null}
 
           <div className="min-h-2 flex-1" />
 

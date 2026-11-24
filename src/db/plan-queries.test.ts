@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { db } from '@/db/appDb';
-import { loadLastPlanDate, loadPlanBetween, loadRunPlanOptions, loadUpcomingPlan } from '@/db/plan-queries';
+import {
+  loadLastPlanDate,
+  loadPlanBetween,
+  loadPlanNoteForGuidedStart,
+  loadRunPlanOptions,
+  loadUpcomingPlan,
+} from '@/db/plan-queries';
 import type { PlanEntry } from '@/domain/models';
 
 const NOW = '2026-10-01T10:00:00.000Z';
@@ -125,5 +131,36 @@ describe('loadLastPlanDate', () => {
     await addEntry('b', '2026-12-01', 'workout');
 
     await expect(loadLastPlanDate()).resolves.toBe('2027-01-12');
+  });
+});
+
+describe('loadPlanNoteForGuidedStart', () => {
+  const today = new Date(2026, 9, 7, 9, 0);
+
+  async function addNoted(id: string, date: string, notes: string, orderInDay = 1) {
+    await addEntry(id, date, 'workout', orderInDay);
+    await db.planEntries.update(id, { notes });
+  }
+
+  it('liefert die Notiz des offenen Termins von heute für den geführten Start', async () => {
+    await addNoted('heute', '2026-10-07', 'Beispielnotiz');
+
+    await expect(loadPlanNoteForGuidedStart('t1', undefined, today)).resolves.toBe('Beispielnotiz');
+  });
+
+  it('nimmt den ausdrücklich gewählten Termin vor dem von heute', async () => {
+    await addNoted('heute', '2026-10-07', 'Beispielnotiz');
+    await addNoted('morgen', '2026-10-08', 'Locker bleiben');
+
+    await expect(loadPlanNoteForGuidedStart('t1', 'morgen', today)).resolves.toBe(
+      'Locker bleiben',
+    );
+  });
+
+  it('liefert nichts für einen belegten Termin', async () => {
+    await addNoted('heute', '2026-10-07', 'Beispielnotiz');
+    await addSession('heute', 'completed');
+
+    await expect(loadPlanNoteForGuidedStart('t1', undefined, today)).resolves.toBeUndefined();
   });
 });

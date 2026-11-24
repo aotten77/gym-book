@@ -180,6 +180,38 @@ test.describe('Termine im Plan', () => {
     expect(errors).toEqual([]);
   });
 
+  test('die Notiz des Termins steht als Banner über der Session, auch bei 320px', async ({ page }) => {
+    const errors = collectPageErrors(page);
+    const today = await localDay(page);
+
+    await page.setViewportSize({ width: 320, height: 700 });
+    await importPlan(page, [
+      { date: today, workout: 'Einheit A', notes: 'Beispielnotiz, Sprünge nur angedeutet' },
+    ]);
+    await page.goto('./');
+    await page.waitForTimeout(1000);
+    await page.getByRole('button', { name: /Heute · Einheit A/ }).click();
+    await page.waitForURL(/#\/session\//);
+    await page.waitForTimeout(600);
+    await closeExerciseSheet(page);
+
+    const banner = page.locator('[data-plan-note]');
+    await expect(banner).toContainText('Beispielnotiz, Sprünge nur angedeutet');
+
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    expect(overflow).toBeLessThanOrEqual(0);
+
+    // Ein Tipp blendet es aus, ein Reload holt es zurück.
+    await banner.click();
+    await expect(banner).toHaveCount(0);
+    await page.reload();
+    await expect(page.locator('[data-plan-note]')).toContainText('Beispielnotiz');
+
+    expect(errors).toEqual([]);
+  });
+
   test('ohne Termin heute steht „Heute trainieren“ mit „am längsten her“', async ({ page }) => {
     await page.goto('./');
     await page.waitForTimeout(800);
