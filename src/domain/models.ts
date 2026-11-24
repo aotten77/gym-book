@@ -139,13 +139,26 @@ export interface GuidedRun {
    * festgehalten. Fehlt bei laufenden und bei älteren Einheiten.
    */
   protocol?: GuidedProtocolEntry[];
+  /**
+   * Beim Start durch eine Einschränkung herausgenommene Schritte, mit ihrer
+   * Position in der Vorlage. `steps` enthält sie nicht - nur Anzeige und Protokoll.
+   */
+  pausedSteps?: { index: number; step: GuidedStep; pausedBy: string[]; pausedUntil?: string }[];
+  /** Angepasste Schritte; `index` zählt in `steps`, den abgespielten. */
+  adjustedSteps?: {
+    index: number;
+    adjustedBy: string[];
+    /** Nur gesetzt, wenn die Sekunden tatsächlich geändert wurden. */
+    secondsBefore?: number;
+    notes?: RestrictionNote[];
+  }[];
 }
 
 /**
  * Was aus einem Schritt wurde. `aborted` gilt für die Übung, in der die
  * Einheit endete, bevor sie zu Ende lief.
  */
-export type GuidedProtocolStatus = 'done' | 'skipped' | 'extended' | 'aborted';
+export type GuidedProtocolStatus = 'done' | 'skipped' | 'extended' | 'aborted' | 'paused';
 
 /** Eine Zeile des Protokolls: ein Schritt, bei beidseitigen je Seite. */
 export interface GuidedProtocolEntry {
@@ -158,6 +171,8 @@ export interface GuidedProtocolEntry {
   plannedSeconds: number;
   /** Ist: wie lange die Übung tatsächlich lief, ohne Pausen. */
   actualSeconds: number;
+  /** Namen der Einschränkungen, die den Schritt pausiert oder angepasst haben. */
+  restrictedBy?: string[];
 }
 
 export interface WorkoutTemplate {
@@ -378,6 +393,40 @@ export interface WorkoutSessionExercise {
   targetHeightCm?: number;
   restSeconds?: number;
   notes?: string;
+  /*
+   * Snapshot der Einschränkungen beim Start (bzw. beim Hinzufügen). Spätere
+   * Importe oder ein Aufheben schreiben ihn nicht um - siehe
+   * `docs/architecture/restrictions.md`. Die Zielfelder oben tragen schon die
+   * angepassten Werte.
+   */
+  /** Namen der Einschränkungen, die die Übung beim Start pausiert haben. */
+  pausedBy?: string[];
+  /** Spätestes `until` der pausierenden Einschränkungen; fehlt bei offenem Ende. */
+  pausedUntil?: string;
+  /** Gesetzt bei „Trotzdem machen“; entfernt bei „Wieder pausieren“. */
+  pauseOverriddenAt?: string;
+  /** Namen aller Einschränkungen mit einer Anpassung an dieser Zeile, auch nur mit Notiz. */
+  adjustedBy?: string[];
+  /** Die Notizen der Anpassungen, je eine Zeile unter dem Übungsnamen. */
+  adjustmentNotes?: RestrictionNote[];
+  /** Nur die tatsächlich geänderten Werte, mit ihrem Wert vor der Anpassung - das „statt …“. */
+  targetsBeforeAdjustment?: Partial<
+    Pick<
+      WorkoutSessionExercise,
+      | 'workSetCount'
+      | 'targetReps'
+      | 'targetRepsMax'
+      | 'targetSeconds'
+      | 'targetWeight'
+      | 'targetHeightCm'
+    >
+  >;
+  /** Eine Anpassung trägt `holdProgression`: kein Steigerungshinweis. */
+  progressionHeld?: boolean;
+  /** Bei einem Ersatz: die Session-Zeile der pausierten Übung und der Name der Einschränkung. */
+  replacementFor?: { sessionExerciseId: string; restrictionName: string };
+  /** Gesetzt durch den Schalter in der Historie; entfernt beim Zurücknehmen. */
+  excludedFromProgressAt?: string;
 }
 
 export interface WorkoutSetLog {
@@ -630,7 +679,101 @@ export interface LibraryImportLog {
   updatedPlanEntries?: number;
   /** Offene Termine in `planRange`, die die Datei nicht nannte. */
   removedPlanEntries?: number;
+  /** Einschränkungen aus der Datei; fehlen bei älteren Zeilen. */
+  createdRestrictions?: number;
+  updatedRestrictions?: number;
+  liftedRestrictions?: number;
+  reactivatedRestrictions?: number;
 }
+
+/**
+ * Eine Einschränkung: pausiert oder passt Ziele über einen Zeitraum an, ohne
+ * die Workouts anzufassen. Kommt nur über den Bibliotheks-Import; die App kann
+ * sie nur aufheben. Siehe `docs/architecture/restrictions.md`.
+ */
+export interface Restriction {
+  id: string;
+  /** Anzeigename und Identität im Import (über `normalizeImportKey`). */
+  name: string;
+  /** Freitext, nur in der App und im Export. */
+  reason?: string;
+  /** Ortszeit-Tag `YYYY-MM-DD`, inklusive. */
+  from: string;
+  /** Ortszeit-Tag, inklusive; fehlt er, gilt die Einschränkung bis zum Aufheben. */
+  until?: string;
+  /** Gesetzt durch „Aufheben“ oder `lifted: true`; `lifted: false` entfernt ihn. */
+  liftedAt?: string;
+  pauses: RestrictionPause[];
+  adjustments: RestrictionAdjustment[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Eine Übung; ohne `templateId` überall. */
+export interface ExerciseTarget {
+  exerciseId: string;
+  templateId?: string;
+}
+
+/** Ein Schritt einer geführten Vorlage über den Namen; ohne `templateId` in allen, auch künftigen. */
+export interface StepTarget {
+  stepName: string;
+  templateId?: string;
+}
+
+/** Die Ersatzübung einer pausierten Übung. */
+export interface RestrictionReplacement {
+  exerciseId: string;
+  workSetCount: number;
+  targetReps?: number;
+  targetRepsMax?: number;
+  targetSeconds?: number;
+  targetWeight?: number;
+  targetHeightCm?: number;
+  /** Fehlt sie, erbt der Ersatz die Pause der pausierten Übung. */
+  restSeconds?: number;
+}
+
+export type RestrictionPause = (ExerciseTarget & { replacement?: RestrictionReplacement }) | StepTarget;
+
+export interface ExerciseAdjustment extends ExerciseTarget {
+  workSetCount?: number;
+  targetReps?: number;
+  targetRepsMax?: number;
+  targetSeconds?: number;
+  targetWeight?: number;
+  targetHeightCm?: number;
+  note?: string;
+  /** Unterdrückt nur den Steigerungshinweis, nicht die Wochenregel. */
+  holdProgression?: boolean;
+}
+
+export interface StepAdjustment extends StepTarget {
+  /** Bei einem beidseitigen Schritt je Seite, wie `GuidedStep.seconds`. */
+  seconds?: number;
+  note?: string;
+}
+
+export type RestrictionAdjustment = ExerciseAdjustment | StepAdjustment;
+
+/** Eine Notiz einer Anpassung samt dem Namen ihrer Einschränkung. */
+export interface RestrictionNote {
+  by: string;
+  note: string;
+}
+
+/**
+ * Die Art einer Session-Zeile unter Einschränkungen, für Oberfläche und
+ * Export. Genau eine je Zeile, nach Rangfolge - siehe `sessionRestrictionKind`.
+ */
+export type RestrictionKind =
+  | 'pausiert'
+  | 'trotzdem'
+  | 'angepasst'
+  | 'ausgenommen'
+  | 'ersatz'
+  | 'gehalten'
+  | 'hinweis';
 
 export interface SessionBundle {
   session: WorkoutSession;

@@ -929,6 +929,7 @@ const PROTOCOL_STATUS_LABELS: Record<GuidedProtocolEntry['status'], string> = {
   skipped: 'uebersprungen',
   extended: 'verlaengert',
   aborted: 'abgebrochen',
+  paused: 'pausiert',
 };
 
 /**

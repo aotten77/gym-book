@@ -38,6 +38,7 @@ const PROTOCOL_STATUS_LABELS: Record<GuidedProtocolStatus, string> = {
   skipped: 'Übersprungen',
   extended: 'Verlängert',
   aborted: 'Abgebrochen',
+  paused: 'Pausiert',
 };
 
 function formatProtocolSide(entry: GuidedProtocolEntry) {
