@@ -443,7 +443,7 @@ describe('loadTestsBetween', () => {
       {
         id: 'test-old',
         exerciseId: 'hip',
-        exerciseNameSnapshot: 'Hüfte',
+        exerciseNameSnapshot: 'Beispiel E',
         recordedAt: '2026-07-30T10:00:00.000Z',
         leftValue: 30,
         rightValue: 28,
@@ -452,7 +452,7 @@ describe('loadTestsBetween', () => {
       {
         id: 'test-inside',
         exerciseId: 'hip',
-        exerciseNameSnapshot: 'Hüfte',
+        exerciseNameSnapshot: 'Beispiel E',
         recordedAt: '2026-08-05T10:00:00.000Z',
         leftValue: 32,
         rightValue: 31,
@@ -466,7 +466,7 @@ describe('loadTestsBetween', () => {
       {
         id: 'test-inside',
         recordedAt: '2026-08-05T10:00:00.000Z',
-        exerciseNameSnapshot: 'Hüfte',
+        exerciseNameSnapshot: 'Beispiel E',
         asymmetryPercent: 3.1,
       },
     ]);
@@ -526,7 +526,7 @@ describe('loadSyncActivitySince', () => {
       ['2026-08-03T10:00:00.000Z', '2026-08-13T10:00:00.000Z'].map((recordedAt, index) => ({
         id: `test-${index}`,
         exerciseId: 'hip',
-        exerciseNameSnapshot: 'Hüfte',
+        exerciseNameSnapshot: 'Beispiel E',
         recordedAt,
         leftValue: 30,
         rightValue: 28,
@@ -629,7 +629,7 @@ describe('loadEarliestTimelineDate', () => {
     await db.exerciseTests.add({
       id: 'test',
       exerciseId: 'hip',
-      exerciseNameSnapshot: 'Hüfte',
+      exerciseNameSnapshot: 'Beispiel E',
       recordedAt: '2026-07-20T10:00:00.000Z',
       leftValue: 30,
       rightValue: 28,

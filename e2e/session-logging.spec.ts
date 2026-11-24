@@ -457,13 +457,15 @@ test.describe('Sätze und Reihenfolge', () => {
     await startSampleSession(page);
     await openExerciseSheet(page, 'Front Squat');
 
-    // Aufwärmsatz plus drei Arbeitssätze - danach zeigt das Sheet die Übung
-    // als fertig, und von dort geht es zurück in die Liste.
+    // Aufwärmsatz plus drei Arbeitssätze - danach steht das Sheet schon auf
+    // der nächsten Übung, und von dort geht es zurück in die Liste.
     for (let index = 0; index < 4; index += 1) {
       await completeActiveSet(page);
     }
 
-    await expect(page.locator('[data-sheet-finished]')).toBeVisible();
+    await expect(
+      page.locator('[data-sheet]').getByRole('heading', { name: /Bulgarian Split Squat/ }),
+    ).toBeVisible();
     await closeExerciseSheet(page);
     await expect(page.locator('[data-sheet]')).toHaveCount(0);
 
@@ -567,10 +569,10 @@ test.describe('Aktive Übung', () => {
       await completeActiveSet(page);
     }
 
-    // Beim letzten Satz zeigt das Sheet den Block als fertig - der nächste
-    // wird nicht ungefragt aufgerissen, nur angeboten.
-    await expect(page.locator('[data-sheet-finished]')).toBeVisible();
-    await expect(page.locator('[data-sheet] [data-set-row]')).toHaveCount(0);
+    // Beim letzten Satz öffnet das Sheet den nächsten Block gleich selbst.
+    await expect(
+      page.locator('[data-sheet]').getByRole('heading', { name: /Bulgarian Split Squat/ }),
+    ).toBeVisible();
 
     /*
      * Beim letzten Satz muss der Sprung kommen. Die Live-Query hinkt dem

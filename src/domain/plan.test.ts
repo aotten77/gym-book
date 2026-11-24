@@ -8,11 +8,14 @@ import {
   expandSeries,
   findMatchingPlanEntry,
   isValidLocalDate,
+  isWithinPlanShiftWindow,
+  pickPlanEntryForStart,
   pickTodayPlan,
   planEntryKey,
   planEntryName,
   planEntryState,
   planWeekdayMigration,
+  shiftDateKey,
   toPlanEntryFields,
   toRunPlanSnapshot,
   validatePlanEntryValues,
@@ -221,6 +224,73 @@ describe('findMatchingPlanEntry', () => {
     expect(
       findMatchingPlanEntry([second, first], { kind: 'run', day: '2026-10-05', takenIds: new Set() })?.id,
     ).toBe('r1');
+  });
+});
+
+describe('shiftDateKey', () => {
+  it('zählt Kalendertage, auch über Monatsgrenze und Zeitumstellung', () => {
+    expect(shiftDateKey('2026-10-30', 3)).toBe('2026-11-02');
+    expect(shiftDateKey('2026-10-25', -7)).toBe('2026-10-18');
+    expect(shiftDateKey('kein Datum', 1)).toBeUndefined();
+  });
+});
+
+describe('isWithinPlanShiftWindow', () => {
+  it('reicht sieben Tage in beide Richtungen, über die Kalenderwoche hinaus', () => {
+    // 2026-10-11 ist ein Sonntag: der Montag danach und der Sonntag davor zählen.
+    expect(isWithinPlanShiftWindow('2026-10-12', '2026-10-11')).toBe(true);
+    expect(isWithinPlanShiftWindow('2026-10-04', '2026-10-11')).toBe(true);
+    expect(isWithinPlanShiftWindow('2026-10-18', '2026-10-11')).toBe(true);
+    expect(isWithinPlanShiftWindow('2026-10-19', '2026-10-11')).toBe(false);
+    expect(isWithinPlanShiftWindow('2026-10-03', '2026-10-11')).toBe(false);
+  });
+});
+
+describe('pickPlanEntryForStart', () => {
+  const mo = entry({ id: 'mo', date: '2026-10-05' });
+  const th = entry({ id: 'do', date: '2026-10-08' });
+  const query = (day: string, requestedId?: string, takenIds: string[] = []) => ({
+    templateId: 'A',
+    day,
+    takenIds: new Set(takenIds),
+    requestedId,
+  });
+
+  it('nimmt den offenen Termin von heute', () => {
+    expect(pickPlanEntryForStart([mo, th], query('2026-10-08'))?.id).toBe('do');
+  });
+
+  it('verknüpft ohne Wunsch keinen Termin eines anderen Tages', () => {
+    expect(pickPlanEntryForStart([mo, th], query('2026-10-06'))).toBeNull();
+    expect(pickPlanEntryForStart([th], query('2026-10-07'))).toBeNull();
+  });
+
+  it('ein zweites Training am selben Tag greift nicht auf den nächsten Termin', () => {
+    expect(pickPlanEntryForStart([mo, th], query('2026-10-05', undefined, ['mo']))).toBeNull();
+  });
+
+  it('nimmt einen gewünschten Termin im Fenster - vorziehen und nachholen', () => {
+    expect(pickPlanEntryForStart([mo, th], query('2026-10-06', 'do'))?.id).toBe('do');
+    expect(pickPlanEntryForStart([mo, th], query('2026-10-06', 'mo'))?.id).toBe('mo');
+  });
+
+  it('der Wunsch geht vor den Termin von heute', () => {
+    expect(pickPlanEntryForStart([mo, th], query('2026-10-05', 'do'))?.id).toBe('do');
+  });
+
+  it('ein gewünschter Termin außerhalb des Fensters, belegt oder fremd fällt auf heute zurück', () => {
+    const far = entry({ id: 'weit', date: '2026-10-20' });
+    const other = entry({ id: 'b', date: '2026-10-08', templateId: 'B' });
+
+    expect(pickPlanEntryForStart([mo, far], query('2026-10-05', 'weit'))?.id).toBe('mo');
+    expect(pickPlanEntryForStart([mo, th], query('2026-10-05', 'do', ['do']))?.id).toBe('mo');
+    expect(pickPlanEntryForStart([mo, other], query('2026-10-05', 'b'))?.id).toBe('mo');
+  });
+
+  it('kennt keine Lauf-Termine', () => {
+    const run = entry({ id: 'run', date: '2026-10-05', kind: 'run', templateId: undefined, title: 'Lauf' });
+
+    expect(pickPlanEntryForStart([run], { ...query('2026-10-05', 'run') })).toBeNull();
   });
 });
 

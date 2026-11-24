@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { ArrowRight, CheckCircle2, Clock3, Plus, Timer, X } from 'lucide-react';
+import { CheckCircle2, Clock3, Plus, Timer, X } from 'lucide-react';
 import { Alert } from '@/components/Alert';
 import { AppShell } from '@/components/AppShell';
 import { RestMode } from '@/components/RestMode';
@@ -13,7 +13,6 @@ import { Button, IconButton } from '@/components/ui/Button';
 import { CheckboxField, SelectField, TextArea } from '@/components/ui/Field';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { SessionBlockCard } from '@/components/SessionBlockCard';
-import { SessionBlockFinished } from '@/components/SessionBlockFinished';
 import {
   SessionExerciseStage,
   SessionPartnerRow,
@@ -157,7 +156,7 @@ function byRestTrackEnd(left: RestTimerTrack, right: RestTimerTrack) {
 }
 
 /*
- * Der große Knopf im Fuß des Sheets - "abhaken" wie "Weiter: …".
+ * Der große Knopf im Fuß des Sheets - "abhaken".
  *
  * 62px statt 52. Der Knopf wird mit ausgestrecktem Daumen getroffen, oft im
  * letzten Satz einer Serie, und 52px waren gerade eben über dem Mindestmaß -
@@ -170,6 +169,9 @@ const SHEET_ACTION_CLASS = cn(
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface',
   'disabled:cursor-not-allowed disabled:opacity-50',
 );
+
+/** Wie lange der große Knopf nach dem Sprung in den nächsten Block ruht: `isBlockSwitchLocked`. */
+const BLOCK_SWITCH_LOCK_MS = 700;
 
 interface PendingSetLogDelete {
   log: WorkoutSetLog;
@@ -536,30 +538,35 @@ export function SessionPage() {
   const sessionProgress = useMemo(() => summarizeSessionProgress(setLogs ?? []), [setLogs]);
   const openBlock = blockProgress.find((block) => block.key === openSessionBlockKey);
   /*
-   * Der Block, dessen letzter Satz gerade *im Sheet* abgehakt wurde.
+   * Die Übungen des Blocks, aus dem das Sheet gerade weitergesprungen ist.
    *
-   * Dann bleibt das Sheet offen und zeigt die Übung als fertig, mit "Weiter: …"
-   * im Fuß. Ein gespeicherter Schlüssel statt einer Ableitung aus dem Status,
-   * aus zwei Gründen: eine fertige Übung, die man *aus der Liste* öffnet, soll
-   * weiter ihre Bühne zeigen - dort korrigiert man Werte und ergänzt Sätze -,
-   * und die Live-Query trägt den letzten Haken erst einen Emit später. Hinge
-   * die Ansicht am Status, stünde für diesen Moment die Bühne der nächsten
-   * Übung im Sheet, denn der Fokus ist schon weitergezogen. Flüchtig wie das
-   * Sheet selbst: nach einem Reload ist beides zu.
-   *
-   * Der zweite Fall fängt das Zurückkommen auf die Seite ab: der offene Block
-   * liegt im ui-store und überlebt einen Seitenwechsel, dieser State nicht.
-   * Ein fertiger Block, in dem der Fokus nicht mehr steht, ist genau das
-   * Fertig-Bild - wer ihn aus der Liste öffnet, zieht den Fokus
-   * hinein und bekommt die Bühne.
+   * Nach dem letzten Satz eines Blocks öffnet das Sheet sofort den nächsten
+   * offenen Block (Entscheidung vom 24.11.2026). Gewartet wird dann aber noch
+   * auf die Pause, die mit diesem letzten Satz begonnen hat - und die gehört
+   * zu einer Übung, die nicht mehr im Sheet steht. Dieser Merker hält fest,
+   * woher sie kommt, damit der Ruhemodus sie trotzdem groß zeigt. Er fällt
+   * mit dem nächsten Haken und mit jedem Wechsel von Hand weg. Flüchtig wie
+   * das Sheet selbst: nach einem Reload ist beides zu.
    */
-  const [finishedBlockKey, setFinishedBlockKey] = useState<string | null>(null);
-  const isOpenBlockFinished =
-    openBlock !== undefined &&
-    (openBlock.key === finishedBlockKey ||
-      (openBlock.status === 'done' &&
-        !openBlock.exercises.some((item) => item.exercise.id === activeSessionExerciseId)));
-  const nextOpenBlock = openBlock ? findNextOpenBlock(blockProgress, openBlock.key) : undefined;
+  const [carryOverRestExerciseIds, setCarryOverRestExerciseIds] = useState<string[] | null>(null);
+  /*
+   * Kurz nach dem Sprung ist der große Knopf gesperrt. Der Daumen liegt beim
+   * letzten Satz genau darauf, und wo eben "abhaken" stand, steht jetzt das
+   * Abhaken von Satz 1 der nächsten Übung - ein zweiter Tap hakte ihn ab,
+   * bevor man ihn gesehen hat. Meist liegt der Ruhemodus ohnehin darüber,
+   * nach einer Übung ohne Pause aber nicht.
+   */
+  const [isBlockSwitchLocked, setIsBlockSwitchLocked] = useState(false);
+
+  useEffect(() => {
+    if (!isBlockSwitchLocked) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => setIsBlockSwitchLocked(false), BLOCK_SWITCH_LOCK_MS);
+
+    return () => window.clearTimeout(timeout);
+  }, [isBlockSwitchLocked]);
   /*
    * Welcher Satz auf der Bühne groß liegt.
    *
@@ -692,26 +699,24 @@ export function SessionPage() {
    * Wartens - während ein Satz auf Zeit läuft, wartet man nicht, sondern hält,
    * und die Zeit dafür steht auf der Bühne im Sheet, wo auch der Satz steht.
    *
-   * Nach dem letzten Satz eines Blocks steht der Fokus schon auf der nächsten
+   * Nach dem letzten Satz eines Blocks steht das Sheet schon auf der nächsten
    * Übung, und dort läuft keine Pause - gewartet wird aber auf die gerade
-   * begonnene des fertigen Blocks. Deshalb dann dessen zuletzt endende Spur.
-   * Nur, wenn danach noch etwas kommt: nach dem allerletzten Satz wartet man
-   * auf nichts mehr, und die Pause steht als Chip im Fuß.
+   * begonnene des fertigen Blocks. Deshalb dann dessen zuletzt endende Spur,
+   * siehe `carryOverRestExerciseIds`. Nach dem allerletzten Satz gibt es
+   * diesen Fall nicht: dann schließt sich das Sheet, und die Pause steht in
+   * der Leiste unter der Liste.
    */
-  const finishedBlockRestTrack =
-    isOpenBlockFinished && nextOpenBlock && openBlock
-      ? restTimers
-          .filter((track) =>
-            openBlock.exercises.some((item) => item.exercise.id === track.sessionExerciseId),
-          )
-          .sort(byRestTrackEnd)
-          .at(-1)
-      : undefined;
-  const activeRestTrack = isOpenBlockFinished
-    ? finishedBlockRestTrack
-    : activeSetLog
+  const carryOverRestTrack = carryOverRestExerciseIds
+    ? restTimers
+        .filter((track) => carryOverRestExerciseIds.includes(track.sessionExerciseId))
+        .sort(byRestTrackEnd)
+        .at(-1)
+    : undefined;
+  const activeRestTrack =
+    carryOverRestTrack ??
+    (activeSetLog
       ? findRestTrack(restTimers, activeSetLog.sessionExerciseId, activeSetLog.side)
-      : undefined;
+      : undefined);
   const activeRestSeconds = remainingRestSeconds(activeRestTrack, now);
   /*
    * Der Schlüssel gilt nur, solange die Pause läuft. Abgelaufene Spuren bleiben
@@ -779,15 +784,12 @@ export function SessionPage() {
         })
       : false;
   /*
-   * Nach dem letzten Satz eines Blocks ist die anstehende Zeile die einer
-   * anderen Übung - "Satz 1" allein hieße dann, es gehe hier weiter. Der Name
-   * davor ist derselbe, den der Knopf "Weiter: …" im Fuß trägt.
+   * Nach dem letzten Satz eines Blocks gehört die Pause einer anderen Übung
+   * als die anstehende Zeile - "Satz 1" allein hieße dann, es gehe dort
+   * weiter. Der Name davor sagt, dass eine neue Übung kommt.
    */
-  const isActiveSetOutsideOpenBlock =
-    Boolean(openBlock) &&
-    !openBlock?.exercises.some((item) => item.exercise.id === activeSetExercise?.id);
   const restModeNextLabel = activeSetLog
-    ? isActiveSetOutsideOpenBlock && activeSetExercise
+    ? carryOverRestTrack && activeSetExercise
       ? `${activeSetExercise.exerciseNameSnapshot} · ${describeSetRow(activeSetLog)}`
       : describeSetRow(activeSetLog)
     : undefined;
@@ -825,8 +827,8 @@ export function SessionPage() {
     // Wer eine Übung öffnet, will bei dem Satz landen, der dran ist - nicht
     // bei dem, den er beim letzten Besuch angetippt hat.
     setSelectedSetLogId(null);
-    // Und auf ihrer Bühne, auch wenn sie fertig ist: siehe `finishedBlockKey`.
-    setFinishedBlockKey(null);
+    // Wer von Hand wechselt, wartet nicht mehr auf die Pause von vorher.
+    setCarryOverRestExerciseIds(null);
   }
 
   /*
@@ -867,13 +869,13 @@ export function SessionPage() {
   function handleSelectSheetMember(sessionExerciseId: string) {
     setActiveSessionExerciseId(sessionExerciseId);
     setSelectedSetLogId(null);
-    setFinishedBlockKey(null);
+    setCarryOverRestExerciseIds(null);
   }
 
-  /** Zurück in die Liste - per Schließer, Wischen, Escape oder "Zur Übersicht". */
+  /** Zurück in die Liste - per Schließer, Wischen, Escape oder nach dem letzten Satz. */
   function handleCloseExerciseSheet() {
     setOpenSessionBlockKey(null);
-    setFinishedBlockKey(null);
+    setCarryOverRestExerciseIds(null);
   }
 
   /**
@@ -1158,15 +1160,21 @@ export function SessionPage() {
     // damit die nächste offene Zeile nachrückt.
     setSelectedSetLogId(null);
 
+    // Ein neuer Haken beginnt seine eigene Pause - die von vorher ist erledigt.
+    setCarryOverRestExerciseIds(null);
+
     /*
-     * Hat der Block keine offene Zeile mehr, bleibt das Sheet offen und zeigt
-     * ihn als fertig - mit "Weiter: …" im Fuß, solange noch etwas offen ist.
+     * Hat der Block keine offene Zeile mehr, öffnet das Sheet sofort den
+     * nächsten offenen Block - im Supersatz den ganzen -, und nach dem
+     * allerletzten Satz schließt es sich: beendet wird die Einheit in der
+     * Liste.
      *
-     * Früher schloss es sich hier, und die nächste Übung musste man in der
-     * Liste suchen. Gesprungen wird trotzdem nicht: zwischen zwei Übungen wird
-     * umgebaut, getrunken, gelaufen, und erst der Tap auf den Knopf wechselt.
-     * Der Wechsel *innerhalb* eines Supersatzes bleibt davon unberührt, denn
-     * dort geht es ohne Pause weiter.
+     * Bis zum 24.11.2026 blieb das Sheet hier stehen und zeigte die Übung als
+     * fertig, mit "Weiter: …" im Fuß - gedacht als Atempause zum Umbauen.
+     * Die Atempause ist aber schon der Ruhemodus, der nach diesem Haken den
+     * Bildschirm übernimmt und unter "Danach" die nächste Übung nennt; das
+     * Fertig-Bild dahinter verlangte nur noch einen Tap mehr. Der Wechsel
+     * *innerhalb* eines Supersatzes läuft wie immer über `resolveNextFocus`.
      *
      * Der Stand wird aus `effectiveLogs` neu berechnet, nicht aus
      * `blockProgress` gelesen - aus demselben Grund wie oben.
@@ -1183,17 +1191,20 @@ export function SessionPage() {
     );
 
     if (finishedBlock) {
-      setFinishedBlockKey(finishedBlock.key);
-
       /*
-       * Der Fokus geht auf das, was der Knopf verspricht. `resolveNextFocus`
-       * zieht ihn zwar ohnehin weiter, zählt aber eine Übung ohne Sätze als
-       * offen - der Ruhemodus nennt unter "Danach" dieselbe Zeile wie der Fuß.
+       * `findNextOpenBlock` statt des Fokus von `resolveNextFocus`: der zählt
+       * eine Übung ohne Sätze als offen, und das Sheet soll dort landen, wo
+       * wirklich etwas abzuhaken ist.
        */
       const following = findNextOpenBlock(effectiveBlocks, finishedBlock.key);
 
       if (following) {
-        setActiveSessionExerciseId(following.exercise.id);
+        handleOpenExerciseSheet(following.exercise.id);
+        // Nach `handleOpenExerciseSheet`, das den Merker sonst wieder löscht.
+        setCarryOverRestExerciseIds(finishedBlock.exercises.map((item) => item.exercise.id));
+        setIsBlockSwitchLocked(true);
+      } else {
+        handleCloseExerciseSheet();
       }
     }
 
@@ -1452,7 +1463,7 @@ export function SessionPage() {
                   <Clock3 size={12} aria-hidden="true" />
                   <span className="max-w-[8rem] truncate">{description}</span>
                   <span
-                    {...(index === 0 && (!hasRunningSetTimer || isOpenBlockFinished)
+                    {...(index === 0 && !hasRunningSetTimer
                       ? { role: 'timer', 'aria-live': 'off' as const }
                       : {})}
                   >
@@ -1464,39 +1475,11 @@ export function SessionPage() {
           </div>
         </div>
 
-        {isOpenBlockFinished ? (
-          /*
-            Derselbe Knopf an derselben Stelle, nur mit neuer Handlung: wer
-            gerade den letzten Satz abgehakt hat, hat den Daumen genau hier.
-            Er öffnet den nächsten offenen Block - im Supersatz den ganzen -,
-            oder führt zurück in die Liste, wo die Einheit beendet wird.
-          */
-          <button
-            type="button"
-            data-sheet-continue=""
-            onClick={() =>
-              nextOpenBlock
-                ? handleOpenExerciseSheet(nextOpenBlock.exercise.id)
-                : handleCloseExerciseSheet()
-            }
-            className={SHEET_ACTION_CLASS}
-          >
-            {nextOpenBlock ? (
-              <>
-                <span className="truncate">
-                  Weiter: {nextOpenBlock.exercise.exerciseNameSnapshot}
-                </span>
-                <ArrowRight size={18} aria-hidden="true" className="ml-2 shrink-0" />
-              </>
-            ) : (
-              <span className="truncate">Zur Übersicht</span>
-            )}
-          </button>
-        ) : activeSetAction ? (
+        {activeSetAction ? (
           <button
             type="button"
             onClick={() => void activeSetAction.run()}
-            disabled={activeSetAction.disabled}
+            disabled={activeSetAction.disabled || isBlockSwitchLocked}
             className={SHEET_ACTION_CLASS}
           >
             <span className="truncate">{activeSetAction.label}</span>
@@ -1961,7 +1944,7 @@ export function SessionPage() {
                 */}
                 <p className="truncate text-[10px] font-bold uppercase tracking-[0.16em] text-content-muted">
                   {openBlock.isSuperset ? 'Supersatz' : 'Einzelübung'}
-                  {roundLabel && !isOpenBlockFinished ? ` · ${roundLabel}` : ''}
+                  {roundLabel ? ` · ${roundLabel}` : ''}
                 </p>
                 {/*
                   Rechts daneben, wo im Streifen der Liste "Noch" und "Ende"
@@ -1971,27 +1954,12 @@ export function SessionPage() {
                   320px teilt sich der Kopf die Breite mit dem Schließer.
                 */}
                 <div className="mt-0.5 flex items-end justify-between gap-3">
-                  {isOpenBlockFinished ? (
-                    /*
-                      Statt des Zählers der Zustand: der nächste Satz gehört
-                      schon zu einer anderen Übung, und "Satz 9 von 14" über
-                      einer fertigen Übung hieße, er stünde hier.
-                    */
-                    <p className="min-w-0 flex-1 truncate font-display text-2xl font-extrabold leading-none tracking-tight">
-                      {!nextOpenBlock
-                        ? 'Alle Übungen fertig'
-                        : openBlock.isSuperset
-                          ? 'Supersatz fertig'
-                          : 'Übung fertig'}
-                    </p>
-                  ) : (
-                    <p className="min-w-0 flex-1 truncate font-display text-2xl font-extrabold leading-none tabular-nums tracking-tight">
-                      Satz {Math.min(sessionProgress.completedCount + 1, sessionProgress.totalCount)}
-                      <span className="ml-1.5 text-sm font-semibold text-content-muted">
-                        von {sessionProgress.totalCount}
-                      </span>
-                    </p>
-                  )}
+                  <p className="min-w-0 flex-1 truncate font-display text-2xl font-extrabold leading-none tabular-nums tracking-tight">
+                    Satz {Math.min(sessionProgress.completedCount + 1, sessionProgress.totalCount)}
+                    <span className="ml-1.5 text-sm font-semibold text-content-muted">
+                      von {sessionProgress.totalCount}
+                    </span>
+                  </p>
                   <SessionOutlook
                     session={session}
                     blocks={sessionBlocks}
@@ -2005,7 +1973,7 @@ export function SessionPage() {
                 dieser Übung noch aussteht - eine Zahl, die im Satz selbst
                 niemand nachzählen will.
               */}
-              {focusedRounds.length > 1 && !isOpenBlockFinished ? (
+              {focusedRounds.length > 1 ? (
                 <div aria-hidden="true" className="flex gap-1">
                   {focusedRounds.map((round, index) => (
                     <span
@@ -2035,19 +2003,15 @@ export function SessionPage() {
         fieldNavigation
         onClose={handleCloseExerciseSheet}
       >
-        {openBlock && isOpenBlockFinished ? (
-          <SessionBlockFinished block={openBlock} next={nextOpenBlock?.block} />
-        ) : (
-          <div className="space-y-2">
-            {openBlock?.exercises.map((item, index) =>
-              renderSheetMember(item, {
-                isFirst: index === 0,
-                isLast: index === (openBlock?.exercises.length ?? 1) - 1,
-                isSupersetMember: openBlock.isSuperset,
-              }),
-            )}
-          </div>
-        )}
+        <div className="space-y-2">
+          {openBlock?.exercises.map((item, index) =>
+            renderSheetMember(item, {
+              isFirst: index === 0,
+              isLast: index === (openBlock?.exercises.length ?? 1) - 1,
+              isSupersetMember: openBlock.isSuperset,
+            }),
+          )}
+        </div>
       </Sheet>
 
       {/*

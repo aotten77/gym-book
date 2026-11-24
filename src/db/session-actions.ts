@@ -10,7 +10,7 @@ import type {
 import { isGuidedTemplate } from '@/domain/guided-steps';
 import { resolveWeekControl } from '@/domain/program';
 import { loadTakenPlanEntryIds } from '@/db/plan-actions';
-import { findMatchingPlanEntry } from '@/domain/plan';
+import { pickPlanEntryForStart } from '@/domain/plan';
 import { toDateInputValue } from '@/domain/program';
 import { findRestTrack, removeRestTrack, removeRestTracksForExercise } from '@/domain/rest-timer';
 import type { SetLogValuesInput } from '@/domain/history';
@@ -89,7 +89,11 @@ export async function findActiveSession() {
 }
 
 export interface StartSessionOptions {
-  /** Der Termin, für den die Session gestartet wird; unbrauchbar heißt: normal zuordnen. */
+  /**
+   * Der Termin, für den die Session gestartet wird - auch einer von einem
+   * anderen Tag im Fenster um heute (vorziehen, nachholen). Unbrauchbar heißt:
+   * normal zuordnen.
+   */
   planEntryId?: string;
   /** Der Startzeitpunkt, auch der Tag für die Zuordnung. */
   now?: Date;
@@ -126,9 +130,10 @@ export async function resolveSessionWeekContext() {
 }
 
 /**
- * Der Termin, den eine neue Session erfüllt: der gewünschte, falls er offen
- * und ein Workout dieser Vorlage ist, sonst der passende (heute zuerst, dann
- * der früheste offene der Kalenderwoche).
+ * Der Termin, den eine neue Session erfüllt: der gewünschte, falls er offen,
+ * ein Workout dieser Vorlage und im Fenster um heute ist, sonst der offene
+ * passende von heute (`pickPlanEntryForStart`). Ohne beides keiner - dann ist
+ * das Training zusätzlich.
  *
  * Nur innerhalb der Transaktion aufrufen, die die Session schreibt: ob der
  * Termin belegt ist, darf sich zwischen Lesen und Schreiben nicht ändern.
@@ -140,24 +145,13 @@ export async function findPlanEntryForStart(
 ) {
   const candidates = await db.planEntries.where('templateId').equals(templateId).toArray();
   const takenIds = await loadTakenPlanEntryIds(candidates.map((candidate) => candidate.id));
-  const requested = options.planEntryId
-    ? candidates.find(
-        (candidate) =>
-          candidate.id === options.planEntryId &&
-          candidate.kind === 'workout' &&
-          !takenIds.has(candidate.id),
-      )
-    : undefined;
 
-  return (
-    requested ??
-    findMatchingPlanEntry(candidates, {
-      kind: 'workout',
-      templateId,
-      day: toDateInputValue(now),
-      takenIds,
-    })
-  );
+  return pickPlanEntryForStart(candidates, {
+    templateId,
+    day: toDateInputValue(now),
+    takenIds,
+    requestedId: options.planEntryId,
+  });
 }
 
 export async function startSessionFromTemplate(

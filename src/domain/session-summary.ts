@@ -97,7 +97,7 @@ export interface NextOpenBlock {
 }
 
 /**
- * Der Block, den der Knopf "Weiter: …" im Sheet öffnet, wenn der eigene fertig ist.
+ * Der Block, den das Sheet nach dem letzten Satz des eigenen von selbst öffnet.
  *
  * Gesucht wird hinter dem eigenen Block und danach von vorn, wie bei
  * `findNextOpenExercise` - eine weiter oben ausgelassene oder nachträglich

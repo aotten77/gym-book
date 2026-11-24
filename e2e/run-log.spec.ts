@@ -114,6 +114,34 @@ test.describe('Lauf eintragen', () => {
     const overflow = await weeks.evaluateAll((nodes) => nodes.filter((n) => n.scrollWidth > n.clientWidth).length);
     expect(overflow).toBe(0);
   });
+
+  /*
+   * Das Datumsfeld ragte auf dem iPhone über den Rand. Den iOS-eigenen
+   * Darstellungscode führt Playwright-WebKit nicht aus; dieser Test sichert
+   * deshalb nur das eigene Layout und dass die Schutzregel aus index.css greift.
+   */
+  test('Lauf-Sheet läuft bei 320px nicht über', async ({ page }) => {
+    await openRunLogFromNow(page);
+    const sheet = page.locator('[data-sheet]');
+    await expect(sheet).toBeVisible();
+
+    const date = sheet.getByLabel('Datum');
+    const style = await date.evaluate((node) => {
+      const computed = getComputedStyle(node);
+      return { appearance: computed.appearance, boxSizing: computed.boxSizing };
+    });
+    expect(style).toEqual({ appearance: 'none', boxSizing: 'border-box' });
+
+    const sticksOut = await sheet.evaluate((root) => {
+      const edge = root.getBoundingClientRect().right + 0.5;
+      return Array.from(root.querySelectorAll('*'))
+        .filter((node) => node.getBoundingClientRect().right > edge)
+        .map((node) => node.outerHTML.slice(0, 80));
+    });
+    expect(sticksOut).toEqual([]);
+    const pageOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    expect(pageOverflow).toBeLessThanOrEqual(0);
+  });
 });
 
 test.describe('Lauf-Sheet und Termine', () => {

@@ -232,6 +232,41 @@ select {
   background-size: 1.15rem;
 }
 
+/*
+ * Datums- und Zeitfelder auf dem iPhone.
+ *
+ * iOS-WebKit zeichnet sie als `MenulistButton`, erzwingt dabei
+ * `box-sizing: content-box` und eine Mindestbreite in der Breite des längsten
+ * Datums. Zusammen mit `w-full` und dem Polster aus `CONTROL_CLASSES` ragt das
+ * Feld so rund 34px über den Rand, und die ganze Ansicht scrollt seitlich.
+ * `appearance: none` schaltet das ab; der Picker öffnet sich beim Tippen
+ * trotzdem. Playwright-WebKit führt diesen iOS-Code nicht aus - bestätigen
+ * lässt sich die Korrektur nur auf dem echten Gerät
+ * (https://bugs.webkit.org/show_bug.cgi?id=290080).
+ */
+input[type='date'],
+input[type='time'],
+input[type='datetime-local'],
+input[type='month'],
+input[type='week'] {
+  appearance: none;
+  -webkit-appearance: none;
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  text-align: left;
+}
+
+/* Ohne Mindesthöhe klappt ein leeres Feld auf iOS auf die Höhe des Polsters zusammen. */
+input::-webkit-date-and-time-value {
+  margin: 0;
+  text-align: left;
+  min-height: 1.2em;
+  min-height: 1lh;
+}
+
 @layer base {
   /*
    * Überschriften in der Display-Schrift, eng gesetzt.

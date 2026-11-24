@@ -1,14 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import type { PlanEntry } from '@/domain/models';
 import {
-  buildTodayUnitOptions,
+  buildNowSections,
   describeLastTrained,
+  describePlanDay,
   estimateTemplateMinutes,
-  filterNowOptions,
-  SHORT_WORKOUT_MAX_MINUTES,
+  nowStartMode,
   type TodayUnitOption,
 } from '@/domain/today-units';
 
+// 2026-10-07 ist ein Mittwoch.
 const today = new Date(2026, 9, 7, 12);
 
 const templates = [
@@ -21,98 +22,153 @@ function entry(partial: Partial<PlanEntry> & Pick<PlanEntry, 'id' | 'orderInDay'
   return { date: '2026-10-07', kind: 'workout', ...partial } as PlanEntry;
 }
 
-describe('buildTodayUnitOptions', () => {
-  it('geplante zuerst, übrige nach Name', () => {
-    const { planned, others } = buildTodayUnitOptions({
-      templates,
-      plannedToday: [entry({ id: 'e1', orderInDay: 1, templateId: 'b' })],
-      recency: {},
-      minutesByTemplate: {},
-      today,
-    });
+function sections(openEntries: PlanEntry[], extra: Partial<Parameters<typeof buildNowSections>[0]> = {}) {
+  return buildNowSections({
+    templates,
+    openEntries,
+    recency: {},
+    minutesByTemplate: {},
+    exerciseCountByTemplate: {},
+    today,
+    ...extra,
+  });
+}
 
-    expect(planned.map((option) => option.name)).toEqual(['Einheit B']);
-    expect(others.map((option) => option.name)).toEqual(['Einheit A', 'Mobility Hüfte']);
-    expect(others[1].kind).toBe('mobility');
-    expect(others[0].lastTrained).toBe('noch nie');
+const names = (options: TodayUnitOption[]) => options.map((option) => option.name);
+
+describe('buildNowSections', () => {
+  it('ohne Termine ist alles spontan, nach Name', () => {
+    const result = sections([]);
+
+    expect(result.now).toBeUndefined();
+    expect(names(result.spontaneous)).toEqual(['Einheit A', 'Einheit B', 'Mobility Hüfte']);
+    expect(result.spontaneous[2].kind).toBe('mobility');
+    expect(result.spontaneous[0].lastTrained).toBe('noch nie');
+    expect(result.planned).toEqual([]);
+    expect(result.catchUp).toEqual([]);
   });
 
-  it('ein Workout zweimal geplant erscheint einmal', () => {
-    const { planned } = buildTodayUnitOptions({
-      templates,
-      plannedToday: [
-        entry({ id: 'e1', orderInDay: 1, templateId: 'b' }),
-        entry({ id: 'e2', orderInDay: 2, templateId: 'b' }),
+  it('der erste Termin von heute ist die Lime-Zeile, weitere stehen unter „Geplant“', () => {
+    const result = sections([
+      entry({ id: 'e2', orderInDay: 2, templateId: 'm' }),
+      entry({ id: 'e1', orderInDay: 1, templateId: 'b' }),
+    ]);
+
+    expect(result.now).toMatchObject({ name: 'Einheit B', planEntry: { id: 'e1', date: '2026-10-07' } });
+    expect(names(result.planned)).toEqual(['Mobility Hüfte']);
+    expect(names(result.spontaneous)).toEqual(['Einheit A']);
+  });
+
+  it('„Geplant“ zeigt je Workout den nächsten Termin, nach Datum', () => {
+    const result = sections([
+      entry({ id: 'a-sa', date: '2026-10-10', orderInDay: 1, templateId: 'a' }),
+      entry({ id: 'b-do', date: '2026-10-08', orderInDay: 1, templateId: 'b' }),
+      entry({ id: 'a-fr', date: '2026-10-09', orderInDay: 1, templateId: 'a' }),
+      entry({ id: 'a-weit', date: '2026-12-01', orderInDay: 1, templateId: 'a' }),
+    ]);
+
+    expect(result.planned.map((option) => option.planEntry?.id)).toEqual(['b-do', 'a-fr']);
+    expect(names(result.spontaneous)).toEqual(['Mobility Hüfte']);
+  });
+
+  it('auch ein Termin weit in der Zukunft macht ein Workout zu einem geplanten', () => {
+    const result = sections([entry({ id: 'm', date: '2026-12-01', orderInDay: 1, templateId: 'm' })]);
+
+    expect(names(result.planned)).toEqual(['Mobility Hüfte']);
+    expect(names(result.spontaneous)).toEqual(['Einheit A', 'Einheit B']);
+  });
+
+  it('das Workout der Lime-Zeile steht nicht noch einmal unter „Geplant“', () => {
+    const result = sections([
+      entry({ id: 'heute', orderInDay: 1, templateId: 'a' }),
+      entry({ id: 'sa', date: '2026-10-10', orderInDay: 1, templateId: 'a' }),
+    ]);
+
+    expect(result.now?.planEntry?.id).toBe('heute');
+    expect(result.planned).toEqual([]);
+    expect(names(result.spontaneous)).not.toContain('Einheit A');
+  });
+
+  it('„Nachholen“ zeigt die offenen Termine der letzten sieben Tage, je Termin', () => {
+    const result = sections([
+      entry({ id: 'zu-alt', date: '2026-09-29', orderInDay: 1, templateId: 'a' }),
+      entry({ id: 'so', date: '2026-10-04', orderInDay: 1, templateId: 'a' }),
+      entry({ id: 'mo', date: '2026-10-05', orderInDay: 1, templateId: 'a' }),
+      entry({ id: 'fr', date: '2026-10-09', orderInDay: 1, templateId: 'a' }),
+    ]);
+
+    expect(result.catchUp.map((option) => option.planEntry?.id)).toEqual(['so', 'mo']);
+    // Zwei Termine, zwei Zeilen: dasselbe Workout darf auch unter „Geplant“ stehen.
+    expect(result.planned.map((option) => option.planEntry?.id)).toEqual(['fr']);
+  });
+
+  it('ein Workout nur mit Termin in der Vergangenheit ist spontan', () => {
+    const result = sections([entry({ id: 'mo', date: '2026-10-05', orderInDay: 1, templateId: 'b' })]);
+
+    expect(names(result.catchUp)).toEqual(['Einheit B']);
+    expect(names(result.spontaneous)).toContain('Einheit B');
+  });
+
+  it('Lauf-Termine und Termine gelöschter Workouts fallen weg', () => {
+    const result = sections([
+      entry({ id: 'lauf', orderInDay: 1, kind: 'run', title: 'Intervalle' }),
+      entry({ id: 'weg', orderInDay: 2, templateId: 'weg' }),
+    ]);
+
+    expect(result.now).toBeUndefined();
+    expect(result.planned).toEqual([]);
+    expect(result.spontaneous).toHaveLength(3);
+  });
+
+  it('trägt Minuten, Übungszahl und die geführte Marke', () => {
+    const result = sections([], {
+      templates: [
+        ...templates,
+        { id: 'g', name: 'Yoga Abend', category: 'yoga', steps: [{ name: 'Kindhaltung', seconds: 60 }] },
       ],
-      recency: {},
-      minutesByTemplate: {},
-      today,
+      minutesByTemplate: { m: 8 },
+      exerciseCountByTemplate: { m: 5 },
     });
 
-    expect(planned).toHaveLength(1);
-  });
-
-  it('Termin eines gelöschten Workouts fällt weg', () => {
-    const { planned } = buildTodayUnitOptions({
-      templates,
-      plannedToday: [entry({ id: 'e1', orderInDay: 1, templateId: 'weg' })],
-      recency: {},
-      minutesByTemplate: {},
-      today,
+    expect(result.spontaneous.find((option) => option.templateId === 'm')).toMatchObject({
+      minutes: 8,
+      exerciseCount: 5,
+      guided: false,
     });
-
-    expect(planned).toEqual([]);
-  });
-
-  it('Lauf-Termine fallen weg', () => {
-    const { planned, others } = buildTodayUnitOptions({
-      templates,
-      plannedToday: [entry({ id: 'e1', orderInDay: 1, kind: 'run', title: 'Intervalle' })],
-      recency: {},
-      minutesByTemplate: {},
-      today,
-    });
-
-    expect(planned).toEqual([]);
-    expect(others).toHaveLength(3);
+    expect(result.spontaneous.find((option) => option.templateId === 'g')?.guided).toBe(true);
+    expect(result.spontaneous.find((option) => option.templateId === 'a')?.planEntry).toBeUndefined();
   });
 });
 
-describe('buildTodayUnitOptions: geführte Vorlagen', () => {
-  const withGuided = [
-    ...templates,
-    {
-      id: 'g',
-      name: 'Yoga Abend',
-      category: 'yoga' as const,
-      steps: [{ name: 'Kindhaltung', seconds: 60 }],
-    },
-  ];
-
-  it('markiert eine geführte Vorlage, Kraft und leere Listen nicht', () => {
-    const { others } = buildTodayUnitOptions({
-      templates: [...withGuided, { id: 'e', name: 'Leer', steps: [] }],
-      plannedToday: [],
-      recency: {},
-      minutesByTemplate: {},
-      today,
-    });
-
-    expect(others.filter((option) => option.guided).map((option) => option.name)).toEqual([
-      'Yoga Abend',
-    ]);
+describe('nowStartMode', () => {
+  const option = (date?: string): TodayUnitOption => ({
+    templateId: 'a',
+    name: 'Einheit A',
+    kind: 'strength',
+    lastTrained: 'noch nie',
+    minutes: 0,
+    exerciseCount: 0,
+    guided: false,
+    ...(date ? { planEntry: { id: 'e', date } } : {}),
   });
 
-  it('markiert auch einen heute geplanten Termin einer geführten Vorlage', () => {
-    const { planned } = buildTodayUnitOptions({
-      templates: withGuided,
-      plannedToday: [entry({ id: 'e1', orderInDay: 1, templateId: 'g' })],
-      recency: {},
-      minutesByTemplate: {},
-      today,
-    });
+  it('heute verknüpft, im Fenster fragt, sonst zusätzlich', () => {
+    expect(nowStartMode(option('2026-10-07'), '2026-10-07')).toBe('link');
+    expect(nowStartMode(option('2026-10-12'), '2026-10-07')).toBe('ask');
+    expect(nowStartMode(option('2026-09-30'), '2026-10-07')).toBe('ask');
+    expect(nowStartMode(option('2026-10-15'), '2026-10-07')).toBe('extra');
+    expect(nowStartMode(option(), '2026-10-07')).toBe('extra');
+  });
+});
 
-    expect(planned[0]).toMatchObject({ name: 'Yoga Abend', guided: true, planEntryId: 'e1' });
+describe('describePlanDay', () => {
+  it('heute, bis sechs Tage der Wochentag, sonst das Datum', () => {
+    expect(describePlanDay('2026-10-07', today)).toBe('heute');
+    expect(describePlanDay('2026-10-08', today)).toBe('Do');
+    expect(describePlanDay('2026-10-05', today)).toBe('Mo');
+    expect(describePlanDay('2026-10-13', today)).toBe('Di');
+    expect(describePlanDay('2026-10-14', today)).toBe('14.10.');
+    expect(describePlanDay('2026-09-30', today)).toBe('30.09.');
   });
 });
 
@@ -122,27 +178,6 @@ describe('describeLastTrained', () => {
     expect(describeLastTrained(new Date(2026, 8, 30, 18).toISOString(), today)).toBe('zuletzt 30.09.');
     expect(describeLastTrained(new Date(2026, 9, 7, 6).toISOString(), today)).toBe('zuletzt heute');
     expect(describeLastTrained(undefined, today)).toBe('noch nie');
-  });
-});
-
-describe('buildTodayUnitOptions: Minuten und Termin', () => {
-  it('trägt Minuten, Übungszahl und die Termin-Id des geplanten Workouts', () => {
-    const { planned, others } = buildTodayUnitOptions({
-      templates,
-      plannedToday: [entry({ id: 'e1', orderInDay: 1, templateId: 'b' })],
-      recency: {},
-      minutesByTemplate: { b: 40, m: 8 },
-      exerciseCountByTemplate: { m: 5 },
-      today,
-    });
-
-    expect(planned[0]).toMatchObject({ templateId: 'b', minutes: 40, planEntryId: 'e1' });
-    expect(others.find((option) => option.templateId === 'm')).toMatchObject({
-      minutes: 8,
-      exerciseCount: 5,
-    });
-    expect(others.find((option) => option.templateId === 'a')?.minutes).toBe(0);
-    expect(others.find((option) => option.templateId === 'a')?.planEntryId).toBeUndefined();
   });
 });
 
@@ -176,42 +211,5 @@ describe('estimateTemplateMinutes', () => {
     // 30 + 20 = 50 s
     expect(estimateTemplateMinutes([{ workSetCount: 1, includeWarmup: false, unilateral: false }])).toBe(1);
     expect(estimateTemplateMinutes([])).toBe(0);
-  });
-});
-
-describe('filterNowOptions', () => {
-  const option = (
-    templateId: string,
-    kind: TodayUnitOption['kind'],
-    minutes: number,
-  ): TodayUnitOption => ({
-    templateId,
-    name: templateId,
-    kind,
-    lastTrained: 'noch nie',
-    minutes,
-    exerciseCount: 0,
-    guided: false,
-  });
-  const options = [
-    option('m8', 'mobility', 8),
-    option('s15', 'strength', 15),
-    option('s40', 'strength', 40),
-    option('y30', 'yoga', 30),
-    option('f10', 'faszien', 10),
-  ];
-
-  it('filtert „Kurz" auf höchstens 15 min, die übrigen Filter auf die Art', () => {
-    expect(SHORT_WORKOUT_MAX_MINUTES).toBe(15);
-    expect(filterNowOptions(options, 'all')).toHaveLength(5);
-    expect(filterNowOptions(options, 'short').map((o) => o.templateId)).toEqual(['m8', 's15', 'f10']);
-    expect(filterNowOptions(options, 'mobility').map((o) => o.templateId)).toEqual(['m8']);
-    expect(filterNowOptions(options, 'yoga').map((o) => o.templateId)).toEqual(['y30']);
-    expect(filterNowOptions(options, 'faszien').map((o) => o.templateId)).toEqual(['f10']);
-    expect(filterNowOptions(options, 'strength').map((o) => o.templateId)).toEqual(['s15', 's40']);
-  });
-
-  it('„Kurz" lässt Workouts ohne Schätzung aus', () => {
-    expect(filterNowOptions([option('leer', 'strength', 0)], 'short')).toEqual([]);
   });
 });

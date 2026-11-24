@@ -6,6 +6,7 @@ import { ActiveSessionHint } from '@/components/ActiveSessionHint';
 import { Alert } from '@/components/Alert';
 import { UnitKindIcon } from '@/components/icons/UnitKindIcon';
 import { RunLogSheet } from '@/components/RunLogSheet';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { Sheet } from '@/components/ui/Sheet';
 import { db } from '@/db/appDb';
 import {
@@ -20,27 +21,17 @@ import {
   navigateToGuidedStart,
   navigateToStartedSession,
 } from '@/lib/session-navigation';
-import { pickTodayPlan } from '@/domain/plan';
+import type { PlanEntry } from '@/domain/models';
+import { PLAN_SHIFT_WINDOW_DAYS, planEntryState, shiftDateKey } from '@/domain/plan';
 import { toDateInputValue } from '@/domain/program';
 import {
-  buildTodayUnitOptions,
-  filterNowOptions,
-  SHORT_WORKOUT_MAX_MINUTES,
-  type NowFilter,
+  buildNowSections,
+  describePlanDay,
+  nowStartMode,
   type TodayUnitOption,
 } from '@/domain/today-units';
 import { formatNumber, formatRunDate } from '@/lib/format';
-import { cn } from '@/lib/utils';
 import { useUiStore } from '@/store/ui-store';
-
-const FILTERS: { value: NowFilter; label: string }[] = [
-  { value: 'all', label: 'Alle' },
-  { value: 'short', label: 'Kurz' },
-  { value: 'mobility', label: 'Mobility' },
-  { value: 'yoga', label: 'Yoga' },
-  { value: 'faszien', label: 'Faszien' },
-  { value: 'strength', label: 'Kraft' },
-];
 
 const ROW_CLASSES =
   'flex min-h-[3.625rem] w-full items-center gap-3 rounded-control border border-line bg-surface-raised px-3 py-2 text-left hover:bg-surface disabled:opacity-60';
@@ -52,9 +43,13 @@ const SECTION_LABEL_CLASSES = 'text-xs font-semibold uppercase tracking-wide tex
  * Plan. Ersetzt das `TodayUnitSheet`, das nur an der früheren Programmseite hing - eine
  * spontane Schreibtisch-Mobility soll nicht erst dort gesucht werden müssen.
  *
- * Gestartet wird ohne `planEntryId`, außer bei einem heute geplanten offenen
- * Eintrag (wie die Lime-Karte im Plan): jedes andere Workout verknüpft die Zuordnungsregel
- * selbst. Jede Zeile ist ein Knopf; die Marken sind Zierde.
+ * Oben der erste offene Termin von heute (Lime), dann „Nachholen" (offene
+ * Termine der letzten Tage), „Spontan" (was ab heute nirgends im Plan steht)
+ * und „Geplant" (je Workout der nächste offene Termin). Ein Training an einem
+ * anderen Tag als dem seines Termins ist zusätzlich, außer man sagt es: liegt
+ * der Termin im Fenster um heute, fragt ein Dialog „vorziehen/nachholen oder
+ * zusätzlich?". Still verknüpft wird nur ein Termin von heute
+ * (`pickPlanEntryForStart`). Jede Zeile ist ein Knopf; die Marken sind Zierde.
  *
  * Läuft schon eine Session, entfallen die Startoptionen: jeder Tap führte
  * sonst stumm in die laufende Einheit zurück (`startSessionFromTemplate`
@@ -71,10 +66,11 @@ export function NowSheet() {
   const location = useLocation();
   const open = useUiStore((state) => state.isNowSheetOpen);
   const setOpen = useUiStore((state) => state.setNowSheetOpen);
-  const [filter, setFilter] = useState<NowFilter>('all');
   const [isStarting, setIsStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
   const [runSheetOpen, setRunSheetOpen] = useState(false);
+  // Die Zeile, deren Termin an einem anderen Tag liegt - solange die Rückfrage offen ist.
+  const [asking, setAsking] = useState<TodayUnitOption | null>(null);
 
   /*
    * Das Flag liegt global im ui-store, aber jede Seite mountet ihr eigenes
@@ -88,10 +84,10 @@ export function NowSheet() {
     setOpen(false);
   }, [location.pathname, setOpen]);
 
-  // Bei jedem Öffnen frisch: Filter zurück auf „Alle", nach Fehler oder Start nichts gesperrt.
+  // Bei jedem Öffnen frisch: keine Rückfrage, nach Fehler oder Start nichts gesperrt.
   useEffect(() => {
     if (open) {
-      setFilter('all');
+      setAsking(null);
       setIsStarting(false);
       setStartError(null);
     }
@@ -99,6 +95,8 @@ export function NowSheet() {
 
   const today = new Date();
   const todayKey = toDateInputValue(today);
+  // Ab hier zählen offene Termine als nachholbar; ältere fallen still weg.
+  const windowStartKey = shiftDateKey(todayKey, -PLAN_SHIFT_WINDOW_DAYS) ?? todayKey;
 
   const templates = useLiveQuery(
     () => (open ? db.workoutTemplates.toArray() : Promise.resolve(undefined)),
@@ -117,8 +115,8 @@ export function NowSheet() {
     [open],
   );
   const upcoming = useLiveQuery(
-    () => (open ? loadUpcomingPlan(todayKey) : Promise.resolve(undefined)),
-    [open, todayKey],
+    () => (open ? loadUpcomingPlan(windowStartKey) : Promise.resolve(undefined)),
+    [open, windowStartKey],
   );
 
   // `null` heißt „läuft keine", `undefined` „noch nicht geladen" - sonst blitzten die Startzeilen kurz auf.
@@ -136,35 +134,31 @@ export function NowSheet() {
     exerciseCounts !== undefined &&
     upcoming !== undefined;
 
-  const plannedToday = upcoming
-    ? pickTodayPlan(upcoming.entries, upcoming.links, todayKey).todayOpen
+  const openEntries = upcoming
+    ? upcoming.entries.filter(
+        (entry: PlanEntry) => planEntryState(entry.id, upcoming.links) === 'offen',
+      )
     : [];
-  const { planned, others } = buildTodayUnitOptions({
+  const sections = buildNowSections({
     templates: templates ?? [],
-    plannedToday,
+    openEntries,
     recency: recency ?? {},
     minutesByTemplate: minutesByTemplate ?? {},
     exerciseCountByTemplate: exerciseCounts ?? {},
     today,
   });
+  const { now: first, catchUp, spontaneous, planned } = sections;
+  const nothingToShow =
+    !first && catchUp.length === 0 && spontaneous.length === 0 && planned.length === 0;
 
-  // Der erste Termin ist „jetzt dran" und damit die einzige Lime-Fläche; er
-  // bleibt vom Filter unberührt, ein Termin ist keine Auswahl.
-  const [first, ...furtherPlanned] = planned;
-  const visibleFurther = filterNowOptions(furtherPlanned, filter);
-  const visibleOthers = filterNowOptions(others, filter);
-  const quick = visibleOthers.filter(
-    (option) => option.minutes > 0 && option.minutes <= SHORT_WORKOUT_MAX_MINUTES,
-  );
-  const quickIds = new Set(quick.map((option) => option.templateId));
-  const rest = visibleOthers.filter((option) => !quickIds.has(option.templateId));
-  const nothingToShow = !first && visibleFurther.length === 0 && visibleOthers.length === 0;
+  /** Startet die Zeile - mit `planEntryId` für genau diesen Termin, ohne als zusätzliches Training. */
+  async function startOption(option: TodayUnitOption, planEntryId: string | undefined) {
+    setAsking(null);
 
-  async function handleStart(option: TodayUnitOption) {
     // Eine geführte Vorlage startet nicht hier, sondern auf ihrem Start-Screen.
     if (option.guided) {
       setOpen(false);
-      navigateToGuidedStart(navigate, option.templateId, { planEntryId: option.planEntryId });
+      navigateToGuidedStart(navigate, option.templateId, { planEntryId });
       return;
     }
 
@@ -173,7 +167,7 @@ export function NowSheet() {
     try {
       const sessionId = await startSessionFromTemplate(
         option.templateId,
-        option.planEntryId ? { planEntryId: option.planEntryId } : {},
+        planEntryId ? { planEntryId } : {},
       );
       setStartError(null);
       setOpen(false);
@@ -186,24 +180,69 @@ export function NowSheet() {
     }
   }
 
-  function renderRow(option: TodayUnitOption) {
+  function handleTap(option: TodayUnitOption) {
+    switch (nowStartMode(option, todayKey)) {
+      case 'link':
+        void startOption(option, option.planEntry?.id);
+        return;
+      case 'ask':
+        setAsking(option);
+        return;
+      default:
+        void startOption(option, undefined);
+    }
+  }
+
+  function renderRow(option: TodayUnitOption, detail: string) {
     return (
-      <li key={option.templateId}>
+      <li key={option.planEntry?.id ?? option.templateId}>
         <button
           type="button"
           className={ROW_CLASSES}
           disabled={isStarting}
-          onClick={() => void handleStart(option)}
+          onClick={() => handleTap(option)}
         >
           <UnitKindIcon kind={option.kind} size={20} className="shrink-0 text-content-secondary" />
+          {/* Umbrechen statt `truncate`: bei 320px schnitte das die Unterzeile still ab. */}
           <span className="min-w-0 flex-1">
-            <span className="block truncate font-semibold text-content">{option.name}</span>
-            <span className="block truncate text-sm text-content-muted">{option.lastTrained}</span>
+            <span className="block break-words font-semibold text-content">{option.name}</span>
+            <span className="block break-words text-sm text-content-muted">{detail}</span>
           </span>
         </button>
       </li>
     );
   }
+
+  function spontaneousDetail(option: TodayUnitOption) {
+    const parts: string[] = [];
+
+    if (option.minutes > 0) {
+      parts.push(`${formatNumber(option.minutes)} min`);
+    }
+
+    if (option.exerciseCount > 0) {
+      const noun = option.exerciseCount === 1 ? 'Übung' : 'Übungen';
+      parts.push(`${formatNumber(option.exerciseCount)} ${noun}`);
+    }
+
+    return [...parts, option.lastTrained].join(' · ');
+  }
+
+  function plannedDetail(option: TodayUnitOption) {
+    const day = option.planEntry ? describePlanDay(option.planEntry.date, today) : '';
+
+    return `${day === 'heute' ? 'heute geplant' : `geplant ${day}`} · ${option.lastTrained}`;
+  }
+
+  function catchUpDetail(option: TodayUnitOption) {
+    const day = option.planEntry ? describePlanDay(option.planEntry.date, today) : '';
+
+    return `von ${day} · ${option.lastTrained}`;
+  }
+
+  // Die Rückfrage: vorziehen (Termin liegt später) oder nachholen (früher) - oder zusätzlich.
+  const askingDay = asking?.planEntry ? describePlanDay(asking.planEntry.date, today) : '';
+  const askingAhead = asking?.planEntry ? asking.planEntry.date > todayKey : false;
 
   const header = (
     <div className="min-w-0">
@@ -257,7 +296,7 @@ export function NowSheet() {
                 <button
                   type="button"
                   disabled={isStarting}
-                  onClick={() => void handleStart(first)}
+                  onClick={() => handleTap(first)}
                   className="flex min-h-[3.625rem] w-full items-center gap-3 rounded-control bg-highlight px-3 py-2 text-left text-highlight-contrast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60"
                 >
                   <span className="min-w-0 flex-1">
@@ -270,75 +309,35 @@ export function NowSheet() {
                 </button>
               ) : null}
 
-              {visibleFurther.length > 0 ? (
-                <ul className="space-y-2">{visibleFurther.map(renderRow)}</ul>
-              ) : null}
-
-              <div role="radiogroup" aria-label="Filter" className="flex flex-wrap gap-2">
-                {FILTERS.map((item) => (
-                  <button
-                    key={item.value}
-                    type="button"
-                    role="radio"
-                    aria-checked={filter === item.value}
-                    onClick={() => setFilter(item.value)}
-                    className={cn(
-                      'min-h-touch rounded-full border px-4 text-sm font-semibold',
-                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
-                      filter === item.value
-                        ? 'border-transparent bg-accent text-accent-contrast'
-                        : 'border-line bg-surface-raised text-content-secondary hover:bg-surface',
-                    )}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-
-              {quick.length > 0 ? (
-                <section className="space-y-2">
-                  <h3 className={SECTION_LABEL_CLASSES}>Kurz &amp; spontan</h3>
-                  <ul className="grid grid-cols-2 gap-2">
-                    {quick.map((option) => (
-                      <li key={option.templateId}>
-                        <button
-                          type="button"
-                          disabled={isStarting}
-                          onClick={() => void handleStart(option)}
-                          className="flex min-h-[4.5rem] w-full flex-col justify-between gap-1 rounded-control border border-line bg-surface-raised px-3 py-2 text-left hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60"
-                        >
-                          <span className="flex items-start gap-2">
-                            <UnitKindIcon
-                              kind={option.kind}
-                              size={16}
-                              className="mt-0.5 shrink-0 text-content-secondary"
-                            />
-                            <span className="min-w-0 break-words font-semibold text-content">
-                              {option.name}
-                            </span>
-                          </span>
-                          <span className="text-sm text-content-muted">
-                            {formatNumber(option.minutes)} min · {formatNumber(option.exerciseCount)}{' '}
-                            {option.exerciseCount === 1 ? 'Übung' : 'Übungen'}
-                          </span>
-                        </button>
-                      </li>
-                    ))}
+              {catchUp.length > 0 ? (
+                <section data-now-section="nachholen" className="space-y-2">
+                  <h3 className={SECTION_LABEL_CLASSES}>Nachholen</h3>
+                  <ul className="space-y-2">
+                    {catchUp.map((option) => renderRow(option, catchUpDetail(option)))}
                   </ul>
                 </section>
               ) : null}
 
-              {rest.length > 0 ? (
-                <section className="space-y-2">
-                  <h3 className={SECTION_LABEL_CLASSES}>
-                    {quick.length > 0 ? 'Weitere Workouts' : 'Workouts'}
-                  </h3>
-                  <ul className="space-y-2">{rest.map(renderRow)}</ul>
+              {spontaneous.length > 0 ? (
+                <section data-now-section="spontan" className="space-y-2">
+                  <h3 className={SECTION_LABEL_CLASSES}>Spontan</h3>
+                  <ul className="space-y-2">
+                    {spontaneous.map((option) => renderRow(option, spontaneousDetail(option)))}
+                  </ul>
+                </section>
+              ) : null}
+
+              {planned.length > 0 ? (
+                <section data-now-section="geplant" className="space-y-2">
+                  <h3 className={SECTION_LABEL_CLASSES}>Geplant</h3>
+                  <ul className="space-y-2">
+                    {planned.map((option) => renderRow(option, plannedDetail(option)))}
+                  </ul>
                 </section>
               ) : null}
 
               {nothingToShow ? (
-                <p className="text-sm text-content-muted">Kein Workout passt zu diesem Filter.</p>
+                <p className="text-sm text-content-muted">Noch kein Workout angelegt.</p>
               ) : null}
             </>
           ) : null}
@@ -384,6 +383,24 @@ export function NowSheet() {
           ) : null}
         </div>
       </Sheet>
+      <ConfirmDialog
+        open={asking !== null}
+        title={`${asking?.name ?? ''} ${askingAhead ? 'ist' : 'war'} für ${askingDay} geplant`}
+        description={
+          askingAhead
+            ? `Vorgezogen gilt der Termin heute als erledigt und fällt am ${askingDay} weg. ` +
+              'Zusätzlich trainiert bleibt der Plan, wie er ist.'
+            : 'Nachgeholt gilt der Termin als erledigt. Zusätzlich trainiert bleibt er offen.'
+        }
+        confirmLabel={`Termin vom ${askingDay} ${askingAhead ? 'vorziehen' : 'nachholen'}`}
+        destructive={false}
+        secondaryAction={{
+          label: 'Zusätzlich trainieren',
+          onClick: () => asking && void startOption(asking, undefined),
+        }}
+        onConfirm={() => asking && void startOption(asking, asking.planEntry?.id)}
+        onCancel={() => setAsking(null)}
+      />
       <RunLogSheet open={runSheetOpen} onClose={() => setRunSheetOpen(false)} />
     </>
   );

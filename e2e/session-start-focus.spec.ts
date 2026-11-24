@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { closeExerciseSheet, resetDatabase, seedSampleData } from './helpers';
+import { closeExerciseSheet, resetDatabase, seedSampleData, tapNowSheetWorkout } from './helpers';
 
 /*
  * Ein frischer Start öffnet das Fokus-Sheet auf dem ersten offenen Block.
@@ -14,7 +14,7 @@ test.describe('Session-Start öffnet das Fokus-Sheet', () => {
     await page.waitForTimeout(600);
     // Über das Jetzt-Sheet: im Plan steht „Einheit A“ je nach Wochentag als künftiger Termin.
     await page.getByRole('button', { name: 'Jetzt trainieren' }).click();
-    await page.locator('[data-sheet]').getByRole('button', { name: 'Einheit A' }).first().click();
+    await tapNowSheetWorkout(page, 'Einheit A');
     await page.waitForURL(/#\/session\//);
   });
 

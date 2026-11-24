@@ -17,6 +17,12 @@ interface ConfirmDialogProps {
    * Rückfrage mehr.
    */
   children?: ReactNode;
+  /**
+   * Eine zweite, gleichwertige Antwort neben der Bestätigung - etwa
+   * „Termin vorziehen" oder „Zusätzlich trainieren". Dann stehen die Knöpfe
+   * untereinander, weil drei nebeneinander auf 320px nicht passen.
+   */
+  secondaryAction?: { label: string; onClick: () => void };
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -36,6 +42,7 @@ export function ConfirmDialog({
   destructive = true,
   busy = false,
   children,
+  secondaryAction,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -86,19 +93,38 @@ export function ConfirmDialog({
           {description}
         </p>
         {children ? <div className="mt-4">{children}</div> : null}
-        <div className="mt-5 grid grid-cols-2 gap-3">
-          <Button variant="ghost" onClick={onCancel} disabled={busy}>
-            {cancelLabel}
-          </Button>
-          <Button
-            ref={confirmRef}
-            variant={destructive ? 'danger' : 'primary'}
-            onClick={onConfirm}
-            disabled={busy}
-          >
-            {busy ? 'Läuft...' : confirmLabel}
-          </Button>
-        </div>
+        {secondaryAction ? (
+          <div className="mt-5 grid gap-3">
+            <Button
+              ref={confirmRef}
+              variant={destructive ? 'danger' : 'primary'}
+              onClick={onConfirm}
+              disabled={busy}
+            >
+              {busy ? 'Läuft...' : confirmLabel}
+            </Button>
+            <Button onClick={secondaryAction.onClick} disabled={busy}>
+              {secondaryAction.label}
+            </Button>
+            <Button variant="ghost" onClick={onCancel} disabled={busy}>
+              {cancelLabel}
+            </Button>
+          </div>
+        ) : (
+          <div className="mt-5 grid grid-cols-2 gap-3">
+            <Button variant="ghost" onClick={onCancel} disabled={busy}>
+              {cancelLabel}
+            </Button>
+            <Button
+              ref={confirmRef}
+              variant={destructive ? 'danger' : 'primary'}
+              onClick={onConfirm}
+              disabled={busy}
+            >
+              {busy ? 'Läuft...' : confirmLabel}
+            </Button>
+          </div>
+        )}
       </div>
     </div>,
     document.body,

@@ -168,7 +168,7 @@ Recommended set log shape:
 - Entries arrive only through the library import; the user cannot create, edit, move or delete them. The app itself writes them in a few fixed places only: the weekday data fix, the sample data, the `deleteTemplate` cascade of open entries, backup restore and local reset. A series exists only as a copy in the sample data. No recurring weekday schedule, no rule that generates future entries, no automatic rescheduling of a missed day — that would be a second plan source and the automation v1 excludes.
 - Whether an entry is open, taken or done is **derived** from the sessions and runs that point at it (`planEntryId`), never stored on the entry. An aborted session takes nothing.
 - A taken entry is history: it cannot be changed, deleted or moved.
-- The link is made when a session starts or a run is saved — today's open matching entry first, else the earliest open one of the current calendar week. The program week still comes from `resolveWeekControl`; an entry never chooses it, and `materializeSession` knows nothing of the plan.
+- The link is made when a session starts or a run is saved. A session takes today's open matching entry, or another day's entry only when the user chose it explicitly (pull forward or catch up, at most 7 days around today) — otherwise it is an extra session and no other day changes. A run takes today's open matching entry, else the earliest open one of the current calendar week, shown and changeable in the run sheet. The program week still comes from `resolveWeekControl`; an entry never chooses it, and `materializeSession` knows nothing of the plan.
 - Sessions keep `planDateSnapshot`, runs `runPlanSnapshot`, so history stays readable after an entry changes or goes.
 
 ## v1 Scope

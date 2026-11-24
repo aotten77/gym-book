@@ -58,12 +58,11 @@ async function trainRamp(page: Page, reps: [number, number, number]) {
   }
 
   /*
-   * Nach dem letzten Satz bleibt das Sheet offen und zeigt die Übung als
-   * fertig; beendet wird die Einheit in der Liste. Die Pause liegt noch
-   * darüber und muss weg, bevor das Sheet sich schließen lässt.
+   * Nach dem letzten Satz steht das Sheet schon auf der nächsten Übung;
+   * beendet wird die Einheit in der Liste. Die Pause liegt noch darüber und
+   * muss weg, bevor das Sheet sich schließen lässt.
    */
   await minimizeRestMode(page);
-  await expect(page.locator('[data-sheet-finished]')).toBeVisible();
   await closeExerciseSheet(page);
   await expect(page.locator('[data-sheet]')).toHaveCount(0);
 

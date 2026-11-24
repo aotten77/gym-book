@@ -38,9 +38,9 @@ export async function loadPlanBetween(from: string, to: string): Promise<PlanWit
   return attachLinks(entries);
 }
 
-/** Alle Termine ab `today` (einschließlich), sortiert, mit Verweisen. */
-export async function loadUpcomingPlan(today: string): Promise<PlanWithLinks> {
-  const entries = await db.planEntries.where('date').aboveOrEqual(today).toArray();
+/** Alle Termine ab `from` (einschließlich), sortiert, mit Verweisen. */
+export async function loadUpcomingPlan(from: string): Promise<PlanWithLinks> {
+  const entries = await db.planEntries.where('date').aboveOrEqual(from).toArray();
 
   return attachLinks(entries);
 }

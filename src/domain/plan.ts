@@ -310,9 +310,10 @@ export function sortPlanEntries(entries: PlanEntry[]): PlanEntry[] {
 }
 
 /**
- * Welcher Termin zu einem Start gehört: der offene passende von heute, sonst
+ * Welchen Termin ein Lauf vorschlägt: der offene passende von heute, sonst
  * der früheste offene passende der laufenden Kalenderwoche - ausdrücklich
- * auch ein künftiger, denn wer vorzieht, trainiert trotzdem *diesen* Termin.
+ * auch ein künftiger. Das Lauf-Sheet zeigt die Wahl an und lässt sie ändern;
+ * ein Workout-Start verknüpft dagegen still und geht über `pickPlanEntryForStart`.
  * Schon belegte Termine zählen nicht; bei mehreren am selben Tag entscheidet
  * `orderInDay`. Passt nichts, `null`.
  */
@@ -355,6 +356,73 @@ export function findMatchingPlanEntry(
   const until = toDateInputValue(nextWeekStart);
 
   return candidates.find((entry) => entry.date >= from && entry.date < until) ?? null;
+}
+
+/**
+ * So viele Kalendertage um heute darf ein Workout-Start einen Termin vorziehen
+ * oder nachholen. Ein gleitendes Fenster statt der Kalenderwoche: sonst ließe
+ * sich am Sonntag der Montag nicht vorziehen und am Montag der Sonntag nicht
+ * nachholen.
+ */
+export const PLAN_SHIFT_WINDOW_DAYS = 7;
+
+/** `YYYY-MM-DD` plus `days` Kalendertage, per `setDate` - eine Zeitumstellung verschiebt nichts. */
+export function shiftDateKey(day: string, days: number): string | undefined {
+  const parsed = parseLocalDate(day);
+
+  if (!parsed) {
+    return undefined;
+  }
+
+  parsed.setDate(parsed.getDate() + days);
+
+  return toDateInputValue(parsed);
+}
+
+/** Liegt `date` höchstens `PLAN_SHIFT_WINDOW_DAYS` Tage vor oder nach `today`? */
+export function isWithinPlanShiftWindow(date: string, today: string): boolean {
+  const from = shiftDateKey(today, -PLAN_SHIFT_WINDOW_DAYS);
+  const until = shiftDateKey(today, PLAN_SHIFT_WINDOW_DAYS);
+
+  return from !== undefined && until !== undefined && date >= from && date <= until;
+}
+
+/**
+ * Welcher Termin zu einem Workout-Start gehört.
+ *
+ * Ein mitgegebener Termin gilt, wenn er offen ist, zu diesem Workout gehört und
+ * im Fenster um heute liegt - so zieht man bewusst vor oder holt nach. Sonst
+ * nur der offene passende Termin von *heute*: ein Training an einem anderen
+ * Tag ist zusätzlich und verändert keinen anderen Tag. Wer eine Einheit
+ * vorzieht, ohne es zu sagen, trainiert sie am Termin womöglich noch einmal.
+ * Läufe gehen nicht hier durch, sondern über `findMatchingPlanEntry`.
+ */
+export function pickPlanEntryForStart(
+  entries: PlanEntry[],
+  query: {
+    templateId: string;
+    day: string;
+    takenIds: ReadonlySet<string>;
+    requestedId?: string;
+  },
+): PlanEntry | null {
+  const candidates = sortPlanEntries(
+    entries.filter(
+      (entry) =>
+        entry.kind === 'workout' &&
+        entry.templateId === query.templateId &&
+        !query.takenIds.has(entry.id),
+    ),
+  );
+
+  const requested = query.requestedId
+    ? candidates.find(
+        (entry) =>
+          entry.id === query.requestedId && isWithinPlanShiftWindow(entry.date, query.day),
+      )
+    : undefined;
+
+  return requested ?? candidates.find((entry) => entry.date === query.day) ?? null;
 }
 
 /**

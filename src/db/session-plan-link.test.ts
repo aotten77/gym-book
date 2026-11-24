@@ -58,12 +58,44 @@ describe('Session dem Termin zuordnen', () => {
     expect(session?.planDateSnapshot).toBe('2026-10-08');
   });
 
-  it('nimmt sonst den frühesten offenen der Woche', async () => {
-    await seed([entry('mo', '2026-10-05', 'A')]);
+  it('verknüpft ohne Wunsch keinen Termin eines anderen Tages', async () => {
+    await seed([entry('mo', '2026-10-05', 'A'), entry('do', '2026-10-08', 'A')]);
 
     const id = await startSessionFromTemplate('A', { now: MI });
+    const session = await db.workoutSessions.get(id);
 
-    expect((await db.workoutSessions.get(id))?.planEntryId).toBe('mo');
+    // Zusätzlich trainiert: weder der verpasste Montag noch der Donnerstag sind belegt.
+    expect('planEntryId' in (session as object)).toBe(false);
+  });
+
+  it('zieht einen gewünschten Termin über die Wochengrenze vor', async () => {
+    // 2026-10-11 ist ein Sonntag, der 12. der Montag danach.
+    await seed([entry('next-mo', '2026-10-12', 'A')]);
+
+    const id = await startSessionFromTemplate('A', {
+      planEntryId: 'next-mo',
+      now: new Date(2026, 9, 11, 18, 0),
+    });
+    const session = await db.workoutSessions.get(id);
+
+    expect(session?.planEntryId).toBe('next-mo');
+    expect(session?.planDateSnapshot).toBe('2026-10-12');
+  });
+
+  it('holt einen gewünschten Termin der Vorwoche nach', async () => {
+    await seed([entry('so', '2026-10-04', 'A')]);
+
+    const id = await startSessionFromTemplate('A', { planEntryId: 'so', now: MO });
+
+    expect((await db.workoutSessions.get(id))?.planEntryId).toBe('so');
+  });
+
+  it('ein gewünschter Termin außerhalb des Fensters wird nicht verknüpft', async () => {
+    await seed([entry('weit', '2026-10-20', 'A')]);
+
+    const id = await startSessionFromTemplate('A', { planEntryId: 'weit', now: MO });
+
+    expect('planEntryId' in ((await db.workoutSessions.get(id)) as object)).toBe(false);
   });
 
   it('ohne passenden Termin kein Verweis', async () => {

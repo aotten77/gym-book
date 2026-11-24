@@ -119,7 +119,7 @@ export async function loadTemplateRecency(): Promise<Record<string, string>> {
 
 /**
  * Grobe Dauer je Workout in Minuten (siehe `estimateTemplateMinutes`) -
- * die Quelle der Kurz-Kacheln im Jetzt-Sheet. Ein Workout ohne Übungen fehlt
+ * die Quelle der Zeilen unter „Spontan“ im Jetzt-Sheet. Ein Workout ohne Übungen fehlt
  * im Ergebnis.
  */
 export async function loadTemplateMinutes(): Promise<Record<string, number>> {

@@ -56,13 +56,35 @@ export async function startSampleSession(page: Page) {
   await page.goto('./');
   await page.waitForTimeout(600);
   await page.getByRole('button', { name: 'Jetzt trainieren' }).click();
-  await page.locator('[data-sheet]').getByRole('button', { name: 'Einheit A' }).first().click();
+  await tapNowSheetWorkout(page, 'Einheit A');
   await page.waitForURL(/#\/session\//);
   // Ein frischer Start öffnet das Sheet immer; darauf warten statt blind zu raten.
   await expect(page.locator('[data-sheet]')).toBeVisible();
   await closeExerciseSheet(page);
 
   return page.url();
+}
+
+/**
+ * Tippt im offenen Jetzt-Sheet auf ein Workout - die Lime-Zeile, falls es
+ * heute geplant ist. Liegt sein Termin an einem anderen Tag in der Nähe, fragt
+ * ein Dialog „vorziehen oder zusätzlich?“; je nach Wochentag tut er das bei
+ * den Beispieldaten. Dann wird zusätzlich trainiert, damit kein Termin wandert.
+ */
+export async function tapNowSheetWorkout(page: Page, name: string) {
+  await page.locator('[data-sheet]').getByRole('button', { name }).first().click();
+  // Entweder ist der Start schon unterwegs, oder die Rückfrage steht da.
+  await page.waitForFunction(
+    () =>
+      /^#\/(session|guided)\//.test(location.hash) ||
+      document.querySelector('[role="alertdialog"]') !== null,
+  );
+
+  const extra = page.getByRole('button', { name: 'Zusätzlich trainieren' });
+
+  if (await extra.isVisible()) {
+    await extra.click();
+  }
 }
 
 /**
