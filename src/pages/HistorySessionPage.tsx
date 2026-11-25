@@ -5,10 +5,14 @@ import { ArrowLeft } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
 import { Empty } from '@/components/Empty';
 import { ExerciseMedia } from '@/components/ExerciseMedia';
+import { RestrictionLabel } from '@/components/RestrictionLabel';
 import { SectionCard } from '@/components/SectionCard';
 import { SupersetBlock } from '@/components/SupersetBlock';
+import { Button } from '@/components/ui/Button';
 import { db } from '@/db/appDb';
+import { setSessionExerciseExcludedFromProgress } from '@/db/session-actions';
 import { sortSetLogs } from '@/domain/history';
+import { isPausedSessionExercise } from '@/domain/restriction';
 import type {
   GuidedProtocolEntry,
   GuidedProtocolStatus,
@@ -216,6 +220,10 @@ export function HistorySessionPage() {
       ? mediaAssetById[exerciseRecord.mediaAssetId]
       : undefined;
     const logs = sortSetLogs(logsBySessionExerciseId[exercise.id] ?? []);
+    const isPaused = isPausedSessionExercise(exercise);
+    const originalId = exercise.replacementFor?.sessionExerciseId;
+    const originalName = sessionExercises?.find((item) => item.id === originalId)
+      ?.exerciseNameSnapshot;
 
     const targetParts = [
       typeof exercise.targetReps === 'number' ? `${exercise.targetReps} Wdh` : null,
@@ -242,13 +250,47 @@ export function HistorySessionPage() {
           .join(' · ')}
       >
         <div className="space-y-3">
+          {/*
+            Dieselben Etiketten wie in der Einheit: sie erklären, warum eine
+            Übung fehlt oder leichter war.
+          */}
+          <RestrictionLabel
+            exercise={exercise}
+            originalName={originalName}
+            className="px-0 text-content-secondary"
+          />
           <ExerciseMedia
             mediaAsset={mediaAsset}
             alt={exercise.exerciseNameSnapshot}
             className="h-40 w-full"
             imageClassName="h-full w-full"
           />
-          {logs.length > 0 ? (
+          {/*
+            Der Schalter ist die eine bewusste Ausnahme von „eine abgeschlossene
+            Einheit ist Geschichte“: er ändert keinen Wert, nur ob die Übung als
+            Leistungsstand zählt. Zurücknehmbar, deshalb ohne Rückfrage. Nicht an
+            einer pausierten Übung - sie hat keine Sätze.
+          */}
+          {session?.status === 'completed' && !isPaused ? (
+            <Button
+              size="md"
+              variant="ghost"
+              fullWidth
+              aria-pressed={Boolean(exercise.excludedFromProgressAt)}
+              data-exclude-from-progress
+              onClick={() =>
+                void setSessionExerciseExcludedFromProgress(
+                  exercise.id,
+                  !exercise.excludedFromProgressAt,
+                )
+              }
+            >
+              {exercise.excludedFromProgressAt
+                ? 'Wieder als Leistungsstand zählen'
+                : 'Zählt nicht als Leistungsstand'}
+            </Button>
+          ) : null}
+          {isPaused ? null : logs.length > 0 ? (
             logs.map((log) => (
               <div key={log.id} className="rounded-panel border border-line bg-surface p-4">
                 <div className="flex items-start justify-between gap-3">

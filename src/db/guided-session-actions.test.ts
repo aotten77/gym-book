@@ -196,6 +196,137 @@ describe("startGuidedSession", () => {
   });
 });
 
+describe("Einschränkungen beim Start", () => {
+  // 2026-12-01 ist ein Dienstag, mitten in der Schonphase.
+  const IN_PHASE = new Date(2026, 11, 1, 18, 0, 0);
+  const FLOW: GuidedStep[] = [
+    { name: "Tiefe Hocke", seconds: 60 },
+    { name: "Taubenpose", seconds: 60 },
+    { name: "Kosakenhocke", seconds: 40 },
+  ];
+
+  async function seedRestricted() {
+    await seedGuided({ steps: FLOW });
+    await db.workoutTemplates.add({
+      id: "g2",
+      name: "Morgenflow",
+      category: "yoga",
+      steps: [
+        { name: "Taubenpose", seconds: 60 },
+        { name: "Hund", seconds: 10 },
+      ],
+      createdAt: STAMP,
+      updatedAt: STAMP,
+    });
+    await db.restrictions.add({
+      id: "r1",
+      name: "Beispiel A",
+      from: "2026-12-01",
+      until: "2026-12-14",
+      pauses: [{ stepName: "Kosakenhocke", templateId: "g" }],
+      adjustments: [
+        { stepName: "Taubenpose", seconds: 30, note: "Nur bis zum Ziehen" },
+      ],
+      createdAt: STAMP,
+      updatedAt: STAMP,
+    });
+  }
+
+  it("spielt pausierte Schritte nicht ab und friert die Anpassung ein", async () => {
+    await seedRestricted();
+
+    const id = await startGuidedSession("g", { now: IN_PHASE });
+    const guided = (await db.workoutSessions.get(id))?.guided;
+
+    expect(guided?.steps).toEqual([
+      { name: "Tiefe Hocke", seconds: 60 },
+      { name: "Taubenpose", seconds: 30 },
+    ]);
+    expect(guided?.pausedSteps).toEqual([
+      {
+        index: 2,
+        step: FLOW[2],
+        pausedBy: ["Beispiel A"],
+        pausedUntil: "2026-12-14",
+      },
+    ]);
+    expect(guided?.adjustedSteps).toEqual([
+      {
+        index: 1,
+        adjustedBy: ["Beispiel A"],
+        secondsBefore: 60,
+        notes: [{ by: "Beispiel A", note: "Nur bis zum Ziehen" }],
+      },
+    ]);
+  });
+
+  it("trifft mit einem Schritt ohne Vorlage jede Vorlage mit diesem Schritt", async () => {
+    await seedRestricted();
+
+    const id = await startGuidedSession("g2", { now: IN_PHASE });
+    const guided = (await db.workoutSessions.get(id))?.guided;
+
+    expect(guided?.steps).toEqual([
+      { name: "Taubenpose", seconds: 30 },
+      { name: "Hund", seconds: 10 },
+    ]);
+    expect(guided?.pausedSteps).toBeUndefined();
+  });
+
+  it("startet nicht, wenn heute alle Schritte pausiert sind", async () => {
+    await seedGuided({ steps: [{ name: "Kosakenhocke", seconds: 40 }] });
+    await db.restrictions.add({
+      id: "r1",
+      name: "Beispiel A",
+      from: "2026-12-01",
+      pauses: [{ stepName: "Kosakenhocke" }],
+      adjustments: [],
+      createdAt: STAMP,
+      updatedAt: STAMP,
+    });
+
+    await expect(startGuidedSession("g", { now: IN_PHASE })).rejects.toThrow(
+      "Heute sind alle Schritte pausiert.",
+    );
+    expect(await db.workoutSessions.count()).toBe(0);
+  });
+
+  it("schreibt pausierte Schritte ins Protokoll, mit der Position in der Vorlage", async () => {
+    await seedRestricted();
+
+    const id = await startGuidedSession("g", { now: IN_PHASE });
+    await completeGuidedSession(id, new Date(IN_PHASE.getTime() + 60 * 60_000));
+    const protocol = (await db.workoutSessions.get(id))?.guided?.protocol;
+
+    expect(
+      protocol?.map(({ stepIndex, name, status, plannedSeconds, restrictedBy }) => ({
+        stepIndex,
+        name,
+        status,
+        plannedSeconds,
+        restrictedBy,
+      })),
+    ).toEqual([
+      { stepIndex: 0, name: "Tiefe Hocke", status: "done", plannedSeconds: 60, restrictedBy: undefined },
+      { stepIndex: 1, name: "Taubenpose", status: "done", plannedSeconds: 30, restrictedBy: ["Beispiel A"] },
+      { stepIndex: 2, name: "Kosakenhocke", status: "paused", plannedSeconds: 40, restrictedBy: ["Beispiel A"] },
+    ]);
+  });
+
+  it("schreibt sie auch beim Abbruch", async () => {
+    await seedRestricted();
+
+    const id = await startGuidedSession("g", { now: IN_PHASE });
+    await abortGuidedSession(id, new Date(IN_PHASE.getTime() + 20_000));
+    const protocol = (await db.workoutSessions.get(id))?.guided?.protocol;
+
+    expect(protocol?.map(({ stepIndex, status }) => [stepIndex, status])).toEqual([
+      [0, "aborted"],
+      [2, "paused"],
+    ]);
+  });
+});
+
 describe("completeGuidedSession", () => {
   it("schließt am rechnerischen Ende ab, auch wenn die Seite später zurückkehrt", async () => {
     await seedGuided();

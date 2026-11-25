@@ -16,6 +16,14 @@ Use this skill when:
 
 Do not use it for generic framework tutorials or unrelated repositories.
 
+## Top rule: no personal data in files
+
+This repository is **public**. Above every other rule here: nothing personal about the user ever goes into a file — not into code, tests, fixtures, docs, specs, plans, commit messages or PR texts. Personal means anything that says something about the user: health and physical complaints (body part with side, reasons, appointments with practitioners), their real training plan, real workout and exercise names from it, heart rates, real dates of their life.
+
+- Examples are **recognisably invented**: „Beispiel A“, „Erfundener Beispielgrund“, „Beispiel-Mobility“. Taken together they must not tell a coherent story about the user — a disclaimer like "all examples are invented" does not make a realistic one safe.
+- Material the user hands over (e.g. the import format from the claude.ai project) is neutralised **before** it is written, and they are shown what was changed.
+- Enforced by [scripts/privacy-guard.mjs](scripts/privacy-guard.mjs) in the `pre-commit` and `pre-push` hooks (`.githooks/`, activated by `npm install` via `prepare`, or `git config core.hooksPath .githooks`). It checks added lines against generic patterns and against the user's private term list outside the repo (`~/.config/privat-begriffe.txt`). A hit blocks the commit or push; reword, never bypass (`--no-verify` is not an option). `npm run privacy` checks the working tree.
+
 ## Product constraints
 
 - Hosting is fixed to GitHub Pages. The app is a static, client-side PWA.
@@ -101,9 +109,17 @@ Do not use it for generic framework tutorials or unrelated repositories.
 - The link is made when a session starts or a run is saved. A session takes today's open matching entry, or another day's entry only when the user chose it explicitly (pull forward or catch up, at most 7 days around today) — otherwise it is an extra session and no other day changes. A run takes today's open matching entry, else the earliest open one of the current calendar week, shown and changeable in the run sheet. The program week still comes from `resolveWeekControl`; an entry never chooses it, and `materializeSession` knows nothing of the plan.
 - Sessions keep `planDateSnapshot`, runs `runPlanSnapshot`, so history stays readable after an entry changes or goes.
 
+## Restrictions
+
+- A restriction (`restrictions` table) pauses exercises or guided steps for a period — optionally with a replacement exercise — or adjusts their targets, without touching any template. Templates stay the plan; a restriction is a period-bound overlay on it.
+- Restrictions arrive only through the library import (block `restrictions`, described for the training assistant in `docs/claude-projekt/import-format.md`). The app's one write path is lifting one (`liftRestriction`); it never creates or edits one — that would be a second place where the plan is made.
+- They take effect at session start and **freeze as a snapshot** on the session rows (`pausedBy`, `adjustedBy`, `targetsBeforeAdjustment`, `replacementFor`, …) and on the guided run (`pausedSteps`, `adjustedSteps`). A stored session never changes when a restriction is edited or lifted later. Order of targets: assignment → week rule → adjustment.
+- A paused exercise is skipped like a skipped one, but stays visible and can be done anyway (`pauseOverriddenAt`); a guided step is simply not played. No automatic rescheduling, no derived restrictions, no medical logic — the app executes what the plan says.
+- Restrictions are information, never a signal colour (see `docs/architecture/ui-palette.md`); details in `docs/architecture/restrictions.md`.
+
 ## v1 scope
 
-Must include: template management · local media upload · session start from template · per-session execution edits · optional warmup set · work set logging · left/right capture · time plus optional load · rest timer · last values · exercise history graph · tests with left/right values and asymmetry · export/import backup · run logging (distance, duration, elevation, average heart rate) · guided session (step list from the library import, hands-free run with signal and optional spoken announcements) · dated training plan (single entries for workouts and runs, written by the library import, read-only in the app) · installable PWA on Pages.
+Must include: template management · local media upload · session start from template · per-session execution edits · optional warmup set · work set logging · left/right capture · time plus optional load · rest timer · last values · exercise history graph · tests with left/right values and asymmetry · export/import backup · run logging (distance, duration, elevation, average heart rate) · guided session (step list from the library import, hands-free run with signal and optional spoken announcements) · dated training plan (single entries for workouts and runs, written by the library import, read-only in the app) · restrictions (pause with optional replacement or adjust exercises and guided steps for a period, written by the library import, frozen at session start, liftable in the app) · installable PWA on Pages.
 
 Must exclude: backend services · cloud sync · multi-user · sharing · video upload · complex adaptive progression · deload automation · recurring plan rules or automatic rescheduling · semantic conflict resolution.
 

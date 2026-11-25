@@ -664,7 +664,7 @@ Spec Abschnitt 12.
 - Create: `docs/architecture/restrictions.md`
 
 - [ ] **Step 1:** Die Datei kopieren und **vollständig lesen**: nichts
-  Persönliches (Befunde, Körperstellen, Termine, echte Workoutnamen von
+  Persönliches (Gesundheitsangaben, Körperstellen, Termine, echte Workoutnamen von
   Andreas). Funde Andreas zeigen, nicht selbst entscheiden.
 - [ ] **Step 2: Failing test** `import-format.test.ts`:
   `it('jeder json-Block der Formatbeschreibung ist eine gültige Importdatei')`

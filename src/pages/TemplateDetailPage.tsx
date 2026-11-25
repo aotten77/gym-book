@@ -33,6 +33,7 @@ import { SupersetBlock } from '@/components/SupersetBlock';
 import { TemplateProgressionSection } from '@/components/TemplateProgressionSection';
 import { db } from '@/db/appDb';
 import { clearExerciseMedia, replaceExerciseMedia } from '@/db/media-actions';
+import { loadTemplateRestrictionView } from '@/db/restriction-queries';
 import { startSessionFromTemplate } from '@/db/session-actions';
 import { navigateToGuidedStart, navigateToStartedSession } from '@/lib/session-navigation';
 import {
@@ -47,8 +48,10 @@ import {
 import { prefillTargetReps } from '@/domain/exercise-defaults';
 import { describeGuidedFacts, isGuidedTemplate } from '@/domain/guided-steps';
 import type { MediaAsset, WorkoutTemplateExercise } from '@/domain/models';
+import type { PlannedRestriction } from '@/domain/restriction';
 import { describeRepRange } from '@/domain/session-summary';
 import { buildSupersetBlocks, moveSupersetBlock, moveWithinGroup } from '@/domain/superset';
+import { useTodayKey } from '@/hooks/useTodayKey';
 
 interface TemplateExerciseFormState {
   exerciseId: string;
@@ -104,12 +107,15 @@ function TemplateExerciseMeta({
   exerciseName,
   bandName,
   mediaAsset,
+  restriction,
 }: {
   item: WorkoutTemplateExercise;
   exerciseName: string;
   /** Name des Ziel-Bands, aufgelöst aus dem Katalog. */
   bandName?: string;
   mediaAsset?: MediaAsset;
+  /** Was eine Einschränkung heute an dieser Übung bewirkt - nur Auskunft, das Workout bleibt. */
+  restriction?: PlannedRestriction;
 }) {
   return (
     <div className="flex min-w-0 items-start gap-3">
@@ -145,6 +151,19 @@ function TemplateExerciseMeta({
           {bandName ? ` · ${bandName}` : ''}
           {item.restSeconds ? ` · Pause ${item.restSeconds}s` : ''}
         </p>
+        {restriction ? (
+          <div
+            data-template-restriction={restriction.kind}
+            className="mt-1 space-y-0.5 text-xs font-semibold text-content-secondary"
+          >
+            <p className="break-words">{restriction.label}</p>
+            {restriction.notes.map((note, index) => (
+              <p key={index} className="break-words font-normal">
+                {note}
+              </p>
+            ))}
+          </div>
+        ) : null}
         {item.notes ? (
           <p className="mt-2 whitespace-pre-line text-sm text-content-muted">{item.notes}</p>
         ) : null}
@@ -158,6 +177,7 @@ interface TemplateExerciseCardProps {
   exerciseName: string;
   bandName?: string;
   mediaAsset?: MediaAsset;
+  restriction?: PlannedRestriction;
   isBusy: boolean;
   isFirst: boolean;
   isLast: boolean;
@@ -182,6 +202,7 @@ function TemplateExerciseCard({
   exerciseName,
   bandName,
   mediaAsset,
+  restriction,
   isBusy,
   isFirst,
   isLast,
@@ -214,6 +235,7 @@ function TemplateExerciseCard({
         exerciseName={exerciseName}
         bandName={bandName}
         mediaAsset={mediaAsset}
+        restriction={restriction}
       />
 
       {/*
@@ -335,6 +357,12 @@ export function TemplateDetailPage() {
   const programWeeks = useLiveQuery(() => db.programWeeks.toArray(), []);
   const progressionRules = useLiveQuery(() => db.progressionRules.toArray(), []);
   const bandLevels = useLiveQuery(() => db.bandLevels.orderBy('orderIndex').toArray(), []);
+  const todayKey = useTodayKey();
+  // Die Einschränkungen von heute an Übungen und Schritten - gerechnet wie beim Start.
+  const restrictionView = useLiveQuery(
+    () => loadTemplateRestrictionView(templateId, new Date()),
+    [templateId, todayKey],
+  );
 
   const bandNameById = Object.fromEntries((bandLevels ?? []).map((band) => [band.id, band.name]));
   const nameById = Object.fromEntries((exercises ?? []).map((item) => [item.id, item.name]));
@@ -636,6 +664,7 @@ export function TemplateDetailPage() {
         exerciseName={nameById[item.exerciseId] ?? 'Unbekannte Übung'}
         bandName={item.targetBandId ? bandNameById[item.targetBandId] : undefined}
         mediaAsset={mediaAssetId ? mediaAssetById[mediaAssetId] : undefined}
+        restriction={restrictionView?.exercises[item.id]}
         isBusy={isReorderingExercises}
         isFirst={position.isFirst}
         isLast={position.isLast}
@@ -777,7 +806,7 @@ export function TemplateDetailPage() {
         </SectionCard>
 
         {isGuided ? (
-          <GuidedStepsCard steps={template?.steps ?? []} />
+          <GuidedStepsCard steps={template?.steps ?? []} restrictions={restrictionView?.steps} />
         ) : (
           <>
             <SectionCard

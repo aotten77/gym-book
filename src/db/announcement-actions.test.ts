@@ -191,6 +191,56 @@ describe('generateAnnouncements', () => {
   });
 });
 
+describe('Ansagen bei einer Schrittanpassung', () => {
+  const STEPS: GuidedStep[] = [
+    { name: 'Hund', seconds: 60 },
+    { name: 'Taubenpose', seconds: 60 },
+  ];
+  const IN_PHASE = new Date(2026, 11, 1, 18, 0, 0);
+  const BEFORE = new Date(2026, 10, 24, 18, 0, 0);
+
+  async function seedAdjustment() {
+    await seed('t', STEPS);
+    await db.restrictions.add({
+      id: 'r1',
+      name: 'Beispiel A',
+      from: '2026-12-01',
+      until: '2026-12-14',
+      pauses: [],
+      adjustments: [{ stepName: 'Taubenpose', templateId: 't', seconds: 30 }],
+      createdAt: STAMP,
+      updatedAt: STAMP,
+    });
+  }
+
+  it('verlangt am Tag der Anpassung zusätzlich den Satz mit den angepassten Sekunden', async () => {
+    await seedAdjustment();
+
+    expect(await getAnnouncementAvailability('t', IN_PHASE)).toMatchObject({ total: 4, missing: 4 });
+
+    await saveApiKey(KEY);
+    const texts: string[] = [];
+    await generateAnnouncements(['t'], {
+      synth: async ({ text }) => {
+        texts.push(text);
+        return blob();
+      },
+      isOnline: ONLINE,
+      now: IN_PHASE,
+    });
+
+    expect(texts).toContain('Als Nächstes: Taubenpose, 30 Sekunden');
+    expect(texts).toContain('Als Nächstes: Taubenpose, 60 Sekunden');
+    expect(await getAnnouncementAvailability('t', IN_PHASE)).toMatchObject({ missing: 0, complete: true });
+  });
+
+  it('bleibt ohne wirksame Einschränkung unverändert', async () => {
+    await seedAdjustment();
+
+    expect(await getAnnouncementAvailability('t', BEFORE)).toMatchObject({ total: 3, missing: 3 });
+  });
+});
+
 describe('Ansagen einer laufenden Einheit (Schritt-Snapshot)', () => {
   it('prüft die Verfügbarkeit an den Schritten, ohne die Vorlage zu lesen', async () => {
     expect(await getStepsAnnouncementAvailability(A)).toMatchObject({ total: 3, missing: 3, complete: false });

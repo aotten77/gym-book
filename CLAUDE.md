@@ -2,6 +2,14 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Top rule: no personal data in files
+
+This repository is **public**. Above every other rule here: nothing personal about the user ever goes into a file — not into code, tests, fixtures, docs, specs, plans, commit messages or PR texts. Personal means anything that says something about the user: health and physical complaints (body part with side, reasons, appointments with practitioners), their real training plan, real workout and exercise names from it, heart rates, real dates of their life.
+
+- Examples are **recognisably invented**: „Beispiel A“, „Erfundener Beispielgrund“, „Beispiel-Mobility“. Taken together they must not tell a coherent story about the user — a disclaimer like "all examples are invented" does not make a realistic one safe.
+- Material the user hands over (e.g. the import format from the claude.ai project) is neutralised **before** it is written, and they are shown what was changed.
+- Enforced by [scripts/privacy-guard.mjs](scripts/privacy-guard.mjs) in the `pre-commit` and `pre-push` hooks (`.githooks/`, activated by `npm install` via `prepare`, or `git config core.hooksPath .githooks`). It checks added lines against generic patterns and against the user's private term list outside the repo (`~/.config/privat-begriffe.txt`). A hit blocks the commit or push; reword, never bypass (`--no-verify` is not an option). `npm run privacy` checks the working tree.
+
 ## Commands
 
 ```bash
@@ -77,6 +85,8 @@ Read the matching file before touching that area. Everything in `docs/architectu
 | Data loss on iOS, why the safeguards exist | `docs/architecture/data-safety.md` |
 | Runs, workout kind, weekly volume | `docs/architecture/weekly-volume.md` |
 | Guided templates | `docs/architecture/guided-templates.md` |
+| Restrictions (pause/adjust over a period, snapshot at start, lift) | `docs/architecture/restrictions.md` |
+| Library-import format for the training assistant (claude.ai project); every `json` block is tested against the parser — **change it in the same step as the import code** | `docs/claude-projekt/import-format.md` |
 | UI layer, palette, the three signal colours | `docs/architecture/ui-palette.md` |
 
 ### Schema changes

@@ -14,6 +14,8 @@ import {
 } from 'lucide-react';
 import { ExerciseGuideBlock } from '@/components/ExerciseGuideBlock';
 import { ExerciseMedia } from '@/components/ExerciseMedia';
+import { PauseSheet } from '@/components/PauseSheet';
+import { RestrictionLabel } from '@/components/RestrictionLabel';
 import { Button, IconButton } from '@/components/ui/Button';
 import { toggleSetCompletion, updateSetLogValues } from '@/db/session-actions';
 import { setLogKey, type LastSetValues, type SetValues } from '@/domain/history';
@@ -36,6 +38,7 @@ import {
   PROGRESSION_HINT_SHORT_LABEL,
   hasProgressionHint,
 } from '@/domain/progression-hint';
+import { isPausedSessionExercise } from '@/domain/restriction';
 import {
   buildSetRounds,
   describeExerciseTarget,
@@ -233,14 +236,14 @@ function ActiveSetEditor({
    * die der große Knopf beim Abhaken übernimmt. Nur einmal berechnet, damit
    * Feld, Knopf und Timer nicht drei Quellen haben.
    */
-  const rowFallback = setRowFallback(exercise, lastValues);
+  const rowFallback = setRowFallback(exercise, lastValues, log.setKind);
   /*
    * Was in den leeren Feldern steht und beim Abhaken übernommen wird - die
    * letzte Ausführung, bei der Zeit aber das Soll (siehe `setRowFallback`).
    * Liest das Feld etwas anderes als die Uhr, muss die Zahl wieder getippt
    * werden.
    */
-  const placeholders = setRowPlaceholders(exercise, lastValues);
+  const placeholders = setRowPlaceholders(exercise, lastValues, log.setKind);
   // "zuletzt 30 s": das letzte Mal, einen Tap entfernt, wenn es vom Plan abweicht.
   const offeredLastSeconds = lastSecondsOffer(exercise, lastValues);
 
@@ -910,6 +913,8 @@ function StageSetTimer({
 
 interface SessionExerciseStageProps {
   exercise: WorkoutSessionExercise;
+  /** Beim Ersatz der Name der pausierten Übung, für „Ersatz für …“. */
+  originalName?: string;
   /** Die Sätze dieser Übung, bereits sortiert. */
   exerciseLogs: WorkoutSetLog[];
   mediaAsset?: MediaAsset;
@@ -998,6 +1003,7 @@ export function SessionExerciseStage({
   onRequestDeleteSetLog,
   onAddSetLog,
   onOpenInfo,
+  originalName,
 }: SessionExerciseStageProps) {
   const rounds = buildSetRounds(exerciseLogs);
   const restBadges = buildRestBadges(exerciseLogs, restTracks, now);
@@ -1064,6 +1070,8 @@ export function SessionExerciseStage({
             {describeExerciseTarget(exercise)}
             {exercise.restSeconds ? ` · Pause ${exercise.restSeconds}s` : ''}
           </p>
+          {/* Dieselben Zeilen wie in der Liste, damit die Notiz im Training gelesen wird. */}
+          <RestrictionLabel exercise={exercise} originalName={originalName} className="mt-1 px-0" />
         </div>
         {/*
           Was der *Übung* gilt, steht bei ihrem Namen: verbinden, lösen und im
@@ -1135,7 +1143,7 @@ export function SessionExerciseStage({
             <SideCard
               key={row.id}
               log={row}
-              fallback={setRowFallback(exercise, lastSetValues?.resolve(row))}
+              fallback={setRowFallback(exercise, lastSetValues?.resolve(row), row.setKind)}
               hasHint={hintFor(row)}
               isActive={row.id === activeSetLog?.id}
               onSelect={() => onSelectSetLog(row.id)}
@@ -1181,7 +1189,7 @@ export function SessionExerciseStage({
               <SetRowButton
                 key={row.id}
                 log={row}
-                fallback={setRowFallback(exercise, lastSetValues?.resolve(row))}
+                fallback={setRowFallback(exercise, lastSetValues?.resolve(row), row.setKind)}
                 hasHint={hintFor(row)}
                 isActive={row.id === activeSetLog?.id}
                 restBadge={restBadges[row.id]}
@@ -1398,6 +1406,10 @@ export function SessionPartnerRow({
   now,
   onSelect,
 }: SessionPartnerRowProps) {
+  if (isPausedSessionExercise(exercise)) {
+    return <PausedPartnerRow exercise={exercise} />;
+  }
+
   return (
     <div className="flex items-center gap-2 rounded-card bg-surface-raised px-3 py-2">
       <div className="min-w-0 flex-1">
@@ -1433,6 +1445,33 @@ export function SessionPartnerRow({
       >
         Wechseln
       </Button>
+    </div>
+  );
+}
+
+/**
+ * Ein pausierter Partner im Supersatz: Name und Etikett, kein „Wechseln“ -
+ * die Übung ist nicht dran. Ein Tipp aufs Etikett öffnet das Sheet der Pause,
+ * wie in der Liste; erst „Trotzdem machen“ holt sie in die Runde.
+ */
+function PausedPartnerRow({ exercise }: { exercise: WorkoutSessionExercise }) {
+  const [isPauseSheetOpen, setIsPauseSheetOpen] = useState(false);
+
+  return (
+    <div data-paused-exercise className="rounded-card bg-surface-raised py-2">
+      <h3 className="truncate px-3 font-display text-sm font-bold tracking-tight">
+        {exercise.exerciseNameSnapshot}
+      </h3>
+      <RestrictionLabel
+        exercise={exercise}
+        onOpen={() => setIsPauseSheetOpen(true)}
+        className="px-3"
+      />
+      <PauseSheet
+        open={isPauseSheetOpen}
+        exercise={exercise}
+        onClose={() => setIsPauseSheetOpen(false)}
+      />
     </div>
   );
 }

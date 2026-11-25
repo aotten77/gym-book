@@ -87,7 +87,10 @@ export interface Exercise {
  */
 export interface GuidedStep {
   name: string;
-  /** Ganze Sekunden über 0 - bei einem beidseitigen Schritt **je Seite**. */
+  /**
+   * Ganze Sekunden über 0 - bei einem beidseitigen Schritt die **Gesamtzeit**
+   * beider Seiten; jede Seite läuft die Hälfte (`guidedSideSeconds`).
+   */
   seconds: number;
   /** Aus einem Schritt werden links und rechts, mit Seitenwechsel dazwischen. */
   bothSides?: boolean;
@@ -752,7 +755,7 @@ export interface ExerciseAdjustment extends ExerciseTarget {
 }
 
 export interface StepAdjustment extends StepTarget {
-  /** Bei einem beidseitigen Schritt je Seite, wie `GuidedStep.seconds`. */
+  /** Ersetzt `GuidedStep.seconds`, mit derselben Bedeutung (beidseitig: Gesamtzeit). */
   seconds?: number;
   note?: string;
 }

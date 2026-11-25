@@ -1,7 +1,24 @@
 import { describe, expect, it } from 'vitest';
-import type { GuidedStep, Restriction, WorkoutSessionExercise } from '@/domain/models';
+import type {
+  Exercise,
+  GuidedProtocolEntry,
+  GuidedRun,
+  GuidedStep,
+  Restriction,
+  WorkoutSessionExercise,
+  WorkoutTemplate,
+  WorkoutTemplateExercise,
+} from '@/domain/models';
 import {
   applyRestrictionEffect,
+  countRestrictionEffects,
+  describePlannedRestriction,
+  describeRestrictionCounts,
+  describeRestrictionPeriod,
+  describeRestrictionTargets,
+  describeGuidedStepRestrictions,
+  describeAdjustedTargets,
+  describeRestrictionLabel,
   describeRestrictionState,
   findAdjustmentConflicts,
   isInactiveSessionExercise,
@@ -13,6 +30,7 @@ import {
   resolveRestrictionEffect,
   sessionRestrictionKind,
   suppressesProgressionHint,
+  withRestrictionProtocol,
   type RestrictionEffect,
 } from '@/domain/restriction';
 
@@ -470,5 +488,357 @@ describe('Art einer Session-Zeile', () => {
     expect(
       isInactiveSessionExercise(row({ pausedBy: ['Beispiel A'], pauseOverriddenAt: STAMP })),
     ).toBe(false);
+  });
+});
+
+describe('Etiketten einer Session-Zeile', () => {
+  const by = ['Beispiel A'];
+
+  it.each<[Partial<WorkoutSessionExercise>, string | undefined]>([
+    [{ pausedBy: by, pausedUntil: '2026-12-14' }, 'Pausiert bis 14.12. · Beispiel A'],
+    [{ pausedBy: ['Beispiel A', 'Beispiel C'] }, 'Pausiert · Beispiel A, Beispiel C'],
+    [{ pausedBy: by, pausedUntil: '2026-12-14', pauseOverriddenAt: STAMP }, 'Trotzdem · Beispiel A'],
+    [{ adjustedBy: by, progressionHeld: true }, 'Steigerung gehalten · Beispiel A'],
+    [{ excludedFromProgressAt: STAMP }, 'Nicht als Leistungsstand'],
+    [{ adjustedBy: by, targetsBeforeAdjustment: { targetWeight: 45 } }, undefined],
+    [{ adjustedBy: by, adjustmentNotes: [{ by: 'Beispiel A', note: 'ruhig' }] }, undefined],
+    [{}, undefined],
+  ])('beschriftet %o als %s', (overrides, label) => {
+    expect(describeRestrictionLabel(row(overrides))).toBe(label);
+  });
+
+  it('nennt beim Ersatz die pausierte Übung', () => {
+    const replacement = row({
+      replacementFor: { sessionExerciseId: 'se0', restrictionName: 'Beispiel A' },
+    });
+
+    expect(describeRestrictionLabel(replacement, 'Sprungkniebeuge')).toBe(
+      'Ersatz für Sprungkniebeuge · Beispiel A',
+    );
+  });
+
+  it('beschreibt nur die tatsächlich geänderten Werte, Zahlen deutsch', () => {
+    expect(
+      describeAdjustedTargets(
+        row({ adjustedBy: by, targetWeight: 40, targetsBeforeAdjustment: { targetWeight: 45 } }),
+      ),
+    ).toBe('40 kg statt 45 · Beispiel A');
+    expect(
+      describeAdjustedTargets(
+        row({ adjustedBy: by, targetWeight: 42.5, targetsBeforeAdjustment: { targetWeight: 45 } }),
+      ),
+    ).toBe('42,5 kg statt 45 · Beispiel A');
+    expect(
+      describeAdjustedTargets(
+        row({
+          adjustedBy: by,
+          workSetCount: 2,
+          targetWeight: 40,
+          targetsBeforeAdjustment: { workSetCount: 4, targetWeight: null },
+        }),
+      ),
+    ).toBe('2 Sätze statt 4, 40 kg · Beispiel A');
+    expect(describeAdjustedTargets(row({ adjustedBy: by, targetsBeforeAdjustment: {} }))).toBe(
+      undefined,
+    );
+    expect(describeAdjustedTargets(row({ adjustedBy: by }))).toBeUndefined();
+  });
+});
+
+describe('withRestrictionProtocol', () => {
+  const A: GuidedStep = { name: 'Tiefe Hocke', seconds: 60 };
+  const B: GuidedStep = { name: 'Taubenpose', seconds: 90, bothSides: true };
+  const C: GuidedStep = { name: 'Kosakenhocke', seconds: 30 };
+
+  function entry(overrides: Partial<GuidedProtocolEntry>): GuidedProtocolEntry {
+    return { stepIndex: 0, name: 'Tiefe Hocke', status: 'done', plannedSeconds: 60, actualSeconds: 60, ...overrides };
+  }
+
+  it('rechnet auf die Vorlage um und setzt pausierte Schritte je Seite an ihren Platz', () => {
+    const run: GuidedRun = {
+      steps: [A, C],
+      events: [],
+      pausedSteps: [{ index: 1, step: B, pausedBy: ['Beispiel A'], pausedUntil: '2026-12-14' }],
+      adjustedSteps: [{ index: 1, adjustedBy: ['Beispiel D'], secondsBefore: 40 }],
+    };
+    const protocol = [
+      entry({}),
+      entry({ stepIndex: 1, name: 'Kosakenhocke', plannedSeconds: 30, actualSeconds: 30 }),
+    ];
+
+    expect(withRestrictionProtocol(protocol, run)).toEqual([
+      entry({}),
+      {
+        stepIndex: 1,
+        name: 'Taubenpose',
+        side: 'left',
+        status: 'paused',
+        plannedSeconds: 45,
+        actualSeconds: 0,
+        restrictedBy: ['Beispiel A'],
+      },
+      {
+        stepIndex: 1,
+        name: 'Taubenpose',
+        side: 'right',
+        status: 'paused',
+        plannedSeconds: 45,
+        actualSeconds: 0,
+        restrictedBy: ['Beispiel A'],
+      },
+      entry({
+        stepIndex: 2,
+        name: 'Kosakenhocke',
+        plannedSeconds: 30,
+        actualSeconds: 30,
+        restrictedBy: ['Beispiel D'],
+      }),
+    ]);
+  });
+
+  it('lässt ein Protokoll ohne Einschränkungen, wie es ist', () => {
+    const protocol = [entry({}), entry({ stepIndex: 1, name: 'Kosakenhocke' })];
+
+    expect(withRestrictionProtocol(protocol, { steps: [A, C], events: [] })).toEqual(protocol);
+  });
+
+  it('nennt pausierte Schritte auch nach einem Abbruch', () => {
+    const run: GuidedRun = {
+      steps: [A],
+      events: [],
+      pausedSteps: [{ index: 1, step: C, pausedBy: ['Beispiel A'] }],
+    };
+
+    expect(withRestrictionProtocol([entry({ status: 'aborted', actualSeconds: 12 })], run)).toEqual([
+      entry({ status: 'aborted', actualSeconds: 12 }),
+      {
+        stepIndex: 1,
+        name: 'Kosakenhocke',
+        status: 'paused',
+        plannedSeconds: 30,
+        actualSeconds: 0,
+        restrictedBy: ['Beispiel A'],
+      },
+    ]);
+  });
+});
+
+describe('describeGuidedStepRestrictions', () => {
+  const steps: GuidedStep[] = [
+    { name: 'Tiefe Hocke', seconds: 60 },
+    { name: 'Taubenpose', seconds: 45 },
+    { name: 'Kosakenhocke', seconds: 40 },
+    { name: 'Hund', seconds: 30 },
+  ];
+
+  it('beschreibt je Vorlagen-Schritt Pause, geänderte Sekunden und Notizen', () => {
+    const view = describeGuidedStepRestrictions({
+      steps: [steps[1], { ...steps[2], seconds: 30 }, steps[3]],
+      pausedSteps: [{ index: 0, step: steps[0], pausedBy: ['Beispiel A'], pausedUntil: '2026-12-14' }],
+      adjustedSteps: [
+        {
+          index: 1,
+          adjustedBy: ['Beispiel A', 'Beispiel D'],
+          secondsBefore: 40,
+          notes: [{ by: 'Beispiel A', note: 'Nur bis zum Ziehen' }],
+        },
+        { index: 2, adjustedBy: ['Beispiel D'], notes: [{ by: 'Beispiel D', note: 'Langsam' }] },
+      ],
+    });
+
+    expect(view.get(0)).toEqual({ kind: 'pausiert', label: 'Pausiert bis 14.12. · Beispiel A', notes: [] });
+    expect(view.has(1)).toBe(false);
+    expect(view.get(2)).toEqual({
+      kind: 'angepasst',
+      label: '30 s statt 40 · Beispiel A, Beispiel D',
+      notes: ['Nur bis zum Ziehen'],
+    });
+    expect(view.get(3)).toEqual({ kind: 'angepasst', label: 'Hinweis · Beispiel D', notes: ['Langsam'] });
+  });
+
+  it('nennt eine Pause ohne Enddatum ohne „bis“', () => {
+    const view = describeGuidedStepRestrictions({
+      steps: [],
+      pausedSteps: [{ index: 0, step: steps[0], pausedBy: ['Beispiel A'] }],
+      adjustedSteps: [],
+    });
+
+    expect(view.get(0)?.label).toBe('Pausiert · Beispiel A');
+  });
+});
+
+describe('describeRestrictionTargets', () => {
+  function exercise(id: string, name: string): Exercise {
+    return { id, name, trackingMode: 'reps_weight', unilateral: false, createdAt: STAMP, updatedAt: STAMP };
+  }
+
+  function template(id: string, name: string, steps?: GuidedStep[]): WorkoutTemplate {
+    return { id, name, ...(steps ? { steps } : {}), createdAt: STAMP, updatedAt: STAMP };
+  }
+
+  function assignment(templateId: string, exerciseId: string): WorkoutTemplateExercise {
+    return { id: `${templateId}-${exerciseId}`, templateId, exerciseId, orderIndex: 0, workSetCount: 3 };
+  }
+
+  const lookup = {
+    exercises: [exercise('e1', 'Sprungkniebeuge'), exercise('e2', 'Step-up'), exercise('e3', 'Kniebeuge')],
+    templates: [template('t1', 'Einheit A'), template('g1', 'Abendflow', [{ name: 'Taubenpose', seconds: 45 }])],
+    templateExercises: [assignment('t1', 'e1'), assignment('t1', 'e3')],
+  };
+
+  it('beschreibt alle vier Zielformen in Klarnamen', () => {
+    const result = describeRestrictionTargets(
+      restriction({
+        pauses: [
+          { exerciseId: 'e1', replacement: { exerciseId: 'e2', workSetCount: 3 } },
+          { stepName: 'Taubenpose', templateId: 'g1' },
+        ],
+        adjustments: [
+          { exerciseId: 'e3', templateId: 't1', targetWeight: 40 },
+          { stepName: 'Taubenpose', seconds: 30 },
+        ],
+      }),
+      lookup,
+    );
+
+    expect(result).toEqual([
+      { label: 'Pause: Sprungkniebeuge → Ersatz Step-up, 3 Sätze', status: 'ok' },
+      { label: 'Pause: Schritt Taubenpose in Abendflow', status: 'ok' },
+      { label: 'Anpassung: Kniebeuge in Einheit A – 40 kg', status: 'ok' },
+      { label: 'Anpassung: Schritt Taubenpose in allen geführten Vorlagen – 30 s', status: 'ok' },
+    ]);
+  });
+
+  it('nennt Ziele eines gelöschten Workouts oder einer entfernten Zuordnung „gibt es nicht mehr“', () => {
+    const result = describeRestrictionTargets(
+      restriction({
+        pauses: [
+          { exerciseId: 'e1', templateId: 'weg' },
+          { stepName: 'Taubenpose', templateId: 'weg' },
+          { exerciseId: 'e2', templateId: 't1' },
+          { exerciseId: 'geloescht' },
+        ],
+      }),
+      lookup,
+    );
+
+    expect(result.map((target) => target.status)).toEqual([
+      'gibt es nicht mehr',
+      'gibt es nicht mehr',
+      'gibt es nicht mehr',
+      'gibt es nicht mehr',
+    ]);
+  });
+
+  it('nennt Ziele ohne Treffer „trifft derzeit nichts“', () => {
+    const result = describeRestrictionTargets(
+      restriction({ pauses: [{ stepName: 'Kosakenhocke' }, { exerciseId: 'e2' }] }),
+      lookup,
+    );
+
+    expect(result.map((target) => target.status)).toEqual(['trifft derzeit nichts', 'trifft derzeit nichts']);
+  });
+});
+
+describe('countRestrictionEffects', () => {
+  const targets = { workSetCount: 3, targetReps: 8, targetWeight: 40 };
+
+  it('zählt Pausen und nur tatsächlich geänderte Anpassungen', () => {
+    const result = countRestrictionEffects({
+      restrictions: [
+        restriction({
+          pauses: [{ exerciseId: 'e1' }],
+          adjustments: [
+            { exerciseId: 'e2', targetWeight: 30 },
+            // Gleich dem Wochenwert: keine Abweichung.
+            { exerciseId: 'e3', targetWeight: 40 },
+            // Nur eine Notiz: kein „angepasst“.
+            { exerciseId: 'e4', note: 'Langsam' },
+          ],
+        }),
+      ],
+      day: '2026-12-05',
+      templateId: 't1',
+      targetsByTemplateExerciseId: {
+        te1: { exerciseId: 'e1', targets },
+        te2: { exerciseId: 'e2', targets },
+        te3: { exerciseId: 'e3', targets },
+        te4: { exerciseId: 'e4', targets },
+      },
+    });
+
+    expect(result).toEqual({ paused: 1, adjusted: 1 });
+  });
+
+  it('zählt außerhalb des Zeitraums nichts', () => {
+    expect(
+      countRestrictionEffects({
+        restrictions: [restriction({ pauses: [{ exerciseId: 'e1' }] })],
+        day: '2026-11-30',
+        templateId: 't1',
+        targetsByTemplateExerciseId: { te1: { exerciseId: 'e1', targets } },
+      }),
+    ).toEqual({ paused: 0, adjusted: 0 });
+  });
+});
+
+describe('describeRestrictionCounts', () => {
+  it('nennt Pausen und Anpassungen in einer Zeile', () => {
+    expect(describeRestrictionCounts({ paused: 1, adjusted: 1 }, 'exercise')).toBe(
+      '1 Übung pausiert · 1 angepasst',
+    );
+    expect(describeRestrictionCounts({ paused: 2, adjusted: 0 }, 'exercise')).toBe('2 Übungen pausiert');
+    expect(describeRestrictionCounts({ paused: 0, adjusted: 2 }, 'step')).toBe('2 Schritte angepasst');
+    expect(describeRestrictionCounts({ paused: 0, adjusted: 0 }, 'step')).toBeUndefined();
+  });
+});
+
+describe('describeRestrictionPeriod', () => {
+  it('sagt „bis“, „ab“ oder „ohne Enddatum“', () => {
+    expect(describeRestrictionPeriod(restriction(), '2026-12-05')).toBe('bis 14.12.');
+    expect(describeRestrictionPeriod(restriction(), '2026-11-24')).toBe('ab 01.12.');
+    expect(describeRestrictionPeriod(restriction({ until: undefined }), '2026-12-05')).toBe('ohne Enddatum');
+  });
+});
+
+describe('describePlannedRestriction', () => {
+  const targets = { workSetCount: 3, targetReps: 8, targetWeight: 45 };
+  const exerciseName = (id: string) => (id === 'e2' ? 'Step-up' : undefined);
+
+  function plan(overrides: Partial<Restriction>) {
+    return describePlannedRestriction({
+      effect: resolveRestrictionEffect({
+        restrictions: [restriction(overrides)],
+        day: '2026-12-05',
+        exerciseId: 'e1',
+        templateId: 't1',
+      }),
+      targets,
+      exerciseName,
+    });
+  }
+
+  it('beschreibt Pause mit Ersatz, Anpassung, gehaltene Steigerung und Hinweis', () => {
+    expect(plan({ pauses: [{ exerciseId: 'e1', replacement: { exerciseId: 'e2', workSetCount: 3 } }] })).toEqual({
+      kind: 'pausiert',
+      label: 'Pausiert bis 14.12. · Ersatz: Step-up · Beispiel A',
+      notes: [],
+    });
+    expect(plan({ adjustments: [{ exerciseId: 'e1', targetWeight: 40, note: 'Nur bis Parallel' }] })).toEqual({
+      kind: 'angepasst',
+      label: 'Angepasst: 40 kg statt 45 · Beispiel A',
+      notes: ['Nur bis Parallel'],
+    });
+    expect(plan({ adjustments: [{ exerciseId: 'e1', holdProgression: true }] })).toEqual({
+      kind: 'gehalten',
+      label: 'Steigerung gehalten · Beispiel A',
+      notes: [],
+    });
+    expect(plan({ adjustments: [{ exerciseId: 'e1', note: 'Langsam' }] })).toEqual({
+      kind: 'hinweis',
+      label: 'Hinweis · Beispiel A',
+      notes: ['Langsam'],
+    });
+    expect(plan({})).toBeUndefined();
   });
 });

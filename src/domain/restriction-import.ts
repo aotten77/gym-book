@@ -211,12 +211,26 @@ function hasStep(steps: readonly GuidedStep[] | undefined, stepName: string) {
   return steps?.some((step) => normalizeImportKey(step.name) === key) ?? false;
 }
 
+/**
+ * Die Schrittziele ohne Vorlage, die eine Liste schon trägt - normalisiert.
+ * Trifft so ein Ziel derzeit nichts, bleibt es stehen (Spec §2); der Bestand
+ * nennt es, und sein Rückimport darf daran nicht scheitern.
+ */
+function storedStepNames(targets: readonly (ExerciseTarget | StepTarget)[] | undefined) {
+  return new Set(
+    (targets ?? [])
+      .filter((target): target is StepTarget => isStepTarget(target) && !target.templateId)
+      .map((target) => normalizeImportKey(target.stepName)),
+  );
+}
+
 /** Löst eine der vier Zielformen auf; meldet, was nicht passt. */
 function resolveTarget(
   item: ImportPauseInput | ImportAdjustmentInput,
   context: ResolveContext,
   line: string,
   problems: string[],
+  stored: Set<string>,
 ): ExerciseTarget | StepTarget | undefined {
   if ((item.exercise === undefined) === (item.step === undefined)) {
     problems.push(
@@ -253,7 +267,10 @@ function resolveTarget(
         problems.push(`${line}: Schritt "${stepName}" gibt es in "${template.name}" nicht.`);
         return undefined;
       }
-    } else if (![...context.stepsByTemplateId.values()].some((steps) => hasStep(steps, stepName))) {
+    } else if (
+      !stored.has(normalizeImportKey(stepName)) &&
+      ![...context.stepsByTemplateId.values()].some((steps) => hasStep(steps, stepName))
+    ) {
       problems.push(`${line}: Schritt "${stepName}" kommt in keiner geführten Vorlage vor.`);
       return undefined;
     }
@@ -321,13 +338,15 @@ function resolvePauses(
   context: ResolveContext,
   prefix: string,
   problems: string[],
+  existing: RestrictionPause[] | undefined,
 ): RestrictionPause[] {
   const keys = new Map<string, number>();
   const pauses: RestrictionPause[] = [];
+  const stored = storedStepNames(existing);
 
   items.forEach((item, index) => {
     const line = `${prefix}, Pause ${index + 1}`;
-    const target = resolveTarget(item, context, line, problems);
+    const target = resolveTarget(item, context, line, problems, stored);
 
     if (!target || rejectDuplicateTarget(keys, target, index, 'Pause', line, problems)) {
       return;
@@ -373,13 +392,15 @@ function resolveAdjustments(
   context: ResolveContext,
   prefix: string,
   problems: string[],
+  existing: RestrictionAdjustment[] | undefined,
 ): RestrictionAdjustment[] {
   const keys = new Map<string, number>();
   const adjustments: RestrictionAdjustment[] = [];
+  const stored = storedStepNames(existing);
 
   items.forEach((item, index) => {
     const line = `${prefix}, Anpassung ${index + 1}`;
-    const target = resolveTarget(item, context, line, problems);
+    const target = resolveTarget(item, context, line, problems, stored);
 
     if (!target || rejectDuplicateTarget(keys, target, index, 'Anpassung', line, problems)) {
       return;
@@ -529,9 +550,11 @@ export function planRestrictions(input: {
       problems.push(`${line}: "until" (${until}) liegt vor "from" (${from}).`);
     }
 
-    const pauses = item.pauses ? resolvePauses(item.pauses, context, line, problems) : undefined;
+    const pauses = item.pauses
+      ? resolvePauses(item.pauses, context, line, problems, existing?.pauses)
+      : undefined;
     const adjustments = item.adjustments
-      ? resolveAdjustments(item.adjustments, context, line, problems)
+      ? resolveAdjustments(item.adjustments, context, line, problems, existing?.adjustments)
       : undefined;
 
     if (!existing && (pauses?.length ?? 0) + (adjustments?.length ?? 0) === 0) {

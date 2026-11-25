@@ -15,6 +15,7 @@ import {
   loadTemplateRecency,
 } from '@/db/history-queries';
 import { loadUpcomingPlan } from '@/db/plan-queries';
+import { loadRestrictionSummaries } from '@/db/restriction-queries';
 import { startSessionFromTemplate } from '@/db/session-actions';
 import {
   activeSessionPath,
@@ -118,6 +119,11 @@ export function NowSheet() {
     () => (open ? loadUpcomingPlan(windowStartKey) : Promise.resolve(undefined)),
     [open, windowStartKey],
   );
+  // Für heute gerechnet: jeder Start von hier - auch Nachholen und Vorziehen - ist heute.
+  const restrictionSummaries = useLiveQuery(
+    () => (open ? loadRestrictionSummaries(new Date()) : Promise.resolve(undefined)),
+    [open, todayKey],
+  );
 
   // `null` heißt „läuft keine", `undefined` „noch nicht geladen" - sonst blitzten die Startzeilen kurz auf.
   const activeSession = useLiveQuery(
@@ -132,7 +138,8 @@ export function NowSheet() {
     recency !== undefined &&
     minutesByTemplate !== undefined &&
     exerciseCounts !== undefined &&
-    upcoming !== undefined;
+    upcoming !== undefined &&
+    restrictionSummaries !== undefined;
 
   const openEntries = upcoming
     ? upcoming.entries.filter(
@@ -145,6 +152,7 @@ export function NowSheet() {
     recency: recency ?? {},
     minutesByTemplate: minutesByTemplate ?? {},
     exerciseCountByTemplate: exerciseCounts ?? {},
+    restrictionSummaryByTemplate: restrictionSummaries ?? {},
     today,
   });
   const { now: first, catchUp, spontaneous, planned } = sections;
@@ -207,6 +215,11 @@ export function NowSheet() {
           <span className="min-w-0 flex-1">
             <span className="block break-words font-semibold text-content">{option.name}</span>
             <span className="block break-words text-sm text-content-muted">{detail}</span>
+            {option.restrictionSummary ? (
+              <span data-now-restrictions="" className="block break-words text-sm text-content-secondary">
+                {option.restrictionSummary}
+              </span>
+            ) : null}
           </span>
         </button>
       </li>
@@ -304,6 +317,12 @@ export function NowSheet() {
                       Heute geplant
                     </span>
                     <span className="block truncate font-semibold">{first.name}</span>
+                    {first.restrictionSummary ? (
+                      /* Nebentext auf gefüllter Fläche: abgeschwächt, nicht umgefärbt. */
+                      <span data-now-restrictions="" className="block break-words text-sm opacity-75">
+                        {first.restrictionSummary}
+                      </span>
+                    ) : null}
                   </span>
                   <Play size={20} aria-hidden="true" className="shrink-0" />
                 </button>

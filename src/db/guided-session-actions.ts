@@ -1,6 +1,7 @@
 import { db } from "@/db/appDb";
 import { getStepsAnnouncementAvailability } from "@/db/announcement-actions";
 import { SETTINGS_ID } from "@/db/normalize";
+import { loadRestrictions } from "@/db/restriction-actions";
 import { setGuidedAudioMode } from "@/db/settings-actions";
 import {
   abortSession,
@@ -17,6 +18,11 @@ import {
 } from "@/domain/guided-run";
 import { isGuidedTemplate } from "@/domain/guided-steps";
 import type { GuidedAudioMode, WorkoutSession } from "@/domain/models";
+import { toDateInputValue } from "@/domain/program";
+import {
+  resolveGuidedSteps,
+  withRestrictionProtocol,
+} from "@/domain/restriction";
 import { resolveWorkoutCategory } from "@/domain/workout-category";
 import { createId } from "@/lib/id";
 
@@ -42,6 +48,11 @@ export interface StartGuidedOptions extends StartSessionOptions {
  * stehen in derselben Transaktion, sonst erzeugen zwei schnelle Taps zwei
  * parallele aktive Sessions. Den Termin verknüpft dieselbe Regel wie beim
  * Kraft-Start (`findPlanEntryForStart`).
+ *
+ * Die Einschränkungen des Starttags frieren ein: `steps` enthält nur die
+ * abgespielten Schritte mit angepassten Sekunden, `pausedSteps` und
+ * `adjustedSteps` halten den Rest für Anzeige und Protokoll fest. Sind alle
+ * Schritte pausiert, startet nichts.
  */
 export async function startGuidedSession(
   templateId: string,
@@ -58,12 +69,22 @@ export async function startGuidedSession(
     throw new Error(`${template.name} ist keine geführte Vorlage.`);
   }
 
+  const { steps, pausedSteps, adjustedSteps } = resolveGuidedSteps({
+    restrictions: await loadRestrictions(),
+    day: toDateInputValue(now),
+    templateId: template.id,
+    steps: template.steps ?? [],
+  });
+
+  if (steps.length === 0) {
+    throw new Error("Heute sind alle Schritte pausiert.");
+  }
+
   const { program, programWeek, resolvedProgramWeek, usedWeekOverride } =
     await resolveSessionWeekContext();
   // Vor der Transaktion: die Verfügbarkeit liest mehrere Tabellen und die TTS-Einstellungen.
-  const availability = await getStepsAnnouncementAvailability(
-    template.steps ?? [],
-  );
+  // Geprüft wird an den wirksamen Schritten - eine Anpassung ändert die Sätze.
+  const availability = await getStepsAnnouncementAvailability(steps);
   const wanted: GuidedAudioMode =
     options.audioMode ??
     (await db.appSettings.get(SETTINGS_ID))?.guidedAudioMode ??
@@ -85,12 +106,17 @@ export async function startGuidedSession(
     // Eine Kopie: spätere Importe ersetzen die Schritte der Vorlage, nicht die dieser Einheit.
     guided: {
       audioMode,
-      steps: (template.steps ?? []).map((step) => ({ ...step })),
-      events: addGuidedEvent(
-        [],
-        { type: "start", at: now.getTime() },
-        template.steps ?? [],
-      ),
+      steps: steps.map((step) => ({ ...step })),
+      events: addGuidedEvent([], { type: "start", at: now.getTime() }, steps),
+      ...(pausedSteps.length > 0
+        ? {
+            pausedSteps: pausedSteps.map((paused) => ({
+              ...paused,
+              step: { ...paused.step },
+            })),
+          }
+        : {}),
+      ...(adjustedSteps.length > 0 ? { adjustedSteps } : {}),
     },
   };
 
@@ -163,10 +189,13 @@ export async function completeGuidedSession(
       // Das Protokoll gilt bis zum rechnerischen Ende, nicht bis `now`.
       guided: {
         ...session.guided,
-        protocol: deriveGuidedProtocol(
-          session.guided.steps,
-          session.guided.events,
-          endsAt,
+        protocol: withRestrictionProtocol(
+          deriveGuidedProtocol(
+            session.guided.steps,
+            session.guided.events,
+            endsAt,
+          ),
+          session.guided,
         ),
       },
     });
@@ -253,10 +282,13 @@ export async function abortGuidedSession(
       completedAt: now.toISOString(),
       guided: {
         ...session.guided,
-        protocol: deriveGuidedProtocol(
-          session.guided.steps,
-          session.guided.events,
-          now.getTime(),
+        protocol: withRestrictionProtocol(
+          deriveGuidedProtocol(
+            session.guided.steps,
+            session.guided.events,
+            now.getTime(),
+          ),
+          session.guided,
         ),
       },
     });

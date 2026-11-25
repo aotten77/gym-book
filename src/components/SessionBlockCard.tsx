@@ -1,17 +1,22 @@
+import { useState } from 'react';
 import {
   Check,
   ChevronDown,
   ChevronRight,
   ChevronUp,
   Clock3,
+  Pause,
   Repeat,
   SkipForward,
   Undo2,
 } from 'lucide-react';
+import { PauseSheet } from '@/components/PauseSheet';
+import { RestrictionLabel } from '@/components/RestrictionLabel';
 import { IconButton } from '@/components/ui/Button';
 import { sortSetLogs } from '@/domain/history';
 import type { RestTimerTrack, WorkoutSessionExercise } from '@/domain/models';
 import { findRestTrack, isRestTrackReady, remainingRestSeconds } from '@/domain/rest-timer';
+import { isPausedSessionExercise, sessionRestrictionKind } from '@/domain/restriction';
 import {
   describeExerciseTarget,
   summarizeCompletedExercise,
@@ -40,6 +45,8 @@ interface SessionBlockCardProps {
   onMoveBlock: (sessionExerciseId: string, direction: -1 | 1) => void;
   /** Lässt eine Übung aus - oder holt sie zurück. Immer eine einzelne, nie den Block. */
   onToggleSkip: (sessionExerciseId: string) => void;
+  /** Namen aller Übungen der Session - für „Ersatz für …“. */
+  exerciseNameById?: Record<string, string>;
 }
 
 /** Die Pausen einer Übung, beide Seiten, in der Reihenfolge des Ablaufs. */
@@ -104,8 +111,17 @@ export function SessionBlockCard({
   onOpen,
   onMoveBlock,
   onToggleSkip,
+  exerciseNameById,
 }: SessionBlockCardProps) {
-  const isDone = block.status === 'done';
+  /*
+   * Ein Block, dessen Übungen alle pausiert sind, ist zwar „erledigt“ - er
+   * wartet auf nichts -, aber nicht trainiert. Er steht deshalb ausgegraut da
+   * statt waldgrün, in neutraler Tinte wie ein Hinweis.
+   */
+  const isPausedBlock =
+    block.exercises.length > 0 &&
+    block.exercises.every((item) => isPausedSessionExercise(item.exercise));
+  const isDone = block.status === 'done' && !isPausedBlock;
   const isCurrent = block.status === 'current';
   const firstExerciseId = block.exercises[0]?.exercise.id ?? '';
   /*
@@ -132,7 +148,8 @@ export function SessionBlockCard({
         'rounded-card p-3.5 transition',
         isDone && 'bg-success text-success-contrast',
         isCurrent && 'bg-highlight text-highlight-contrast shadow-soft',
-        !isDone && !isCurrent && 'border border-line bg-surface',
+        isPausedBlock && 'border border-line bg-surface-sunken text-content-secondary',
+        !isDone && !isCurrent && !isPausedBlock && 'border border-line bg-surface',
       )}
     >
       <div className="flex min-h-[28px] items-center justify-between gap-3">
@@ -155,7 +172,12 @@ export function SessionBlockCard({
             !isDone && !isCurrent && 'text-content-muted',
           )}
         >
-          {isDone ? (
+          {isPausedBlock ? (
+            <span className="inline-flex items-center gap-1">
+              <Pause size={13} strokeWidth={3} aria-hidden="true" />
+              Pausiert
+            </span>
+          ) : isDone ? (
             <span className="inline-flex items-center gap-1">
               <Check size={13} strokeWidth={3} aria-hidden="true" />
               {block.totalCount} Sätze
@@ -224,6 +246,11 @@ export function SessionBlockCard({
             isReadOnly={isReadOnly}
             onOpen={onOpen}
             onToggleSkip={onToggleSkip}
+            originalName={
+              item.exercise.replacementFor
+                ? exerciseNameById?.[item.exercise.replacementFor.sessionExerciseId]
+                : undefined
+            }
           />
         ))}
       </div>
@@ -240,6 +267,7 @@ interface SessionBlockExerciseRowProps {
   isReadOnly: boolean;
   onOpen: (sessionExerciseId: string) => void;
   onToggleSkip: (sessionExerciseId: string) => void;
+  originalName?: string;
 }
 
 /**
@@ -284,25 +312,78 @@ function SessionBlockExerciseRow({
   isReadOnly,
   onOpen,
   onToggleSkip,
+  originalName,
 }: SessionBlockExerciseRowProps) {
   const { exercise, nextOpenLog } = item;
   const isDone = status === 'done';
+  const [isPauseSheetOpen, setIsPauseSheetOpen] = useState(false);
+  /*
+   * Das Sheet der Pause öffnet nur, wo es etwas zu entscheiden gibt: an einer
+   * pausierten Übung („Trotzdem machen“) und an einer freigegebenen, solange
+   * kein Satz abgehakt ist („Wieder pausieren“).
+   */
+  const kind = sessionRestrictionKind(exercise);
+  const canDecidePause =
+    !isReadOnly &&
+    (kind === 'pausiert' || (kind === 'trotzdem' && !item.logs.some((log) => log.completed)));
+  const pauseSheet = canDecidePause ? (
+    <PauseSheet
+      open={isPauseSheetOpen}
+      exercise={exercise}
+      onClose={() => setIsPauseSheetOpen(false)}
+    />
+  ) : null;
+  const restrictionLabel = (
+    <RestrictionLabel
+      exercise={exercise}
+      originalName={originalName}
+      onOpen={canDecidePause ? () => setIsPauseSheetOpen(true) : undefined}
+    />
+  );
+
+  /*
+   * Eine pausierte Übung steht an ihrem Platz, eingeklappt: Name und Etikett,
+   * sonst nichts. Ein Tipp öffnet das Sheet der Pause, nicht die Übung.
+   */
+  if (kind === 'pausiert') {
+    return (
+      <div data-paused-exercise>
+        <p className="truncate px-2.5 pt-1 font-display text-[15px] font-bold tracking-tight">
+          {exercise.exerciseNameSnapshot}
+        </p>
+        {/*
+          Volle Deckkraft: auf dem abgesenkten Grund fiele die abgeschwächte
+          Nebenfarbe unter 4,5:1 (docs/architecture/ui-palette.md).
+        */}
+        <RestrictionLabel
+          exercise={exercise}
+          onOpen={canDecidePause ? () => setIsPauseSheetOpen(true) : undefined}
+          className="opacity-100"
+        />
+        {pauseSheet}
+      </div>
+    );
+  }
 
   if (isDone) {
     return (
-      <ExerciseSummaryLine
-        exercise={exercise}
-        logsSummary={summarizeCompletedExercise(item.logs)}
-        asymmetryPercent={summarizeExerciseAsymmetry(item.logs)}
-        wasSkipped={exercise.wasSkipped}
-        /*
-          Auf der fertigen Karte nur noch der Rückweg: was abgehakt ist, lässt
-          man nicht mehr aus - aber eine ausgelassene Übung muss man
-          zurückholen können, sonst wäre die Entscheidung endgültig.
-        */
-        onToggleSkip={!isReadOnly && exercise.wasSkipped ? onToggleSkip : undefined}
-        onOpen={() => onOpen(exercise.id)}
-      />
+      <div>
+        <ExerciseSummaryLine
+          exercise={exercise}
+          logsSummary={summarizeCompletedExercise(item.logs)}
+          asymmetryPercent={summarizeExerciseAsymmetry(item.logs)}
+          wasSkipped={exercise.wasSkipped}
+          /*
+            Auf der fertigen Karte nur noch der Rückweg: was abgehakt ist, lässt
+            man nicht mehr aus - aber eine ausgelassene Übung muss man
+            zurückholen können, sonst wäre die Entscheidung endgültig.
+          */
+          onToggleSkip={!isReadOnly && exercise.wasSkipped ? onToggleSkip : undefined}
+          onOpen={() => onOpen(exercise.id)}
+        />
+        {restrictionLabel}
+        {pauseSheet}
+      </div>
     );
   }
 
@@ -344,6 +425,9 @@ function SessionBlockExerciseRow({
           <SkipToggleButton exercise={exercise} onToggleSkip={onToggleSkip} />
         ) : null}
       </div>
+
+      {restrictionLabel}
+      {pauseSheet}
 
       {/*
         Die Pausen hängen an der Übung, zu der sie gehören - und im

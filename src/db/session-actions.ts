@@ -14,7 +14,11 @@ import { pickPlanEntryForStart } from '@/domain/plan';
 import { toDateInputValue } from '@/domain/program';
 import { findRestTrack, removeRestTrack, removeRestTracksForExercise } from '@/domain/rest-timer';
 import type { SetLogValuesInput } from '@/domain/history';
-import { applyRestrictionEffect, resolveRestrictionEffect } from '@/domain/restriction';
+import {
+  applyRestrictionEffect,
+  isPausedSessionExercise,
+  resolveRestrictionEffect,
+} from '@/domain/restriction';
 import { materializeSession } from '@/domain/session';
 import { loadRestrictions } from '@/db/restriction-actions';
 import {
@@ -278,6 +282,17 @@ export async function toggleSetCompletion(setLogId: string) {
     async () => {
       if (!(await isSetLogEditable(setLogId))) {
         return;
+      }
+
+      /*
+       * Eine pausierte Übung ist nicht dran - ein Satz daran zählte sonst als
+       * letzter Wert. Erst „Trotzdem machen“ gibt sie frei.
+       */
+      const setLog = await db.workoutSetLogs.get(setLogId);
+      const row = setLog && (await db.workoutSessionExercises.get(setLog.sessionExerciseId));
+
+      if (row && isPausedSessionExercise(row)) {
+        throw new Error('Diese Übung ist pausiert - erst „Trotzdem machen“.');
       }
 
       // Lesen und Schreiben in einem Zug: bei einem Doppeltipp würde ein

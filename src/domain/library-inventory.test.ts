@@ -12,6 +12,7 @@ import type {
   Program,
   ProgramWeek,
   ProgressionRule,
+  Restriction,
   WorkoutTemplate,
   WorkoutTemplateExercise,
 } from '@/domain/models';
@@ -128,6 +129,8 @@ const input: LibraryInventoryInput = {
   program,
   programWeeks,
   progressionRules,
+  restrictions: [],
+  today: '2026-11-24',
 };
 
 const state: LibraryImportState = {
@@ -306,5 +309,159 @@ describe('buildLibraryInventory', () => {
 
   it('hat ohne aktives Programm kein Programm', () => {
     expect(buildLibraryInventory({ ...input, program: undefined }).programm).toBeNull();
+  });
+});
+
+describe('bestand.json: Einschränkungen', () => {
+  const guided = template({
+    id: 'tpl-yoga',
+    name: 'Yoga Abend',
+    category: 'yoga',
+    steps: [
+      { name: 'Kindhaltung', seconds: 60 },
+      { name: 'Taube', seconds: 45 },
+    ],
+  });
+
+  function restriction(overrides: Partial<Restriction> & { id: string; name: string }): Restriction {
+    return {
+      from: '2026-11-20',
+      until: '2026-12-14',
+      pauses: [],
+      adjustments: [],
+      createdAt: stamp,
+      updatedAt: stamp,
+      ...overrides,
+    };
+  }
+
+  const knee = restriction({
+    id: 'r1',
+    name: 'Beispiel A',
+    reason: 'Erfundener Grund',
+    pauses: [
+      {
+        exerciseId: 'ex-squat',
+        templateId: 'tpl-a',
+        replacement: { exerciseId: 'ex-step', workSetCount: 2, targetReps: 8 },
+      },
+      { stepName: 'Kindhaltung' },
+    ],
+    adjustments: [
+      { stepName: 'Taube', templateId: 'tpl-yoga', seconds: 30, note: 'Langsam' },
+      { exerciseId: 'ex-pull', targetReps: 5, holdProgression: true },
+    ],
+  });
+  const shoulder = restriction({
+    id: 'r4',
+    name: 'Beispiel F',
+    from: '2026-12-01',
+    until: undefined,
+    adjustments: [{ exerciseId: 'ex-plank', templateId: 'tpl-mob', targetSeconds: 20 }],
+  });
+  const restrictedInput: LibraryInventoryInput = {
+    ...input,
+    templates: [...templates, guided],
+    restrictions: [
+      shoulder,
+      knee,
+      restriction({ id: 'r2', name: 'Alt', from: '2026-10-01', until: '2026-11-01' }),
+      restriction({ id: 'r3', name: 'Weg', liftedAt: '2026-11-22T10:00:00.000Z' }),
+    ],
+  };
+
+  it('nennt nicht aufgehobene, nicht abgelaufene Einschränkungen in Importform', () => {
+    expect(buildLibraryInventory(restrictedInput).restrictions).toEqual([
+      {
+        name: 'Beispiel A',
+        reason: 'Erfundener Grund',
+        from: '2026-11-20',
+        until: '2026-12-14',
+        pauses: [
+          {
+            template: 'Einheit A',
+            exercise: 'Front Squat',
+            replacement: { exercise: 'Step-down', workSetCount: 2, targetReps: 8 },
+          },
+          { step: 'Kindhaltung' },
+        ],
+        adjustments: [
+          { template: 'Yoga Abend', step: 'Taube', seconds: 30, note: 'Langsam' },
+          { exercise: 'Klimmzug', targetReps: 5, holdProgression: true },
+        ],
+      },
+      {
+        name: 'Beispiel F',
+        from: '2026-12-01',
+        pauses: [],
+        adjustments: [{ template: 'Mobility', exercise: 'Seitstütz', targetSeconds: 20 }],
+      },
+    ]);
+  });
+
+  it('lässt tote Ziele weg', () => {
+    const inventory = buildLibraryInventory({
+      ...restrictedInput,
+      restrictions: [
+        restriction({
+          id: 'r9',
+          name: 'Beispiel E',
+          pauses: [{ exerciseId: 'ex-gone' }, { exerciseId: 'ex-curl', templateId: 'tpl-gone' }, { exerciseId: 'ex-curl' }],
+          adjustments: [{ stepName: 'Taube', templateId: 'tpl-gone', seconds: 20 }],
+        }),
+      ],
+    });
+
+    expect(inventory.restrictions).toEqual([
+      { name: 'Beispiel E', from: '2026-11-20', until: '2026-12-14', pauses: [{ exercise: 'Beinbeuger' }], adjustments: [] },
+    ]);
+  });
+
+  it('lässt sich mit Ersatz, Schritt und Schrittanpassung unverändert wieder einlesen', () => {
+    const inventory = buildLibraryInventory(restrictedInput);
+    const payload = { schemaVersion: 1, restrictions: inventory.restrictions };
+    const plan = planLibraryImport(parseLibraryImportPayload(JSON.stringify(payload)), {
+      ...state,
+      templates: restrictedInput.templates,
+      restrictions: restrictedInput.restrictions,
+    });
+
+    expect(plan.restrictions.map((entry) => entry.kind)).toEqual(['unchanged', 'unchanged']);
+    expect(planHasChanges(plan)).toBe(false);
+  });
+
+  it('liest ein Schrittziel, das derzeit nichts trifft, unverändert wieder ein', () => {
+    // Der Schritt ist inzwischen umbenannt; die Pause bleibt stehen (Spec §2).
+    const idle: Restriction = {
+      ...knee,
+      pauses: [{ stepName: 'Sprungkniebeuge' }],
+      adjustments: [],
+    };
+    const inventory = buildLibraryInventory({ ...restrictedInput, restrictions: [idle] });
+
+    expect(inventory.restrictions[0].pauses).toEqual([{ step: 'Sprungkniebeuge' }]);
+
+    const payload = { schemaVersion: 1, restrictions: inventory.restrictions };
+    const plan = planLibraryImport(parseLibraryImportPayload(JSON.stringify(payload)), {
+      ...state,
+      templates: restrictedInput.templates,
+      restrictions: [idle],
+    });
+
+    expect(plan.restrictions.map((entry) => entry.kind)).toEqual(['unchanged']);
+  });
+
+  it('weist ein neues Schrittziel ohne Treffer weiter ab', () => {
+    const payload = {
+      schemaVersion: 1,
+      restrictions: [{ name: 'Beispiel A', pauses: [{ step: 'Sprungkniebeuge' }] }],
+    };
+    expect(() =>
+      planLibraryImport(parseLibraryImportPayload(JSON.stringify(payload)), {
+        ...state,
+        templates: restrictedInput.templates,
+        restrictions: [knee],
+      }),
+    ).toThrow('Schritt "Sprungkniebeuge" kommt in keiner geführten Vorlage vor.');
   });
 });

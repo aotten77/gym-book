@@ -9,6 +9,7 @@ import type {
   ExerciseTest,
   GuidedProtocolEntry,
   PlanEntry,
+  Restriction,
   RunLog,
   Side,
   TrackingMode,
@@ -99,6 +100,7 @@ function build(input: Partial<AnalysisExportInput>) {
     templateExercises: [],
     programWeeks: [],
     progressionRules: [],
+    restrictions: [],
     weekControl,
     ...input,
   });
@@ -827,7 +829,7 @@ describe('Läufe und Wochensummen', () => {
     expect(rows[0][2]).toBe('70');
   });
 
-  it('sessions.csv: Spalte art am Ende', () => {
+  it('sessions.csv: Spalte art am Ende, vor den Plan- und Einschränkungsspalten', () => {
     const files = build({
       sessions: [
         session({ id: 's1' }),
@@ -849,9 +851,9 @@ describe('Läufe und Wochensummen', () => {
     });
     const { columns, rows } = parseCsv(files.sessionsCsv);
 
-    expect(columns.slice(-2)).toEqual(['art', 'geplant_am']);
+    expect(columns.slice(-5, -3)).toEqual(['art', 'geplant_am']);
     expect(columns.slice(0, 7)).toHaveLength(7);
-    expect(rows.map((row) => row[row.length - 2])).toEqual(['kraft', 'mobility']);
+    expect(rows.map((row) => row[columns.indexOf('art')])).toEqual(['kraft', 'mobility']);
   });
 
   it('sessions.csv: Yoga und Faszien tragen ihre Art, nicht kraft', () => {
@@ -870,9 +872,9 @@ describe('Läufe und Wochensummen', () => {
         setLog({ id: 'l2', sessionExerciseId: 'e2', reps: 5 }),
       ],
     });
-    const { rows } = parseCsv(files.sessionsCsv);
+    const { columns, rows } = parseCsv(files.sessionsCsv);
 
-    expect(rows.map((row) => row[row.length - 2])).toEqual(['yoga', 'faszien']);
+    expect(rows.map((row) => row[columns.indexOf('art')])).toEqual(['yoga', 'faszien']);
   });
 
   it('meta.json: Zeitraum über Sessions und Läufe', () => {
@@ -1042,8 +1044,12 @@ describe('Plandaten', () => {
     const sessions = parseCsv(files.sessionsCsv);
     const runs = parseCsv(files.runsCsv);
 
-    expect(sessions.columns.slice(-1)).toEqual(['geplant_am']);
-    expect(sessions.rows.map((row) => row[row.length - 1])).toEqual(['2026-08-24', '']);
+    // Nach geplant_am kommen nur noch die drei Einschränkungsspalten.
+    expect(sessions.columns.slice(-4, -3)).toEqual(['geplant_am']);
+    expect(sessions.rows.map((row) => row[sessions.columns.indexOf('geplant_am')])).toEqual([
+      '2026-08-24',
+      '',
+    ]);
     expect(runs.columns.slice(-2)).toEqual(['geplant_am', 'plan_titel']);
     expect(runs.rows[0].slice(-2)).toEqual(['2026-10-03', 'Dauerlauf']);
     expect(runs.rows[1].slice(-2)).toEqual(['', '']);
@@ -1104,11 +1110,12 @@ describe('geführte Sessions im Analyse-Export', () => {
       'soll_sekunden',
       'ist_sekunden',
       'abgebrochen',
+      'einschraenkung',
     ]);
     expect(rows).toEqual([
-      ['2026-08-25', 'Di', 'Abendflow', 'yoga', '1', 'Hund', 'beide', 'verlaengert', '60', '75', 'nein'],
-      ['2026-08-25', 'Di', 'Abendflow', 'yoga', '2', 'Taube tief', 'links', 'gemacht', '90', '90', 'nein'],
-      ['2026-08-25', 'Di', 'Abendflow', 'yoga', '2', 'Taube tief', 'rechts', 'uebersprungen', '90', '20', 'nein'],
+      ['2026-08-25', 'Di', 'Abendflow', 'yoga', '1', 'Hund', 'beide', 'verlaengert', '60', '75', 'nein', ''],
+      ['2026-08-25', 'Di', 'Abendflow', 'yoga', '2', 'Taube tief', 'links', 'gemacht', '90', '90', 'nein', ''],
+      ['2026-08-25', 'Di', 'Abendflow', 'yoga', '2', 'Taube tief', 'rechts', 'uebersprungen', '90', '20', 'nein', ''],
     ]);
     expect(files.protocolCsv).toContain('"Taube, tief"');
   });
@@ -1137,7 +1144,7 @@ describe('geführte Sessions im Analyse-Export', () => {
     });
     const { rows } = parseCsv(files.protocolCsv);
 
-    expect(rows[0].slice(7)).toEqual(['abgebrochen', '60', '20', 'ja']);
+    expect(rows[0].slice(7)).toEqual(['abgebrochen', '60', '20', 'ja', '']);
   });
 
   it('verwirft eine geführte Session ohne Protokoll mit Begründung', () => {
@@ -1193,5 +1200,212 @@ describe('geführte Sessions im Analyse-Export', () => {
 
     expect(text).toContain('## protokoll.csv');
     expect(text).toContain(files.protocolCsv.trimEnd());
+  });
+});
+
+describe('Einschränkungen im Analyse-Export', () => {
+  const by = ['Beispiel A'];
+  const kinds: Partial<WorkoutSessionExercise>[] = [
+    { exerciseNameSnapshot: 'Sprungkniebeuge', pausedBy: by, pausedUntil: '2026-09-14' },
+    { exerciseNameSnapshot: 'Kniebeuge', pausedBy: by, pauseOverriddenAt: '2026-08-25T17:10:00.000Z' },
+    { exerciseNameSnapshot: 'Ausfallschritt', adjustedBy: by, targetsBeforeAdjustment: { targetWeight: 45 } },
+    { exerciseNameSnapshot: 'Beinpresse', excludedFromProgressAt: '2026-08-26T08:00:00.000Z' },
+    { exerciseNameSnapshot: 'Step-up', replacementFor: { sessionExerciseId: 'e1', restrictionName: 'Beispiel A' } },
+    { exerciseNameSnapshot: 'Hip Thrust', adjustedBy: by, progressionHeld: true },
+    { exerciseNameSnapshot: 'Rudern', adjustedBy: by, adjustmentNotes: [{ by: 'Beispiel A', note: 'Langsam' }] },
+  ];
+
+  function restrictedSession() {
+    return build({
+      sessions: [session({ id: 's1' })],
+      sessionExercises: kinds.map((kind, index) =>
+        sessionExercise({ id: `e${index + 1}`, sessionId: 's1', orderIndex: index + 1, ...kind }),
+      ),
+      setLogs: kinds.flatMap((_, index) =>
+        // Die pausierte Übung hat nur offene Sätze, wie beim Start angelegt.
+        [1, 2, 3].map((setNumber) =>
+          setLog({
+            id: `l${index}-${setNumber}`,
+            sessionExerciseId: `e${index + 1}`,
+            setNumber,
+            completed: index !== 0,
+            weight: 40,
+            reps: 6,
+          }),
+        ),
+      ),
+    });
+  }
+
+  it('sessions.csv: endet auf einschraenkung, einschraenkung_art und ersatz_fuer', () => {
+    const { columns } = parseCsv(restrictedSession().sessionsCsv);
+
+    expect(columns.slice(-3)).toEqual(['einschraenkung', 'einschraenkung_art', 'ersatz_fuer']);
+  });
+
+  it('sessions.csv: je eine Zeile für alle sieben Arten, der Ersatz nennt die pausierte Übung', () => {
+    const { columns, rows } = parseCsv(restrictedSession().sessionsCsv);
+    const cell = (row: string[], column: string) => row[columns.indexOf(column)];
+
+    expect(rows.map((row) => [cell(row, 'uebung'), cell(row, 'einschraenkung_art')])).toEqual([
+      ['Sprungkniebeuge', 'pausiert'],
+      ['Kniebeuge', 'trotzdem'],
+      ['Ausfallschritt', 'angepasst'],
+      ['Beinpresse', 'ausgenommen'],
+      ['Step-up', 'ersatz'],
+      ['Hip Thrust', 'gehalten'],
+      ['Rudern', 'hinweis'],
+    ]);
+    expect(rows.map((row) => cell(row, 'einschraenkung'))).toEqual([
+      'Beispiel A',
+      'Beispiel A',
+      'Beispiel A',
+      '',
+      'Beispiel A',
+      'Beispiel A',
+      'Beispiel A',
+    ]);
+    expect(rows.map((row) => cell(row, 'ersatz_fuer'))).toEqual(['', '', '', '', 'Sprungkniebeuge', '', '']);
+    // Pausiert ist nicht übersprungen.
+    expect(cell(rows[0], 'uebersprungen')).toBe('nein');
+    expect(cell(rows[0], 'arbeitssaetze')).toBe('0');
+  });
+
+  it('eine pausierte Übung macht die Einheit nicht unvollständig', () => {
+    const files = build({
+      sessions: [session({ id: 's1' })],
+      sessionExercises: [
+        sessionExercise({ id: 'e1', sessionId: 's1' }),
+        sessionExercise({
+          id: 'e2',
+          sessionId: 's1',
+          orderIndex: 2,
+          exerciseNameSnapshot: 'Sprungkniebeuge',
+          pausedBy: by,
+          workSetCount: 20,
+        }),
+      ],
+      setLogs: [
+        setLog({ id: 'l1', sessionExerciseId: 'e1', weight: 40, reps: 6 }),
+        ...Array.from({ length: 20 }, (_, index) =>
+          setLog({ id: `p${index}`, sessionExerciseId: 'e2', setNumber: index + 1, completed: false }),
+        ),
+      ],
+    });
+    const { columns, rows } = parseCsv(files.sessionsCsv);
+
+    expect(rows.map((row) => row[columns.indexOf('unvollstaendig')])).toEqual(['nein', 'nein']);
+  });
+
+  it('protokoll.csv: Status pausiert und die Einschränkung am Ende', () => {
+    const files = build({
+      sessions: [
+        session({
+          id: 'g1',
+          templateNameSnapshot: 'Abendflow',
+          templateCategorySnapshot: 'yoga',
+          guided: {
+            steps: [{ name: 'Hund', seconds: 60 }],
+            events: [{ type: 'start', at: 1 }],
+            protocol: [
+              { stepIndex: 0, name: 'Hund', status: 'done', plannedSeconds: 30, actualSeconds: 30, restrictedBy: by },
+              { stepIndex: 1, name: 'Kosakenhocke', status: 'paused', plannedSeconds: 40, actualSeconds: 0, restrictedBy: by },
+            ],
+          },
+        }),
+      ],
+    });
+    const { columns, rows } = parseCsv(files.protocolCsv);
+
+    expect(columns.at(-1)).toBe('einschraenkung');
+    expect(rows.map((row) => [row[columns.indexOf('status')], row.at(-1)])).toEqual([
+      ['gemacht', 'Beispiel A'],
+      ['pausiert', 'Beispiel A'],
+    ]);
+  });
+
+  const restriction = (overrides: Partial<Restriction>): Restriction => ({
+    id: 'r1',
+    name: 'Beispiel A',
+    reason: 'Erfundener Grund',
+    from: '2026-08-20',
+    until: '2026-09-14',
+    pauses: [{ exerciseId: 'exercise-1' }],
+    adjustments: [],
+    createdAt: '2026-08-20T08:00:00.000Z',
+    updatedAt: '2026-08-20T08:00:00.000Z',
+    ...overrides,
+  });
+
+  it('meta.json: einschraenkungen im Zeitraum oder heute wirksam, mit Zielen und Hinweis', () => {
+    const files = build({
+      exercises: [
+        {
+          id: 'exercise-1',
+          name: 'Front Squat LH',
+          trackingMode: 'reps_weight',
+          unilateral: false,
+          createdAt: '2026-08-01T08:00:00.000Z',
+          updatedAt: '2026-08-01T08:00:00.000Z',
+        },
+      ],
+      templates: [template({ id: 'template-a', name: 'Einheit A' })],
+      templateExercises: [
+        { id: 'te1', templateId: 'template-a', exerciseId: 'exercise-1', orderIndex: 1, workSetCount: 3 },
+      ],
+      sessions: [session({ id: 's1' })],
+      sessionExercises: [sessionExercise({ id: 'e1', sessionId: 's1' })],
+      setLogs: [setLog({ id: 'l1', sessionExerciseId: 'e1', weight: 40, reps: 6 })],
+      restrictions: [
+        restriction({}),
+        restriction({ id: 'r2', name: 'Beispiel F', from: '2026-09-01', until: undefined, reason: undefined }),
+        restriction({ id: 'r3', name: 'Alt', from: '2026-06-01', until: '2026-06-30' }),
+        // Am Tag der Einheit aufgehoben: galt im Zeitraum noch.
+        restriction({ id: 'r4', name: 'Aufgehoben', liftedAt: '2026-08-25T19:00:00.000Z' }),
+        restriction({ id: 'r5', name: 'Früh aufgehoben', liftedAt: '2026-08-22T10:00:00.000Z' }),
+      ],
+    });
+    const meta = JSON.parse(files.metaJson);
+
+    expect(meta.einschraenkungen).toEqual([
+      {
+        name: 'Aufgehoben',
+        grund: 'Erfundener Grund',
+        von: '2026-08-20',
+        bis: '2026-09-14',
+        aufgehoben_am: '2026-08-25',
+        zustand: 'aufgehoben',
+        ziele: ['Pause: Front Squat LH'],
+      },
+      {
+        name: 'Beispiel A',
+        grund: 'Erfundener Grund',
+        von: '2026-08-20',
+        bis: '2026-09-14',
+        aufgehoben_am: null,
+        zustand: 'aktiv',
+        ziele: ['Pause: Front Squat LH'],
+      },
+      {
+        name: 'Beispiel F',
+        grund: null,
+        von: '2026-09-01',
+        bis: null,
+        aufgehoben_am: null,
+        zustand: 'angekündigt',
+        ziele: ['Pause: Front Squat LH'],
+      },
+    ]);
+    expect(meta.hinweise.join(' ')).toContain(
+      'angepasst, trotzdem oder ausgenommen sind kein Leistungsstand',
+    );
+  });
+
+  it('der Einfügetext beschreibt die neuen Spalten', () => {
+    const text = buildAnalysisPasteText(restrictedSession(), new Date('2026-08-26T09:00:00'));
+
+    expect(text).toContain('einschraenkung_art');
+    expect(text).toMatch(/ersatz_fuer[^\n]*pausierten/);
+    expect(text).toMatch(/Status[^\n]*pausiert/);
   });
 });

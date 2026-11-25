@@ -422,6 +422,11 @@ function GuidedRunScreen({
             <ExerciseLeft
               state={state}
               steps={guided.steps}
+              notes={
+                guided.adjustedSteps?.find(
+                  (adjusted) => adjusted.index === state.stepIndex,
+                )?.notes
+              }
               onOpenHint={() => setHintSection(state.sectionIndex)}
             />
           ) : (
@@ -701,14 +706,20 @@ function describeUpcomingDuration(step: GuidedStep): string {
   return step.bothSides ? `${clock} je Seite` : clock;
 }
 
-/** Links in der Übung: sie in Lime, darunter die nächste groß in Weiß. */
+/**
+ * Links in der Übung: sie in Lime, darunter die nächste groß in Weiß. Die
+ * Notizen einer Einschränkung stehen als Textzeile unter dem Namen - ohne
+ * Ansage, denn die Ansagen sind vorab erzeugt und eine Notiz hat keine.
+ */
 function ExerciseLeft({
   state,
   steps,
+  notes,
   onOpenHint,
 }: {
   state: GuidedRunState;
   steps: readonly GuidedStep[];
+  notes?: { by: string; note: string }[];
   onOpenHint: () => void;
 }) {
   const current = state.current;
@@ -729,6 +740,15 @@ function ExerciseLeft({
           <InfoButton stepName={step.name} onOpen={onOpenHint} />
         ) : null}
       </h1>
+      {notes?.map((note, index) => (
+        <p
+          key={`${note.by}-${index}`}
+          data-guided-note
+          className="mt-1 break-words text-[13px] leading-snug text-accent-contrast/75"
+        >
+          {note.note}
+        </p>
+      ))}
 
       <p className={cn(CAPTION_CLASSES, "mt-4")}>Als Nächstes</p>
       {next && nextStep ? (

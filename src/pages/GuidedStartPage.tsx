@@ -11,8 +11,11 @@ import { db } from '@/db/appDb';
 import { getAnnouncementAvailability } from '@/db/announcement-actions';
 import { startGuidedSession } from '@/db/guided-session-actions';
 import { loadPlanNoteForGuidedStart } from '@/db/plan-queries';
+import { loadRestrictions } from '@/db/restriction-actions';
 import type { GuidedAudioMode } from '@/domain/models';
 import { describeGuidedFacts, describeGuidedStepDuration, isGuidedTemplate } from '@/domain/guided-steps';
+import { toDateInputValue } from '@/domain/program';
+import { describeGuidedStepRestrictions, resolveGuidedSteps } from '@/domain/restriction';
 import { describeOverage, useAnnouncementGeneration } from '@/hooks/useAnnouncementGeneration';
 import { describeWorkoutCategory, resolveWorkoutCategory } from '@/domain/workout-category';
 import { primeTimerSound, setAmbientAudioSession } from '@/lib/sound';
@@ -35,6 +38,11 @@ const CAPTION_CLASSES = 'text-[10px] font-bold uppercase tracking-[0.16em] text-
  *
  * Lime gibt es hier nicht: nichts ist „jetzt dran“, solange nichts läuft. Hell
  * ist nur dieser Screen - dunkel werden erst die Screens des laufenden Ablaufs.
+ *
+ * Einschränkungen von heute stehen in der Liste: ein pausierter Schritt
+ * ausgegraut an seinem Platz, ein angepasster mit „30 s statt 45 · …“ und
+ * seinen Notizen. Die Kennzahlen rechnen nur, was abgespielt wird; sind alle
+ * Schritte pausiert, steht statt des Knopfs ein Satz.
  */
 export function GuidedStartPage() {
   const { templateId } = useParams();
@@ -68,6 +76,8 @@ export function GuidedStartPage() {
         : undefined,
     [templateId, requestedPlanEntryId],
   );
+
+  const restrictions = useLiveQuery(() => loadRestrictions(), []);
 
   const lastChoice = useLiveQuery(
     async () => (await db.appSettings.get('app-settings'))?.guidedAudioMode ?? null,
@@ -163,6 +173,20 @@ export function GuidedStartPage() {
   const steps = template.steps ?? [];
   const category = resolveWorkoutCategory(template.category);
   const hintStep = hintStepIndex === null ? undefined : steps[hintStepIndex];
+  // Die Einschränkungen von heute; `startGuidedSession` löst sie genauso auf.
+  const resolved = resolveGuidedSteps({
+    restrictions: restrictions ?? [],
+    day: toDateInputValue(new Date()),
+    templateId: template.id,
+    steps,
+  });
+  const restricted = describeGuidedStepRestrictions(resolved);
+  const allPaused = steps.length > 0 && resolved.steps.length === 0;
+  // Der abgespielte Schritt je Vorlagen-Position, mit den angepassten Sekunden.
+  let playedIndex = 0;
+  const effectiveSteps = steps.map((step, index) =>
+    restricted.get(index)?.kind === 'pausiert' ? step : (resolved.steps[playedIndex++] ?? step),
+  );
 
   return (
     <GuidedStage label={template.name} screen="start">
@@ -175,47 +199,69 @@ export function GuidedStartPage() {
           data-guided-steps
           className="min-h-0 overflow-y-auto rounded-panel bg-surface-sunken px-3 py-0.5"
         >
-          {steps.map((step, index) => (
-            <li
-              key={index}
-              data-guided-step={index}
-              className="flex min-h-[2.5rem] items-center justify-between gap-3 border-b border-line py-1.5 text-[13px] last:border-b-0"
-            >
-              <span className="min-w-0 break-words">
-                {step.name}
-                {step.bothSides ? (
-                  <small className="ml-1 text-[11px] text-content-muted">L · R</small>
-                ) : null}
-              </span>
-              <span className="flex shrink-0 items-center gap-2">
-                <span className="whitespace-nowrap text-xs tabular-nums text-content-muted">
-                  {describeGuidedStepDuration(step)}
-                </span>
-                {step.hint ? (
-                  /*
-                    Das „i“ ist 44px groß, damit man es trifft, und zieht sich
-                    mit negativem Rand zusammen, damit die Zeile nicht wächst.
-                  */
-                  <button
-                    type="button"
-                    aria-label={`Hinweis: ${step.name}`}
-                    onClick={() => setHintStepIndex(index)}
-                    className={cn(
-                      '-my-2 -mr-2.5 grid h-11 w-11 place-items-center rounded-full',
-                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
-                    )}
-                  >
-                    <span
-                      aria-hidden="true"
-                      className="grid h-7 w-7 place-items-center rounded-full bg-surface-raised font-serif text-base font-bold italic leading-none"
-                    >
-                      i
+          {steps.map((step, index) => {
+            const restriction = restricted.get(index);
+            const isPaused = restriction?.kind === 'pausiert';
+
+            return (
+              <li
+                key={index}
+                data-guided-step={index}
+                data-guided-step-restriction={restriction?.kind}
+                className={cn(
+                  'flex min-h-[2.5rem] items-center justify-between gap-3 border-b border-line py-1.5 text-[13px] last:border-b-0',
+                  // Ausgegraut, aber lesbar: Sekundärtinte auf dem abgesenkten Grund hält 4,5:1.
+                  isPaused && 'text-content-secondary',
+                )}
+              >
+                <span className="min-w-0 break-words">
+                  {step.name}
+                  {step.bothSides ? (
+                    <small className="ml-1 text-[11px] text-content-muted">L · R</small>
+                  ) : null}
+                  {restriction ? (
+                    <span className="mt-0.5 block text-[11px] font-semibold text-content-secondary">
+                      <span data-guided-step-label className="block">{restriction.label}</span>
+                      {restriction.notes.map((note, noteIndex) => (
+                        <span key={noteIndex} className="block font-normal">
+                          {note}
+                        </span>
+                      ))}
                     </span>
-                  </button>
-                ) : null}
-              </span>
-            </li>
-          ))}
+                  ) : null}
+                </span>
+                <span className="flex shrink-0 items-center gap-2">
+                  {isPaused ? null : (
+                    <span className="whitespace-nowrap text-xs tabular-nums text-content-muted">
+                      {describeGuidedStepDuration(effectiveSteps[index])}
+                    </span>
+                  )}
+                  {step.hint ? (
+                    /*
+                      Das „i“ ist 44px groß, damit man es trifft, und zieht sich
+                      mit negativem Rand zusammen, damit die Zeile nicht wächst.
+                    */
+                    <button
+                      type="button"
+                      aria-label={`Hinweis: ${step.name}`}
+                      onClick={() => setHintStepIndex(index)}
+                      className={cn(
+                        '-my-2 -mr-2.5 grid h-11 w-11 place-items-center rounded-full',
+                        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+                      )}
+                    >
+                      <span
+                        aria-hidden="true"
+                        className="grid h-7 w-7 place-items-center rounded-full bg-surface-raised font-serif text-base font-bold italic leading-none"
+                      >
+                        i
+                      </span>
+                    </button>
+                  ) : null}
+                </span>
+              </li>
+            );
+          })}
         </ol>
 
         <div className="flex min-h-0 flex-col">
@@ -237,7 +283,7 @@ export function GuidedStartPage() {
             data-guided-facts
             className="mt-2 flex flex-nowrap gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           >
-            {describeGuidedFacts(steps).map((fact) => (
+            {(allPaused ? [] : describeGuidedFacts(resolved.steps)).map((fact) => (
               <li
                 key={fact}
                 className="flex-none whitespace-nowrap rounded-full bg-surface-sunken px-[9px] py-[5px] text-[11.5px] font-semibold text-content-secondary"
@@ -320,7 +366,12 @@ export function GuidedStartPage() {
             </p>
           ) : null}
 
-          {activeSession ? (
+          {allPaused ? (
+            /* Kein Knopf und kein „trotzdem“: eine geführte Einheit ohne Schritte gibt es nicht. */
+            <p data-guided-all-paused className="rounded-control bg-surface-sunken px-3 py-2.5 text-sm text-content-secondary">
+              Heute sind alle Schritte pausiert.
+            </p>
+          ) : activeSession ? (
             <>
               <div data-guided-running className="mb-2 text-xs">
                 <ActiveSessionHint />
@@ -339,7 +390,7 @@ export function GuidedStartPage() {
             <Button
               variant="primary"
               className="rounded-full"
-              disabled={isStarting || activeSession === undefined}
+              disabled={isStarting || activeSession === undefined || restrictions === undefined}
               onClick={() => void handleStart()}
             >
               Einheit starten

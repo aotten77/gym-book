@@ -9,6 +9,7 @@ import type {
   Program,
   ProgramWeek,
   ProgressionRule,
+  Restriction,
   RunLog,
   Side,
   TrackingMode,
@@ -21,6 +22,13 @@ import type {
 import { buildLibraryInventory } from '@/domain/library-inventory';
 import { buildPlanLinks, planEntryName, planEntryState, sortPlanEntries } from '@/domain/plan';
 import { toDateInputValue, type WeekControl } from '@/domain/program';
+import {
+  describeRestrictionState,
+  describeRestrictionTargets,
+  isInactiveSessionExercise,
+  isPausedSessionExercise,
+  sessionRestrictionKind,
+} from '@/domain/restriction';
 import { formatPace, paceSecondsPerKm } from '@/domain/run';
 import { supportsReps } from '@/domain/tracking';
 import { isoWeekday, weekdayShortLabel } from '@/domain/training-calendar';
@@ -134,6 +142,8 @@ export interface AnalysisExportInput {
   templateExercises: WorkoutTemplateExercise[];
   programWeeks: ProgramWeek[];
   progressionRules: ProgressionRule[];
+  /** Alle Einschränkungen - für `meta.einschraenkungen` und `bestand.json`. */
+  restrictions: Restriction[];
   /** Siehe [DEFAULT_REFERENCE_TEMPLATE_NAME]. */
   referenceTemplateName?: string;
 }
@@ -183,6 +193,12 @@ interface AnalysisRow {
   stundenSeitReferenz?: number;
   /** Der Spitzensatz als Kurzform - Rohstoff für `progression.csv`. */
   topKurz: string;
+  /** Die Namen der Einschränkungen, die die Zeile betreffen. */
+  einschraenkung: string;
+  /** Die Art aus der Rangfolge von `sessionRestrictionKind`, sonst leer. */
+  einschraenkungArt: string;
+  /** Beim Ersatz der Name der pausierten Übung. */
+  ersatzFuer: string;
 }
 
 /** Eine Zeile von `protokoll.csv`: ein Schritt einer geführten Einheit, bei beidseitigen je Seite. */
@@ -387,6 +403,9 @@ const SESSION_COLUMNS = [
   // Zuletzt, damit bestehende Auswertungen ihre Spaltenpositionen behalten.
   'art',
   'geplant_am',
+  'einschraenkung',
+  'einschraenkung_art',
+  'ersatz_fuer',
 ];
 
 /**
@@ -492,9 +511,10 @@ export function buildAnalysisExport(input: AnalysisExportInput): AnalysisExportF
        * Übersprungene Übungen zählen nicht als geplant: Überspringen ändert
        * den Plan dieser Session (siehe `toggleSkipSessionExercise`), es ist
        * kein Versäumnis. Sonst sähe jede bewusst gekürzte Einheit
-       * unvollständig aus.
+       * unvollständig aus. Eine pausierte Übung genauso - die Einschränkung
+       * hat sie herausgenommen.
        */
-      if (!exercise.wasSkipped) {
+      if (!isInactiveSessionExercise(exercise)) {
         plannedWorkRows += logs.filter((log) => log.setKind === 'work').length;
       }
     }
@@ -541,14 +561,16 @@ export function buildAnalysisExport(input: AnalysisExportInput): AnalysisExportF
       );
 
       /*
-       * Eine Zeile entsteht nur für Übungen, die ausgeführt oder ausdrücklich
-       * übersprungen wurden. Alles andere ist eine Übung, die in einer
-       * abgebrochenen Einheit nie an die Reihe kam - genau die leeren Zeilen,
-       * die den Vollexport unlesbar machen.
+       * Eine Zeile entsteht nur für Übungen, die ausgeführt, ausdrücklich
+       * übersprungen oder pausiert wurden. Alles andere ist eine Übung, die in
+       * einer abgebrochenen Einheit nie an die Reihe kam - genau die leeren
+       * Zeilen, die den Vollexport unlesbar machen.
        */
-      if (completed.length === 0 && !exercise.wasSkipped) {
+      if (completed.length === 0 && !exercise.wasSkipped && !isPausedSessionExercise(exercise)) {
         continue;
       }
+
+      const restriction = describeRowRestriction(exercise, sessionExercises);
 
       /*
        * Die Modi werden **gesammelt**, nicht überschrieben. Eine Übung, deren
@@ -607,6 +629,7 @@ export function buildAnalysisExport(input: AnalysisExportInput): AnalysisExportF
           stundenSeitLetzterEinheit,
           stundenSeitReferenz,
           topKurz: topSet ? formatTopSet(topSet) : '',
+          ...restriction,
         });
       }
     }
@@ -640,6 +663,8 @@ export function buildAnalysisExport(input: AnalysisExportInput): AnalysisExportF
         program: input.program,
         programWeeks: input.programWeeks,
         progressionRules: input.progressionRules,
+        restrictions: input.restrictions,
+        today: toDateInputValue(input.exportedAt),
       }),
       null,
       2,
@@ -652,6 +677,33 @@ export function buildAnalysisExport(input: AnalysisExportInput): AnalysisExportF
       totalSessions: input.sessions.length,
       exercises: [...trainedExercises.values()],
     }),
+  };
+}
+
+/**
+ * Die drei Einschränkungs-Spalten einer Zeile: Namen (aus Pause, Anpassung
+ * und Ersatz), die eine Art nach der Rangfolge und beim Ersatz der Name der
+ * pausierten Übung - über den Snapshot, nicht über die Bibliothek.
+ */
+function describeRowRestriction(
+  exercise: WorkoutSessionExercise,
+  sessionExercises: WorkoutSessionExercise[],
+): Pick<AnalysisRow, 'einschraenkung' | 'einschraenkungArt' | 'ersatzFuer'> {
+  const names = [
+    ...new Set([
+      ...(exercise.pausedBy ?? []),
+      ...(exercise.adjustedBy ?? []),
+      ...(exercise.replacementFor ? [exercise.replacementFor.restrictionName] : []),
+    ]),
+  ];
+  const original = exercise.replacementFor
+    ? sessionExercises.find((item) => item.id === exercise.replacementFor?.sessionExerciseId)
+    : undefined;
+
+  return {
+    einschraenkung: names.join('; '),
+    einschraenkungArt: sessionRestrictionKind(exercise) ?? '',
+    ersatzFuer: original?.exerciseNameSnapshot ?? '',
   };
 }
 
@@ -681,6 +733,9 @@ function buildSessionsCsv(rows: AnalysisRow[]): string {
         row.stundenSeitReferenz,
         row.art,
         row.geplantAm,
+        row.einschraenkung,
+        row.einschraenkungArt,
+        row.ersatzFuer,
       ]),
     );
   }
@@ -922,6 +977,7 @@ const PROTOCOL_COLUMNS = [
   'soll_sekunden',
   'ist_sekunden',
   'abgebrochen',
+  'einschraenkung',
 ];
 
 const PROTOCOL_STATUS_LABELS: Record<GuidedProtocolEntry['status'], string> = {
@@ -956,6 +1012,7 @@ function buildProtocolCsv(rows: ProtocolRow[]): string {
         row.entry.plannedSeconds,
         row.entry.actualSeconds,
         row.abgebrochen,
+        (row.entry.restrictedBy ?? []).join('; '),
       ]),
     );
   }
@@ -1135,16 +1192,65 @@ function buildMetaJson(input: AnalysisExportInput, context: MetaContext): string
       })(),
       hinweise: [
         'kraft_dauer_min ist die Session-Dauer von Start bis Abschluss, inklusive Pausen.',
-        'protokoll.csv ist das Schritt-Protokoll der geführten Einheiten (Yoga, Faszien, Mobility): eine Zeile je Schritt und Seite mit Status (gemacht, verlaengert, uebersprungen, abgebrochen), Soll- und Ist-Dauer in Sekunden ohne Pausen; abgebrochen=ja heißt: die Einheit wurde vorzeitig beendet.',
+        'protokoll.csv ist das Schritt-Protokoll der geführten Einheiten (Yoga, Faszien, Mobility): eine Zeile je Schritt und Seite mit Status (gemacht, verlaengert, uebersprungen, abgebrochen, pausiert), Soll- und Ist-Dauer in Sekunden ohne Pausen; abgebrochen=ja heißt: die Einheit wurde vorzeitig beendet. schritt_nr zählt in der Vorlage; bei einem angepassten Schritt ist soll_sekunden der angepasste Wert.',
+        'Einschränkungen (meta.einschraenkungen) stehen in sessions.csv in einschraenkung (Namen), einschraenkung_art (pausiert, trotzdem, angepasst, ausgenommen, ersatz, gehalten oder hinweis) und ersatz_fuer (beim Ersatz der Name der pausierten Übung), in protokoll.csv in einschraenkung. Werte mit einschraenkung_art angepasst, trotzdem oder ausgenommen sind kein Leistungsstand; ersatz, gehalten und hinweis sind es. pausiert heißt: wegen einer Einschränkung nicht gemacht – nicht übersprungen.',
         'wochen.csv zählt nur abgeschlossene Sessions; abgebrochene stehen in sessions.csv, aber nicht in den Wochensummen.',
         'verstrichen heißt: vergangen und keiner Session oder keinem Lauf zugeordnet – nicht zwingend ausgelassen.',
-        'bestand.json ist der heutige Stand der Bibliothek (Übungen, Workouts mit Zuordnungen und Zielwerten, Bänder, Wochenregeln) in den Feldnamen des Bibliotheks-Imports – Plan, nicht Training.',
+        'bestand.json ist der heutige Stand der Bibliothek (Übungen, Workouts mit Zuordnungen und Zielwerten, Bänder, Wochenregeln, nicht aufgehobene und nicht abgelaufene Einschränkungen) in den Feldnamen des Bibliotheks-Imports – Plan, nicht Training.',
       ],
+      einschraenkungen: describeMetaRestrictions(input, dates[0], dates[dates.length - 1]),
       verworfeneSessions: context.discarded,
     },
     null,
     2,
   )}\n`;
+}
+
+/**
+ * `meta.einschraenkungen`: jede, die im Zeitraum des Exports galt, und jede,
+ * die heute aktiv oder angekündigt ist - nach Beginn und Name. Eine
+ * aufgehobene galt bis zum Tag ihres Aufhebens. Ziele in Klarnamen, eines, das
+ * es nicht mehr gibt oder das derzeit nichts trifft, mit diesem Zustand.
+ */
+function describeMetaRestrictions(input: AnalysisExportInput, from?: string, to?: string) {
+  const today = toDateInputValue(input.exportedAt);
+  const lookup = {
+    exercises: input.exercises,
+    templates: input.templates,
+    templateExercises: input.templateExercises,
+  };
+
+  return input.restrictions
+    .map((restriction) => {
+      const liftedOn = restriction.liftedAt ? localDate(restriction.liftedAt) : undefined;
+      const end = [restriction.until, liftedOn].filter((day): day is string => Boolean(day)).sort()[0];
+      const state = describeRestrictionState(restriction, today);
+      const inPeriod =
+        from !== undefined &&
+        to !== undefined &&
+        restriction.from <= to &&
+        (end === undefined || end >= from) &&
+        (liftedOn === undefined || liftedOn >= restriction.from);
+
+      return { restriction, liftedOn, state, shown: inPeriod || state === 'aktiv' || state === 'angekündigt' };
+    })
+    .filter((item) => item.shown)
+    .sort(
+      (left, right) =>
+        left.restriction.from.localeCompare(right.restriction.from) ||
+        left.restriction.name.localeCompare(right.restriction.name, 'de'),
+    )
+    .map(({ restriction, liftedOn, state }) => ({
+      name: restriction.name,
+      grund: restriction.reason ?? null,
+      von: restriction.from,
+      bis: restriction.until ?? null,
+      aufgehoben_am: liftedOn ?? null,
+      zustand: state,
+      ziele: describeRestrictionTargets(restriction, lookup).map((target) =>
+        target.status === 'ok' ? target.label : `${target.label} (${target.status})`,
+      ),
+    }));
 }
 
 /**

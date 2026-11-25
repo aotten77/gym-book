@@ -322,6 +322,20 @@ export function findNextOpenExercise(
   return searchOrder.find((exercise) => exercise.id !== currentSessionExerciseId && isOpen(exercise));
 }
 
+/**
+ * Wohin der Fokus fällt, wenn er auf keiner Übung der Session liegt - beim
+ * ersten Rendern, nach dem Löschen oder Umsortieren.
+ *
+ * Die erste Übung, die dran sein kann: eine pausierte oder ausgelassene wartet
+ * auf nichts, „Los mit …“ darf nicht auf sie zeigen. Ist keine aktiv, bleibt
+ * es bei der ersten - irgendwo muss der Fokus stehen.
+ */
+export function pickFallbackFocus(
+  exercises: WorkoutSessionExercise[],
+): WorkoutSessionExercise | undefined {
+  return exercises.find((exercise) => !isInactiveSessionExercise(exercise)) ?? exercises[0];
+}
+
 interface ResolveNextFocusInput {
   exercises: WorkoutSessionExercise[];
   setLogs: WorkoutSetLog[];

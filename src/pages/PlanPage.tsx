@@ -5,6 +5,7 @@ import { ArrowDown, ArrowUp, ChevronRight, Play, ShieldAlert } from 'lucide-reac
 import { Alert } from '@/components/Alert';
 import { AppShell } from '@/components/AppShell';
 import { PlanEntrySheet } from '@/components/PlanEntrySheet';
+import { RestrictionsCard } from '@/components/RestrictionsCard';
 import { RunLogSheet } from '@/components/RunLogSheet';
 import { TimelineUnitRow, type TimelineEntryAction } from '@/components/TimelineUnitRow';
 import { TimelineWeek } from '@/components/TimelineWeek';
@@ -680,6 +681,9 @@ export function PlanPage() {
               <ChevronRight size={18} className="shrink-0 text-content-muted" aria-hidden="true" />
             </Link>
           ) : null}
+
+          {/* Aktive und angekündigte Einschränkungen; ohne solche fehlt die Karte ganz. */}
+          <RestrictionsCard />
 
           {startError ? <Alert>{startError}</Alert> : null}
 

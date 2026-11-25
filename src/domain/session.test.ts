@@ -4,6 +4,7 @@ import {
   findNextOpenExercise,
   hasOpenSets,
   materializeSession,
+  pickFallbackFocus,
   resolveNextFocus,
 } from '@/domain/session';
 import { resolveRestrictionEffect } from '@/domain/restriction';
@@ -472,6 +473,37 @@ describe('findNextOpenExercise', () => {
     const setLogs = [createLog('first', 1, true), createLog('third', 1, true)];
 
     expect(findNextOpenExercise([first, second, third], setLogs, 'first')?.id).toBe('second');
+  });
+
+  describe('pickFallbackFocus', () => {
+    it('nimmt die erste Übung, die nicht pausiert oder ausgelassen ist', () => {
+      const exercises = [
+        createExercise('a', 1, { pausedBy: ['Beispiel A'] }),
+        createExercise('b', 2, { wasSkipped: true }),
+        createExercise('c', 3),
+      ];
+
+      expect(pickFallbackFocus(exercises)?.id).toBe('c');
+    });
+
+    it('nimmt eine freigegebene Pause wie jede andere Übung', () => {
+      const exercises = [
+        createExercise('a', 1, {
+          pausedBy: ['Beispiel A'],
+          pauseOverriddenAt: '2026-11-25T10:00:00.000Z',
+        }),
+        createExercise('b', 2),
+      ];
+
+      expect(pickFallbackFocus(exercises)?.id).toBe('a');
+    });
+
+    it('bleibt bei der ersten, wenn keine aktiv ist', () => {
+      const exercises = [createExercise('a', 1, { pausedBy: ['Beispiel A'] })];
+
+      expect(pickFallbackFocus(exercises)?.id).toBe('a');
+      expect(pickFallbackFocus([])).toBeUndefined();
+    });
   });
 });
 

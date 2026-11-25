@@ -365,7 +365,7 @@ export function LibraryImportSection() {
   return (
     <SectionCard
       title="Bibliothek importieren"
-      subtitle="Übungen, Workouts, Zuordnungen, Bänder und Termine aus einer JSON-Datei - Trainingsdaten bleiben unberührt."
+      subtitle="Übungen, Workouts, Zuordnungen, Bänder, Termine und Einschränkungen aus einer JSON-Datei - Trainingsdaten bleiben unberührt."
     >
       <div className="space-y-4">
         <input

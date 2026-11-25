@@ -1,8 +1,11 @@
+import { guidedSideSeconds } from '@/domain/guided-steps';
 import { normalizeImportKey } from '@/domain/import-key';
 import { formatNumber } from '@/lib/format';
 import type {
+  Exercise,
   ExerciseAdjustment,
   ExerciseTarget,
+  GuidedProtocolEntry,
   GuidedRun,
   GuidedStep,
   Restriction,
@@ -12,6 +15,8 @@ import type {
   StepAdjustment,
   StepTarget,
   WorkoutSessionExercise,
+  WorkoutTemplate,
+  WorkoutTemplateExercise,
 } from '@/domain/models';
 
 /*
@@ -293,6 +298,108 @@ export function resolveGuidedSteps(input: {
   });
 
   return { steps, pausedSteps, adjustedSteps };
+}
+
+/**
+ * Das Protokoll einer geführten Einheit mit ihren Einschränkungen: `stepIndex`
+ * zählt danach in der Vorlage, nicht in den abgespielten Schritten, damit
+ * `schritt_nr` im Export stabil bleibt. Jeder pausierte Schritt bekommt an
+ * seinem Platz eine Zeile `paused` (je Seite bei einem beidseitigen), auch
+ * nach einem Abbruch - die Pause stand beim Start fest. Pausierte und
+ * angepasste Zeilen tragen `restrictedBy`. `guided-run.ts` bleibt unberührt.
+ */
+export function withRestrictionProtocol(
+  protocol: readonly GuidedProtocolEntry[],
+  run: GuidedRun,
+): GuidedProtocolEntry[] {
+  const pausedSteps = run.pausedSteps ?? [];
+  const adjustedSteps = run.adjustedSteps ?? [];
+  const templateIndexes = findTemplateIndexes(run);
+  const played = protocol.map((entry): GuidedProtocolEntry => {
+    const adjusted = adjustedSteps.find((step) => step.index === entry.stepIndex);
+
+    return {
+      ...entry,
+      stepIndex: templateIndexes[entry.stepIndex] ?? entry.stepIndex,
+      ...(adjusted ? { restrictedBy: adjusted.adjustedBy } : {}),
+    };
+  });
+  const paused = pausedSteps.flatMap(({ index, step, pausedBy }) =>
+    (step.bothSides ? (['left', 'right'] as const) : [undefined]).map(
+      (side): GuidedProtocolEntry => ({
+        stepIndex: index,
+        name: step.name,
+        ...(side ? { side } : {}),
+        status: 'paused',
+        plannedSeconds: guidedSideSeconds(step),
+        actualSeconds: 0,
+        restrictedBy: pausedBy,
+      }),
+    ),
+  );
+
+  // Stabil sortiert: links vor rechts, abgespielte Zeilen in ihrer Reihenfolge.
+  return [...played, ...paused].sort((left, right) => left.stepIndex - right.stepIndex);
+}
+
+/** Die Vorlagen-Position je abgespieltem Schritt: die Lücken sind die pausierten. */
+function findTemplateIndexes(run: Pick<GuidedRun, 'steps' | 'pausedSteps'>): number[] {
+  const pausedIndexes = new Set((run.pausedSteps ?? []).map((paused) => paused.index));
+  const templateIndexes: number[] = [];
+
+  for (let index = 0; templateIndexes.length < run.steps.length; index += 1) {
+    if (!pausedIndexes.has(index)) {
+      templateIndexes.push(index);
+    }
+  }
+
+  return templateIndexes;
+}
+
+/** Was eine Einschränkung an einem Schritt einer geführten Vorlage bewirkt. */
+export interface GuidedStepRestriction {
+  kind: 'pausiert' | 'angepasst';
+  /** „Pausiert bis 14.12. · Beispiel A“, „30 s statt 45 · Beispiel A“, „Hinweis · Beispiel A“. */
+  label: string;
+  notes: string[];
+}
+
+/**
+ * Die Etiketten der Schritte für den Start-Screen, je Position in der
+ * **Vorlage**. Schritte ohne Einschränkung fehlen. Geänderte Sekunden stehen
+ * als „statt“, eine Anpassung nur mit Notiz heißt „Hinweis“.
+ */
+export function describeGuidedStepRestrictions(
+  run: Pick<GuidedRun, 'steps' | 'pausedSteps' | 'adjustedSteps'>,
+): Map<number, GuidedStepRestriction> {
+  const view = new Map<number, GuidedStepRestriction>();
+  const templateIndexes = findTemplateIndexes(run);
+
+  for (const { index, pausedBy, pausedUntil } of run.pausedSteps ?? []) {
+    view.set(index, {
+      kind: 'pausiert',
+      label: pausedUntil
+        ? `Pausiert bis ${formatRestrictionDay(pausedUntil)} · ${pausedBy.join(', ')}`
+        : `Pausiert · ${pausedBy.join(', ')}`,
+      notes: [],
+    });
+  }
+
+  for (const { index, adjustedBy, secondsBefore, notes } of run.adjustedSteps ?? []) {
+    const step = run.steps[index];
+    const change =
+      secondsBefore === undefined || !step
+        ? 'Hinweis'
+        : `${formatNumber(step.seconds)} s statt ${formatNumber(secondsBefore)}`;
+
+    view.set(templateIndexes[index], {
+      kind: 'angepasst',
+      label: `${change} · ${adjustedBy.join(', ')}`,
+      notes: (notes ?? []).map((note) => note.note),
+    });
+  }
+
+  return view;
 }
 
 export interface RestrictionConflict {
@@ -593,4 +700,269 @@ export function describeAdjustmentLine(
   }
 
   return `Anpassung: ${describeRestrictionTarget(adjustment, names)} – ${parts.join(', ')}`;
+}
+
+/**
+ * Das Etikett unter dem Namen einer Session-Zeile, in Liste, Fokus-Sheet und
+ * Historie. Angepasste Werte und Notizen stehen nicht hier, sondern als eigene
+ * Zeilen (`describeAdjustedTargets`, `adjustmentNotes`). `originalName` ist
+ * beim Ersatz der Name der pausierten Übung.
+ */
+export function describeRestrictionLabel(
+  row: RestrictionKindFields & Pick<WorkoutSessionExercise, 'pausedUntil' | 'adjustedBy'>,
+  originalName?: string,
+): string | undefined {
+  const names = (list: string[] | undefined) => (list ?? []).join(', ');
+
+  switch (sessionRestrictionKind(row)) {
+    case 'pausiert':
+      return row.pausedUntil
+        ? `Pausiert bis ${formatRestrictionDay(row.pausedUntil)} · ${names(row.pausedBy)}`
+        : `Pausiert · ${names(row.pausedBy)}`;
+    case 'trotzdem':
+      return `Trotzdem · ${names(row.pausedBy)}`;
+    case 'ausgenommen':
+      return 'Nicht als Leistungsstand';
+    case 'ersatz':
+      return `Ersatz für ${originalName ?? 'eine pausierte Übung'} · ${row.replacementFor?.restrictionName}`;
+    case 'gehalten':
+      return `Steigerung gehalten · ${names(row.adjustedBy)}`;
+    case 'angepasst':
+      // Die „statt“-Zeile sagt schon, dass angepasst wurde.
+      return row.excludedFromProgressAt ? 'Nicht als Leistungsstand' : undefined;
+    default:
+      return undefined;
+  }
+}
+
+const ADJUSTED_FIELD_LABELS: Record<(typeof ADJUSTABLE_FIELDS)[number], (value: number) => string> = {
+  workSetCount: (value) => `${formatNumber(value)} ${value === 1 ? 'Satz' : 'Sätze'}`,
+  targetReps: (value) => `${formatNumber(value)} Wdh.`,
+  targetRepsMax: (value) => `bis ${formatNumber(value)} Wdh.`,
+  targetSeconds: (value) => `${formatNumber(value)} s`,
+  targetWeight: (value) => `${formatNumber(value)} kg`,
+  targetHeightCm: (value) => `${formatNumber(value)} cm`,
+};
+
+/**
+ * `40 kg statt 45 · Beispiel A` - nur die Werte, die die Anpassung
+ * tatsächlich geändert hat. Hatte der Plan keinen Wert, steht er ohne „statt“.
+ * Ohne echte Abweichung `undefined`: eine Anpassung nur mit Notiz zeigt nur
+ * die Notiz.
+ */
+export function describeAdjustedTargets(
+  row: Pick<WorkoutSessionExercise, 'targetsBeforeAdjustment' | 'adjustedBy'> & AdjustableTargets,
+): string | undefined {
+  const before = row.targetsBeforeAdjustment ?? {};
+  const parts = ADJUSTABLE_FIELDS.flatMap((field) => {
+    const previous = before[field];
+    const current = row[field];
+
+    if (previous === undefined || current === undefined) {
+      return [];
+    }
+
+    const label = ADJUSTED_FIELD_LABELS[field];
+
+    return previous === null
+      ? [label(current)]
+      : [`${label(current)} statt ${formatNumber(previous)}`];
+  });
+
+  return parts.length > 0 ? `${parts.join(', ')} · ${(row.adjustedBy ?? []).join(', ')}` : undefined;
+}
+
+export type RestrictionTargetStatus = 'ok' | 'gibt es nicht mehr' | 'trifft derzeit nichts';
+
+/** Was es in der Bibliothek gibt - für Klarnamen und tote Ziele. */
+export interface RestrictionTargetLookup {
+  exercises: Pick<Exercise, 'id' | 'name'>[];
+  templates: Pick<WorkoutTemplate, 'id' | 'name' | 'steps'>[];
+  templateExercises: Pick<WorkoutTemplateExercise, 'templateId' | 'exerciseId'>[];
+}
+
+/**
+ * Die Ziele einer Einschränkung in Klarnamen, für ihr Sheet: erst die Pausen
+ * (mit Ersatz), dann die Anpassungen (mit Werten). Ein Ziel, dessen Übung,
+ * Workout, Zuordnung oder Schritt es nicht mehr gibt, ist „gibt es nicht
+ * mehr“; ein Ziel ohne Workout, das derzeit nirgends vorkommt, „trifft
+ * derzeit nichts“. Beide trifft beim Start nichts, gelöscht wird nichts.
+ */
+export function describeRestrictionTargets(
+  restriction: Pick<Restriction, 'pauses' | 'adjustments'>,
+  lookup: RestrictionTargetLookup,
+): { label: string; status: RestrictionTargetStatus }[] {
+  const exercises = new Map(lookup.exercises.map((exercise) => [exercise.id, exercise.name]));
+  const templates = new Map(lookup.templates.map((template) => [template.id, template]));
+  const names: RestrictionNameLookup = {
+    exerciseName: (id) => exercises.get(id),
+    templateName: (id) => templates.get(id)?.name,
+  };
+  const hasStep = (template: Pick<WorkoutTemplate, 'steps'>, stepName: string) =>
+    (template.steps ?? []).some(
+      (step) => normalizeImportKey(step.name) === normalizeImportKey(stepName),
+    );
+
+  const statusOf = (target: ExerciseTarget | StepTarget): RestrictionTargetStatus => {
+    if (isStepTarget(target)) {
+      if (target.templateId === undefined) {
+        return lookup.templates.some((template) => hasStep(template, target.stepName))
+          ? 'ok'
+          : 'trifft derzeit nichts';
+      }
+
+      const template = templates.get(target.templateId);
+
+      return template && hasStep(template, target.stepName) ? 'ok' : 'gibt es nicht mehr';
+    }
+
+    if (!exercises.has(target.exerciseId)) {
+      return 'gibt es nicht mehr';
+    }
+
+    const assigned = lookup.templateExercises.some(
+      (item) =>
+        item.exerciseId === target.exerciseId &&
+        (target.templateId === undefined || item.templateId === target.templateId),
+    );
+
+    if (target.templateId === undefined) {
+      return assigned ? 'ok' : 'trifft derzeit nichts';
+    }
+
+    return templates.has(target.templateId) && assigned ? 'ok' : 'gibt es nicht mehr';
+  };
+
+  return [
+    ...restriction.pauses.map((pause) => ({
+      label: describePauseLine(pause, names),
+      status: statusOf(pause),
+    })),
+    ...restriction.adjustments.map((adjustment) => ({
+      label: describeAdjustmentLine(adjustment, names),
+      status: statusOf(adjustment),
+    })),
+  ];
+}
+
+/**
+ * Wie viele Übungen eines Workouts an `day` pausiert und wie viele
+ * tatsächlich angepasst sind. `targets` sind die Werte nach Zuordnung und
+ * Wochenregel; eine Anpassung gleich dem Wochenwert, eine reine Notiz und
+ * „Steigerung gehalten“ zählen nicht als angepasst.
+ */
+export function countRestrictionEffects(input: {
+  restrictions: Restriction[];
+  day: string;
+  templateId: string;
+  targetsByTemplateExerciseId: Record<string, { exerciseId: string; targets: AdjustableTargets }>;
+}): { paused: number; adjusted: number } {
+  let paused = 0;
+  let adjusted = 0;
+
+  for (const { exerciseId, targets } of Object.values(input.targetsByTemplateExerciseId)) {
+    const effect = resolveRestrictionEffect({
+      restrictions: input.restrictions,
+      day: input.day,
+      templateId: input.templateId,
+      exerciseId,
+    });
+
+    if (effect.pausedBy.length > 0) {
+      paused += 1;
+    } else if (applyRestrictionEffect(targets, effect).snapshot.targetsBeforeAdjustment) {
+      adjusted += 1;
+    }
+  }
+
+  return { paused, adjusted };
+}
+
+/** `1 Übung pausiert · 1 angepasst`, `2 Schritte angepasst`; ohne beides `undefined`. */
+export function describeRestrictionCounts(
+  counts: { paused: number; adjusted: number },
+  unit: 'exercise' | 'step',
+): string | undefined {
+  const noun = (count: number) =>
+    unit === 'exercise' ? (count === 1 ? 'Übung' : 'Übungen') : count === 1 ? 'Schritt' : 'Schritte';
+
+  if (counts.paused > 0) {
+    const pausedText = `${formatNumber(counts.paused)} ${noun(counts.paused)} pausiert`;
+
+    return counts.adjusted > 0
+      ? `${pausedText} · ${formatNumber(counts.adjusted)} angepasst`
+      : pausedText;
+  }
+
+  return counts.adjusted > 0
+    ? `${formatNumber(counts.adjusted)} ${noun(counts.adjusted)} angepasst`
+    : undefined;
+}
+
+/** `bis 14.12.`, `ab 01.12.` (angekündigt) oder `ohne Enddatum`, für die Karte. */
+export function describeRestrictionPeriod(
+  restriction: Pick<Restriction, 'from' | 'until'>,
+  day: string,
+): string {
+  if (day < restriction.from) {
+    return `ab ${formatRestrictionDay(restriction.from)}`;
+  }
+
+  return restriction.until === undefined
+    ? 'ohne Enddatum'
+    : `bis ${formatRestrictionDay(restriction.until)}`;
+}
+
+/** Was eine Einschränkung heute an einer Übung eines Workouts bewirken würde. */
+export interface PlannedRestriction {
+  kind: 'pausiert' | 'angepasst' | 'gehalten' | 'hinweis';
+  label: string;
+  notes: string[];
+}
+
+/**
+ * Das Etikett einer Übung auf der Workout-Seite, für heute: „Pausiert bis
+ * 14.12. · Ersatz: Step-up · Beispiel A“, „Angepasst: 40 kg statt 45 · …“,
+ * „Steigerung gehalten · …“ oder „Hinweis · …“, dazu die Notizen. Ohne
+ * Wirkung `undefined`.
+ */
+export function describePlannedRestriction(input: {
+  effect: RestrictionEffect;
+  targets: AdjustableTargets;
+  exerciseName: (id: string) => string | undefined;
+}): PlannedRestriction | undefined {
+  const { effect } = input;
+
+  if (effect.pausedBy.length > 0) {
+    const parts = [
+      effect.pausedUntil ? `Pausiert bis ${formatRestrictionDay(effect.pausedUntil)}` : 'Pausiert',
+      ...(effect.replacements.length > 0
+        ? [
+            `Ersatz: ${effect.replacements
+              .map(({ replacement }) => input.exerciseName(replacement.exerciseId) ?? UNKNOWN_NAME)
+              .join(', ')}`,
+          ]
+        : []),
+      effect.pausedBy.join(', '),
+    ];
+
+    return { kind: 'pausiert', label: parts.join(' · '), notes: [] };
+  }
+
+  if (effect.adjustments.length === 0) {
+    return undefined;
+  }
+
+  const { targets, snapshot } = applyRestrictionEffect(input.targets, effect);
+  const notes = (snapshot.adjustmentNotes ?? []).map((note) => note.note);
+  const by = (snapshot.adjustedBy ?? []).join(', ');
+  const changed = describeAdjustedTargets({ ...targets, ...snapshot });
+
+  if (changed) {
+    return { kind: 'angepasst', label: `Angepasst: ${changed}`, notes };
+  }
+
+  return snapshot.progressionHeld
+    ? { kind: 'gehalten', label: `Steigerung gehalten · ${by}`, notes }
+    : { kind: 'hinweis', label: `Hinweis · ${by}`, notes };
 }

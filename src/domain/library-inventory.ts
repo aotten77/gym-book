@@ -6,10 +6,12 @@ import type {
   Program,
   ProgramWeek,
   ProgressionRule,
+  Restriction,
   TrackingMode,
   WorkoutTemplate,
   WorkoutTemplateExercise,
 } from '@/domain/models';
+import { describeRestrictionState, describeRestrictionTargets, isStepTarget } from '@/domain/restriction';
 import { resolveWorkoutCategory, type WorkoutCategory } from '@/domain/workout-category';
 
 /*
@@ -50,6 +52,9 @@ export interface LibraryInventoryInput {
   program?: Program;
   programWeeks: ProgramWeek[];
   progressionRules: ProgressionRule[];
+  restrictions: Restriction[];
+  /** Heute (`YYYY-MM-DD`): ab da gilt eine Einschränkung als abgelaufen. */
+  today: string;
 }
 
 export interface InventoryExercise {
@@ -108,6 +113,34 @@ export interface InventoryWeek {
   regeln: InventoryRule[];
 }
 
+type InventoryTarget = { exercise: string; template?: string } | { step: string; template?: string };
+
+interface InventoryExerciseValues {
+  workSetCount?: number;
+  targetReps?: number;
+  targetRepsMax?: number;
+  targetSeconds?: number;
+  targetWeight?: number;
+  targetHeightCm?: number;
+}
+
+export type InventoryRestrictionPause = InventoryTarget & {
+  replacement?: InventoryExerciseValues & { exercise: string; restSeconds?: number };
+};
+
+export type InventoryRestrictionAdjustment = InventoryTarget &
+  InventoryExerciseValues & { seconds?: number; note?: string; holdProgression?: true };
+
+/** Eine Einschränkung in den Feldnamen des Imports (Block `restrictions`). */
+export interface InventoryRestriction {
+  name: string;
+  reason?: string;
+  from: string;
+  until?: string;
+  pauses: InventoryRestrictionPause[];
+  adjustments: InventoryRestrictionAdjustment[];
+}
+
 export interface LibraryInventory {
   hinweis: string;
   exercises: InventoryExercise[];
@@ -115,6 +148,8 @@ export interface LibraryInventory {
   templateAssignments: InventoryAssignment[];
   bandLevels: Array<{ name: string; orderIndex: number }>;
   programm: { name: string; startedOn?: string; wochen: InventoryWeek[] } | null;
+  /** Nicht aufgehobene, nicht abgelaufene - ohne Ziele, die es nicht mehr gibt. */
+  restrictions: InventoryRestriction[];
 }
 
 export const LIBRARY_INVENTORY_NOTE =
@@ -206,7 +241,97 @@ export function buildLibraryInventory(input: LibraryInventoryInput): LibraryInve
       .sort((left, right) => left.orderIndex - right.orderIndex)
       .map((item) => ({ name: item.name, orderIndex: item.orderIndex })),
     programm: input.program ? describeProgram(input, input.program, assignmentInfo, bandName) : null,
+    restrictions: describeRestrictions(input, exerciseNames),
   };
+}
+
+/**
+ * Die Einschränkungen in Importform: aktive und angekündigte, nach Namen.
+ * Ein Ziel, das es nicht mehr gibt, fehlt - es trifft beim Start ohnehin
+ * nichts, und Klarnamen hat es keine. Wer den Block so zurückspielt, ändert
+ * nur, was er ändern will; ein toter Eintrag fällt dabei weg.
+ */
+function describeRestrictions(
+  input: LibraryInventoryInput,
+  exerciseNames: Map<string, string>,
+): InventoryRestriction[] {
+  const templateNames = new Map(input.templates.map((item) => [item.id, item.name]));
+  const lookup = {
+    exercises: input.exercises,
+    templates: input.templates,
+    templateExercises: input.templateExercises,
+  };
+  const target = (item: Restriction['pauses'][number] | Restriction['adjustments'][number]) => {
+    const template = item.templateId === undefined ? undefined : templateNames.get(item.templateId);
+
+    return isStepTarget(item)
+      ? defined({ template, step: item.stepName })
+      : defined({ template, exercise: exerciseNames.get(item.exerciseId) ?? '' });
+  };
+
+  return input.restrictions
+    .filter((restriction) => {
+      const state = describeRestrictionState(restriction, input.today);
+
+      return state === 'aktiv' || state === 'angekündigt';
+    })
+    .sort(byName)
+    .map((restriction) => {
+      const [pauseStatus, adjustmentStatus] = [
+        describeRestrictionTargets({ pauses: restriction.pauses, adjustments: [] }, lookup),
+        describeRestrictionTargets({ pauses: [], adjustments: restriction.adjustments }, lookup),
+      ];
+      const alive = (status: { status: string }) => status.status !== 'gibt es nicht mehr';
+
+      return defined<InventoryRestriction>({
+        name: restriction.name,
+        reason: restriction.reason,
+        from: restriction.from,
+        until: restriction.until,
+        pauses: restriction.pauses
+          .filter((_, index) => alive(pauseStatus[index]))
+          .map((pause) => {
+            const replacement = isStepTarget(pause) ? undefined : pause.replacement;
+            // Ein gelöschter Ersatz hat keinen Namen mehr und fällt weg.
+            const replacementName = replacement && exerciseNames.get(replacement.exerciseId);
+
+            return defined<InventoryRestrictionPause>({
+              ...target(pause),
+              replacement: replacementName
+                ? defined({
+                    exercise: replacementName,
+                    workSetCount: replacement.workSetCount,
+                    targetReps: replacement.targetReps,
+                    targetRepsMax: replacement.targetRepsMax,
+                    targetSeconds: replacement.targetSeconds,
+                    targetWeight: replacement.targetWeight,
+                    targetHeightCm: replacement.targetHeightCm,
+                    restSeconds: replacement.restSeconds,
+                  })
+                : undefined,
+            });
+          }),
+        adjustments: restriction.adjustments
+          .filter((_, index) => alive(adjustmentStatus[index]))
+          .map((adjustment) =>
+            defined<InventoryRestrictionAdjustment>({
+              ...target(adjustment),
+              ...(isStepTarget(adjustment)
+                ? { seconds: adjustment.seconds }
+                : {
+                    workSetCount: adjustment.workSetCount,
+                    targetReps: adjustment.targetReps,
+                    targetRepsMax: adjustment.targetRepsMax,
+                    targetSeconds: adjustment.targetSeconds,
+                    targetWeight: adjustment.targetWeight,
+                    targetHeightCm: adjustment.targetHeightCm,
+                    holdProgression: adjustment.holdProgression ? true : undefined,
+                  }),
+              note: adjustment.note,
+            }),
+          ),
+      });
+    });
 }
 
 function describeProgram(

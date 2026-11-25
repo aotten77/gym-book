@@ -4,7 +4,7 @@ Stand: 24.11.2026 · Status: Entwurf, abgestimmt im Grilling und in der
 Rückfragen-Runde mit dem Trainings-Assistenten (Abschnitt 13)
 
 Alle Beispiele in diesem Dokument sind erfunden. Das Repo ist öffentlich;
-echte Befunde, Gründe und Termine gehören nur in die Nutzdaten und in
+echte Gesundheitsangaben, Gründe und Termine gehören nur in die Nutzdaten und in
 das claude.ai-Projekt, nie in Spec, Tests oder Fixtures.
 
 ## Ziel

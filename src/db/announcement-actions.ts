@@ -1,8 +1,11 @@
 import { db } from '@/db/appDb';
+import { loadRestrictions } from '@/db/restriction-actions';
 import { addSentChars, getTtsQuota, readTtsSettings, saveAnnouncement } from '@/db/tts-actions';
 import { requiredAnnouncementTexts } from '@/domain/guided-announcements';
 import type { GuidedStep } from '@/domain/models';
 import { isGuidedTemplate } from '@/domain/guided-steps';
+import { toDateInputValue } from '@/domain/program';
+import { resolveGuidedSteps } from '@/domain/restriction';
 import { announcementKey, countChars, quotaCostUsd, quotaFits, quotaOver } from '@/domain/tts-quota';
 import { MISSING_KEY_MESSAGE, synthesizeSpeech, TtsError, type SynthesizeOptions } from '@/lib/tts-client';
 
@@ -25,13 +28,23 @@ export interface AnnouncementAvailability {
   complete: boolean;
 }
 
-async function loadGuidedTexts(templateIds: readonly string[]): Promise<string[]> {
+/**
+ * Die Sätze der Vorlagen: die ihrer Schritte plus die der am Tag `now`
+ * wirksamen Schritte - eine Schrittanpassung ändert die Sekunden und damit
+ * den Satz („Als Nächstes: Taubenpose, 30 Sekunden“).
+ */
+async function loadGuidedTexts(templateIds: readonly string[], now: Date): Promise<string[]> {
   const templates = await db.workoutTemplates.bulkGet([...new Set(templateIds)]);
+  const restrictions = await loadRestrictions();
+  const day = toDateInputValue(now);
   const texts = new Set<string>();
 
   for (const template of templates) {
     if (template && isGuidedTemplate(template)) {
-      for (const text of requiredAnnouncementTexts(template.steps ?? [])) {
+      const steps = template.steps ?? [];
+      const effective = resolveGuidedSteps({ restrictions, day, templateId: template.id, steps }).steps;
+
+      for (const text of [...requiredAnnouncementTexts(steps), ...requiredAnnouncementTexts(effective)]) {
         texts.add(text);
       }
     }
@@ -53,9 +66,12 @@ async function describeAvailability(texts: readonly string[]): Promise<Announcem
   return { voice, total: texts.length, missing: missing.length, complete: texts.length > 0 && missing.length === 0 };
 }
 
-/** „Alle Ansagen da?“ für eine Vorlage mit der aktuellen Stimme. */
-export async function getAnnouncementAvailability(templateId: string): Promise<AnnouncementAvailability> {
-  return describeAvailability(await loadGuidedTexts([templateId]));
+/** „Alle Ansagen da?“ für eine Vorlage mit der aktuellen Stimme, am Tag `now`. */
+export async function getAnnouncementAvailability(
+  templateId: string,
+  now: Date = new Date(),
+): Promise<AnnouncementAvailability> {
+  return describeAvailability(await loadGuidedTexts([templateId], now));
 }
 
 /**
@@ -131,7 +147,7 @@ export async function generateAnnouncements(
 ): Promise<GenerateAnnouncementsResult> {
   try {
     const settings = await readTtsSettings();
-    const texts = await loadGuidedTexts(templateIds);
+    const texts = await loadGuidedTexts(templateIds, options.now ?? new Date());
     const missing = await findMissingTexts(texts, settings.voice);
 
     if (missing.length === 0) {

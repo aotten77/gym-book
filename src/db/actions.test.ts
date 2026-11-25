@@ -1808,6 +1808,14 @@ describe('Pause einer Übung in der Session', () => {
     );
   });
 
+  it('hakt an einer pausierten Übung keinen Satz ab', async () => {
+    await seedRestSession();
+    await pause();
+
+    await expect(toggleSetCompletion('b-1-left')).rejects.toThrow('pausiert');
+    expect((await db.workoutSetLogs.get('b-1-left'))?.completed).toBe(false);
+  });
+
   it('gibt nur eine pausierte Übung einer laufenden Einheit frei', async () => {
     await seedRestSession();
 

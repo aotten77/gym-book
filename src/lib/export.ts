@@ -966,6 +966,7 @@ async function loadAnalysisFiles(): Promise<{ files: AnalysisExportFiles; export
     templates,
     templateExercises,
     progressionRules,
+    restrictions,
   ] =
     await Promise.all([
       db.exercises.toArray(),
@@ -982,6 +983,7 @@ async function loadAnalysisFiles(): Promise<{ files: AnalysisExportFiles; export
       db.workoutTemplates.toArray(),
       db.workoutTemplateExercises.toArray(),
       db.progressionRules.toArray(),
+      db.restrictions.toArray(),
     ]);
 
   const program = settings?.activeProgramId
@@ -1001,6 +1003,7 @@ async function loadAnalysisFiles(): Promise<{ files: AnalysisExportFiles; export
     templateExercises,
     programWeeks,
     progressionRules,
+    restrictions,
     program,
     // Dieselbe Auflösung wie Start, Plan und Einstellungen - die Rangfolge der
     // Woche hat genau eine Stelle, und der Export darf keine zweite werden.

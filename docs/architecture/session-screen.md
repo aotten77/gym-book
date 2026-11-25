@@ -55,3 +55,13 @@ The derivations are pure and tested in [session-summary.ts](../../src/domain/ses
 ### The plan note banner
 
 A session linked to a plan entry (`planEntryId`) whose entry carries `notes` shows that note in a neutral banner at the top of the session page ([PlanNoteBanner.tsx](../../src/components/PlanNoteBanner.tsx), `data-plan-note`). Before, the note existed only in the plan sheet and nobody read it during training. A tap hides it; that is component state, so a reload brings it back — whether it was read is not training information. The guided start screen shows the note of the entry the start *would* link: the one explicitly chosen in the Now sheet (`location.state`), else today's open entry, through `loadPlanNoteForGuidedStart`, which applies the same `pickPlanEntryForStart` rule and the same taken entries as `findPlanEntryForStart`. Spontaneous sessions without an entry show nothing. Ink, not lime: a note is information, nothing is "up now".
+
+### Restrictions in the session
+
+Restrictions (`docs/architecture/restrictions.md`) are frozen onto the session rows at start; the screen only reads that snapshot. The list and the sheet are not rebuilt for them:
+
+- **Paused** exercises stay at their place in the list, collapsed: name plus the label "Pausiert bis 14.12. · Beispiel A" ([RestrictionLabel.tsx](../../src/components/RestrictionLabel.tsx), `data-restriction-kind`). A block whose members are all paused is greyed out instead of forest green — it waits for nothing, but nothing was trained. Focus, "next open block" and the time estimate skip paused rows like skipped ones (`isInactiveSessionExercise`).
+- A tap on that label opens [PauseSheet.tsx](../../src/components/PauseSheet.tsx) — names, reason, period — with "Trotzdem machen"; afterwards the label reads "Trotzdem · …" and offers "Wieder pausieren" until the first set is checked off.
+- **Adjusted** exercises show a line with only the values that really changed ("40 kg statt 45 · Beispiel A"; a value the plan did not have stands without "statt") and every adjustment note as its own line — in the list *and* in the focus sheet, never only behind the "i".
+- A **replacement** sits directly behind its paused exercise, labelled "Ersatz für Sprungkniebeuge · Beispiel A". In a superset it takes the paused member's group.
+- **History** shows the same labels and, per exercise of a completed session, the switch "Zählt nicht als Leistungsstand" (not on paused rows; reversible, so no confirmation).

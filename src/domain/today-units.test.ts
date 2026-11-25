@@ -37,6 +37,15 @@ function sections(openEntries: PlanEntry[], extra: Partial<Parameters<typeof bui
 const names = (options: TodayUnitOption[]) => options.map((option) => option.name);
 
 describe('buildNowSections', () => {
+  it('reicht die Zeile der Einschränkungen an die Workout-Karte durch', () => {
+    const result = sections([entry({ id: 'e1', orderInDay: 1, templateId: 'b' })], {
+      restrictionSummaryByTemplate: { b: '1 Übung pausiert · 1 angepasst' },
+    });
+
+    expect(result.now?.restrictionSummary).toBe('1 Übung pausiert · 1 angepasst');
+    expect(result.spontaneous.every((option) => option.restrictionSummary === undefined)).toBe(true);
+  });
+
   it('ohne Termine ist alles spontan, nach Name', () => {
     const result = sections([]);
 

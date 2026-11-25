@@ -377,6 +377,23 @@ describe('setRowFallback', () => {
       setRowFallback(exercise({ id: 'a', trackingMode: 'time' }), { seconds: 30 }).seconds,
     ).toBe(30);
   });
+
+  it('nimmt einen angepassten Wert vor die letzte Ausführung', () => {
+    // 40 kg statt 45 wegen einer Einschränkung: der Knopf darf nicht 45 versprechen.
+    const adjusted = exercise({
+      id: 'a',
+      targetReps: 6,
+      targetWeight: 40,
+      targetsBeforeAdjustment: { targetWeight: 45 },
+    });
+
+    expect(setRowFallback(adjusted, { reps: 8, weight: 45 }, 'work')).toMatchObject({
+      reps: 8,
+      weight: 40,
+    });
+    // Der Aufwärmsatz behält sein letztes Mal - die Anpassung gilt den Arbeitssätzen.
+    expect(setRowFallback(adjusted, { reps: 8, weight: 20 }, 'warmup').weight).toBe(20);
+  });
 });
 
 describe('setRowPlaceholders', () => {
@@ -400,6 +417,24 @@ describe('setRowPlaceholders', () => {
 
     expect(setRowPlaceholders(exercise({ id: 'a', targetReps: 8 }), last)).toBe(last);
     expect(setRowPlaceholders(exercise({ id: 'a', targetReps: 8 }))).toBeUndefined();
+  });
+
+  it('ersetzt angepasste Werte der letzten Ausführung durch das Ziel', () => {
+    const adjusted = exercise({
+      id: 'a',
+      targetReps: 5,
+      targetWeight: 40,
+      targetsBeforeAdjustment: { targetWeight: 45, targetReps: null },
+    });
+
+    expect(setRowPlaceholders(adjusted, { reps: 8, weight: 45 }, 'work')).toEqual({
+      reps: 5,
+      weight: 40,
+    });
+    expect(setRowPlaceholders(adjusted, { reps: 8, weight: 20 }, 'warmup')).toEqual({
+      reps: 8,
+      weight: 20,
+    });
   });
 });
 

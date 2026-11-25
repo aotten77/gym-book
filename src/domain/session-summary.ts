@@ -214,6 +214,11 @@ export interface SetRowFallback {
  * Die Frage stellt sich nicht mehr: `hasProgressionHint` liefert keinen Wert,
  * sondern nur die Feststellung "Steigerung möglich". Was hier landet, ist
  * gemessen - und genau deshalb darf es ungefragt gespeichert werden.
+ *
+ * Eine zweite Ausnahme: ein Wert, den eine Einschränkung angepasst hat
+ * (`targetsBeforeAdjustment`), schlägt das letzte Mal - 40 kg statt 45 heißt
+ * 40 im Feld und auf dem Knopf. Sie gilt den Arbeitssätzen; ein Aufwärmsatz
+ * behält sein letztes Mal.
  */
 export function setRowFallback(
   exercise: Pick<
@@ -223,19 +228,59 @@ export function setRowFallback(
     | 'targetWeight'
     | 'targetBandNameSnapshot'
     | 'targetHeightCm'
+    | 'targetsBeforeAdjustment'
   >,
   lastValues?: Pick<
     SetRowFallback,
     'reps' | 'seconds' | 'weight' | 'heightCm' | 'bandNameSnapshot'
   >,
+  setKind?: SetKind,
 ): SetRowFallback {
+  const last = { ...lastValues, ...adjustedTargets(exercise, setKind) };
+
   return {
-    reps: lastValues?.reps ?? exercise.targetReps,
-    seconds: exercise.targetSeconds ?? lastValues?.seconds,
-    weight: lastValues?.weight ?? exercise.targetWeight,
-    heightCm: lastValues?.heightCm ?? exercise.targetHeightCm,
-    bandNameSnapshot: lastValues?.bandNameSnapshot ?? exercise.targetBandNameSnapshot,
+    reps: last.reps ?? exercise.targetReps,
+    seconds: exercise.targetSeconds ?? last.seconds,
+    weight: last.weight ?? exercise.targetWeight,
+    heightCm: last.heightCm ?? exercise.targetHeightCm,
+    bandNameSnapshot: last.bandNameSnapshot ?? exercise.targetBandNameSnapshot,
   };
+}
+
+const ADJUSTED_VALUE_FIELDS = [
+  ['reps', 'targetReps'],
+  ['weight', 'targetWeight'],
+  ['heightCm', 'targetHeightCm'],
+] as const;
+
+/**
+ * Die Zielwerte, die eine Einschränkung angepasst hat, als Satzwerte - sie
+ * schlagen das letzte Mal (siehe `setRowFallback`). Die Sekunden fehlen, weil
+ * dort ohnehin das Soll gilt; ein Aufwärmsatz bekommt nichts.
+ */
+function adjustedTargets(
+  exercise: Pick<
+    WorkoutSessionExercise,
+    'targetReps' | 'targetWeight' | 'targetHeightCm' | 'targetsBeforeAdjustment'
+  >,
+  setKind?: SetKind,
+): Pick<SetValues, 'reps' | 'weight' | 'heightCm'> {
+  const before = exercise.targetsBeforeAdjustment;
+  const values: Pick<SetValues, 'reps' | 'weight' | 'heightCm'> = {};
+
+  if (!before || setKind === 'warmup') {
+    return values;
+  }
+
+  for (const [key, field] of ADJUSTED_VALUE_FIELDS) {
+    const target = exercise[field];
+
+    if (field in before && typeof target === 'number') {
+      values[key] = target;
+    }
+  }
+
+  return values;
 }
 
 /**
@@ -247,17 +292,25 @@ export function setRowFallback(
  * während die Uhr auf 20 läuft, und der Knopf schriebe beim Abhaken ohne Timer
  * wieder die 30, die er gerade nicht versprochen hat. Steht ein Zeit-Soll, gilt
  * es auch ohne letzte Ausführung - der Platzhalter ist dann der Plan, und genau
- * den stellt die Uhr.
+ * den stellt die Uhr. Angepasste Werte ersetzen ihr letztes Mal ebenso
+ * (`setRowFallback`).
  */
 export function setRowPlaceholders(
-  exercise: Pick<WorkoutSessionExercise, 'targetSeconds'>,
+  exercise: Pick<
+    WorkoutSessionExercise,
+    'targetSeconds' | 'targetReps' | 'targetWeight' | 'targetHeightCm' | 'targetsBeforeAdjustment'
+  >,
   lastValues?: SetValues,
+  setKind?: SetKind,
 ): SetValues | undefined {
+  const adjusted = lastValues ? adjustedTargets(exercise, setKind) : {};
+  const values = Object.keys(adjusted).length > 0 ? { ...lastValues, ...adjusted } : lastValues;
+
   if (typeof exercise.targetSeconds !== 'number') {
-    return lastValues;
+    return values;
   }
 
-  return { ...lastValues, seconds: exercise.targetSeconds };
+  return { ...values, seconds: exercise.targetSeconds };
 }
 
 /**

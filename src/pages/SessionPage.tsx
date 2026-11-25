@@ -62,7 +62,7 @@ import {
   restTrackKey,
   selectPrimaryRestTrack,
 } from '@/domain/rest-timer';
-import { resolveNextFocus } from '@/domain/session';
+import { pickFallbackFocus, resolveNextFocus } from '@/domain/session';
 import {
   elapsedSetTimerSeconds,
   formatSetTimerClock,
@@ -272,6 +272,14 @@ export function SessionPage() {
     () => db.workoutSessionExercises.where('sessionId').equals(sessionId).sortBy('orderIndex'),
     [sessionId],
   );
+  // Für „Ersatz für …“: der Name der pausierten Zeile, auf die ein Ersatz zeigt.
+  const exerciseNameById = useMemo(
+    () =>
+      Object.fromEntries(
+        (sessionExercises ?? []).map((item) => [item.id, item.exerciseNameSnapshot]),
+      ),
+    [sessionExercises],
+  );
   const setLogs = useLiveQuery(async () => {
     const items = await db.workoutSessionExercises.where('sessionId').equals(sessionId).toArray();
 
@@ -319,11 +327,14 @@ export function SessionPage() {
      * Beim ersten Rendern gibt es noch gar keinen, nach dem Löschen oder
      * Umsortieren kann der bisherige verschwunden sein - das ist dieselbe
      * Regel und nicht zwei: ein Fokus, den die Liste nicht kennt, fällt auf
-     * die erste Übung zurück. Ein leeres `activeSessionExerciseId` findet
+     * die erste Übung zurück, die nicht pausiert oder ausgelassen ist
+     * (`pickFallbackFocus`). Ein leeres `activeSessionExerciseId` findet
      * `some` ohnehin nicht.
      */
-    if (!orderedSessionExercises.some((item) => item.id === activeSessionExerciseId)) {
-      setActiveSessionExerciseId(orderedSessionExercises[0].id);
+    const fallback = pickFallbackFocus(orderedSessionExercises);
+
+    if (fallback && !orderedSessionExercises.some((item) => item.id === activeSessionExerciseId)) {
+      setActiveSessionExerciseId(fallback.id);
     }
   }, [activeSessionExerciseId, orderedSessionExercises, setActiveSessionExerciseId]);
 
@@ -1528,6 +1539,11 @@ export function SessionPage() {
       <SessionExerciseStage
         key={exercise.id}
         exercise={exercise}
+        originalName={
+          exercise.replacementFor
+            ? exerciseNameById[exercise.replacementFor.sessionExerciseId]
+            : undefined
+        }
         exerciseLogs={sortedFocusedLogs}
         mediaAsset={mediaAssetForExercise(exercise)}
         /*
@@ -1884,6 +1900,7 @@ export function SessionPage() {
                 isBusy={isReorderingExercises}
                 onOpen={handleOpenExerciseSheet}
                 onToggleSkip={(sessionExerciseId) => void handleToggleSkip(sessionExerciseId)}
+                exerciseNameById={exerciseNameById}
               />
             ))}
           </div>

@@ -31,6 +31,8 @@ export interface TodayUnitOption {
   guided: boolean;
   /** Nur bei Zeilen aus dem Plan: der Termin, um den es geht. */
   planEntry?: { id: string; date: string };
+  /** „1 Übung pausiert · 1 angepasst“ - was Einschränkungen heute an diesem Workout ändern. */
+  restrictionSummary?: string;
 }
 
 /**
@@ -189,6 +191,11 @@ export function buildNowSections(input: {
   recency: Record<string, string>;
   minutesByTemplate: Record<string, number>;
   exerciseCountByTemplate: Record<string, number>;
+  /**
+   * Je Workout die Zeile der Einschränkungen, für heute gerechnet: jeder
+   * Start aus dem Jetzt-Sheet - auch Nachholen und Vorziehen - ist heute.
+   */
+  restrictionSummaryByTemplate?: Record<string, string>;
   today: Date;
 }): NowSections {
   const byId = new Map(input.templates.map((template) => [template.id, template]));
@@ -207,6 +214,9 @@ export function buildNowSections(input: {
     exerciseCount: input.exerciseCountByTemplate[template.id] ?? 0,
     guided: isGuidedTemplate(template),
     ...(entry ? { planEntry: { id: entry.id, date: entry.date } } : {}),
+    ...(input.restrictionSummaryByTemplate?.[template.id]
+      ? { restrictionSummary: input.restrictionSummaryByTemplate[template.id] }
+      : {}),
   });
 
   // Lauf-Termine und Termine gelöschter Workouts fallen weg.
