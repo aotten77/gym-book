@@ -1,0 +1,3 @@
+#!/bin/sh
+# Oberste Regel: keine persönlichen Daten in Dateien (CLAUDE.md).
+exec node scripts/privacy-guard.mjs --staged

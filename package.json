@@ -12,7 +12,9 @@
     "check:strict": "tsc -p tsconfig.strict.json --noEmit",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "test:e2e:ui": "playwright test --ui"
+    "test:e2e:ui": "playwright test --ui",
+    "privacy": "node scripts/privacy-guard.mjs --worktree",
+    "prepare": "git config core.hooksPath .githooks || true"
   },
   "dependencies": {
     "@fontsource-variable/archivo": "^5.3.0",
