@@ -1,12 +1,14 @@
 import { db } from '@/db/appDb';
 import { loadRestrictions } from '@/db/restriction-actions';
 import { addSentChars, getTtsQuota, readTtsSettings, saveAnnouncement } from '@/db/tts-actions';
-import { requiredAnnouncementTexts } from '@/domain/guided-announcements';
+import { requiredAnnouncementTexts, requiredGuidanceTexts } from '@/domain/guided-announcements';
 import type { GuidedStep } from '@/domain/models';
 import { isGuidedTemplate } from '@/domain/guided-steps';
 import { toDateInputValue } from '@/domain/program';
 import { resolveGuidedSteps } from '@/domain/restriction';
 import { announcementKey, countChars, quotaCostUsd, quotaFits, quotaOver } from '@/domain/tts-quota';
+import { measureAudioDuration } from '@/lib/announcement-audio';
+import { readBlobBuffer } from '@/lib/media';
 import { MISSING_KEY_MESSAGE, synthesizeSpeech, TtsError, type SynthesizeOptions } from '@/lib/tts-client';
 
 /*
@@ -32,12 +34,20 @@ export interface AnnouncementAvailability {
  * Die Sätze der Vorlagen: die ihrer Schritte plus die der am Tag `now`
  * wirksamen Schritte - eine Schrittanpassung ändert die Sekunden und damit
  * den Satz („Als Nächstes: Taubenpose, 30 Sekunden“).
+ *
+ * `guidanceTexts` sind dieselben Sätze mit angehängter Anleitung; sie stehen
+ * zusätzlich in `texts`, damit eine Vorlage beide Varianten bekommt und der
+ * Schalter „Mit Anleitung“ ohne zweiten Erzeugungslauf nutzbar ist.
  */
-async function loadGuidedTexts(templateIds: readonly string[], now: Date): Promise<string[]> {
+async function loadGuidedTexts(
+  templateIds: readonly string[],
+  now: Date,
+): Promise<{ texts: string[]; guidanceTexts: string[] }> {
   const templates = await db.workoutTemplates.bulkGet([...new Set(templateIds)]);
   const restrictions = await loadRestrictions();
   const day = toDateInputValue(now);
   const texts = new Set<string>();
+  const guidanceTexts = new Set<string>();
 
   for (const template of templates) {
     if (template && isGuidedTemplate(template)) {
@@ -47,16 +57,37 @@ async function loadGuidedTexts(templateIds: readonly string[], now: Date): Promi
       for (const text of [...requiredAnnouncementTexts(steps), ...requiredAnnouncementTexts(effective)]) {
         texts.add(text);
       }
+
+      for (const { text } of [...requiredGuidanceTexts(steps), ...requiredGuidanceTexts(effective)]) {
+        guidanceTexts.add(text);
+      }
     }
   }
 
-  return [...texts];
+  for (const text of guidanceTexts) {
+    texts.add(text);
+  }
+
+  return { texts: [...texts], guidanceTexts: [...guidanceTexts] };
 }
 
-async function findMissingTexts(texts: readonly string[], voice: string): Promise<string[]> {
+/**
+ * Fehlend ist ein Satz ohne Datensatz - und ein Anleitungssatz ohne
+ * gemessene Dauer: ohne sie lässt sich der Wechsel nicht festlegen.
+ */
+async function findMissingTexts(
+  texts: readonly string[],
+  voice: string,
+  guidanceTexts: readonly string[] = [],
+): Promise<string[]> {
   const existing = await db.announcements.bulkGet(texts.map((text) => announcementKey(text, voice)));
+  const needsDuration = new Set(guidanceTexts);
 
-  return texts.filter((_, index) => !existing[index]);
+  return texts.filter((text, index) => {
+    const record = existing[index];
+
+    return !record || (needsDuration.has(text) && record.durationMs === undefined);
+  });
 }
 
 async function describeAvailability(texts: readonly string[]): Promise<AnnouncementAvailability> {
@@ -71,7 +102,7 @@ export async function getAnnouncementAvailability(
   templateId: string,
   now: Date = new Date(),
 ): Promise<AnnouncementAvailability> {
-  return describeAvailability(await loadGuidedTexts([templateId], now));
+  return describeAvailability((await loadGuidedTexts([templateId], now)).texts);
 }
 
 /**
@@ -125,6 +156,8 @@ export interface GenerateAnnouncementsOptions {
   sleep?: SynthesizeOptions['sleep'];
   now?: Date;
   isOnline?: () => boolean;
+  /** Für Tests: ersetzt die Messung der MP3-Länge. */
+  measure?: (data: ArrayBuffer) => Promise<number | null>;
 }
 
 export interface GenerateAnnouncementsResult {
@@ -147,8 +180,8 @@ export async function generateAnnouncements(
 ): Promise<GenerateAnnouncementsResult> {
   try {
     const settings = await readTtsSettings();
-    const texts = await loadGuidedTexts(templateIds, options.now ?? new Date());
-    const missing = await findMissingTexts(texts, settings.voice);
+    const { texts, guidanceTexts } = await loadGuidedTexts(templateIds, options.now ?? new Date());
+    const missing = await findMissingTexts(texts, settings.voice, guidanceTexts);
 
     if (missing.length === 0) {
       return { status: 'complete', generated: 0, missing: 0 };
@@ -181,6 +214,7 @@ export async function generateAnnouncements(
     }
 
     const synth = options.synth ?? synthesizeSpeech;
+    const measure = options.measure ?? measureAudioDuration;
     let generated = 0;
 
     for (const text of missing) {
@@ -195,7 +229,9 @@ export async function generateAnnouncements(
 
         // Nur was gesendet und beantwortet wurde, zählt - dann erst speichern.
         await addSentChars(countChars(text), options.now);
-        await saveAnnouncement(text, settings.voice, blob);
+        // Gemessen wird nur hier, beim Erzeugen; Start und Ablauf lesen die Dauer.
+        const durationMs = await measure(await readBlobBuffer(blob));
+        await saveAnnouncement(text, settings.voice, blob, durationMs ?? undefined);
         generated += 1;
       } catch (error) {
         return fail(

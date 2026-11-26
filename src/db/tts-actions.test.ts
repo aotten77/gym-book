@@ -129,4 +129,26 @@ describe('Ansagen', () => {
     expect(stored).toMatchObject({ text: 'Als Nächstes: Taube', voice: 'v1', byteSize: 9 });
     expect(stored?.createdAt).toBeTruthy();
   });
+
+  it('ersetzt eine Ansage ohne Dauer, sobald eine gemessene kommt', async () => {
+    const id = announcementKey('Als Nächstes: Beispiel A', 'v1');
+
+    await saveAnnouncement('Als Nächstes: Beispiel A', 'v1', new Blob(['alt'], { type: 'audio/mpeg' }));
+    expect((await db.announcements.get(id))?.durationMs).toBeUndefined();
+
+    await saveAnnouncement('Als Nächstes: Beispiel A', 'v1', new Blob(['neuer'], { type: 'audio/mpeg' }), 9_000);
+    expect(await db.announcements.get(id)).toMatchObject({ durationMs: 9_000, byteSize: 5 });
+  });
+
+  it('lässt eine Ansage mit Dauer beim zweiten Speichern unverändert', async () => {
+    const id = announcementKey('Als Nächstes: Beispiel A', 'v1');
+
+    await saveAnnouncement('Als Nächstes: Beispiel A', 'v1', new Blob(['erst'], { type: 'audio/mpeg' }), 9_000);
+    const first = await db.announcements.get(id);
+
+    await saveAnnouncement('Als Nächstes: Beispiel A', 'v1', new Blob(['zweite'], { type: 'audio/mpeg' }), 4_000);
+    await saveAnnouncement('Als Nächstes: Beispiel A', 'v1', new Blob(['dritte'], { type: 'audio/mpeg' }));
+
+    expect(await db.announcements.get(id)).toEqual(first);
+  });
 });

@@ -271,3 +271,60 @@ describe('Ansagen einer laufenden Einheit (Schritt-Snapshot)', () => {
     expect(audio!.get('Geschafft.')!.byteLength).toBe(3);
   });
 });
+
+describe('Anleitung', () => {
+  const GUIDE = 'Erfundener Beispieltext zum Einstieg.';
+  const G: GuidedStep[] = [
+    { name: 'Beispiel A', seconds: 40, guidance: GUIDE },
+    { name: 'Beispiel B', seconds: 30 },
+  ];
+  const GUIDED_TEXT = `Als Nächstes: Beispiel A, 40 Sekunden. ${GUIDE}`;
+
+  it('erzeugt beide Varianten und speichert die gemessene Dauer', async () => {
+    await seed('g', G);
+    await saveApiKey(KEY);
+    const result = await generateAnnouncements(['g'], {
+      synth: async () => blob(),
+      isOnline: ONLINE,
+      measure: async () => 12_000,
+    });
+
+    // 2 Sätze ohne Anleitung + Geschafft. + 1 Satz mit Anleitung
+    expect(result).toMatchObject({ status: 'complete', generated: 4 });
+    expect((await db.announcements.get(announcementKey(GUIDED_TEXT, VOICE)))?.durationMs).toBe(12_000);
+  });
+
+  it('erzeugt einen Anleitungssatz ohne Dauer beim nächsten Lauf neu und speichert ihn mit Dauer', async () => {
+    await seed('g', G);
+    await saveApiKey(KEY);
+    await generateAnnouncements(['g'], {
+      synth: async () => blob(),
+      isOnline: ONLINE,
+      measure: async () => null,
+    });
+    expect((await db.announcements.get(announcementKey(GUIDED_TEXT, VOICE)))?.durationMs).toBeUndefined();
+
+    const second = await generateAnnouncements(['g'], {
+      synth: async () => blob(),
+      isOnline: ONLINE,
+      measure: async () => 9_000,
+    });
+
+    expect(second).toMatchObject({ status: 'complete', generated: 1 });
+    expect((await db.announcements.get(announcementKey(GUIDED_TEXT, VOICE)))?.durationMs).toBe(9_000);
+  });
+
+  it('braucht für Sätze ohne Anleitung keine Dauer', async () => {
+    await seed('a', A);
+    await saveApiKey(KEY);
+    await generateAnnouncements(['a'], {
+      synth: async () => blob(),
+      isOnline: ONLINE,
+      measure: async () => null,
+    });
+
+    expect(
+      await generateAnnouncements(['a'], { synth: async () => blob(), isOnline: ONLINE }),
+    ).toMatchObject({ status: 'complete', generated: 0 });
+  });
+});

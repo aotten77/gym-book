@@ -177,23 +177,30 @@ export async function checkApiKey(options: CheckApiKeyOptions = {}) {
   return { blob, text: CHECK_TEXT, chars };
 }
 
-/** Speichert eine Ansage; ein vorhandener Satz mit gleicher Stimme bleibt unverändert. */
-export async function saveAnnouncement(text: string, voice: string, blob: Blob) {
+/**
+ * Speichert eine Ansage; ein vorhandener Satz mit gleicher Stimme bleibt
+ * unverändert - außer ihm fehlt die Dauer und jetzt kommt eine: dann ersetzt
+ * die gemessene Ansage ihn, sonst bliebe ein Anleitungssatz für immer ohne.
+ */
+export async function saveAnnouncement(text: string, voice: string, blob: Blob, durationMs?: number) {
   const id = announcementKey(text, voice);
   // Vor der Transaktion: ein `await` auf Nicht-Dexie-Arbeit schlösse sie früh.
   const audio = await readBlobBuffer(blob);
 
   await db.transaction('rw', db.announcements, async () => {
-    if (await db.announcements.get(id)) {
+    const existing = await db.announcements.get(id);
+
+    if (existing && (existing.durationMs !== undefined || durationMs === undefined)) {
       return;
     }
 
-    await db.announcements.add({
+    await db.announcements.put({
       id,
       text,
       voice,
       audio,
       byteSize: audio.byteLength,
+      ...(durationMs !== undefined && { durationMs }),
       createdAt: new Date().toISOString(),
     });
   });

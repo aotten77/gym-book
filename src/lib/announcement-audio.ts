@@ -75,3 +75,24 @@ export async function decodeAnnouncements(
 export function playDecodedAnnouncement(buffer: AudioBuffer, delaySeconds: number) {
   playAudioBufferWhenAwake(buffer, delaySeconds);
 }
+
+/**
+ * Misst die Länge einer Ansage in Millisekunden. Dekodiert eine Kopie mit
+ * eigenem `OfflineAudioContext` - der braucht keine Nutzergeste, und
+ * `decodeAudioData` löst den Puffer ab. `null`, wo es Web Audio nicht gibt
+ * oder das Dekodieren scheitert; wirft nie.
+ */
+export async function measureAudioDuration(data: ArrayBuffer): Promise<number | null> {
+  try {
+    if (typeof OfflineAudioContext === 'undefined') {
+      return null;
+    }
+
+    const context = new OfflineAudioContext(1, 1, 44_100);
+    const buffer = await context.decodeAudioData(data.slice(0));
+
+    return Math.round(buffer.duration * 1000);
+  } catch {
+    return null;
+  }
+}
