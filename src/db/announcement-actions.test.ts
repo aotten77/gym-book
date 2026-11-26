@@ -314,6 +314,81 @@ describe('Anleitung', () => {
     expect((await db.announcements.get(announcementKey(GUIDED_TEXT, VOICE)))?.durationMs).toBe(9_000);
   });
 
+  it('meldet die Anleitung als verfügbar, vollständig und mit Gesamtdauer', async () => {
+    await seed('g', G);
+    expect((await getAnnouncementAvailability('g')).guidance).toEqual({ available: true, complete: false });
+
+    await saveApiKey(KEY);
+    await generateAnnouncements(['g'], {
+      synth: async () => blob(),
+      isOnline: ONLINE,
+      measure: async () => 12_000,
+    });
+
+    // Wechsel 15 + 40 + Wechsel 5 + 30 = 90
+    expect((await getAnnouncementAvailability('g')).guidance).toEqual({
+      available: true,
+      complete: true,
+      totalSeconds: 90,
+    });
+  });
+
+  it('kennt keine Anleitung bei Vorlagen ohne guidance', async () => {
+    await seed('a', A);
+
+    expect((await getAnnouncementAvailability('a')).guidance).toEqual({ available: false, complete: false });
+  });
+
+  it('meldet eine ungemessene Anleitung als unvollständig, Stimme + Ton bleibt wählbar', async () => {
+    await seed('g', G);
+    await saveApiKey(KEY);
+    await generateAnnouncements(['g'], {
+      synth: async () => blob(),
+      isOnline: ONLINE,
+      measure: async () => null,
+    });
+
+    const availability = await getAnnouncementAvailability('g');
+
+    expect(availability).toMatchObject({ total: 3, missing: 0, complete: true });
+    expect(availability.guidance).toEqual({ available: true, complete: false });
+  });
+
+  it('misst bei einer Schrittanpassung den wirksamen Satz', async () => {
+    const IN_PHASE = new Date(2026, 11, 1, 18, 0, 0);
+
+    await seed('g', G);
+    await db.restrictions.add({
+      id: 'r1',
+      name: 'Beispiel R',
+      from: '2026-12-01',
+      until: '2026-12-14',
+      pauses: [],
+      adjustments: [{ stepName: 'Beispiel A', templateId: 'g', seconds: 20 }],
+      createdAt: STAMP,
+      updatedAt: STAMP,
+    });
+    await saveApiKey(KEY);
+    const texts: string[] = [];
+    await generateAnnouncements(['g'], {
+      synth: async ({ text }) => {
+        texts.push(text);
+        return blob();
+      },
+      isOnline: ONLINE,
+      now: IN_PHASE,
+      measure: async () => 12_000,
+    });
+
+    expect(texts).toContain(`Als Nächstes: Beispiel A, 20 Sekunden. ${GUIDE}`);
+    // Wechsel 15 + 20 + Wechsel 5 + 30 = 70
+    expect((await getAnnouncementAvailability('g', IN_PHASE)).guidance).toEqual({
+      available: true,
+      complete: true,
+      totalSeconds: 70,
+    });
+  });
+
   it('braucht für Sätze ohne Anleitung keine Dauer', async () => {
     await seed('a', A);
     await saveApiKey(KEY);

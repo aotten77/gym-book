@@ -1,9 +1,13 @@
 import { db } from '@/db/appDb';
 import { loadRestrictions } from '@/db/restriction-actions';
 import { addSentChars, getTtsQuota, readTtsSettings, saveAnnouncement } from '@/db/tts-actions';
-import { requiredAnnouncementTexts, requiredGuidanceTexts } from '@/domain/guided-announcements';
+import {
+  applyGuidance,
+  requiredAnnouncementTexts,
+  requiredGuidanceTexts,
+} from '@/domain/guided-announcements';
 import type { GuidedStep } from '@/domain/models';
-import { isGuidedTemplate } from '@/domain/guided-steps';
+import { isGuidedTemplate, resolveGuidedSections, sumGuidedSeconds } from '@/domain/guided-steps';
 import { toDateInputValue } from '@/domain/program';
 import { resolveGuidedSteps } from '@/domain/restriction';
 import { announcementKey, countChars, quotaCostUsd, quotaFits, quotaOver } from '@/domain/tts-quota';
@@ -28,31 +32,56 @@ export interface AnnouncementAvailability {
   missing: number;
   /** Alle Ansagen mit der aktuellen Stimme da: nur dann ist „Stimme + Ton“ wählbar. */
   complete: boolean;
+  /**
+   * Die gesprochene Anleitung, getrennt gezählt: `total`, `missing` und
+   * `complete` oben meinen nur die Sätze ohne Anleitung, damit „Stimme + Ton“
+   * nicht an einer fehlenden Anleitung hängt.
+   */
+  guidance: GuidanceAvailability;
 }
+
+export interface GuidanceAvailability {
+  /** Mindestens ein (wirksamer) Schritt hat eine Anleitung. */
+  available: boolean;
+  /** Alle Anleitungssätze da und gemessen. */
+  complete: boolean;
+  /** Gesamtdauer der Einheit in Sekunden mit Anleitung; nur bei `complete`. */
+  totalSeconds?: number;
+}
+
+const NO_GUIDANCE: GuidanceAvailability = { available: false, complete: false };
 
 /**
  * Die Sätze der Vorlagen: die ihrer Schritte plus die der am Tag `now`
  * wirksamen Schritte - eine Schrittanpassung ändert die Sekunden und damit
  * den Satz („Als Nächstes: Taubenpose, 30 Sekunden“).
  *
- * `guidanceTexts` sind dieselben Sätze mit angehängter Anleitung; sie stehen
- * zusätzlich in `texts`, damit eine Vorlage beide Varianten bekommt und der
- * Schalter „Mit Anleitung“ ohne zweiten Erzeugungslauf nutzbar ist.
+ * `guidanceTexts` sind die Sätze mit angehängter Anleitung, getrennt von
+ * `texts`. Erzeugt werden beide, damit der Schalter „Mit Anleitung“ ohne
+ * zweiten Erzeugungslauf nutzbar ist. `effectiveSteps` sind die wirksamen
+ * Schritte je Vorlage - für die Gesamtdauer mit Anleitung.
  */
 async function loadGuidedTexts(
   templateIds: readonly string[],
   now: Date,
-): Promise<{ texts: string[]; guidanceTexts: string[] }> {
+): Promise<{
+  texts: string[];
+  guidanceTexts: string[];
+  effectiveSteps: Map<string, GuidedStep[]>;
+}> {
   const templates = await db.workoutTemplates.bulkGet([...new Set(templateIds)]);
   const restrictions = await loadRestrictions();
   const day = toDateInputValue(now);
   const texts = new Set<string>();
   const guidanceTexts = new Set<string>();
+  const effectiveSteps = new Map<string, GuidedStep[]>();
 
   for (const template of templates) {
     if (template && isGuidedTemplate(template)) {
       const steps = template.steps ?? [];
       const effective = resolveGuidedSteps({ restrictions, day, templateId: template.id, steps }).steps;
+
+      effectiveSteps.set(template.id, effective);
 
       for (const text of [...requiredAnnouncementTexts(steps), ...requiredAnnouncementTexts(effective)]) {
         texts.add(text);
@@ -64,11 +93,7 @@ async function loadGuidedTexts(
     }
   }
 
-  for (const text of guidanceTexts) {
-    texts.add(text);
-  }
-
-  return { texts: [...texts], guidanceTexts: [...guidanceTexts] };
+  return { texts: [...texts], guidanceTexts: [...guidanceTexts], effectiveSteps };
 }
 
 /**
@@ -90,11 +115,57 @@ async function findMissingTexts(
   });
 }
 
-async function describeAvailability(texts: readonly string[]): Promise<AnnouncementAvailability> {
-  const { voice } = await readTtsSettings();
+async function describeAvailability(
+  texts: readonly string[],
+  voice: string,
+  guidance: GuidanceAvailability,
+): Promise<AnnouncementAvailability> {
   const missing = await findMissingTexts(texts, voice);
 
-  return { voice, total: texts.length, missing: missing.length, complete: texts.length > 0 && missing.length === 0 };
+  return {
+    voice,
+    total: texts.length,
+    missing: missing.length,
+    complete: texts.length > 0 && missing.length === 0,
+    guidance,
+  };
+}
+
+/**
+ * Die gemessenen Längen der Sätze, je Satz - nur Sätze mit Datensatz **und**
+ * Dauer. Reiner Lesezugriff: gemessen wird nur beim Erzeugen.
+ */
+export async function loadGuidanceDurations(
+  texts: readonly string[],
+  voice: string,
+): Promise<Map<string, number>> {
+  const records = await db.announcements.bulkGet(texts.map((text) => announcementKey(text, voice)));
+  const durations = new Map<string, number>();
+
+  for (const [index, record] of records.entries()) {
+    if (record?.durationMs !== undefined) {
+      durations.set(texts[index], record.durationMs);
+    }
+  }
+
+  return durations;
+}
+
+async function describeGuidance(
+  steps: readonly GuidedStep[],
+  voice: string,
+): Promise<GuidanceAvailability> {
+  const texts = requiredGuidanceTexts(steps).map((entry) => entry.text);
+
+  if (texts.length === 0) {
+    return NO_GUIDANCE;
+  }
+
+  const withGuidance = applyGuidance(steps, await loadGuidanceDurations(texts, voice));
+
+  return withGuidance
+    ? { available: true, complete: true, totalSeconds: sumGuidedSeconds(resolveGuidedSections(withGuidance)) }
+    : { available: true, complete: false };
 }
 
 /** „Alle Ansagen da?“ für eine Vorlage mit der aktuellen Stimme, am Tag `now`. */
@@ -102,7 +173,12 @@ export async function getAnnouncementAvailability(
   templateId: string,
   now: Date = new Date(),
 ): Promise<AnnouncementAvailability> {
-  return describeAvailability((await loadGuidedTexts([templateId], now)).texts);
+  const { voice } = await readTtsSettings();
+  const { texts, effectiveSteps } = await loadGuidedTexts([templateId], now);
+  // Die Anleitung des Tages: eine Schrittanpassung ändert ihren Satz und ihre Länge.
+  const guidance = await describeGuidance(effectiveSteps.get(templateId) ?? [], voice);
+
+  return describeAvailability(texts, voice, guidance);
 }
 
 /**
@@ -112,7 +188,10 @@ export async function getAnnouncementAvailability(
 export async function getStepsAnnouncementAvailability(
   steps: readonly GuidedStep[],
 ): Promise<AnnouncementAvailability> {
-  return describeAvailability(requiredAnnouncementTexts(steps));
+  const { voice } = await readTtsSettings();
+
+  // Die Sätze eines Snapshots mit `guidanceSeconds` enthalten die Anleitung schon.
+  return describeAvailability(requiredAnnouncementTexts(steps), voice, NO_GUIDANCE);
 }
 
 /**
@@ -181,7 +260,7 @@ export async function generateAnnouncements(
   try {
     const settings = await readTtsSettings();
     const { texts, guidanceTexts } = await loadGuidedTexts(templateIds, options.now ?? new Date());
-    const missing = await findMissingTexts(texts, settings.voice, guidanceTexts);
+    const missing = await findMissingTexts([...texts, ...guidanceTexts], settings.voice, guidanceTexts);
 
     if (missing.length === 0) {
       return { status: 'complete', generated: 0, missing: 0 };
