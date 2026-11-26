@@ -164,12 +164,21 @@ export function describeGuidedSteps(steps: readonly GuidedStep[]): string {
  *
  * Die Minuten sind gerundet und nie unter einer - „≈ 0 min“ sagte nichts. Die
  * Zahl der beidseitigen steht nur da, wo es welche gibt.
+ *
+ * `totalSeconds` ersetzt die aus den Schritten gerechnete Dauer - mit
+ * Anleitung kommt sie aus den gemessenen Ansagen; `withGuidance` sagt es dazu.
  */
-export function describeGuidedFacts(steps: readonly GuidedStep[]): string[] {
-  const { stepCount, bothSidesCount, totalSeconds } = summarizeGuidedSteps(steps);
+export function describeGuidedFacts(
+  steps: readonly GuidedStep[],
+  options: { totalSeconds?: number; withGuidance?: boolean } = {},
+): string[] {
+  const summary = summarizeGuidedSteps(steps);
+  const totalSeconds = options.totalSeconds ?? summary.totalSeconds;
+  const { stepCount, bothSidesCount } = summary;
+  const minutes = `≈ ${formatNumber(Math.max(1, Math.round(totalSeconds / 60)))} min`;
   const facts = [
     describeStepCount(stepCount),
-    `≈ ${formatNumber(Math.max(1, Math.round(totalSeconds / 60)))} min`,
+    options.withGuidance ? `${minutes} mit Anleitung` : minutes,
   ];
 
   if (bothSidesCount > 0) {

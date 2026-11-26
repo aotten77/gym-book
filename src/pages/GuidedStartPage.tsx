@@ -53,6 +53,8 @@ export function GuidedStartPage() {
   const [startError, setStartError] = useState<string | null>(null);
   // Die Wahl dieses Besuchs; bis zum ersten Tipp gilt die zuletzt gewählte (Standard: Stimme).
   const [choice, setChoice] = useState<GuidedAudioMode | null>(null);
+  // Ebenso für „Mit Anleitung“; bis zum ersten Tipp gilt die zuletzt gewählte (Standard: aus).
+  const [guidanceChoice, setGuidanceChoice] = useState<boolean | null>(null);
   const announcements = useAnnouncementGeneration();
 
   // `null` heißt „gibt es nicht“, `undefined` „noch nicht geladen“.
@@ -79,13 +81,19 @@ export function GuidedStartPage() {
 
   const restrictions = useLiveQuery(() => loadRestrictions(), []);
 
-  const lastChoice = useLiveQuery(
-    async () => (await db.appSettings.get('app-settings'))?.guidedAudioMode ?? null,
-    [],
-  );
+  const settings = useLiveQuery(async () => (await db.appSettings.get('app-settings')) ?? null, []);
+  const lastChoice = settings?.guidedAudioMode ?? null;
 
   const voiceAvailable = availability?.complete === true;
   const voiceSelected = voiceAvailable && (choice ?? lastChoice ?? 'voice') === 'voice';
+  // Der Schalter steht nur bei „Stimme + Ton“ und wenn ein Schritt eine Anleitung hat.
+  const guidance = availability?.guidance;
+  const showGuidance = voiceSelected && guidance?.available === true;
+  const guidanceReady = showGuidance && guidance?.complete === true;
+  const guidanceSelected =
+    guidanceReady && (guidanceChoice ?? settings?.guidedGuidance ?? false);
+  // Fehlt eine Ansage oder bei gewählter Stimme eine gemessene Anleitung, hilft „Ansagen erzeugen“.
+  const needsGeneration = !voiceAvailable || (showGuidance && !guidanceReady);
 
   // Läuft schon eine Einheit, startet keine zweite - wie beim Kraft-Start.
   const activeSession = useLiveQuery(
@@ -113,6 +121,8 @@ export function GuidedStartPage() {
         ...readGuidedStartState(location.state),
         // Ohne vollständige Ansagen keine Angabe: es läuft „Nur Ton“, und die zuletzt gewählte Stimme bleibt vorgemerkt.
         ...(voiceAvailable ? { audioMode: voiceSelected ? ('voice' as const) : ('tone' as const) } : {}),
+        // Ebenso die Anleitung: nur wenn der Schalter wählbar war.
+        ...(guidanceReady ? { guidance: guidanceSelected } : {}),
       });
 
       // Ersetzen, nicht anhängen: „Zurück“ vom Ablauf soll nicht auf diesen Start-Screen führen.
@@ -236,7 +246,7 @@ export function GuidedStartPage() {
                       {describeGuidedStepDuration(effectiveSteps[index])}
                     </span>
                   )}
-                  {step.hint ? (
+                  {step.hint || step.guidance ? (
                     /*
                       Das „i“ ist 44px groß, damit man es trifft, und zieht sich
                       mit negativem Rand zusammen, damit die Zeile nicht wächst.
@@ -283,7 +293,15 @@ export function GuidedStartPage() {
             data-guided-facts
             className="mt-2 flex flex-nowrap gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           >
-            {(allPaused ? [] : describeGuidedFacts(resolved.steps)).map((fact) => (
+            {(allPaused
+              ? []
+              : describeGuidedFacts(
+                  resolved.steps,
+                  guidanceSelected
+                    ? { totalSeconds: guidance?.totalSeconds, withGuidance: true }
+                    : {},
+                )
+            ).map((fact) => (
               <li
                 key={fact}
                 className="flex-none whitespace-nowrap rounded-full bg-surface-sunken px-[9px] py-[5px] text-[11.5px] font-semibold text-content-secondary"
@@ -329,10 +347,46 @@ export function GuidedStartPage() {
               })}
             </div>
 
-            {availability && !voiceAvailable ? (
+            {showGuidance ? (
+              <button
+                type="button"
+                role="switch"
+                aria-checked={guidanceSelected}
+                data-guided-guidance
+                disabled={!guidanceReady}
+                onClick={() => setGuidanceChoice(!guidanceSelected)}
+                className={cn(
+                  'mt-1 flex min-h-touch w-full items-center justify-between gap-3 rounded-control bg-surface-sunken px-3 py-1 text-left text-xs leading-tight',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+                  'disabled:cursor-not-allowed disabled:opacity-45',
+                )}
+              >
+                <span className="text-content-muted">
+                  <b className="block text-[12.5px] text-content">Mit Anleitung</b>
+                  erklärt jede Übung vorher
+                </span>
+                {/* Wie `ToggleField`: Tinte, kein Lime - „an“ ist nicht „jetzt dran“. */}
+                <span
+                  aria-hidden
+                  className={cn(
+                    'relative h-6 w-10 shrink-0 rounded-full border transition',
+                    guidanceSelected ? 'border-accent-border bg-accent' : 'border-line-strong bg-surface',
+                  )}
+                >
+                  <span
+                    className={cn(
+                      'absolute top-1/2 h-4 w-4 -translate-y-1/2 rounded-full transition-all',
+                      guidanceSelected ? 'left-[1.25rem] bg-accent-contrast' : 'left-0.5 bg-content-muted',
+                    )}
+                  />
+                </span>
+              </button>
+            ) : null}
+
+            {availability && needsGeneration ? (
               <div className="mt-1.5 flex items-center justify-between gap-2">
                 <p data-guided-no-announcements className="text-xs text-content-muted">
-                  Keine Ansagen für diese Vorlage
+                  {voiceAvailable ? 'Anleitung noch nicht erzeugt' : 'Keine Ansagen für diese Vorlage'}
                 </p>
                 <Button
                   variant="secondary"
@@ -425,10 +479,11 @@ export function GuidedStartPage() {
         </div>
       ) : null}
 
-      {hintStep?.hint ? (
+      {hintStep?.hint || hintStep?.guidance ? (
         <GuidedHintDialog
           title={hintStep.name}
           hint={hintStep.hint}
+          guidance={hintStep.guidance}
           onClose={() => setHintStepIndex(null)}
         />
       ) : null}

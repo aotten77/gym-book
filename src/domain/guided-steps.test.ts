@@ -216,6 +216,15 @@ describe('describeGuidedFacts', () => {
   it('rundet nicht unter eine Minute', () => {
     expect(describeGuidedFacts([{ name: 'Kurz', seconds: 10 }])[1]).toBe('≈ 1 min');
   });
+
+  it('nennt die Dauer mit Anleitung', () => {
+    const steps = [{ name: 'Beispiel A', seconds: 300 }];
+
+    expect(describeGuidedFacts(steps, { totalSeconds: 480, withGuidance: true })).toEqual([
+      '1 Schritt',
+      '≈ 8 min mit Anleitung',
+    ]);
+  });
 });
 
 describe('describeGuidedSummary', () => {

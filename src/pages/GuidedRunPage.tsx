@@ -318,7 +318,8 @@ function GuidedRunScreen({
 
   const current = state.current;
   const step = guided.steps[state.stepIndex];
-  const hint = hintSection === state.sectionIndex ? step?.hint : undefined;
+  const isHintOpen =
+    hintSection === state.sectionIndex && Boolean(step?.hint || step?.guidance);
 
   if (!current || !step) {
     return null;
@@ -530,10 +531,11 @@ function GuidedRunScreen({
         </div>
       </div>
 
-      {hint ? (
+      {isHintOpen ? (
         <GuidedHintDialog
           title={step.name}
-          hint={hint}
+          hint={step.hint}
+          guidance={step.guidance}
           footer={
             <span className="flex items-center justify-between gap-3">
               <span>Die Zeit läuft weiter</span>
@@ -746,7 +748,7 @@ function ExerciseLeft({
       >
         {step.name}
         {current?.side ? <GuidedSideTag side={current.side} /> : null}
-        {step.hint ? (
+        {step.hint || step.guidance ? (
           <InfoButton stepName={step.name} onOpen={onOpenHint} />
         ) : null}
       </h1>
@@ -810,7 +812,7 @@ function TransitionLeft({
         {step.name}
         {isSideSwitch ? <GuidedSideTag side="left" done /> : null}
         {section.side ? <GuidedSideTag side={section.side} /> : null}
-        {step.hint ? (
+        {step.hint || step.guidance ? (
           <InfoButton stepName={step.name} onOpen={onOpenHint} />
         ) : null}
       </h1>
