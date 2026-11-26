@@ -314,6 +314,19 @@ describe('Anleitung', () => {
     expect((await db.announcements.get(announcementKey(GUIDED_TEXT, VOICE)))?.durationMs).toBe(9_000);
   });
 
+  it('zählt Anleitungssätze, deren Länge sich nicht messen ließ', async () => {
+    await seed('g', G);
+    await saveApiKey(KEY);
+    const result = await generateAnnouncements(['g'], {
+      synth: async () => blob(),
+      isOnline: ONLINE,
+      measure: async () => null,
+    });
+
+    // Nur der Satz mit Anleitung braucht eine Dauer; die übrigen zählen nicht.
+    expect(result).toMatchObject({ status: 'complete', generated: 4, unmeasured: 1 });
+  });
+
   it('meldet die Anleitung als verfügbar, vollständig und mit Gesamtdauer', async () => {
     await seed('g', G);
     expect((await getAnnouncementAvailability('g')).guidance).toEqual({ available: true, complete: false });

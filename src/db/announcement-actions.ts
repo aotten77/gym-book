@@ -245,6 +245,11 @@ export interface GenerateAnnouncementsResult {
   generated: number;
   /** Wie viele Sätze danach noch fehlen. */
   missing: number;
+  /**
+   * Wie viele Sätze mit Anleitung ohne Dauer gespeichert wurden, weil die
+   * Messung scheiterte - sie gelten weiter als fehlend.
+   */
+  unmeasured?: number;
   message?: string;
 }
 
@@ -294,7 +299,9 @@ export async function generateAnnouncements(
 
     const synth = options.synth ?? synthesizeSpeech;
     const measure = options.measure ?? measureAudioDuration;
+    const needsDuration = new Set(guidanceTexts);
     let generated = 0;
+    let unmeasured = 0;
 
     for (const text of missing) {
       try {
@@ -312,6 +319,10 @@ export async function generateAnnouncements(
         const durationMs = await measure(await readBlobBuffer(blob));
         await saveAnnouncement(text, settings.voice, blob, durationMs ?? undefined);
         generated += 1;
+
+        if (durationMs === null && needsDuration.has(text)) {
+          unmeasured += 1;
+        }
       } catch (error) {
         return fail(
           error instanceof TtsError ? error.message : 'Ansagen nicht erzeugt',
@@ -320,7 +331,7 @@ export async function generateAnnouncements(
       }
     }
 
-    return { status: 'complete', generated, missing: 0 };
+    return { status: 'complete', generated, missing: 0, unmeasured };
   } catch {
     return { status: 'failed', generated: 0, missing: 0, message: 'Ansagen nicht erzeugt' };
   }

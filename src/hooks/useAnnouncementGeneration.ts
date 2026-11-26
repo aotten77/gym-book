@@ -9,6 +9,15 @@ import { formatNumber } from '@/lib/format';
 /** Die Meldung zu einem Ergebnis; `null`, wenn es nichts zu melden gibt. */
 export function describeGenerationResult(result: GenerateAnnouncementsResult) {
   if (result.status === 'complete') {
+    if (result.unmeasured) {
+      return {
+        tone: 'error' as const,
+        text:
+          `${formatNumber(result.generated)} Ansagen erzeugt. Die Länge der Anleitung ließ sich ` +
+          'auf diesem Gerät nicht messen – „Mit Anleitung“ bleibt gesperrt.',
+      };
+    }
+
     return result.generated > 0
       ? { tone: 'success' as const, text: `${formatNumber(result.generated)} Ansagen erzeugt.` }
       : null;

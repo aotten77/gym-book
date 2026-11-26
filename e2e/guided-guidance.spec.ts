@@ -18,9 +18,11 @@ const STEPS = [
   { name: 'Beispiel B', seconds: 4 },
 ];
 
-async function interceptGoogle(page: Page) {
-  const audioContent = silentWavBase64(10);
+/** `measurable: false` antwortet mit Bytes, die sich nicht dekodieren und messen lassen. */
+async function interceptGoogle(page: Page, { measurable = true } = {}) {
+  const audioContent = measurable ? silentWavBase64(10) : 'AAAA';
 
+  await page.unroute(GOOGLE);
   await page.route(GOOGLE, (route) =>
     route.fulfill({
       status: 200,
@@ -40,7 +42,7 @@ async function saveKey(page: Page) {
   await expect(section).toContainText('••••0042');
 }
 
-async function importTemplate(page: Page, { withKey = false } = {}) {
+async function importTemplate(page: Page, { withKey = false, measurable = true } = {}) {
   await page.goto('./#/sync');
   await page.waitForTimeout(600);
   await page.getByLabel('Oder JSON einfügen').fill(
@@ -55,7 +57,11 @@ async function importTemplate(page: Page, { withKey = false } = {}) {
 
   if (withKey) {
     // Beispiel A, Beispiel B, Geschafft. und Beispiel A mit Anleitung.
-    await expect(page.getByRole('status').filter({ hasText: '4 Ansagen erzeugt' })).toBeVisible();
+    await expect(page.getByText('4 Ansagen erzeugt', { exact: false })).toBeVisible();
+  }
+
+  if (withKey && !measurable) {
+    await expect(page.getByText('Die Länge der Anleitung ließ sich', { exact: false })).toBeVisible();
   }
 }
 
@@ -118,6 +124,31 @@ test.describe('Geführte Einheit: gesprochene Anleitung', () => {
 
     await expect(page.getByRole('radio', { name: /Stimme \+ Ton/ })).toBeDisabled();
     await expect(toggle(page)).toHaveCount(0);
+    expect(errors).toEqual([]);
+  });
+
+  test('ohne gemessene Anleitung ist der Schalter gesperrt, bis ein neuer Lauf sie misst', async ({
+    page,
+  }) => {
+    const errors = collectPageErrors(page);
+
+    await interceptGoogle(page, { measurable: false });
+    await saveKey(page);
+    await importTemplate(page, { withKey: true, measurable: false });
+    await openStart(page);
+    await page.getByRole('radio', { name: /Stimme \+ Ton/ }).click();
+
+    await expect(toggle(page)).toBeVisible();
+    await expect(toggle(page)).toBeDisabled();
+    await expect(toggle(page)).toHaveAttribute('aria-checked', 'false');
+    await expect(page.locator('[data-guided-no-announcements]')).toHaveText(
+      'Anleitung noch nicht erzeugt',
+    );
+
+    await interceptGoogle(page);
+    await page.getByRole('button', { name: 'Ansagen erzeugen' }).click();
+    await expect(toggle(page)).toBeEnabled();
+    await expect(page.locator('[data-guided-no-announcements]')).toHaveCount(0);
     expect(errors).toEqual([]);
   });
 
