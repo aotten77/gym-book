@@ -258,12 +258,6 @@ export function getSharedAudioContext(): AudioContext | null {
 }
 
 /**
- * Wie lange nach dem Wechselsignal die Ansage beginnt: das Signal dauert 0,4 s,
- * dazu eine kurze Atempause - nacheinander statt übereinander.
- */
-export const ANNOUNCEMENT_AFTER_SIGNAL_SECONDS = 0.7;
-
-/**
  * Spielt einen schon dekodierten Puffer (eine Ansage) mit derselben Weck- und
  * Fristlogik wie das Signal. Still statt Fehler, wo es Web Audio nicht gibt.
  */

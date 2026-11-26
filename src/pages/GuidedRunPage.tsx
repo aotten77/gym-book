@@ -38,6 +38,7 @@ import {
   deriveGuidedRunState,
   type GuidedRunState,
 } from "@/domain/guided-run";
+import { GUIDED_ANNOUNCEMENT_DELAY_SECONDS } from "@/domain/guided-announcements";
 import { guidedSideSeconds, type GuidedSection } from "@/domain/guided-steps";
 import type {
   GuidedAudioMode,
@@ -51,11 +52,7 @@ import {
   decodeAnnouncements,
   playDecodedAnnouncement,
 } from "@/lib/announcement-audio";
-import {
-  ANNOUNCEMENT_AFTER_SIGNAL_SECONDS,
-  playGuidedSignal,
-  primeTimerSound,
-} from "@/lib/sound";
+import { playGuidedSignal, primeTimerSound } from "@/lib/sound";
 import { keepScreenAwake } from "@/lib/wake-lock";
 import { cn } from "@/lib/utils";
 
@@ -238,7 +235,7 @@ function GuidedRunScreen({
       playDecodedAnnouncement(
         buffer,
         announcement.key.startsWith("announce:exercise-end")
-          ? ANNOUNCEMENT_AFTER_SIGNAL_SECONDS
+          ? GUIDED_ANNOUNCEMENT_DELAY_SECONDS
           : 0,
       );
     }

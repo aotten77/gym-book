@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   buildNextAnnouncement,
   describeSpokenDuration,
+  applyGuidance,
   GUIDED_DONE_TEXT,
+  guidanceTransitionSeconds,
   requiredAnnouncementTexts,
+  requiredGuidanceTexts,
 } from '@/domain/guided-announcements';
 
 describe('describeSpokenDuration', () => {
@@ -58,5 +61,87 @@ describe('requiredAnnouncementTexts', () => {
       'Als Nächstes: Taube, rechts, 75 Sekunden',
       GUIDED_DONE_TEXT,
     ]);
+  });
+});
+
+const GUIDE = 'Erfundener Beispieltext zum Einstieg.';
+
+describe('buildNextAnnouncement mit Anleitung', () => {
+  it('hängt die Anleitung nur mit guidanceSeconds an', () => {
+    const step = { name: 'Beispiel A', seconds: 40, guidance: GUIDE };
+    expect(buildNextAnnouncement(step)).toBe('Als Nächstes: Beispiel A, 40 Sekunden');
+    expect(buildNextAnnouncement({ ...step, guidanceSeconds: 12 })).toBe(
+      `Als Nächstes: Beispiel A, 40 Sekunden. ${GUIDE}`,
+    );
+  });
+
+  it('spricht sie bei beidseitigen Schritten nur links', () => {
+    const step = {
+      name: 'Beispiel C',
+      seconds: 60,
+      bothSides: true,
+      guidance: GUIDE,
+      guidanceSeconds: 12,
+    };
+    expect(buildNextAnnouncement(step, 'left')).toBe(
+      `Als Nächstes: Beispiel C, links, 30 Sekunden. ${GUIDE}`,
+    );
+    expect(buildNextAnnouncement(step, 'right')).toBe('Als Nächstes: Beispiel C, rechts, 30 Sekunden');
+  });
+});
+
+describe('requiredAnnouncementTexts mit Anleitung', () => {
+  it('liefert für einen Snapshot mit guidanceSeconds die Sätze mit Anleitung', () => {
+    expect(
+      requiredAnnouncementTexts([
+        { name: 'Beispiel A', seconds: 40, guidance: GUIDE, guidanceSeconds: 12 },
+      ]),
+    ).toEqual([`Als Nächstes: Beispiel A, 40 Sekunden. ${GUIDE}`, 'Geschafft.']);
+  });
+});
+
+describe('requiredGuidanceTexts', () => {
+  it('ein Satz je Schritt mit Anleitung, leere Anleitung zählt nicht', () => {
+    expect(
+      requiredGuidanceTexts([
+        { name: 'Beispiel A', seconds: 40 },
+        { name: 'Beispiel C', seconds: 60, bothSides: true, guidance: GUIDE },
+        { name: 'Beispiel B', seconds: 30, guidance: '  ' },
+      ]),
+    ).toEqual([{ stepIndex: 1, text: `Als Nächstes: Beispiel C, links, 30 Sekunden. ${GUIDE}` }]);
+  });
+});
+
+describe('guidanceTransitionSeconds', () => {
+  it('rundet 0,7 s + Dauer + 2 s auf und hält den geplanten Wechsel als Untergrenze', () => {
+    expect(guidanceTransitionSeconds(5, 12_000)).toBe(15); // 14,7 → 15
+    expect(guidanceTransitionSeconds(5, 12_400)).toBe(16); // 15,1 → 16
+    expect(guidanceTransitionSeconds(20, 3_000)).toBe(20);
+  });
+});
+
+describe('applyGuidance', () => {
+  const steps = [
+    { name: 'Beispiel A', seconds: 40, guidance: GUIDE },
+    { name: 'Beispiel B', seconds: 30, transitionSeconds: 25, guidance: GUIDE },
+    { name: 'Beispiel D', seconds: 20 },
+  ];
+  const texts = requiredGuidanceTexts(steps).map((entry) => entry.text);
+
+  it('setzt guidanceSeconds nur an Schritten mit Anleitung', () => {
+    const result = applyGuidance(
+      steps,
+      new Map([
+        [texts[0], 12_000],
+        [texts[1], 12_000],
+      ]),
+    );
+    expect(result?.map((step) => step.guidanceSeconds)).toEqual([15, 25, undefined]);
+    expect(steps[0]).not.toHaveProperty('guidanceSeconds');
+  });
+
+  it('gibt null zurück, wenn eine Dauer fehlt oder keine Anleitung da ist', () => {
+    expect(applyGuidance(steps, new Map([[texts[0], 12_000]]))).toBeNull();
+    expect(applyGuidance([{ name: 'Beispiel D', seconds: 20 }], new Map())).toBeNull();
   });
 });
