@@ -95,7 +95,11 @@ export function GuidedHintDialog({ title, hint, guidance, footer, onClose }: Gui
         </div>
 
         <div className="mt-2.5 min-h-0 overflow-y-auto">
-          {hint ? <p className="text-[19px] leading-[1.4]">{hint}</p> : null}
+          {hint ? (
+            <p data-guided-hint-text className="text-[19px] leading-[1.4]">
+              {hint}
+            </p>
+          ) : null}
           {guidance ? (
             <>
               {hint ? <p className={cn(CAPTION_CLASSES, 'mt-3.5')}>Anleitung</p> : null}

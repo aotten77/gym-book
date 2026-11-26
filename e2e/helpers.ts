@@ -258,3 +258,31 @@ export async function setProgramStart(page: Page, date: string) {
   await page.goto('./');
   await page.waitForTimeout(1200);
 }
+
+/**
+ * Eine stille WAV (PCM, mono, 8 kHz, 8 bit) als Base64 - die Antwort der
+ * abgefangenen Google-Synthese, wenn ein Test eine messbare Ansage braucht.
+ * WebKit dekodiert WAV mit `decodeAudioData`, die Platzhalter-MP3 nicht; so
+ * misst die App eine echte Dauer, ohne Test-Hook im Produktcode.
+ */
+export function silentWavBase64(seconds: number): string {
+  const sampleRate = 8_000;
+  const dataSize = sampleRate * seconds;
+  const wav = Buffer.alloc(44 + dataSize, 0x80); // 0x80 ist Stille bei 8 bit.
+
+  wav.write('RIFF', 0, 'ascii');
+  wav.writeUInt32LE(36 + dataSize, 4);
+  wav.write('WAVE', 8, 'ascii');
+  wav.write('fmt ', 12, 'ascii');
+  wav.writeUInt32LE(16, 16); // Länge des fmt-Blocks
+  wav.writeUInt16LE(1, 20); // PCM
+  wav.writeUInt16LE(1, 22); // mono
+  wav.writeUInt32LE(sampleRate, 24);
+  wav.writeUInt32LE(sampleRate, 28); // Bytes je Sekunde
+  wav.writeUInt16LE(1, 32); // Bytes je Frame
+  wav.writeUInt16LE(8, 34); // Bits je Sample
+  wav.write('data', 36, 'ascii');
+  wav.writeUInt32LE(dataSize, 40);
+
+  return wav.toString('base64');
+}

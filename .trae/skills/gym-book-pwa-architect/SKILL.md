@@ -206,7 +206,7 @@ Must include:
 - tests with left/right values and asymmetry
 - export/import backup
 - run logging (distance, duration, elevation, average heart rate)
-- guided session (step list from the library import, hands-free run with signal and optional spoken announcements)
+- guided session (step list from the library import, hands-free run with signal, optional spoken announcements and optional spoken guidance)
 - dated training plan (single entries for workouts and runs, written by the library import, read-only in the app)
 - restrictions (pause with optional replacement or adjust exercises and guided steps for a period, written by the library import, frozen at session start, liftable in the app)
 - installable PWA behavior on GitHub Pages

@@ -228,7 +228,7 @@ test.describe('Geführte Vorlage: Start-Screen', () => {
     const colors = await dialog.evaluate((card) => ({
       card: getComputedStyle(card).backgroundColor,
       title: getComputedStyle(card.querySelector('h2')!).color,
-      text: getComputedStyle(card.querySelector('p:not(:first-child)')!).color,
+      text: getComputedStyle(card.querySelector('[data-guided-hint-text]')!).color,
     }));
 
     expect(colors.title).not.toBe(colors.card);
