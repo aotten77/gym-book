@@ -14,7 +14,10 @@ import { formatNumber, formatStepClock } from '@/lib/format';
  * Rein: keine Uhr, kein Dexie, kein React.
  */
 
-/** Der Wechsel vor dem ersten Schritt - fest, auch wenn der Schritt einen eigenen nennt. */
+/**
+ * Der Wechsel vor dem ersten Schritt - fest, auch wenn der Schritt einen
+ * eigenen nennt, außer bei `guidanceSeconds`.
+ */
 export const GUIDED_START_TRANSITION_SECONDS = 5;
 
 /** Der Wechsel vor jedem weiteren Schritt, solange er keinen eigenen nennt. */
@@ -71,12 +74,26 @@ export function isGuidedTemplate(template?: Pick<WorkoutTemplate, 'steps'> | nul
 }
 
 /**
+ * Der Wechsel vor einem Schritt ohne Anleitung: vor dem ersten fest
+ * `GUIDED_START_TRANSITION_SECONDS`, sonst `transitionSeconds` (Standard 5).
+ * Die eine Regel für die Zeitachse und für die Länge eines Wechsels mit Anleitung.
+ */
+export function plannedTransitionSeconds(steps: readonly GuidedStep[], stepIndex: number): number {
+  return stepIndex === 0
+    ? GUIDED_START_TRANSITION_SECONDS
+    : (steps[stepIndex].transitionSeconds ?? GUIDED_DEFAULT_TRANSITION_SECONDS);
+}
+
+/**
  * Löst die Schritte in die Abfolge der Abschnitte auf.
  *
  * Vor jedem Schritt steht ein Wechsel: vor dem ersten fest 5 Sekunden, vor
- * jedem weiteren die `transitionSeconds` dieses Schritts (Standard 5). Ein
- * beidseitiger Schritt wird links, 3 Sekunden Seitenwechsel, rechts - jede
- * Seite mit der Hälfte der Dauer des Schritts (`guidedSideSeconds`). Nach dem letzten Schritt folgt
+ * jedem weiteren die `transitionSeconds` dieses Schritts (Standard 5) - außer
+ * bei `guidanceSeconds`: trägt ein Schritt im Snapshot dieses Feld, wird dort
+ * die Anleitung gesprochen und der Wechsel ist so lang wie sie, auch beim
+ * ersten Schritt. Ein beidseitiger Schritt wird links, 3 Sekunden
+ * Seitenwechsel, rechts - jede Seite mit der Hälfte der Dauer des Schritts
+ * (`guidedSideSeconds`). Nach dem letzten Schritt folgt
  * nichts: das Ende ist ein Ereignis (Signal und „Geschafft.“), kein Abschnitt.
  */
 export function resolveGuidedSections(steps: readonly GuidedStep[]): GuidedSection[] {
@@ -95,10 +112,7 @@ export function resolveGuidedSections(steps: readonly GuidedStep[]): GuidedSecti
       kind: 'transition',
       stepIndex,
       ...first,
-      seconds:
-        stepIndex === 0
-          ? GUIDED_START_TRANSITION_SECONDS
-          : (step.transitionSeconds ?? GUIDED_DEFAULT_TRANSITION_SECONDS),
+      seconds: step.guidanceSeconds ?? plannedTransitionSeconds(steps, stepIndex),
     });
     push({ kind: 'exercise', stepIndex, ...first, seconds: guidedSideSeconds(step) });
 

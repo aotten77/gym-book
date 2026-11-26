@@ -135,6 +135,43 @@ describe('resolveGuidedSections', () => {
   });
 });
 
+describe('resolveGuidedSections mit Anleitung', () => {
+  it('nimmt guidanceSeconds als Wechsel, auch beim ersten Schritt', () => {
+    const sections = resolveGuidedSections([
+      { name: 'Beispiel A', seconds: 40, guidanceSeconds: 18 },
+      { name: 'Beispiel B', seconds: 30, transitionSeconds: 8, guidanceSeconds: 21 },
+    ]);
+    expect(sections.map((s) => [s.kind, s.seconds])).toEqual([
+      ['transition', 18],
+      ['exercise', 40],
+      ['transition', 21],
+      ['exercise', 30],
+    ]);
+  });
+
+  it('legt bei einem beidseitigen Schritt die Anleitung nur vor links, der Seitenwechsel bleibt 3 s', () => {
+    const sections = resolveGuidedSections([
+      { name: 'Beispiel C', seconds: 60, bothSides: true, guidanceSeconds: 16 },
+    ]);
+    expect(sections.map((s) => [s.kind, s.side, s.seconds])).toEqual([
+      ['transition', 'left', 16],
+      ['exercise', 'left', 30],
+      ['sideSwitch', 'right', 3],
+      ['exercise', 'right', 30],
+    ]);
+  });
+
+  it('ändert ohne guidanceSeconds nichts – auch ein guidance-Text allein nicht', () => {
+    const plain = [
+      { name: 'Beispiel A', seconds: 40, transitionSeconds: 9 },
+      { name: 'Beispiel B', seconds: 30, transitionSeconds: 7 },
+    ];
+    const withText = plain.map((step) => ({ ...step, guidance: 'Erfundener Beispieltext.' }));
+    expect(resolveGuidedSections(withText)).toEqual(resolveGuidedSections(plain));
+    expect(resolveGuidedSections(plain)[0].seconds).toBe(5);
+  });
+});
+
 describe('sumGuidedSeconds', () => {
   it('summiert Wechsel, Übungen und Seitenwechsel', () => {
     // 5 + 60 + 5 + 45 + 5 + 75 + 3 + 75

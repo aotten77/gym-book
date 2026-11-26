@@ -100,6 +100,14 @@ export interface GuidedStep {
   transitionSeconds?: number;
   /** Was die Ansage sagt, wenn `name` sich nicht vorlesen lässt („BWS“). */
   spokenName?: string;
+  /** Die gesprochene Anleitung: 2–4 Sätze, zum Hören geschrieben. */
+  guidance?: string;
+  /**
+   * Nur im Snapshot einer Einheit (`GuidedRun.steps`), gesetzt von
+   * `startGuidedSession`: die Länge des Wechsels vor diesem Schritt, wenn die
+   * Anleitung gesprochen wird. Vorhanden heißt zugleich: hier wird sie gesprochen.
+   */
+  guidanceSeconds?: number;
 }
 
 /**
@@ -652,6 +660,11 @@ export interface AppSettings {
    * Start-Screen vorausgewählt. Additiv; `undefined` heißt „nie gewählt“.
    */
   guidedAudioMode?: GuidedAudioMode;
+  /**
+   * Die zuletzt gewählte Stellung des Schalters „Mit Anleitung“ auf dem
+   * Start-Screen. Additiv; `undefined` heißt aus.
+   */
+  guidedGuidance?: boolean;
   exportSchemaVersion: number;
   updatedAt: string;
 }
@@ -802,6 +815,8 @@ export interface Announcement {
    */
   audio: ArrayBuffer;
   byteSize: number;
+  /** Gemessene Länge der MP3. Fehlt bei älteren Datensätzen und wenn die Messung scheiterte. */
+  durationMs?: number;
   createdAt: string;
 }
 
