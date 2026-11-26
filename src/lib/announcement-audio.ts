@@ -96,3 +96,6 @@ export async function measureAudioDuration(data: ArrayBuffer): Promise<number | 
     return null;
   }
 }
+
+/** Stoppt die laufende Ansage im Ablauf - bei Sprung, Pause, „Nur Ton“ und beim Verlassen. */
+export { stopAnnouncement } from '@/lib/sound';

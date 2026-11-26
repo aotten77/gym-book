@@ -51,6 +51,7 @@ import { formatStepClock } from "@/lib/format";
 import {
   decodeAnnouncements,
   playDecodedAnnouncement,
+  stopAnnouncement,
 } from "@/lib/announcement-audio";
 import { playGuidedSignal, primeTimerSound } from "@/lib/sound";
 import { keepScreenAwake } from "@/lib/wake-lock";
@@ -214,6 +215,18 @@ function GuidedRunScreen({
       playGuidedSignal();
     }
   }, [signalKey]);
+
+  /*
+   * Ein neuer Abschnitt, eine Pause oder „Nur Ton“ macht die laufende Ansage
+   * hinfällig - eine Anleitung liefe sonst in den nächsten Abschnitt. Steht
+   * vor der Ansage-Wirkung: beim Abschnittswechsel erst stoppen, dann die
+   * neue spielen. Nach einer Pause wird die Anleitung nicht wiederholt.
+   */
+  useEffect(() => {
+    stopAnnouncement();
+  }, [state.sectionIndex, state.phase, audioMode]);
+
+  useEffect(() => () => stopAnnouncement(), []);
 
   useEffect(() => {
     if (!announcement || playedAnnouncements.current.has(announcement.key)) {

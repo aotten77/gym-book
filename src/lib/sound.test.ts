@@ -6,6 +6,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
  * Nur so viel, wie das Modul anfasst - gezählt wird, wie viele Oszillatoren
  * tatsächlich gestartet wurden.
  */
+interface FakeBufferSource {
+  buffer: unknown;
+  stopCalls: number;
+  connect: () => void;
+  start: () => void;
+  stop: () => void;
+}
+
 class FakeAudioContext {
   state: 'suspended' | 'running' = 'suspended';
   currentTime = 0;
@@ -20,8 +28,27 @@ class FakeAudioContext {
     return {};
   }
 
-  createBufferSource(): { buffer: unknown; connect: () => void; start: () => void } {
-    return { buffer: null, connect: () => {}, start: () => {} };
+  sources: FakeBufferSource[] = [];
+  /** Lässt `stop` werfen - wie bei einer Quelle, die nie gestartet wurde. */
+  stopThrows = false;
+
+  createBufferSource(): FakeBufferSource {
+    const source: FakeBufferSource = {
+      buffer: null,
+      stopCalls: 0,
+      connect: () => {},
+      start: () => {},
+      stop: () => {
+        source.stopCalls += 1;
+
+        if (this.stopThrows) {
+          throw new Error('InvalidStateError');
+        }
+      },
+    };
+
+    this.sources.push(source);
+    return source;
   }
 
   createGain() {
@@ -169,5 +196,55 @@ describe('playGuidedSignal', () => {
 
     context.letResumeThrough();
     await vi.waitFor(() => expect(context.startedOscillators).toBe(1));
+  });
+});
+
+describe('eine laufende Ansage', () => {
+  function stubRunningContext() {
+    const context = new FakeAudioContext();
+
+    context.state = 'running';
+    vi.stubGlobal(
+      'AudioContext',
+      class {
+        constructor() {
+          return context;
+        }
+      },
+    );
+
+    return context;
+  }
+
+  it('stoppt die laufende, bevor eine neue startet', async () => {
+    const context = stubRunningContext();
+    const { playAudioBufferWhenAwake } = await loadSoundModule();
+
+    playAudioBufferWhenAwake({} as AudioBuffer);
+    playAudioBufferWhenAwake({} as AudioBuffer);
+
+    expect(context.sources.map((source) => source.stopCalls)).toEqual([1, 0]);
+  });
+
+  it('stoppt sie auf Wunsch genau einmal', async () => {
+    const context = stubRunningContext();
+    const { playAudioBufferWhenAwake, stopAnnouncement } = await loadSoundModule();
+
+    playAudioBufferWhenAwake({} as AudioBuffer);
+    stopAnnouncement();
+    stopAnnouncement();
+
+    expect(context.sources[0].stopCalls).toBe(1);
+  });
+
+  it('bleibt still, wenn das Stoppen wirft', async () => {
+    const context = stubRunningContext();
+    const { playAudioBufferWhenAwake, stopAnnouncement } = await loadSoundModule();
+
+    context.stopThrows = true;
+    playAudioBufferWhenAwake({} as AudioBuffer);
+
+    expect(() => stopAnnouncement()).not.toThrow();
+    expect(() => playAudioBufferWhenAwake({} as AudioBuffer)).not.toThrow();
   });
 });

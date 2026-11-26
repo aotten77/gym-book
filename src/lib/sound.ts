@@ -257,19 +257,58 @@ export function getSharedAudioContext(): AudioContext | null {
   return ensureAudioContext();
 }
 
+/*
+ * Es läuft höchstens eine Ansage. Eine Anleitung dauert bis zu 40 s und liefe
+ * sonst nach einem Sprung, einer Pause oder dem Verlassen des Screens weiter
+ * und überlagerte die nächste. `announcementToken` verwirft zusätzlich eine
+ * Ansage, die noch auf das Wecken des Kontexts wartet.
+ */
+let currentAnnouncement: AudioBufferSourceNode | null = null;
+let announcementToken = 0;
+
+/** Stoppt die laufende Ansage - still, wenn keine läuft oder das Stoppen scheitert. */
+export function stopAnnouncement() {
+  announcementToken += 1;
+
+  const source = currentAnnouncement;
+
+  currentAnnouncement = null;
+
+  try {
+    source?.stop();
+  } catch {
+    // Schon zu Ende oder nie gestartet.
+  }
+}
+
 /**
  * Spielt einen schon dekodierten Puffer (eine Ansage) mit derselben Weck- und
- * Fristlogik wie das Signal. Still statt Fehler, wo es Web Audio nicht gibt.
+ * Fristlogik wie das Signal; eine laufende Ansage stoppt vorher. Still statt
+ * Fehler, wo es Web Audio nicht gibt.
  */
 export function playAudioBufferWhenAwake(buffer: AudioBuffer, delaySeconds = 0) {
+  stopAnnouncement();
+
+  const token = announcementToken;
+
   setAmbientAudioSession();
   runWhenAwake((context) => {
+    if (token !== announcementToken) {
+      return;
+    }
+
     try {
       const source = context.createBufferSource();
 
       source.buffer = buffer;
       source.connect(context.destination);
+      source.onended = () => {
+        if (currentAnnouncement === source) {
+          currentAnnouncement = null;
+        }
+      };
       source.start(context.currentTime + delaySeconds);
+      currentAnnouncement = source;
     } catch {
       // Audio ist Beiwerk.
     }
