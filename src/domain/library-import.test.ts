@@ -1290,6 +1290,79 @@ describe('Import - geführte Schritte', () => {
     ]);
   });
 
+  it('liest eine Anleitung, trimmt sie und lässt eine leere weg', () => {
+    const plan = planLibraryImport(
+      buildPayload({
+        templates: [
+          {
+            name: 'Beispiel-Mobility',
+            steps: [
+              { name: 'Beispiel A', seconds: 40, guidance: '  Erfundener Beispieltext.  ' },
+              { name: 'Beispiel B', seconds: 30, guidance: '   ' },
+            ],
+          },
+        ],
+      }),
+      emptyState(),
+    );
+
+    const steps = plan.templates[0].record?.steps ?? [];
+    expect(steps[0].guidance).toBe('Erfundener Beispieltext.');
+    expect('guidance' in steps[1]).toBe(false);
+  });
+
+  it('weist eine Anleitung über 600 Zeichen und eine Nicht-Text-Anleitung ab', () => {
+    expect(() => parseWithSteps([{ name: 'A', seconds: 30, guidance: 'x'.repeat(601) }])).toThrow(
+      'Schritt 1, Feld "guidance": Die Anleitung darf höchstens 600 Zeichen lang sein.',
+    );
+    expect(() => parseWithSteps([{ name: 'A', seconds: 30, guidance: 42 }])).toThrow(
+      'Schritt 1, Feld "guidance": Die Anleitung muss Text sein.',
+    );
+    expect(() =>
+      parseWithSteps([{ name: 'A', seconds: 30, guidance: ` ${'x'.repeat(600)} ` }]),
+    ).not.toThrow();
+  });
+
+  it('übernimmt guidanceSeconds aus einer Datei nicht in die Vorlage', () => {
+    const plan = planLibraryImport(
+      buildPayload({
+        templates: [
+          {
+            name: 'Beispiel-Mobility',
+            steps: [{ name: 'Beispiel A', seconds: 30, guidance: 'Text.', guidanceSeconds: 99 }],
+          },
+        ],
+      } as never),
+      emptyState(),
+    );
+
+    expect(plan.templates[0].record?.steps).toEqual([
+      { name: 'Beispiel A', seconds: 30, guidance: 'Text.' },
+    ]);
+  });
+
+  it('zählt eine geänderte Anleitung als geänderte Schrittliste', () => {
+    const before = [{ name: 'Beispiel A', seconds: 40, guidance: 'Alt.' }];
+    const plan = planLibraryImport(
+      buildPayload({
+        templates: [
+          { name: 'Beispiel-Mobility', steps: [{ name: 'Beispiel A', seconds: 40, guidance: 'Neu.' }] },
+        ],
+      }),
+      emptyState({ templates: [{ ...buildTemplate('t1', 'Beispiel-Mobility'), steps: before }] }),
+    );
+
+    expect(plan.templates[0].kind).toBe('update');
+    expect(plan.templates[0].changes).toEqual([
+      {
+        field: 'Schritte',
+        from: 'geführt, 1 Schritt',
+        to: 'geführt, 1 Schritt (Inhalt geändert)',
+      },
+    ]);
+    expect(plan.templates[0].values.steps?.[0].guidance).toBe('Neu.');
+  });
+
   it('schreibt bei einer neuen Vorlage ohne Schritte keinen Schlüssel', () => {
     const plan = planLibraryImport(buildPayload({ templates: [{ name: 'Kraft A' }] }), emptyState());
 

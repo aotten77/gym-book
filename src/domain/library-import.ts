@@ -36,6 +36,7 @@ import {
   type RestrictionPlanEntry,
 } from '@/domain/restriction-import';
 import { TRACKING_MODE_LABELS } from '@/domain/tracking';
+import { countChars } from '@/domain/tts-quota';
 import { createId } from '@/lib/id';
 import { formatNumber } from '@/lib/format';
 
@@ -104,6 +105,9 @@ function positiveWholeNumber(messages: {
     .positive(messages.notPositive);
 }
 
+/** Etwa 40 Sekunden gesprochen; gezählt in Zeichen wie das TTS-Kontingent. */
+const GUIDANCE_MAX_CHARS = 600;
+
 const importGuidedStepSchema = z.object({
   name: z
     .string({ required_error: 'Der Name fehlt.', invalid_type_error: 'Der Name muss Text sein.' })
@@ -123,6 +127,13 @@ const importGuidedStepSchema = z.object({
     notPositive: 'Der Wechsel muss größer als 0 sein.',
   }).optional(),
   spokenName: z.string().optional(),
+  guidance: z
+    .string({ invalid_type_error: 'Die Anleitung muss Text sein.' })
+    .refine(
+      (value) => countChars(value.trim()) <= GUIDANCE_MAX_CHARS,
+      `Die Anleitung darf höchstens ${GUIDANCE_MAX_CHARS} Zeichen lang sein.`,
+    )
+    .optional(),
 });
 
 const importTemplateSchema = z.object({
@@ -611,6 +622,7 @@ function normalizeGuidedSteps(steps: readonly GuidedStep[]): GuidedStep[] {
   return steps.map((step) => {
     const hint = optionalText(step.hint);
     const spokenName = optionalText(step.spokenName);
+    const guidance = optionalText(step.guidance);
 
     return {
       name: step.name.trim(),
@@ -619,6 +631,7 @@ function normalizeGuidedSteps(steps: readonly GuidedStep[]): GuidedStep[] {
       ...(hint && { hint }),
       ...(step.transitionSeconds !== undefined && { transitionSeconds: step.transitionSeconds }),
       ...(spokenName && { spokenName }),
+      ...(guidance && { guidance }),
     };
   });
 }

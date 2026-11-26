@@ -182,6 +182,7 @@ Jeder Schritt ist ein Objekt:
 | `hint` | nein | Klartext | Der Hinweis hinter dem „i“. **Kein Markdown**, er wird so angezeigt, wie er dasteht. Ein oder zwei Sätze. |
 | `transitionSeconds` | nein | ganze Zahl ≥ 1 | Der Wechsel **vor** diesem Schritt in Sekunden. Fehlt er, sind es 5. Sinnvoll nach einer aufwendigen Position, aus der man mehr Zeit zum Umbauen braucht. |
 | `spokenName` | nein | Text | Was die Ansage statt `name` sagt, siehe unten. |
+| `guidance` | nein | Klartext | Die gesprochene Anleitung, siehe unten. Kein Markdown, höchstens 600 Zeichen. |
 
 **Wie die App die Liste abspielt:**
 
@@ -234,6 +235,34 @@ ist, bekommt deshalb einen `spokenName`. Für ihn gilt:
 
 Ist `name` schon sprechbar („Kindhaltung“, „Herabschauender Hund“), lass
 `spokenName` weg. Der Name wird dann unverändert gesprochen.
+
+**Anleitungen (`guidance`).** Eine Anleitung erklärt eine Übung zum Hören, wie
+ein Trainer im Studio. Wer in der App „Mit Anleitung“ einschaltet, hört sie im
+Wechsel vor dem Schritt, direkt nach „Als Nächstes: …“; die Uhr der Übung
+startet erst, wenn sie zu Ende ist. Für sie gilt:
+
+- **Zwei bis vier kurze, gesprochene Sätze** in dieser Reihenfolge: wie man in
+  die Position kommt, worauf man achtet, was man spürt, ein typischer Fehler.
+- **Für die Computerstimme geschrieben**, nach denselben Regeln wie
+  `spokenName`: keine Abkürzungen, keine Klammern, keine Schrägstriche, kein
+  Markdown, keine URLs, Zahlen ausgeschrieben, wo sie gesprochen anders
+  klingen.
+- **Kein Name, keine Seite, keine Dauer und kein „Als Nächstes“.** Das setzt
+  die App davor.
+- **Bei `bothSides: true` für die erste Seite formuliert.** Vor der zweiten
+  Seite hört man nur „Als Nächstes: …, rechts, …“.
+- **Höchstens 600 Zeichen** (gesprochen etwa 40 Sekunden). Eine längere
+  Anleitung lässt den ganzen Import abbrechen.
+- Die Anleitung verlängert den Wechsel vor dem Schritt nur, **wenn** sie
+  eingeschaltet ist; die App misst dafür die erzeugte Ansage. `seconds` bleibt
+  die reine Haltezeit, `transitionSeconds` der Wechsel ohne Anleitung. Rechne
+  die Anleitung also nicht in eine dieser Zahlen ein.
+- `steps` ersetzt die Liste ganz: Wer Anleitungen nachliefert, schickt die
+  ganze Liste mit allen übrigen Feldern. `guidance` steht in `bestand.json`
+  unter `templates[].steps`.
+
+Den Text hinter dem „i“ (`hint`) ersetzt die Anleitung nicht: `hint` bleibt
+der kurze Lesetext, und das „i“ zeigt beides.
 
 **Vorschau.** Für eine geführte Vorlage steht in der Vorschau
 `Schritte: — → geführt, 12 Schritte`. Ersetzt die Datei eine vorhandene Liste,
@@ -563,7 +592,8 @@ samt ihren Wochenregeln.
         { "name": "Kindhaltung", "seconds": 60 },
         { "name": "Katze-Kuh", "seconds": 45, "spokenName": "Katze und Kuh" },
         { "name": "Herabschauender Hund", "seconds": 60,
-          "hint": "Hüfte nach hinten oben schieben, Fersen Richtung Boden, Nacken lang. Knie dürfen leicht gebeugt bleiben." },
+          "hint": "Hüfte nach hinten oben schieben, Fersen Richtung Boden, Nacken lang. Knie dürfen leicht gebeugt bleiben.",
+          "guidance": "Aus dem Vierfüßlerstand die Zehen aufstellen und die Hüfte nach hinten oben schieben. Die Hände drücken fest in die Matte, der Rücken wird lang. Du spürst die Dehnung in der Rückseite der Beine. Ein typischer Fehler ist ein runder Rücken, weil die Fersen unbedingt zum Boden sollen." },
         { "name": "Tiefer Ausfallschritt", "seconds": 90, "bothSides": true, "transitionSeconds": 10 },
         { "name": "Taube", "seconds": 150, "bothSides": true,
           "hint": "Das vordere Schienbein liegt quer, die Hüfte bleibt gerade." },

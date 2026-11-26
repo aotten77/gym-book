@@ -942,6 +942,54 @@ describe('restoreDatabaseSnapshot', () => {
     expect(parsed.workoutSessions[0].guided?.audioMode).toBe('voice');
   });
 
+  it('trägt Anleitung, Wechsel mit Anleitung und die gemerkte Wahl durch', async () => {
+    const stamp = '2026-07-01T08:00:00.000Z';
+    const templateSteps = [{ name: 'Beispiel A', seconds: 40, guidance: 'Erfundener Beispieltext.' }];
+    const guided = {
+      audioMode: 'voice' as const,
+      steps: [{ ...templateSteps[0], guidanceSeconds: 15 }],
+      events: [{ type: 'start' as const, at: 1_790_000_000_000 }],
+    };
+    const parsed = parseDatabaseSnapshot(
+      JSON.stringify(
+        createSnapshot({
+          appSettings: [
+            {
+              id: 'app-settings',
+              guidedGuidance: true,
+              exportSchemaVersion: SNAPSHOT_SCHEMA_VERSION,
+              updatedAt: stamp,
+            },
+          ],
+          workoutTemplates: [
+            { id: 'template-g', name: 'Beispiel-Mobility', steps: templateSteps, createdAt: stamp, updatedAt: stamp },
+          ],
+          workoutSessions: [
+            {
+              id: 'session-a',
+              templateId: 'template-g',
+              templateNameSnapshot: 'Beispiel-Mobility',
+              resolvedProgramWeek: 1,
+              startedAt: stamp,
+              status: 'active',
+              guided,
+            },
+          ],
+        }),
+      ),
+    );
+
+    // Zod striche alle drei Felder still, wenn sie im Schema fehlten.
+    expect(parsed.appSettings[0].guidedGuidance).toBe(true);
+    expect(parsed.workoutTemplates[0].steps).toEqual(templateSteps);
+    expect(parsed.workoutSessions[0].guided).toEqual(guided);
+
+    await restoreDatabaseSnapshot(parsed);
+
+    expect((await db.workoutTemplates.get('template-g'))?.steps).toEqual(templateSteps);
+    expect((await db.workoutSessions.get('session-a'))?.guided).toEqual(guided);
+  });
+
   it('trägt das Schritt-Protokoll einer geführten Session durch', async () => {
     const stamp = '2026-07-01T08:00:00.000Z';
     const guided = {

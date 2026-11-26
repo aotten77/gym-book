@@ -78,6 +78,9 @@ const guidedStepSchema = z.object({
   hint: z.string().optional(),
   transitionSeconds: z.number().int().positive().optional(),
   spokenName: z.string().optional(),
+  guidance: z.string().optional(),
+  /** Nur im Snapshot einer Einheit; ohne das Feld verlöre ein Restore die Wechsel mit Anleitung. */
+  guidanceSeconds: z.number().int().positive().optional(),
 });
 
 const workoutTemplateSchema = z.object({
@@ -440,6 +443,7 @@ const appSettingsSchema = z.object({
   timerSoundEnabled: z.boolean().optional(),
   keepScreenAwakeEnabled: z.boolean().optional(),
   guidedAudioMode: z.enum(['voice', 'tone']).optional(),
+  guidedGuidance: z.boolean().optional(),
   exportSchemaVersion: z.number().int().positive(),
   updatedAt: z.string(),
 });
