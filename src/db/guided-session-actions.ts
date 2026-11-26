@@ -1,8 +1,12 @@
 import { db } from "@/db/appDb";
-import { getStepsAnnouncementAvailability } from "@/db/announcement-actions";
+import {
+  getStepsAnnouncementAvailability,
+  loadGuidanceDurations,
+} from "@/db/announcement-actions";
 import { SETTINGS_ID } from "@/db/normalize";
 import { loadRestrictions } from "@/db/restriction-actions";
-import { setGuidedAudioMode } from "@/db/settings-actions";
+import { setGuidedAudioMode, setGuidedGuidance } from "@/db/settings-actions";
+import { readTtsSettings } from "@/db/tts-actions";
 import {
   abortSession,
   findActiveSession,
@@ -16,6 +20,10 @@ import {
   deriveGuidedRunState,
   guidedRunEndsAt,
 } from "@/domain/guided-run";
+import {
+  applyGuidance,
+  requiredGuidanceTexts,
+} from "@/domain/guided-announcements";
 import { isGuidedTemplate } from "@/domain/guided-steps";
 import type { GuidedAudioMode, WorkoutSession } from "@/domain/models";
 import { toDateInputValue } from "@/domain/program";
@@ -38,6 +46,8 @@ import { createId } from "@/lib/id";
 export interface StartGuidedOptions extends StartSessionOptions {
   /** Die gewünschte Audio-Wahl; ohne sie gilt die zuletzt gewählte, sonst „Stimme + Ton“. */
   audioMode?: GuidedAudioMode;
+  /** Mit gesprochener Anleitung; ohne Angabe gilt die zuletzt gewählte, sonst aus. */
+  guidance?: boolean;
 }
 
 /**
@@ -53,6 +63,11 @@ export interface StartGuidedOptions extends StartSessionOptions {
  * abgespielten Schritte mit angepassten Sekunden, `pausedSteps` und
  * `adjustedSteps` halten den Rest für Anzeige und Protokoll fest. Sind alle
  * Schritte pausiert, startet nichts.
+ *
+ * Mit Anleitung (nur bei „Stimme + Ton“ und gemessenen Anleitungssätzen)
+ * trägt der Snapshot an jedem Schritt mit Anleitung `guidanceSeconds`: die
+ * Zeitachse ist damit beim Start festgelegt. Fehlt eine Dauer, läuft die
+ * Einheit ohne Anleitung, und die gemerkte Wahl bleibt, wie sie war.
  */
 export async function startGuidedSession(
   templateId: string,
@@ -85,13 +100,25 @@ export async function startGuidedSession(
   // Vor der Transaktion: die Verfügbarkeit liest mehrere Tabellen und die TTS-Einstellungen.
   // Geprüft wird an den wirksamen Schritten - eine Anpassung ändert die Sätze.
   const availability = await getStepsAnnouncementAvailability(steps);
+  const settings = await db.appSettings.get(SETTINGS_ID);
   const wanted: GuidedAudioMode =
-    options.audioMode ??
-    (await db.appSettings.get(SETTINGS_ID))?.guidedAudioMode ??
-    "voice";
+    options.audioMode ?? settings?.guidedAudioMode ?? "voice";
   // „Stimme + Ton“ nur mit allen Ansagen: sonst läuft „Nur Ton“, und die Wahl bleibt, wie sie war.
   const audioMode: GuidedAudioMode =
     wanted === "voice" && availability.complete ? "voice" : "tone";
+  const wantsGuidance = options.guidance ?? settings?.guidedGuidance ?? false;
+  // Die Dauern auch vor der Transaktion; gemessen wurde beim Erzeugen.
+  const withGuidance =
+    audioMode === "voice" && wantsGuidance
+      ? applyGuidance(
+          steps,
+          await loadGuidanceDurations(
+            requiredGuidanceTexts(steps).map((entry) => entry.text),
+            (await readTtsSettings()).voice,
+          ),
+        )
+      : null;
+  const playedSteps = withGuidance ?? steps;
   const session: WorkoutSession = {
     id: createId(),
     templateId: template.id,
@@ -106,8 +133,8 @@ export async function startGuidedSession(
     // Eine Kopie: spätere Importe ersetzen die Schritte der Vorlage, nicht die dieser Einheit.
     guided: {
       audioMode,
-      steps: steps.map((step) => ({ ...step })),
-      events: addGuidedEvent([], { type: "start", at: now.getTime() }, steps),
+      steps: playedSteps.map((step) => ({ ...step })),
+      events: addGuidedEvent([], { type: "start", at: now.getTime() }, playedSteps),
       ...(pausedSteps.length > 0
         ? {
             pausedSteps: pausedSteps.map((paused) => ({
@@ -144,6 +171,11 @@ export async function startGuidedSession(
 
       if (options.audioMode && audioMode === wanted) {
         await setGuidedAudioMode(audioMode);
+      }
+
+      // Dieselbe Regel: gemerkt wird nur eine Wahl, die auch erfüllt wurde.
+      if (options.guidance !== undefined && options.guidance === (withGuidance !== null)) {
+        await setGuidedGuidance(options.guidance);
       }
 
       return session.id;

@@ -94,6 +94,14 @@ export async function setGuidedAudioMode(mode: GuidedAudioMode) {
 }
 
 /**
+ * Merkt die zuletzt gewählte Stellung des Schalters „Mit Anleitung“. Schreibt
+ * immer einen Wert, auch `false` - `undefined` löschte das Feld.
+ */
+export async function setGuidedGuidance(enabled: boolean) {
+  await updateSettings({ guidedGuidance: enabled });
+}
+
+/**
  * Merkt sich, dass eine Sicherung geschrieben wurde.
  *
  * Die Erinnerung auf der Startseite zählt abgeschlossene Trainings, die

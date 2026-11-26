@@ -8,7 +8,10 @@ import {
   setGuidedSessionAudioMode,
   startGuidedSession,
 } from "@/db/guided-session-actions";
-import { generateAnnouncements } from "@/db/announcement-actions";
+import {
+  generateAnnouncements,
+  getStepsAnnouncementAvailability,
+} from "@/db/announcement-actions";
 import { saveApiKey } from "@/db/tts-actions";
 import { abortSession, startSessionFromTemplate } from "@/db/session-actions";
 import type { GuidedStep, PlanEntry } from "@/domain/models";
@@ -806,5 +809,112 @@ describe("Audio-Wahl", () => {
     await expect(setGuidedSessionAudioMode(id, "tone")).rejects.toThrow(
       "läuft nicht mehr",
     );
+  });
+});
+
+describe("startGuidedSession mit Anleitung", () => {
+  const GUIDE = "Erfundener Beispieltext zum Einstieg.";
+  const GUIDED: GuidedStep[] = [
+    { name: "Beispiel A", seconds: 40, guidance: GUIDE },
+    { name: "Beispiel B", seconds: 30 },
+  ];
+
+  async function seedWithGuidance(measured: number | null, now = DO) {
+    await seedGuided({ steps: GUIDED });
+    await saveApiKey("PLATZHALTER-SCHLUESSEL-4321");
+    await generateAnnouncements(["g"], {
+      synth: async () => new Blob(["mp3"], { type: "audio/mpeg" }),
+      isOnline: () => true,
+      measure: async () => measured,
+      now,
+    });
+  }
+
+  async function readSettings() {
+    return db.appSettings.get("app-settings");
+  }
+
+  it("legt den Wechsel mit Anleitung in den Snapshot und merkt die Wahl", async () => {
+    await seedWithGuidance(12_000);
+
+    const id = await startGuidedSession("g", { now: DO, audioMode: "voice", guidance: true });
+    const steps = (await db.workoutSessions.get(id))?.guided?.steps ?? [];
+
+    expect(steps[0].guidanceSeconds).toBe(15);
+    expect("guidanceSeconds" in steps[1]).toBe(false);
+    expect((await readSettings())?.guidedGuidance).toBe(true);
+  });
+
+  it("spricht bei „Nur Ton“ keine Anleitung und lässt die Wahl stehen", async () => {
+    await seedWithGuidance(12_000);
+
+    const id = await startGuidedSession("g", { now: DO, audioMode: "tone", guidance: true });
+    const steps = (await db.workoutSessions.get(id))?.guided?.steps ?? [];
+
+    expect(steps.some((step) => "guidanceSeconds" in step)).toBe(false);
+    expect((await readSettings())?.guidedGuidance).toBeUndefined();
+  });
+
+  it("startet ohne gemessene Anleitung mit Stimme, aber ohne Anleitung", async () => {
+    await seedWithGuidance(null);
+
+    const id = await startGuidedSession("g", { now: DO, audioMode: "voice", guidance: true });
+    const guided = (await db.workoutSessions.get(id))?.guided;
+
+    expect(guided?.audioMode).toBe("voice");
+    expect(guided?.steps.some((step) => "guidanceSeconds" in step)).toBe(false);
+    expect((await readSettings())?.guidedGuidance).toBeUndefined();
+  });
+
+  it("nimmt ohne Angabe die gemerkte Wahl", async () => {
+    await seedWithGuidance(12_000);
+    await db.appSettings.put({
+      id: "app-settings",
+      guidedAudioMode: "voice",
+      guidedGuidance: true,
+      exportSchemaVersion: 1,
+      updatedAt: STAMP,
+    });
+
+    const id = await startGuidedSession("g", { now: DO });
+
+    expect((await db.workoutSessions.get(id))?.guided?.steps[0].guidanceSeconds).toBe(15);
+  });
+
+  it("misst bei einer Schrittanpassung den wirksamen Satz", async () => {
+    const IN_PHASE = new Date(2026, 11, 1, 18, 0, 0);
+
+    await seedWithGuidance(12_000, IN_PHASE);
+    await db.restrictions.add({
+      id: "r1",
+      name: "Beispiel R",
+      from: "2026-12-01",
+      until: "2026-12-14",
+      pauses: [],
+      adjustments: [{ stepName: "Beispiel A", templateId: "g", seconds: 20 }],
+      createdAt: STAMP,
+      updatedAt: STAMP,
+    });
+    // Erst mit der Einschränkung gibt es den Satz mit 20 Sekunden.
+    await generateAnnouncements(["g"], {
+      synth: async () => new Blob(["mp3"], { type: "audio/mpeg" }),
+      isOnline: () => true,
+      measure: async () => 12_000,
+      now: IN_PHASE,
+    });
+
+    const id = await startGuidedSession("g", { now: IN_PHASE, audioMode: "voice", guidance: true });
+    const step = (await db.workoutSessions.get(id))?.guided?.steps[0];
+
+    expect(step).toMatchObject({ seconds: 20, guidanceSeconds: 15 });
+  });
+
+  it("findet im Ablauf die Sätze mit Anleitung", async () => {
+    await seedWithGuidance(12_000);
+
+    const id = await startGuidedSession("g", { now: DO, audioMode: "voice", guidance: true });
+    const steps = (await db.workoutSessions.get(id))?.guided?.steps ?? [];
+
+    expect((await getStepsAnnouncementAvailability(steps)).complete).toBe(true);
   });
 });
