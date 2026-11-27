@@ -90,28 +90,36 @@ describe('synthesizeSpeech', () => {
     expect(blob.size).toBeGreaterThan(0);
   });
 
-  it('gibt nach zwei Fehlschlägen auf, bei 5xx wie bei Netzfehler', async () => {
-    for (const post of [
-      vi.fn<TtsPost>().mockResolvedValue({ status: 503, body: '{}' }),
-      vi.fn<TtsPost>().mockRejectedValue(new TypeError('Load failed')),
-    ]) {
+  it('gibt nach zwei Fehlschlägen auf und nennt, woran es lag', async () => {
+    for (const [post, message] of [
+      [
+        vi.fn<TtsPost>().mockResolvedValue({ status: 503, body: '{}' }),
+        'Google-Fehler 503 – Ansagen nicht erzeugt',
+      ],
+      [
+        vi.fn<TtsPost>().mockRejectedValue(new TypeError('Load failed')),
+        'Keine Verbindung zu Google – Ansagen nicht erzeugt',
+      ],
+    ] as const) {
       const sleep = vi.fn().mockResolvedValue(undefined);
       const error = await failure(synthesizeSpeech({ apiKey: KEY, voice: VOICE, text: 'Hallo', post, sleep }));
 
-      expect(error.message).toBe('Ansagen nicht erzeugt');
+      expect(error.message).toBe(message);
       expect(post).toHaveBeenCalledTimes(2);
       expect(sleep).toHaveBeenCalledTimes(1);
     }
   });
 
-  it('behandelt einen Timeout wie einen Netzfehler', async () => {
-    const post = vi.fn<TtsPost>().mockRejectedValue(new DOMException('Timeout', 'TimeoutError'));
+  it('meldet einen Timeout als zu späte Antwort, auch als Abbruch der eigenen Frist', async () => {
+    for (const name of ['TimeoutError', 'AbortError']) {
+      const post = vi.fn<TtsPost>().mockRejectedValue(new DOMException('Abbruch', name));
 
-    const error = await failure(
-      synthesizeSpeech({ apiKey: KEY, voice: VOICE, text: 'Hallo', post, sleep: async () => {} }),
-    );
+      const error = await failure(
+        synthesizeSpeech({ apiKey: KEY, voice: VOICE, text: 'Hallo', post, sleep: async () => {} }),
+      );
 
-    expect(error.message).toBe('Ansagen nicht erzeugt');
+      expect(error.message).toBe('Google hat nicht rechtzeitig geantwortet – Ansagen nicht erzeugt');
+    }
   });
 
   it('meldet eine Antwort ohne Audio', async () => {

@@ -113,6 +113,28 @@ describe('generateAnnouncements', () => {
     expect((await getTtsView()).monthChars).toBe('Als Nächstes: Hund, 60 Sekunden'.length);
   });
 
+  it('nennt einen Fehler auf dem Gerät anders als einen Fehler bei Google', async () => {
+    await seed('a', A);
+    await saveApiKey(KEY);
+    const measure = vi
+      .fn()
+      .mockResolvedValueOnce(null)
+      .mockRejectedValueOnce(new Error('Speicher voll'));
+
+    const result = await generateAnnouncements(['a'], {
+      synth: async () => blob(),
+      isOnline: ONLINE,
+      measure,
+    });
+
+    expect(result).toMatchObject({
+      status: 'failed',
+      generated: 1,
+      missing: 2,
+      message: 'Ansage von Google erhalten, aber auf dem Gerät nicht gespeichert',
+    });
+  });
+
   it('sendet ohne Schlüssel nichts', async () => {
     await seed('a', A);
     const post = vi.fn();

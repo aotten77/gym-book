@@ -18,6 +18,8 @@ const ERROR_CHARS = 200;
 
 export const MISSING_KEY_MESSAGE = 'Kein Google-Schlüssel – in Einstellungen eintragen';
 export const FAILED_MESSAGE = 'Ansagen nicht erzeugt';
+const NO_CONNECTION_MESSAGE = `Keine Verbindung zu Google – ${FAILED_MESSAGE}`;
+const TIMEOUT_MESSAGE = `Google hat nicht rechtzeitig geantwortet – ${FAILED_MESSAGE}`;
 const NO_AUDIO_MESSAGE = 'Google-Antwort ohne Audio';
 
 /** Die Meldung ist immer anzeigbar und enthält nie den Schlüssel. */
@@ -122,13 +124,21 @@ export async function synthesizeSpeech({
   });
   const headers = { 'Content-Type': 'application/json', 'X-Goog-Api-Key': key };
 
+  // Was beim letzten Versuch schiefging - die Meldung nennt es, damit man
+  // Netz, Frist und Google auseinanderhalten kann.
+  let lastFailure = FAILED_MESSAGE;
+
   for (let attempt = 0; attempt < 2; attempt += 1) {
     let response: { status: number; body: string } | null = null;
 
     try {
       response = await post(TTS_URL, body, TIMEOUT_MS, headers);
-    } catch {
-      // Netzfehler oder Timeout: die Ausnahme selbst wird bewusst nicht weitergereicht.
+    } catch (error) {
+      // Nur die Art des Fehlers zählt; die Ausnahme selbst wird bewusst nicht weitergereicht.
+      const timedOut =
+        error instanceof DOMException && (error.name === 'TimeoutError' || error.name === 'AbortError');
+
+      lastFailure = timedOut ? TIMEOUT_MESSAGE : NO_CONNECTION_MESSAGE;
     }
 
     if (response) {
@@ -145,6 +155,8 @@ export async function synthesizeSpeech({
       if (response.status < 500) {
         throw new TtsError(googleMessage(response.status, response.body, key));
       }
+
+      lastFailure = `Google-Fehler ${response.status} – ${FAILED_MESSAGE}`;
     }
 
     if (attempt === 0) {
@@ -152,5 +164,5 @@ export async function synthesizeSpeech({
     }
   }
 
-  throw new TtsError(FAILED_MESSAGE);
+  throw new TtsError(lastFailure);
 }

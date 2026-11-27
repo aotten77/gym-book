@@ -24,6 +24,8 @@ import { MISSING_KEY_MESSAGE, synthesizeSpeech, TtsError, type SynthesizeOptions
  */
 
 export const OFFLINE_MESSAGE = 'Offline – Ansagen nicht erzeugt';
+/** Google hat geantwortet, aber Zählen, Messen oder Speichern scheiterte. */
+const LOCAL_FAILURE_MESSAGE = 'Ansage von Google erhalten, aber auf dem Gerät nicht gespeichert';
 
 export interface AnnouncementAvailability {
   voice: string;
@@ -325,7 +327,7 @@ export async function generateAnnouncements(
         }
       } catch (error) {
         return fail(
-          error instanceof TtsError ? error.message : 'Ansagen nicht erzeugt',
+          error instanceof TtsError ? error.message : LOCAL_FAILURE_MESSAGE,
           generated,
         );
       }
