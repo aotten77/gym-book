@@ -81,6 +81,47 @@ test.describe('Bibliotheks-Import', () => {
     await expect(page.getByRole('button', { name: 'Import bestätigen' })).toBeDisabled();
   });
 
+  test('ältere Importe zeigen Datum und alle Zähler, ohne überzulaufen', async ({ page }) => {
+    await pasteAndPreview(page, PAYLOAD);
+    await page.getByRole('button', { name: 'Import bestätigen' }).click();
+    await expect(page.getByRole('status').filter({ hasText: 'Eingespielt' })).toBeVisible();
+
+    await pasteAndPreview(
+      page,
+      JSON.stringify({
+        schemaVersion: 1,
+        exercises: [{ name: 'Beispiel-Übung', trackingMode: 'reps_weight', unilateral: false }],
+      }),
+    );
+    await page.getByRole('button', { name: 'Import bestätigen' }).click();
+    await page.waitForTimeout(900);
+
+    // Der erste Import steht jetzt als ältere Zeile da, mit langem Zählertext.
+    const row = page.locator('[data-import-row]');
+
+    await expect(row).toHaveCount(1);
+    await expect(row).toContainText('1 Workout, 1 Übung, 1 Zuordnung, 1 Bandstufe');
+
+    const layout = await row.evaluate((element) => {
+      const [date, counts] = Array.from(element.children) as HTMLElement[];
+
+      return {
+        overflows: element.scrollWidth > element.clientWidth,
+        dateWidth: date.getBoundingClientRect().width,
+        dateClipped: date.scrollWidth > date.clientWidth,
+        countsClipped: counts.scrollWidth > counts.clientWidth,
+        countsRight: counts.getBoundingClientRect().right,
+        rowRight: element.getBoundingClientRect().right,
+      };
+    });
+
+    expect(layout.overflows).toBe(false);
+    expect(layout.dateWidth).toBeGreaterThan(0);
+    expect(layout.dateClipped).toBe(false);
+    expect(layout.countsClipped).toBe(false);
+    expect(layout.countsRight).toBeLessThanOrEqual(layout.rowRight);
+  });
+
   test('bricht mit der beanstandeten Zeile ab, statt halb zu schreiben', async ({ page }) => {
     await pasteAndPreview(
       page,

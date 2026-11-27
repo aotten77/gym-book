@@ -124,10 +124,13 @@ export function SyncPage() {
             {olderImports.map((log) => (
               <div
                 key={log.id}
+                data-import-row
                 className="flex items-center justify-between gap-3 rounded-panel border border-line bg-surface px-4 py-3 text-sm"
               >
-                <span className="min-w-0 truncate">{formatShortDate(new Date(log.importedAt))}</span>
-                <span className="shrink-0 text-xs text-content-muted">{describeImportCounts(log)}</span>
+                <span className="shrink-0">{formatShortDate(new Date(log.importedAt))}</span>
+                <span className="min-w-0 text-right text-xs text-content-muted">
+                  {describeImportCounts(log)}
+                </span>
               </div>
             ))}
           </section>
