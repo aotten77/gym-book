@@ -1,5 +1,5 @@
 import { SectionCard } from '@/components/SectionCard';
-import { describeGuidedStepDuration } from '@/domain/guided-steps';
+import { describeGuidedPausesBefore, describeGuidedStepDuration } from '@/domain/guided-steps';
 import type { GuidedStep } from '@/domain/models';
 import type { GuidedStepRestriction } from '@/domain/restriction';
 import { cn } from '@/lib/utils';
@@ -14,6 +14,9 @@ import { cn } from '@/lib/utils';
  * `restrictions` sind die Etiketten von heute je Schritt-Position („Pausiert
  * bis 14.12. · Beispiel A“, „30 s statt 45 · …“) - Auskunft, die Vorlage
  * bleibt, wie sie ist. Ein pausierter Schritt steht ausgegraut da.
+ *
+ * Vor einem Schritt, dessen Wechsel eine Pause ist, steht „45 s Pause“ - wie
+ * auf dem Start-Screen, nach denselben gespielten Schritten.
  */
 export function GuidedStepsCard({
   steps,
@@ -22,6 +25,11 @@ export function GuidedStepsCard({
   steps: readonly GuidedStep[];
   restrictions?: Map<number, GuidedStepRestriction>;
 }) {
+  const pauses = describeGuidedPausesBefore(
+    steps,
+    (index) => restrictions?.get(index)?.kind === 'pausiert',
+  );
+
   return (
     <SectionCard
       title="Schritte"
@@ -43,6 +51,11 @@ export function GuidedStepsCard({
                   restriction?.kind === 'pausiert' ? 'text-content-secondary' : 'text-content',
                 )}
               >
+                {pauses[index] ? (
+                  <span data-guided-step-pause className="block text-[11px] text-content-muted">
+                    {pauses[index]}
+                  </span>
+                ) : null}
                 {step.name}
                 {step.bothSides ? <small className="ml-1.5 text-xs text-content-muted">L · R</small> : null}
                 {restriction ? (

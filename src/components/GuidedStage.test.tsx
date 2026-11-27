@@ -47,4 +47,28 @@ describe('GuidedStage', () => {
 
     expect(meta.content).toBe('#f2f2ef');
   });
+
+  it('dunkel: setzt die Bühnenfarben auf Papier vor Tinte', () => {
+    render(
+      <GuidedStage label="Yoga" screen="run" tone="dark">
+        Inhalt
+      </GuidedStage>,
+    );
+    const stage = screen.getByRole('main', { name: 'Yoga' });
+
+    expect(stage.style.getPropertyValue('--stage-fg')).toBe('242 242 239');
+    expect(stage.style.getPropertyValue('--stage-bg')).toBe('12 18 16');
+  });
+
+  it('hell: setzt die Bühnenfarben auf Tinte vor Papier', () => {
+    render(
+      <GuidedStage label="Yoga" screen="run" tone="light">
+        Inhalt
+      </GuidedStage>,
+    );
+    const stage = screen.getByRole('main', { name: 'Yoga' });
+
+    expect(stage.style.getPropertyValue('--stage-fg')).toBe('12 18 16');
+    expect(stage.style.getPropertyValue('--stage-bg')).toBe('242 242 239');
+  });
 });

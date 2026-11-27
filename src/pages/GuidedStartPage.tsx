@@ -13,7 +13,12 @@ import { startGuidedSession } from '@/db/guided-session-actions';
 import { loadPlanNoteForGuidedStart } from '@/db/plan-queries';
 import { loadRestrictions } from '@/db/restriction-actions';
 import type { GuidedAudioMode } from '@/domain/models';
-import { describeGuidedFacts, describeGuidedStepDuration, isGuidedTemplate } from '@/domain/guided-steps';
+import {
+  describeGuidedFacts,
+  describeGuidedPausesBefore,
+  describeGuidedStepDuration,
+  isGuidedTemplate,
+} from '@/domain/guided-steps';
 import { toDateInputValue } from '@/domain/program';
 import { describeGuidedStepRestrictions, resolveGuidedSteps } from '@/domain/restriction';
 import { describeOverage, useAnnouncementGeneration } from '@/hooks/useAnnouncementGeneration';
@@ -197,6 +202,10 @@ export function GuidedStartPage() {
   const effectiveSteps = steps.map((step, index) =>
     restricted.get(index)?.kind === 'pausiert' ? step : (resolved.steps[playedIndex++] ?? step),
   );
+  const pauses = describeGuidedPausesBefore(
+    steps,
+    (index) => restricted.get(index)?.kind === 'pausiert',
+  );
 
   return (
     <GuidedStage label={template.name} screen="start">
@@ -225,6 +234,11 @@ export function GuidedStartPage() {
                 )}
               >
                 <span className="min-w-0 break-words">
+                  {pauses[index] ? (
+                    <span data-guided-step-pause className="block text-[11px] text-content-muted">
+                      {pauses[index]}
+                    </span>
+                  ) : null}
                   {step.name}
                   {step.bothSides ? (
                     <small className="ml-1 text-[11px] text-content-muted">L · R</small>

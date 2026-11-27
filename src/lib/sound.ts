@@ -25,6 +25,16 @@ const CHIME_TONES: ChimeTone[] = [
  */
 const GUIDED_SIGNAL_TONES: ChimeTone[] = [{ offsetSeconds: 0, durationSeconds: 0.4, frequency: 784 }];
 
+/**
+ * Der Countdown am Ende einer Pause: bei 3, 2 und 1 Sekunden Rest je ein
+ * kurzer Ton - kürzer und höher als das Übungsende, ohne den Doppelton der
+ * Timer, damit man ohne hinzusehen hört, welcher gerade klingt.
+ */
+const GUIDED_COUNT_TONES: ChimeTone[] = [{ offsetSeconds: 0, durationSeconds: 0.12, frequency: 880 }];
+
+/** Der Start-Ton am Ende der Pause: länger und höher als der Countdown - jetzt geht es los. */
+const GUIDED_GO_TONES: ChimeTone[] = [{ offsetSeconds: 0, durationSeconds: 0.45, frequency: 1174.7 }];
+
 const PEAK_GAIN = 0.22;
 
 /**
@@ -243,6 +253,18 @@ export function playTimerChime() {
 export function playGuidedSignal() {
   setAmbientAudioSession();
   playTonesWhenAwake(GUIDED_SIGNAL_TONES);
+}
+
+/** Ein Countdown-Ton bei 3, 2 und 1 Sekunden Rest einer Pause - wie `playGuidedSignal`. */
+export function playGuidedCountTone() {
+  setAmbientAudioSession();
+  playTonesWhenAwake(GUIDED_COUNT_TONES);
+}
+
+/** Der Start-Ton am Ende einer Pause - wie `playGuidedSignal`. */
+export function playGuidedGoTone() {
+  setAmbientAudioSession();
+  playTonesWhenAwake(GUIDED_GO_TONES);
 }
 
 function playTonesWhenAwake(tones: readonly ChimeTone[]) {

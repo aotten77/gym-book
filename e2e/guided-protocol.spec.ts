@@ -181,7 +181,7 @@ test.describe("Geführte Einheit: Schritt-Protokoll", () => {
       "data-guided-section",
       "transition",
     );
-    await page.getByRole("button", { name: "Pause" }).click();
+    await page.getByRole("button", { name: "Pausieren" }).click();
     await page.getByRole("button", { name: "Einheit beenden …" }).click();
     await page
       .getByRole("dialog", { name: "Einheit beenden?" })

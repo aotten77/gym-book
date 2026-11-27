@@ -77,7 +77,7 @@ test.describe('Geführte Einheit: Pause, Beenden, Verkleinern', () => {
     await expect(run(page)).toHaveAttribute('data-guided-phase', 'exercise');
     await expect(page.locator('[data-guided-name]')).toContainText('Kindhaltung');
 
-    await page.getByRole('button', { name: 'Pause' }).click();
+    await page.getByRole('button', { name: 'Pausieren' }).click();
 
     const stage = page.locator('[data-guided-stage="pause"]');
 
@@ -134,7 +134,7 @@ test.describe('Geführte Einheit: Pause, Beenden, Verkleinern', () => {
     await startRun(page);
     await page.clock.runFor(6500);
 
-    await page.getByRole('button', { name: 'Pause' }).click();
+    await page.getByRole('button', { name: 'Pausieren' }).click();
     await page.getByRole('button', { name: 'Einheit beenden …' }).click();
 
     const dialog = page.getByRole('dialog', { name: 'Einheit beenden?' });
@@ -172,7 +172,7 @@ test.describe('Geführte Einheit: Pause, Beenden, Verkleinern', () => {
     await importGuidedTemplate(page);
     await startRun(page);
     await page.clock.runFor(6500);
-    await page.getByRole('button', { name: 'Pause' }).click();
+    await page.getByRole('button', { name: 'Pausieren' }).click();
 
     await page.getByRole('button', { name: 'Verkleinern' }).click();
     await page.waitForTimeout(600);

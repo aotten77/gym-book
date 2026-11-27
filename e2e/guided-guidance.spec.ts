@@ -169,7 +169,7 @@ test.describe('Geführte Einheit: gesprochene Anleitung', () => {
     await page.waitForURL(/#\/guided\/run\//);
 
     await expect(run(page)).toHaveAttribute('data-guided-section', 'transition');
-    await expect(run(page)).toHaveAttribute('data-guided-remaining', /^1[23]$/);
+    await expect(run(page)).toHaveAttribute('data-guided-remaining', /^1[45]$/);
 
     await page.getByRole('button', { name: 'Sofort starten' }).click();
     await expect(run(page)).toHaveAttribute('data-guided-section', 'exercise');

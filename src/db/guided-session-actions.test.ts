@@ -840,7 +840,7 @@ describe("startGuidedSession mit Anleitung", () => {
     const id = await startGuidedSession("g", { now: DO, audioMode: "voice", guidance: true });
     const steps = (await db.workoutSessions.get(id))?.guided?.steps ?? [];
 
-    expect(steps[0].guidanceSeconds).toBe(15);
+    expect(steps[0].guidanceSeconds).toBe(17);
     expect("guidanceSeconds" in steps[1]).toBe(false);
     expect((await readSettings())?.guidedGuidance).toBe(true);
   });
@@ -878,7 +878,7 @@ describe("startGuidedSession mit Anleitung", () => {
 
     const id = await startGuidedSession("g", { now: DO });
 
-    expect((await db.workoutSessions.get(id))?.guided?.steps[0].guidanceSeconds).toBe(15);
+    expect((await db.workoutSessions.get(id))?.guided?.steps[0].guidanceSeconds).toBe(17);
   });
 
   it("misst bei einer Schrittanpassung den wirksamen Satz", async () => {
@@ -906,7 +906,7 @@ describe("startGuidedSession mit Anleitung", () => {
     const id = await startGuidedSession("g", { now: IN_PHASE, audioMode: "voice", guidance: true });
     const step = (await db.workoutSessions.get(id))?.guided?.steps[0];
 
-    expect(step).toMatchObject({ seconds: 20, guidanceSeconds: 15 });
+    expect(step).toMatchObject({ seconds: 20, guidanceSeconds: 17 });
   });
 
   it("findet im Ablauf die Sätze mit Anleitung", async () => {

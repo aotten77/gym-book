@@ -1,4 +1,5 @@
 import {
+  GUIDED_PAUSE_MIN_SECONDS,
   resolveGuidedSections,
   sumGuidedSeconds,
   type GuidedSection,
@@ -47,10 +48,25 @@ export const GUIDED_EXTEND_SECONDS = 15;
  */
 export const GUIDED_SIGNAL_MAX_DELAY_MS = 2000;
 
+/**
+ * Ab dieser Verspätung bleibt ein Countdown- oder Start-Ton aus: kürzer als
+ * der Abstand zweier Töne (1 s), damit keiner in den nächsten fällt, länger
+ * als ein Tick des Run-Screens (250 ms). Nach einer Rückkehr aus dem
+ * Hintergrund wird nichts nachgeholt.
+ */
+export const GUIDED_COUNT_MAX_DELAY_MS = 600;
+
 export type GuidedPhase = "transition" | "exercise" | "paused" | "finished";
+
+/**
+ * Welcher Ton: das Signal am Ende einer Übung, ein Countdown-Ton bei 3, 2, 1
+ * Sekunden Rest eines langen Wechsels oder der Start-Ton an seinem Ende.
+ */
+export type GuidedSignalKind = "exercise-end" | "count" | "go";
 
 /** Ein fälliges Signal. Den `key` merkt sich der Aufrufer, damit es nicht doppelt klingt. */
 export interface GuidedDueSignal {
+  kind: GuidedSignalKind;
   key: string;
   /** Wann es fällig wurde (ms). */
   dueAt: number;
@@ -133,6 +149,11 @@ interface Timeline {
   runningSince: number | null;
   /** Abschnitte der Abfolge, deren Ende kein Signal auslöst: sie wurden übersprungen. */
   skipped: ReadonlySet<number>;
+  /**
+   * Wechsel der Abfolge, die „Sofort starten“ beendet hat: ihr Countdown und
+   * ihr Start-Ton entfallen - wer tippt, weiß, dass es losgeht.
+   */
+  cutShort: ReadonlySet<number>;
   /** Wie oft die Zeit zurückgesprungen ist (Neustart, Zurück) - Teil des Signal-Schlüssels. */
   rewinds: number;
   /**
@@ -189,6 +210,7 @@ function foldTimeline(
   const count = baseSections.length;
   const extra: number[] = baseSections.map(() => 0);
   const skipped = new Set<number>();
+  const cutShort = new Set<number>();
   const playedMs: number[] = baseSections.map(() => 0);
   let sections = layOut(baseSections, extra);
   let index = 0;
@@ -293,6 +315,7 @@ function foldTimeline(
         break;
       case "startNow":
         if (!isOver() && sections[index].kind !== "exercise") {
+          cutShort.add(index);
           jumpTo(index + 1);
         }
         break;
@@ -339,6 +362,12 @@ function foldTimeline(
           }
         }
 
+        for (const passed of [...cutShort]) {
+          if (passed >= target) {
+            cutShort.delete(passed);
+          }
+        }
+
         for (let again = target; again < count; again += 1) {
           extra[again] = 0;
           playedMs[again] = 0;
@@ -366,6 +395,7 @@ function foldTimeline(
     rawPositionMs,
     runningSince,
     skipped,
+    cutShort,
     rewinds,
     lastJump,
     playedMs,
@@ -451,10 +481,17 @@ export function guidedRunEndsAt(
 }
 
 /**
- * Das Signal am Ende der Übung `index` - und `null`, wenn keines frisch fällig
- * ist oder die Zeit steht. Ein Neustart oder Zurück hängt seine Nummer an
- * den Schlüssel: die neu gespielte Übung endet noch einmal und soll noch
- * einmal klingen. Eine übersprungene Übung endet nie - ohne Signal.
+ * Das Signal, das zur Zeit fällig ist - und `null`, wenn keines frisch fällig
+ * ist oder die Zeit steht.
+ *
+ * Am Ende jeder Übung das Übungsende-Signal (Frische
+ * `GUIDED_SIGNAL_MAX_DELAY_MS`). Ein Wechsel, der tatsächlich mindestens
+ * `GUIDED_PAUSE_MIN_SECONDS` dauert, zählt bei 3, 2 und 1 Sekunden Rest
+ * herunter und endet mit dem Start-Ton (Frische `GUIDED_COUNT_MAX_DELAY_MS`) -
+ * außer „Sofort starten“ hat ihn beendet. Sind mehrere frisch, gewinnt das
+ * jüngste. Ein Neustart oder Zurück hängt seine Nummer an den Schlüssel: was
+ * neu gespielt wird, endet noch einmal und soll noch einmal klingen. Eine
+ * übersprungene Übung endet nie - ohne Signal.
  */
 function findDueSignal(
   timeline: Timeline,
@@ -464,24 +501,41 @@ function findDueSignal(
     return null;
   }
 
+  const suffix = timeline.rewinds > 0 ? `:${timeline.rewinds}` : "";
   let due: GuidedDueSignal | null = null;
+  let dueDelay = Number.POSITIVE_INFINITY;
+
+  const consider = (
+    kind: GuidedSignalKind,
+    key: string,
+    atMs: number,
+    maxDelayMs: number,
+  ) => {
+    const delay = timeline.rawPositionMs - atMs;
+
+    if (delay >= 0 && delay <= maxDelayMs && delay <= dueDelay) {
+      due = { kind, key: `${key}${suffix}`, dueAt: now - delay };
+      dueDelay = delay;
+    }
+  };
 
   timeline.sections.forEach((section, index) => {
-    if (section.kind !== "exercise" || timeline.skipped.has(index)) {
-      return;
+    const endMs = (section.startSeconds + section.seconds) * 1000;
+
+    if (section.kind === "exercise" && !timeline.skipped.has(index)) {
+      consider("exercise-end", `exercise-end:${index}`, endMs, GUIDED_SIGNAL_MAX_DELAY_MS);
     }
 
-    const delay =
-      timeline.rawPositionMs - (section.startSeconds + section.seconds) * 1000;
+    if (
+      section.kind === "transition" &&
+      section.seconds >= GUIDED_PAUSE_MIN_SECONDS &&
+      !timeline.cutShort.has(index)
+    ) {
+      for (const n of [3, 2, 1]) {
+        consider("count", `pause-count:${index}:${n}`, endMs - n * 1000, GUIDED_COUNT_MAX_DELAY_MS);
+      }
 
-    if (delay >= 0 && delay <= GUIDED_SIGNAL_MAX_DELAY_MS) {
-      due = {
-        key:
-          timeline.rewinds > 0
-            ? `exercise-end:${index}:${timeline.rewinds}`
-            : `exercise-end:${index}`,
-        dueAt: now - delay,
-      };
+      consider("go", `pause-go:${index}`, endMs, GUIDED_COUNT_MAX_DELAY_MS);
     }
   });
 
@@ -639,6 +693,7 @@ export function deriveGuidedRunState(
         rawPositionMs: 0,
         runningSince: null,
         skipped: new Set(),
+        cutShort: new Set(),
         rewinds: 0,
         lastJump: null,
         playedMs: [],

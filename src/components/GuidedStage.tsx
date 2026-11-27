@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { applyThemeColor, INK_THEME_COLOR } from '@/lib/theme-color';
 import { cn } from '@/lib/utils';
@@ -8,6 +8,10 @@ import { cn } from '@/lib/utils';
  * laufenden Ablaufs auf Tinte.
  */
 export type GuidedStageTone = 'light' | 'dark';
+
+/** Tinte und Papier als RGB-Tripel - dieselben Werte wie `accent` / `accent-contrast`. */
+const STAGE_INK_RGB = '12 18 16';
+const STAGE_PAPER_RGB = '242 242 239';
 
 interface GuidedStageProps {
   /** Zugänglicher Name des Screens - der Name der Vorlage. */
@@ -42,9 +46,19 @@ interface GuidedStageProps {
  * tauschen die Rollen, es kommt keine Farbe hinzu; `theme-color` wird dann mit
  * umgestellt, weil iOS sonst dunkle Statusleisten-Schrift auf den dunklen Grund
  * zeichnet. Lime gibt es auf keinem Screen mehr als einmal.
+ *
+ * Was auf beiden Tönen stehen soll (der Run-Screen: hell in einer Pause),
+ * nimmt seine Farben aus `stage-fg` und `stage-bg` statt aus den festen Tokens.
  */
 export function GuidedStage({ label, screen, tone = 'light', anchors, children }: GuidedStageProps) {
   useEffect(() => (tone === 'dark' ? applyThemeColor(INK_THEME_COLOR) : undefined), [tone]);
+
+  // Vorder- und Hintergrund der Bühne (`stage-fg` / `stage-bg`): so steht
+  // derselbe Screen auf Tinte und auf Papier, ohne zwei Sätze Klassen.
+  const colors = {
+    '--stage-fg': tone === 'dark' ? STAGE_PAPER_RGB : STAGE_INK_RGB,
+    '--stage-bg': tone === 'dark' ? STAGE_INK_RGB : STAGE_PAPER_RGB,
+  } as CSSProperties;
 
   return createPortal(
     <main
@@ -52,6 +66,7 @@ export function GuidedStage({ label, screen, tone = 'light', anchors, children }
       data-guided-stage={screen}
       data-guided-tone={tone}
       {...anchors}
+      style={colors}
       className={cn(
         'guided-stage flex flex-col pb-[max(0.875rem,var(--stage-inset-bottom))] pl-[max(1.125rem,var(--stage-inset-left))] pr-[max(1.125rem,var(--stage-inset-right))] pt-[max(0.75rem,var(--stage-inset-top))]',
         tone === 'dark' ? 'bg-accent text-accent-contrast' : 'bg-app text-content',

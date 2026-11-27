@@ -113,9 +113,9 @@ describe('requiredGuidanceTexts', () => {
 });
 
 describe('guidanceTransitionSeconds', () => {
-  it('rundet 0,7 s + Dauer + 2 s auf und hält den geplanten Wechsel als Untergrenze', () => {
-    expect(guidanceTransitionSeconds(5, 12_000)).toBe(15); // 14,7 → 15
-    expect(guidanceTransitionSeconds(5, 12_400)).toBe(16); // 15,1 → 16
+  it('rundet 0,7 s + Dauer + 4 s auf und hält den geplanten Wechsel als Untergrenze', () => {
+    expect(guidanceTransitionSeconds(5, 12_000)).toBe(17); // 16,7 → 17
+    expect(guidanceTransitionSeconds(5, 12_400)).toBe(18); // 17,1 → 18
     expect(guidanceTransitionSeconds(20, 3_000)).toBe(20);
   });
 });
@@ -136,7 +136,7 @@ describe('applyGuidance', () => {
         [texts[1], 12_000],
       ]),
     );
-    expect(result?.map((step) => step.guidanceSeconds)).toEqual([15, 25, undefined]);
+    expect(result?.map((step) => step.guidanceSeconds)).toEqual([17, 25, undefined]);
     expect(steps[0]).not.toHaveProperty('guidanceSeconds');
   });
 

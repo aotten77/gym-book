@@ -53,13 +53,18 @@ import {
   playDecodedAnnouncement,
   stopAnnouncement,
 } from "@/lib/announcement-audio";
-import { playGuidedSignal, primeTimerSound } from "@/lib/sound";
+import {
+  playGuidedCountTone,
+  playGuidedGoTone,
+  playGuidedSignal,
+  primeTimerSound,
+} from "@/lib/sound";
 import { keepScreenAwake } from "@/lib/wake-lock";
 import { cn } from "@/lib/utils";
 
 /** Kleinschrift über einem Block - auf Tinte in gedämpftem Papier. */
 const CAPTION_CLASSES =
-  "text-[10px] font-bold uppercase tracking-[0.16em] text-accent-contrast/60";
+  "text-[10px] font-bold uppercase tracking-[0.16em] text-stage-fg/60";
 
 /** Der Umfang des Rings im Wechsel (Radius 56). */
 const RING_CIRCUMFERENCE = 2 * Math.PI * 56;
@@ -205,6 +210,8 @@ function GuidedRunScreen({
   }, [isActive, isVoiceAvailable, session.id]);
 
   const signalKey = isActive ? (state.dueSignal?.key ?? null) : null;
+  // Die Art steckt im Schlüssel: sie wechselt nie ohne ihn.
+  const signalKind = isActive ? (state.dueSignal?.kind ?? null) : null;
   const announcement =
     isActive && audioMode === "voice" ? state.dueAnnouncement : null;
   const announcementKey = announcement?.key ?? null;
@@ -212,9 +219,16 @@ function GuidedRunScreen({
   useEffect(() => {
     if (signalKey && !playedSignals.current.has(signalKey)) {
       playedSignals.current.add(signalKey);
-      playGuidedSignal();
+
+      if (signalKind === "count") {
+        playGuidedCountTone();
+      } else if (signalKind === "go") {
+        playGuidedGoTone();
+      } else {
+        playGuidedSignal();
+      }
     }
-  }, [signalKey]);
+  }, [signalKey, signalKind]);
 
   /*
    * Ein neuer Abschnitt, eine Pause oder „Nur Ton“ macht die laufende Ansage
@@ -325,17 +339,22 @@ function GuidedRunScreen({
     return null;
   }
 
+  // Eine Pause steht hell - auch pausiert: der Screen behält den Ton des Abschnitts.
+  const tone = current.pause ? "light" : "dark";
+  const pauseAnchor = current.pause ? "true" : undefined;
+
   if (state.phase === "paused") {
     return (
       <GuidedStage
         label={session.templateNameSnapshot}
         screen="pause"
-        tone="dark"
+        tone={tone}
         anchors={anchors}
       >
         <div
           data-guided-run
           data-guided-phase="paused"
+          data-guided-pause={pauseAnchor}
           data-guided-section={current.kind}
           data-guided-now={state.stepIndex}
           data-guided-remaining={state.remainingSeconds}
@@ -350,7 +369,11 @@ function GuidedRunScreen({
 
           <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_13.1rem] gap-[18px] pt-2.5">
             <div className="flex min-w-0 flex-col justify-center opacity-70">
-              <p className={CAPTION_CLASSES}>Pausiert</p>
+              {/* Volle Farbe: gedämpft läge das Symbol auf Papier unter 3:1. */}
+              <p className={cn(CAPTION_CLASSES, "text-stage-fg")}>
+                <Pause size={14} fill="currentColor" aria-hidden="true" />
+                <span className="sr-only">Pausiert</span>
+              </p>
               <h1
                 data-guided-name
                 className="mt-1 break-words font-display text-[34px] font-extrabold leading-[1.02] tracking-[-0.03em]"
@@ -377,7 +400,7 @@ function GuidedRunScreen({
               </Button>
               <Button
                 variant="secondary"
-                className={cn(SOFT_BUTTON_CLASSES, "bg-accent-contrast/10")}
+                className={cn(SOFT_BUTTON_CLASSES, "bg-stage-fg/10")}
                 onClick={() => control("restart")}
               >
                 Schritt neu starten
@@ -386,7 +409,7 @@ function GuidedRunScreen({
                 variant="secondary"
                 className={cn(
                   SOFT_BUTTON_CLASSES,
-                  "bg-transparent text-accent-contrast/60",
+                  "bg-transparent text-stage-fg/60",
                 )}
                 onClick={() => setIsEndAsked(true)}
               >
@@ -410,12 +433,13 @@ function GuidedRunScreen({
     <GuidedStage
       label={session.templateNameSnapshot}
       screen="run"
-      tone="dark"
+      tone={tone}
       anchors={anchors}
     >
       <div
         data-guided-run
         data-guided-phase={state.phase}
+        data-guided-pause={pauseAnchor}
         data-guided-section={current.kind}
         data-guided-now={state.stepIndex}
         data-guided-remaining={state.remainingSeconds}
@@ -438,6 +462,12 @@ function GuidedRunScreen({
                   (adjusted) => adjusted.index === state.stepIndex,
                 )?.notes
               }
+              onOpenHint={() => setHintSection(state.sectionIndex)}
+            />
+          ) : current.pause ? (
+            <PauseLeft
+              section={current}
+              step={step}
               onOpenHint={() => setHintSection(state.sectionIndex)}
             />
           ) : (
@@ -467,6 +497,7 @@ function GuidedRunScreen({
               </>
             ) : (
               <CountdownRing
+                tone={current.pause ? "ink" : "highlight"}
                 remainingSeconds={state.remainingSeconds}
                 fraction={
                   (current.startSeconds +
@@ -487,14 +518,11 @@ function GuidedRunScreen({
               {current.kind === "exercise" ? (
                 <Button
                   variant="primary"
-                  className={cn(
-                    PAPER_BUTTON_CLASSES,
-                    "min-w-0 flex-1 gap-1.5 px-2",
-                  )}
+                  aria-label="Pausieren"
+                  className={cn(PAPER_BUTTON_CLASSES, "min-w-0 flex-1 px-2")}
                   onClick={() => control("pause")}
                 >
-                  <Pause size={14} fill="currentColor" aria-hidden="true" />
-                  Pause
+                  <Pause size={16} fill="currentColor" aria-hidden="true" />
                 </Button>
               ) : (
                 <Button
@@ -519,7 +547,7 @@ function GuidedRunScreen({
                 </IconButton>
               ) : (
                 <IconButton
-                  label="Pause"
+                  label="Pausieren"
                   className={cn(ROUND_ICON_CLASSES)}
                   onClick={() => control("pause")}
                 >
@@ -553,19 +581,19 @@ function GuidedRunScreen({
 
 /** Papier auf Tinte: die Hauptaktion des Screens, ohne Lime. */
 const PAPER_BUTTON_CLASSES =
-  "rounded-full bg-accent-contrast text-accent hover:opacity-90 focus-visible:ring-accent-contrast focus-visible:ring-offset-accent";
+  "rounded-full bg-stage-fg text-stage-bg hover:opacity-90 focus-visible:ring-stage-fg focus-visible:ring-offset-stage-bg";
 
 /** „+15 s“: ein leiser Knopf, mindestens 44 px hoch. */
 const PLUS_CLASSES =
-  "mx-auto inline-flex min-h-touch items-center rounded-full bg-accent-contrast/10 px-4 text-xs font-bold text-accent-contrast hover:bg-accent-contrast/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-contrast focus-visible:ring-offset-2 focus-visible:ring-offset-accent";
+  "mx-auto inline-flex min-h-touch items-center rounded-full bg-stage-fg/10 px-4 text-xs font-bold text-stage-fg hover:bg-stage-fg/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stage-fg focus-visible:ring-offset-2 focus-visible:ring-offset-stage-bg";
 
 /** Zurück und Überspringen: runde Symbolknöpfe neben der Hauptaktion. */
 const ROUND_ICON_CLASSES =
-  "rounded-full border-transparent bg-accent-contrast/10 text-accent-contrast hover:bg-accent-contrast/20 focus-visible:ring-accent-contrast focus-visible:ring-offset-accent";
+  "rounded-full border-transparent bg-stage-fg/10 text-stage-fg hover:bg-stage-fg/20 focus-visible:ring-stage-fg focus-visible:ring-offset-stage-bg";
 
 /** Die leisen Aktionen daneben. */
 const SOFT_BUTTON_CLASSES =
-  "rounded-full text-accent-contrast hover:bg-accent-contrast/20 focus-visible:ring-accent-contrast focus-visible:ring-offset-accent";
+  "rounded-full text-stage-fg hover:bg-stage-fg/20 focus-visible:ring-stage-fg focus-visible:ring-offset-stage-bg";
 
 /** Die Kopfzeile von Ablauf und Pause: Verkleinern, Fortschritt, Restzeit. */
 function RunTop({
@@ -583,7 +611,7 @@ function RunTop({
     <div className="flex items-center gap-2.5">
       <IconButton
         label="Verkleinern"
-        className="rounded-full border-transparent bg-accent-contrast/10 text-accent-contrast hover:bg-accent-contrast/20 focus-visible:ring-accent-contrast focus-visible:ring-offset-accent"
+        className="rounded-full border-transparent bg-stage-fg/10 text-stage-fg hover:bg-stage-fg/20 focus-visible:ring-stage-fg focus-visible:ring-offset-stage-bg"
         onClick={onClose}
       >
         <X size={14} aria-hidden="true" />
@@ -591,7 +619,7 @@ function RunTop({
       <ProgressSegments state={state} />
       <span
         data-guided-meta
-        className="whitespace-nowrap text-[11px] tabular-nums text-accent-contrast/60"
+        className="whitespace-nowrap text-[11px] tabular-nums text-stage-fg/60"
       >
         {describeMeta(state, stepCount)}
       </span>
@@ -623,7 +651,7 @@ function AudioPill({ audioMode, canUseVoice, onToggle }: AudioPillProps) {
       aria-label={isVoice ? "Stimme + Ton, tippen für Nur Ton" : "Nur Ton, tippen für Stimme + Ton"}
       disabled={!isVoice && !canUseVoice}
       onClick={onToggle}
-      className="inline-flex min-h-touch items-center gap-1.5 whitespace-nowrap rounded-full bg-accent-contrast/10 px-2.5 text-[11px] font-bold text-accent-contrast hover:bg-accent-contrast/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-contrast focus-visible:ring-offset-2 focus-visible:ring-offset-accent disabled:cursor-not-allowed disabled:opacity-45"
+      className="inline-flex min-h-touch items-center gap-1.5 whitespace-nowrap rounded-full bg-stage-fg/10 px-2.5 text-[11px] font-bold text-stage-fg hover:bg-stage-fg/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stage-fg focus-visible:ring-offset-2 focus-visible:ring-offset-stage-bg disabled:cursor-not-allowed disabled:opacity-45"
     >
       <Icon size={13} aria-hidden="true" />
       {isVoice ? "Stimme + Ton" : "Nur Ton"}
@@ -631,13 +659,16 @@ function AudioPill({ audioMode, canUseVoice, onToggle }: AudioPillProps) {
   );
 }
 
-/** „3 / 12 · noch 15:20“ in der Übung, „Wechsel · noch 14:55“ davor. */
+/**
+ * „3 / 12 · noch 15:20“ in der Übung, „Wechsel · noch 14:55“ davor, „Pause ·
+ * noch 14:55“ in einem langen Wechsel.
+ */
 function describeMeta(state: GuidedRunState, stepCount: number): string {
   const rest = `noch ${formatStepClock(state.remainingTotalSeconds)}`;
 
   switch (state.current?.kind) {
     case "transition":
-      return `Wechsel · ${rest}`;
+      return state.current.pause ? `Pause · ${rest}` : `Wechsel · ${rest}`;
     case "sideSwitch":
       return `Seitenwechsel · ${rest}`;
     default:
@@ -669,12 +700,12 @@ function ProgressSegments({ state }: { state: GuidedRunState }) {
           <i
             key={index}
             data-guided-segment={isDone ? "done" : isNow ? "now" : "todo"}
-            className="relative h-1 flex-1 overflow-hidden rounded-sm bg-accent-contrast/15"
+            className="relative h-1 flex-1 overflow-hidden rounded-sm bg-stage-fg/15"
           >
             <span
               className={cn(
                 "absolute inset-y-0 left-0 rounded-sm",
-                isNow ? "bg-accent-contrast" : "bg-accent-contrast/55",
+                isNow ? "bg-stage-fg" : "bg-stage-fg/55",
               )}
               style={{
                 width: `${Math.round((isDone ? 1 : isNow ? fraction : 0) * 100)}%`,
@@ -699,11 +730,11 @@ function InfoButton({
       type="button"
       aria-label={`Hinweis: ${stepName}`}
       onClick={onOpen}
-      className="-my-2 ml-1 inline-grid h-11 w-11 place-items-center rounded-full align-middle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-contrast"
+      className="-my-2 ml-1 inline-grid h-11 w-11 place-items-center rounded-full align-middle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stage-fg"
     >
       <span
         aria-hidden="true"
-        className="grid h-7 w-7 place-items-center rounded-full bg-accent-contrast/15 font-serif text-base font-bold italic leading-none tracking-normal text-accent-contrast"
+        className="grid h-7 w-7 place-items-center rounded-full bg-stage-fg/15 font-serif text-base font-bold italic leading-none tracking-normal text-stage-fg"
       >
         i
       </span>
@@ -756,7 +787,7 @@ function ExerciseLeft({
         <p
           key={`${note.by}-${index}`}
           data-guided-note
-          className="mt-1 break-words text-[13px] leading-snug text-accent-contrast/75"
+          className="mt-1 break-words text-[13px] leading-snug text-stage-fg/75"
         >
           {note.note}
         </p>
@@ -772,7 +803,7 @@ function ExerciseLeft({
             {nextStep.name}
             {next.side ? <GuidedSideTag side={next.side} /> : null}
           </p>
-          <p className="mt-[5px] text-[13px] tabular-nums text-accent-contrast/60">
+          <p className="mt-[5px] text-[13px] tabular-nums text-stage-fg/60">
             {formatStepClock(next.seconds)}
           </p>
         </>
@@ -816,18 +847,60 @@ function TransitionLeft({
           <InfoButton stepName={step.name} onOpen={onOpenHint} />
         ) : null}
       </h1>
-      <p className="mt-[5px] text-[13px] tabular-nums text-accent-contrast/60">
+      <p className="mt-[5px] text-[13px] tabular-nums text-stage-fg/60">
         {describeUpcomingDuration(step)}
       </p>
     </div>
   );
 }
 
-/** Der Ring im Wechsel: zählt still herunter, ohne Ticks. Er ist die eine Lime-Fläche. */
+/**
+ * Links in einer Pause: groß „Pause“, darunter, was danach kommt - Tinte auf
+ * Papier, ohne Lime: in der Pause ist nichts „jetzt dran“.
+ */
+function PauseLeft({
+  section,
+  step,
+  onOpenHint,
+}: {
+  section: GuidedSection;
+  step: GuidedStep;
+  onOpenHint: () => void;
+}) {
+  return (
+    <div className="flex min-w-0 flex-col justify-center">
+      <p className="font-display text-[72px] font-extrabold uppercase leading-[0.9] tracking-[-0.03em]">
+        Pause
+      </p>
+      <p className={cn(CAPTION_CLASSES, "mt-4")}>Danach</p>
+      <h1
+        data-guided-name
+        className="mt-1 break-words font-display text-[25px] font-extrabold leading-[1.05] tracking-[-0.03em]"
+      >
+        {step.name}
+        {section.side ? <GuidedSideTag side={section.side} /> : null}
+        {step.hint || step.guidance ? (
+          <InfoButton stepName={step.name} onOpen={onOpenHint} />
+        ) : null}
+      </h1>
+      <p className="mt-[5px] text-[13px] tabular-nums text-stage-fg/60">
+        {describeUpcomingDuration(step)}
+      </p>
+    </div>
+  );
+}
+
+/**
+ * Der Ring im Wechsel: zählt still herunter, ohne Ticks. Im kurzen Wechsel
+ * ist er die eine Lime-Fläche; in der Pause steht er in Tinte - Lime ist auf
+ * Papier nicht lesbar und hieße „jetzt dran“.
+ */
 function CountdownRing({
+  tone,
   remainingSeconds,
   fraction,
 }: {
+  tone: "highlight" | "ink";
   remainingSeconds: number;
   /** Wie viel vom Wechsel noch übrig ist, 1 bis 0. */
   fraction: number;
@@ -842,7 +915,7 @@ function CountdownRing({
           cy="64"
           r="56"
           fill="none"
-          className="stroke-accent-contrast/15"
+          className="stroke-stage-fg/15"
           strokeWidth="8"
         />
         <circle
@@ -850,7 +923,7 @@ function CountdownRing({
           cy="64"
           r="56"
           fill="none"
-          className="stroke-highlight"
+          className={tone === "ink" ? "stroke-stage-fg" : "stroke-highlight"}
           strokeWidth="8"
           strokeLinecap="round"
           strokeDasharray={RING_CIRCUMFERENCE}

@@ -53,7 +53,7 @@ export function GuidedEndDialog({ onConfirm, onCancel }: GuidedEndDialogProps) {
         aria-modal="true"
         aria-label="Einheit beenden?"
         onClick={(event) => event.stopPropagation()}
-        className="flex max-h-full w-full max-w-[25rem] flex-col rounded-card border border-accent-contrast/20 bg-accent px-5 pb-4 pt-[1.125rem] shadow-soft"
+        className="flex max-h-full w-full max-w-[25rem] flex-col rounded-card border border-accent-contrast/20 bg-accent text-accent-contrast px-5 pb-4 pt-[1.125rem] shadow-soft"
       >
         <h2 className="font-display text-[22px] font-extrabold leading-tight tracking-[-0.03em]">
           Einheit beenden?

@@ -360,11 +360,11 @@ describe('Anleitung', () => {
       measure: async () => 12_000,
     });
 
-    // Wechsel 15 + 40 + Wechsel 5 + 30 = 90
+    // Wechsel 17 + 40 + Wechsel 5 + 30 = 92
     expect((await getAnnouncementAvailability('g')).guidance).toEqual({
       available: true,
       complete: true,
-      totalSeconds: 90,
+      totalSeconds: 92,
     });
   });
 
@@ -416,11 +416,11 @@ describe('Anleitung', () => {
     });
 
     expect(texts).toContain(`Als Nächstes: Beispiel A, 20 Sekunden. ${GUIDE}`);
-    // Wechsel 15 + 20 + Wechsel 5 + 30 = 70
+    // Wechsel 17 + 20 + Wechsel 5 + 30 = 72
     expect((await getAnnouncementAvailability('g', IN_PHASE)).guidance).toEqual({
       available: true,
       complete: true,
-      totalSeconds: 70,
+      totalSeconds: 72,
     });
   });
 

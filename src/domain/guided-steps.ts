@@ -26,6 +26,13 @@ export const GUIDED_DEFAULT_TRANSITION_SECONDS = 5;
 /** Der Seitenwechsel zwischen links und rechts eines beidseitigen Schritts. */
 export const GUIDED_SIDE_SWITCH_SECONDS = 3;
 
+/**
+ * Ab dieser Länge ist ein Wechsel eine Pause - gemessen an der **geplanten**
+ * Länge (`plannedTransitionSeconds`). Dieselbe Grenze gilt für den Countdown
+ * am Ende eines Wechsels, dort aber gegen die tatsächliche Länge.
+ */
+export const GUIDED_PAUSE_MIN_SECONDS = 15;
+
 export type GuidedSide = 'left' | 'right';
 
 /**
@@ -36,7 +43,8 @@ export type GuidedSide = 'left' | 'right';
  * - `sideSwitch`: die drei Sekunden zwischen links und rechts.
  *
  * Wechsel und Seitenwechsel sind beide „es geht gleich weiter“ - wer nur
- * zwischen Übung und Pause unterscheidet, fasst sie zusammen.
+ * zwischen Übung und „keine Übung“ unterscheidet, fasst sie zusammen. Eine
+ * Pause ist ein langer Wechsel (`GuidedSection.pause`), keine eigene Art.
  */
 export type GuidedSectionKind = 'transition' | 'exercise' | 'sideSwitch';
 
@@ -55,6 +63,11 @@ export interface GuidedSection {
    */
   side?: GuidedSide;
   seconds: number;
+  /**
+   * Nur am Wechsel: ob er eine Pause ist (`isGuidedPause`). Maßgeblich ist die
+   * geplante Länge, nicht die Verlängerung durch die Anleitung.
+   */
+  pause?: boolean;
   /** Sekunden seit Beginn der Einheit, an denen dieser Abschnitt anfängt. */
   startSeconds: number;
 }
@@ -82,6 +95,15 @@ export function plannedTransitionSeconds(steps: readonly GuidedStep[], stepIndex
   return stepIndex === 0
     ? GUIDED_START_TRANSITION_SECONDS
     : (steps[stepIndex].transitionSeconds ?? GUIDED_DEFAULT_TRANSITION_SECONDS);
+}
+
+/**
+ * Ob der Wechsel vor diesem Schritt eine Pause ist: geplant mindestens
+ * `GUIDED_PAUSE_MIN_SECONDS`. Der Wechsel vor dem ersten Schritt ist fest
+ * 5 Sekunden und damit nie eine.
+ */
+export function isGuidedPause(steps: readonly GuidedStep[], stepIndex: number): boolean {
+  return plannedTransitionSeconds(steps, stepIndex) >= GUIDED_PAUSE_MIN_SECONDS;
 }
 
 /**
@@ -113,6 +135,7 @@ export function resolveGuidedSections(steps: readonly GuidedStep[]): GuidedSecti
       stepIndex,
       ...first,
       seconds: step.guidanceSeconds ?? plannedTransitionSeconds(steps, stepIndex),
+      pause: isGuidedPause(steps, stepIndex),
     });
     push({ kind: 'exercise', stepIndex, ...first, seconds: guidedSideSeconds(step) });
 
@@ -191,6 +214,39 @@ export function describeGuidedFacts(
 /** Die Kurzfassung für Listen, wo sonst „0 Übungen“ stünde: „3 Schritte · ≈ 6 min“. */
 export function describeGuidedSummary(steps: readonly GuidedStep[]): string {
   return describeGuidedFacts(steps).slice(0, 2).join(' · ');
+}
+
+/** Die Pausenzeile der Schrittliste: „45 s Pause“, ab einer Minute „1:30 Pause“. */
+export function describeGuidedPause(seconds: number): string {
+  return `${seconds < 60 ? `${formatNumber(seconds)} s` : formatStepClock(seconds)} Pause`;
+}
+
+/**
+ * Die Pausenzeile vor jedem Schritt der Vorlage, je Position - oder `null`.
+ *
+ * Gerechnet wird auf den gespielten Schritten, mit derselben Regel wie die
+ * Zeitachse (`isGuidedPause`): ein pausierter Schritt (`isPaused`, durch eine
+ * Einschränkung) läuft nicht und hat keine Zeile, und der erste gespielte hat
+ * fest 5 Sekunden Wechsel - auch wenn er in der Vorlage nicht der erste ist.
+ */
+export function describeGuidedPausesBefore(
+  steps: readonly GuidedStep[],
+  isPaused: (index: number) => boolean,
+): (string | null)[] {
+  const played = steps.filter((_, index) => !isPaused(index));
+  let playedIndex = 0;
+
+  return steps.map((_, index) => {
+    if (isPaused(index)) {
+      return null;
+    }
+
+    const at = playedIndex++;
+
+    return isGuidedPause(played, at)
+      ? describeGuidedPause(plannedTransitionSeconds(played, at))
+      : null;
+  });
 }
 
 /** Die Dauer in der Schrittliste: „1:00“, bei einem beidseitigen Schritt je Seite „2 × 1:15“. */

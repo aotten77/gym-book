@@ -20,6 +20,8 @@ class FakeAudioContext {
   sampleRate = 44_100;
   destination = {};
   startedOscillators = 0;
+  /** Die Frequenzen der gestarteten Oszillatoren, in der Reihenfolge des Aufbaus. */
+  frequencies: number[] = [];
   private resumeGate: (() => void) | null = null;
 
   addEventListener() {}
@@ -64,7 +66,11 @@ class FakeAudioContext {
   createOscillator() {
     return {
       type: '',
-      frequency: { setValueAtTime: () => {} },
+      frequency: {
+        setValueAtTime: (value: number) => {
+          this.frequencies.push(value);
+        },
+      },
       connect: () => {},
       start: () => {
         this.startedOscillators += 1;
@@ -196,6 +202,45 @@ describe('playGuidedSignal', () => {
 
     context.letResumeThrough();
     await vi.waitFor(() => expect(context.startedOscillators).toBe(1));
+  });
+});
+
+describe('Countdown- und Start-Ton', () => {
+  async function playWith(name: 'playGuidedCountTone' | 'playGuidedGoTone') {
+    const context = new FakeAudioContext();
+    context.state = 'running';
+    const audioSession = { type: 'auto' };
+    vi.stubGlobal(
+      'AudioContext',
+      class {
+        constructor() {
+          return context;
+        }
+      },
+    );
+    vi.stubGlobal('navigator', { audioSession });
+
+    const sound = await loadSoundModule();
+
+    sound[name]();
+
+    return { context, audioSession };
+  }
+
+  it('playGuidedCountTone setzt ambient und spielt genau einen Ton bei 880 Hz', async () => {
+    const { context, audioSession } = await playWith('playGuidedCountTone');
+
+    expect(audioSession.type).toBe('ambient');
+    expect(context.startedOscillators).toBe(1);
+    expect(context.frequencies).toEqual([880]);
+  });
+
+  it('playGuidedGoTone setzt ambient und spielt genau einen Ton bei 1174,7 Hz', async () => {
+    const { context, audioSession } = await playWith('playGuidedGoTone');
+
+    expect(audioSession.type).toBe('ambient');
+    expect(context.startedOscillators).toBe(1);
+    expect(context.frequencies).toEqual([1174.7]);
   });
 });
 

@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
   describeGuidedFacts,
+  describeGuidedPause,
+  describeGuidedPausesBefore,
   describeGuidedStepDuration,
   describeGuidedSummary,
   describeGuidedSteps,
   GUIDED_SIDE_SWITCH_SECONDS,
   GUIDED_START_TRANSITION_SECONDS,
   guidedSideSeconds,
+  isGuidedPause,
   isGuidedTemplate,
   resolveGuidedSections,
   sumGuidedSeconds,
@@ -169,6 +172,60 @@ describe('resolveGuidedSections mit Anleitung', () => {
     const withText = plain.map((step) => ({ ...step, guidance: 'Erfundener Beispieltext.' }));
     expect(resolveGuidedSections(withText)).toEqual(resolveGuidedSections(plain));
     expect(resolveGuidedSections(plain)[0].seconds).toBe(5);
+  });
+});
+
+describe('Pause-Markierung', () => {
+  const steps: GuidedStep[] = [
+    { name: 'Beispiel A', seconds: 30 },
+    { name: 'Beispiel B', seconds: 30, transitionSeconds: 14 },
+    { name: 'Beispiel C', seconds: 30, transitionSeconds: 15 },
+    { name: 'Beispiel D', seconds: 30, transitionSeconds: 45, bothSides: true },
+    { name: 'Beispiel E', seconds: 30, guidanceSeconds: 25 },
+  ];
+
+  it('markiert Wechsel ab geplant 15 s als Pause, den ersten nie', () => {
+    const transitions = resolveGuidedSections(steps).filter((s) => s.kind === 'transition');
+    expect(transitions.map((s) => s.pause)).toEqual([false, false, true, true, false]);
+  });
+
+  it('lässt Seitenwechsel und Übungen ohne Markierung', () => {
+    const others = resolveGuidedSections(steps).filter((s) => s.kind !== 'transition');
+    expect(others.every((s) => s.pause === undefined)).toBe(true);
+  });
+
+  it('isGuidedPause: der erste Schritt ist fest 5 s, auch mit transitionSeconds 45', () => {
+    expect(isGuidedPause([{ name: 'Beispiel A', seconds: 30, transitionSeconds: 45 }], 0)).toBe(
+      false,
+    );
+  });
+});
+
+describe('describeGuidedPause', () => {
+  it('nennt Sekunden unter einer Minute, darüber m:ss', () => {
+    expect(describeGuidedPause(45)).toBe('45 s Pause');
+    expect(describeGuidedPause(15)).toBe('15 s Pause');
+    expect(describeGuidedPause(90)).toBe('1:30 Pause');
+  });
+});
+
+describe('describeGuidedPausesBefore', () => {
+  const steps: GuidedStep[] = [
+    { name: 'Beispiel A', seconds: 30 },
+    { name: 'Beispiel B', seconds: 30, transitionSeconds: 45 },
+    { name: 'Beispiel C', seconds: 30, transitionSeconds: 10 },
+  ];
+
+  it('steht nur vor einem Schritt, dessen Wechsel eine Pause ist', () => {
+    expect(describeGuidedPausesBefore(steps, () => false)).toEqual([null, '45 s Pause', null]);
+  });
+
+  it('nicht vor dem ersten gespielten Schritt, wenn der erste pausiert ist', () => {
+    expect(describeGuidedPausesBefore(steps, (index) => index === 0)).toEqual([null, null, null]);
+  });
+
+  it('nicht vor einem pausierten Schritt', () => {
+    expect(describeGuidedPausesBefore(steps, (index) => index === 1)).toEqual([null, null, null]);
   });
 });
 

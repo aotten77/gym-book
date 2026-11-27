@@ -1,6 +1,6 @@
 # Gym Book: Import-Format (Bibliotheks-Import)
 
-Stand: App-Version vom 25.11.2026, `schemaVersion: 1`.
+Stand: App-Version vom 27.11.2026, `schemaVersion: 1`.
 
 Diese Datei liegt im Repo unter `docs/claude-projekt/import-format.md`. Jeder
 Codeblock vom Typ `json` darin ist eine vollständige, gültige Importdatei (ein
@@ -180,7 +180,7 @@ Jeder Schritt ist ein Objekt:
 | `seconds` | **ja** | ganze Zahl ≥ 1 | Dauer in Sekunden. Bei `bothSides: true` die **Gesamtzeit beider Seiten**: jede Seite läuft die Hälfte (abgerundet). |
 | `bothSides` | nein | `true` | Aus dem Schritt werden links und rechts, mit 3 s Seitenwechsel dazwischen. Fehlt der Schlüssel, ist der Schritt einseitig. |
 | `hint` | nein | Klartext | Der Hinweis hinter dem „i“. **Kein Markdown**, er wird so angezeigt, wie er dasteht. Ein oder zwei Sätze. |
-| `transitionSeconds` | nein | ganze Zahl ≥ 1 | Der Wechsel **vor** diesem Schritt in Sekunden. Fehlt er, sind es 5. Sinnvoll nach einer aufwendigen Position, aus der man mehr Zeit zum Umbauen braucht. |
+| `transitionSeconds` | nein | ganze Zahl ≥ 1 | Der Wechsel **vor** diesem Schritt in Sekunden. Fehlt er, sind es 5. Sinnvoll nach einer aufwendigen Position, aus der man mehr Zeit zum Umbauen braucht. Ab 15 s gilt der Wechsel als Pause: heller Screen, Countdown-Töne am Ende. |
 | `spokenName` | nein | Text | Was die Ansage statt `name` sagt, siehe unten. |
 | `guidance` | nein | Klartext | Die gesprochene Anleitung, siehe unten. Kein Markdown, höchstens 600 Zeichen. |
 

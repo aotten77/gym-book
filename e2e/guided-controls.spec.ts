@@ -95,7 +95,7 @@ test.describe("Geführte Einheit: Springen, Verlängern, Hinweis", () => {
     await expect(page.getByRole("button", { name: "+15 s" })).toHaveCount(0);
     await expectTouchSize(page, "Sofort starten");
     await expectTouchSize(page, "Zurück");
-    await expectTouchSize(page, "Pause");
+    await expectTouchSize(page, "Pausieren");
 
     await page.getByRole("button", { name: "Sofort starten" }).click();
     await expect(run(page)).toHaveAttribute("data-guided-section", "exercise");

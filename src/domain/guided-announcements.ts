@@ -21,8 +21,11 @@ export const GUIDED_DONE_TEXT = 'Geschafft.';
  */
 export const GUIDED_ANNOUNCEMENT_DELAY_SECONDS = 0.7;
 
-/** Ruhe nach dem Ende der Anleitung, bevor die Uhr der Übung startet. */
-export const GUIDED_GUIDANCE_PAD_SECONDS = 2;
+/**
+ * Ruhe nach dem Ende der Anleitung, bevor die Uhr der Übung startet - lässt
+ * Platz für den Countdown, damit er nie in die Stimme fällt.
+ */
+export const GUIDED_GUIDANCE_PAD_SECONDS = 4;
 
 /** Bis hierhin (einschließlich) in Sekunden, darüber in Minuten. */
 const SECONDS_LIMIT = 90;

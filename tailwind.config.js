@@ -74,6 +74,13 @@ export default {
           contrast: "#f2f2ef",
         },
 
+        // Vorder- und Hintergrund der geführten Bühne, gesetzt von
+        // `GuidedStage`: dunkel Papier auf Tinte, hell Tinte auf Papier.
+        stage: {
+          fg: "rgb(var(--stage-fg) / <alpha-value>)",
+          bg: "rgb(var(--stage-bg) / <alpha-value>)",
+        },
+
         // "Jetzt dran". Immer Flaeche, niemals Text.
         highlight: {
           DEFAULT: "#dcf25a",

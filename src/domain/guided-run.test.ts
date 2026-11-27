@@ -129,7 +129,11 @@ describe("fälliges Signal", () => {
   it("kommt genau am Ende einer Übung", () => {
     const state = deriveGuidedRunState(STEPS, START, at(15.2));
 
-    expect(state.dueSignal).toEqual({ key: "exercise-end:1", dueAt: at(15) });
+    expect(state.dueSignal).toEqual({
+      kind: "exercise-end",
+      key: "exercise-end:1",
+      dueAt: at(15),
+    });
   });
 
   it("kommt auch am Ende der ersten Seite, vor dem Seitenwechsel", () => {
@@ -423,6 +427,7 @@ describe("Überspringen, +15 s, Zurück und Sofort starten", () => {
         deriveGuidedRunState(STEPS, events, at(15.5)).dueSignal,
       ).toBeNull();
       expect(deriveGuidedRunState(STEPS, events, at(30.5)).dueSignal).toEqual({
+        kind: "exercise-end",
         key: "exercise-end:1",
         dueAt: at(30),
       });
@@ -784,6 +789,122 @@ describe("deriveGuidedProtocol", () => {
     expect(protocol).toEqual([
       { stepIndex: 0, name: "Hund", status: "aborted", plannedSeconds: 10, actualSeconds: 3 },
     ]);
+  });
+});
+
+describe("Countdown am Ende einer langen Pause", () => {
+  // Wechsel 0–5, A 5–15, Pause 15–60, B 60–70, Wechsel 70–80, C 80–90.
+  const S: GuidedStep[] = [
+    { name: "Beispiel A", seconds: 10 },
+    { name: "Beispiel B", seconds: 10, transitionSeconds: 45 },
+    { name: "Beispiel C", seconds: 10, transitionSeconds: 10 },
+  ];
+
+  it("meldet 3, 2, 1 und Start", () => {
+    expect(deriveGuidedRunState(S, START, at(57.1)).dueSignal).toMatchObject({
+      kind: "count",
+      key: "pause-count:2:3",
+      dueAt: at(57),
+    });
+    expect(deriveGuidedRunState(S, START, at(58.1)).dueSignal).toMatchObject({
+      kind: "count",
+      key: "pause-count:2:2",
+    });
+    expect(deriveGuidedRunState(S, START, at(59.1)).dueSignal).toMatchObject({
+      kind: "count",
+      key: "pause-count:2:1",
+    });
+    expect(deriveGuidedRunState(S, START, at(60.1)).dueSignal).toMatchObject({
+      kind: "go",
+      key: "pause-go:2",
+      dueAt: at(60),
+    });
+  });
+
+  it("lässt einen Ton nach 600 ms fallen", () => {
+    expect(deriveGuidedRunState(S, START, at(57.7)).dueSignal).toBeNull();
+  });
+
+  it("zählt einen 10-s-Wechsel nicht herunter", () => {
+    expect(deriveGuidedRunState(S, START, at(77.1)).dueSignal).toBeNull();
+    expect(deriveGuidedRunState(S, START, at(80.1)).dueSignal).toBeNull();
+  });
+
+  it("zählt einen durch die Anleitung auf 25 s gestreckten 5-s-Wechsel herunter", () => {
+    const G: GuidedStep[] = [
+      { name: "Beispiel A", seconds: 10 },
+      { name: "Beispiel B", seconds: 10, guidanceSeconds: 25 },
+    ];
+
+    // Wechsel 0–5, A 5–15, Wechsel 15–40
+    expect(deriveGuidedRunState(G, START, at(37.1)).dueSignal).toMatchObject({
+      kind: "count",
+      key: "pause-count:2:3",
+    });
+  });
+
+  it("schweigt nach „Sofort starten“ – auch kein Start-Ton", () => {
+    const events: GuidedEvent[] = [...START, { type: "startNow", at: at(58.5) }];
+
+    expect(deriveGuidedRunState(S, events, at(58.5)).dueSignal).toBeNull();
+    expect(deriveGuidedRunState(S, events, at(58.9)).dueSignal).toBeNull();
+  });
+
+  it("schweigt nach „Überspringen“ aus der Pause", () => {
+    const events: GuidedEvent[] = [...START, { type: "skip", at: at(58.5) }];
+
+    // Sprung an den Anfang des Wechsels vor C (Abfolge 70): nichts aus der Pause.
+    expect(deriveGuidedRunState(S, events, at(58.5)).dueSignal).toBeNull();
+    expect(deriveGuidedRunState(S, events, at(58.9)).dueSignal).toBeNull();
+  });
+
+  it("trifft nach Pausieren und Weiter die richtige Restzeit und holt nichts nach", () => {
+    const events: GuidedEvent[] = [
+      ...START,
+      { type: "pause", at: at(56.5) },
+      { type: "resume", at: at(300) },
+    ];
+
+    expect(deriveGuidedRunState(S, events, at(300.1)).dueSignal).toBeNull();
+    expect(deriveGuidedRunState(S, events, at(300.6)).dueSignal).toMatchObject({
+      key: "pause-count:2:3",
+      dueAt: at(300.5),
+    });
+  });
+
+  it("klingt nach „Zurück“ erneut, mit rewinds im Schlüssel", () => {
+    // aus B zurück an den Anfang von Schritt A
+    const events: GuidedEvent[] = [...START, { type: "back", at: at(65) }];
+
+    // nach back: Wechsel A 65–70, A 70–80, Pause 80–125 → 3 s vor Ende bei 122
+    expect(deriveGuidedRunState(S, events, at(122.1)).dueSignal).toMatchObject({
+      key: "pause-count:2:3:1",
+    });
+    expect(deriveGuidedRunState(S, events, at(125.1)).dueSignal).toMatchObject({
+      kind: "go",
+      key: "pause-go:2:1",
+    });
+  });
+
+  it("klingt nach „Sofort starten“ und „Zurück“ wieder", () => {
+    const events: GuidedEvent[] = [
+      ...START,
+      { type: "startNow", at: at(20) },
+      { type: "back", at: at(22) },
+    ];
+
+    // startNow springt auf 60 (Abfolge), back bei 22 auf 0: Pause endet bei 22 + 60 = 82.
+    expect(deriveGuidedRunState(S, events, at(82.1)).dueSignal).toMatchObject({
+      kind: "go",
+      key: "pause-go:2:1",
+    });
+  });
+
+  it("das Übungsende-Signal hat kind exercise-end", () => {
+    expect(deriveGuidedRunState(S, START, at(15.1)).dueSignal).toMatchObject({
+      kind: "exercise-end",
+      key: "exercise-end:1",
+    });
   });
 });
 
