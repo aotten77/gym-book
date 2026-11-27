@@ -122,6 +122,25 @@ test.describe('Geführte Vorlage: Ansagen erzeugen', () => {
     await expect(page.getByText('Keine Ansagen für diese Vorlage')).toBeVisible();
   });
 
+  test('ein späterer Import ohne geführte Vorlage räumt die alte Ansagen-Meldung weg', async ({
+    page,
+  }) => {
+    await importTemplate(page);
+    await expect(page.getByRole('status').filter({ hasText: 'Kein Google-Schlüssel' })).toBeVisible();
+
+    await page.getByLabel('Oder JSON einfügen').fill(
+      JSON.stringify({
+        schemaVersion: 1,
+        exercises: [{ name: 'Beispiel-Übung', trackingMode: 'reps_weight', unilateral: false }],
+      }),
+    );
+    await page.getByRole('button', { name: 'Vorschau erzeugen' }).click();
+    await page.getByRole('button', { name: 'Import bestätigen' }).click();
+
+    await expect(page.getByRole('status').filter({ hasText: 'Eingespielt: 1 Übungen neu' })).toBeVisible();
+    await expect(page.getByText('Kein Google-Schlüssel')).toHaveCount(0);
+  });
+
   test('der Import mit Schlüssel erzeugt die Ansagen automatisch', async ({ page }) => {
     let requests = 0;
 

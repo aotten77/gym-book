@@ -90,5 +90,8 @@ export function useAnnouncementGeneration() {
     setOverage(null);
   }, []);
 
-  return { isRunning, message, overage, run, answerOverage };
+  // Eine Meldung gehört zu ihrem Anlass; ein neuer Import ohne Erzeugung räumt sie weg.
+  const clearMessage = useCallback(() => setMessage(null), []);
+
+  return { isRunning, message, overage, run, answerOverage, clearMessage };
 }

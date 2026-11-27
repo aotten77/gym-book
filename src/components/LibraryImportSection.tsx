@@ -335,6 +335,7 @@ export function LibraryImportSection() {
       setPending(null);
       setText('');
       setIsBusy(false);
+      announcements.clearMessage();
 
       /*
        * Nach der Import-Transaktion und ohne dass der Import darauf wartet: er
